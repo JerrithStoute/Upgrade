@@ -180,8 +180,8 @@ export default async function SchedulePage({
                       </Link>
                     </Td>
                     <Td className="text-slate-500">{t.phase}</Td>
-                    <Td>{fmtDate(t.startDate)}</Td>
-                    <Td className={cn(od && "font-medium text-rose-600")}>{fmtDate(t.endDate)}</Td>
+                    <Td className="whitespace-nowrap">{fmtDate(t.startDate)}</Td>
+                    <Td className={cn("whitespace-nowrap", od && "font-medium text-rose-600")}>{fmtDate(t.endDate)}</Td>
                     <Td right>{t.isMilestone ? "—" : differenceInCalendarDays(t.endDate, t.startDate) + 1}</Td>
                     <Td>
                       {t.assignee ? (
