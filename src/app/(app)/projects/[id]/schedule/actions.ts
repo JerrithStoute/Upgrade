@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { addDays } from "date-fns";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
@@ -133,10 +132,4 @@ export async function completeTask(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.task_completed", description: `Completed task "${task.name}"` });
   revalidate(project.id);
   redirect(schedulePath(project.id));
-}
-
-/** Convenience used by the add-task form defaults. */
-export async function defaultTaskDates() {
-  const today = new Date();
-  return { start: today, end: addDays(today, 2) };
 }

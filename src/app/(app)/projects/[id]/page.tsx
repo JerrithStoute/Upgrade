@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, projectFinancials } from "@/lib/projects";
 import { avgTaskProgress } from "@/lib/project-progress";
-import { fmtDate, money, num, timeAgo, titleCase } from "@/lib/utils";
+import { fmtDate, linePrice, money, num, timeAgo, titleCase } from "@/lib/utils";
 import { Badge, Card, CardBody, CardHeader, Progress, Stat } from "@/components/ui";
 
 function TabLink({ href, children = "View all" }: { href: string; children?: React.ReactNode }) {
@@ -242,7 +242,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
                           CO #{co.number} · {co.title}
                         </p>
                         <p className="text-xs text-slate-500">
-                          Change order · {money(co.items.reduce((s, i) => s + i.quantity * i.unitCost * (1 + i.markupPct / 100), 0))}
+                          Change order · {money(co.items.reduce((s, i) => s + linePrice(i), 0))}
                         </p>
                       </div>
                       <Badge status={co.status} />
