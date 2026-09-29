@@ -109,27 +109,31 @@ export default async function ProjectsPage({
         ))}
       </div>
 
-      <form method="get" className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <form method="get" className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input name="q" defaultValue={q} placeholder="Search name, number or address" className="input pl-9" />
         </div>
-        <select name="status" defaultValue={status} className="input w-auto">
-          <option value="">All statuses</option>
-          {PROJECT_STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {titleCase(s)}
-            </option>
-          ))}
-        </select>
-        <select name="managerId" defaultValue={managerId} className="input w-auto">
-          <option value="">Any manager</option>
-          {managers.map((m) => (
-            <option key={m.id} value={m.id}>
-              {m.name}
-            </option>
-          ))}
-        </select>
+        <div className="w-44">
+          <select name="status" defaultValue={status} className="input">
+            <option value="">All statuses</option>
+            {PROJECT_STATUSES.map((s) => (
+              <option key={s} value={s}>
+                {titleCase(s)}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="w-44">
+          <select name="managerId" defaultValue={managerId} className="input">
+            <option value="">Any manager</option>
+            {managers.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name}
+              </option>
+            ))}
+          </select>
+        </div>
         <Button type="submit" variant="secondary">
           Filter
         </Button>

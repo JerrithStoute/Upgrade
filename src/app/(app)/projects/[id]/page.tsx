@@ -81,14 +81,11 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
           label="Schedule"
           value={`${progress}%`}
           hint={
-            <span className="block">
-              <Progress value={progress} className="mb-1" />
-              {daysRemaining === null
-                ? "No target end date"
-                : daysRemaining < 0
-                  ? `${Math.abs(daysRemaining)} days past target`
-                  : `${daysRemaining} days remaining`}
-            </span>
+            daysRemaining === null
+              ? `${tasks.length} tasks · no target end date`
+              : daysRemaining < 0
+                ? `${Math.abs(daysRemaining)} days past target`
+                : `${daysRemaining} days remaining`
           }
         />
       </div>
