@@ -93,17 +93,17 @@ export default async function PortalChangeOrderDetailPage({ params }: { params: 
             })}
             {co.items.length === 0 ? (
               <Tr>
-                <Td className="text-slate-500" colSpan={5}>
+                <td className="px-4 py-2.5 text-slate-500" colSpan={5}>
                   No line items.
-                </Td>
+                </td>
               </Tr>
             ) : null}
           </TBody>
           <TFoot>
             <tr>
-              <Td colSpan={4} className="text-right font-semibold">
+              <td colSpan={4} className="px-4 py-2.5 text-right font-semibold">
                 Total
-              </Td>
+              </td>
               <Td right className="font-semibold">
                 {money(total)}
               </Td>

@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { fmtDate, money } from "@/lib/utils";
 import { lineTotals } from "@/lib/finance";
-import { Badge, ButtonLink, CardHeader, EmptyState, Stat, Table, THead, TBody, Tr, Th, Td, TFoot } from "@/components/ui";
+import { Badge, ButtonLink, EmptyState, Stat, Table, THead, TBody, Tr, Th, Td, TFoot } from "@/components/ui";
 
 export default async function ChangeOrdersPage({ params }: { params: Promise<{ id: string }> }) {
   await requireStaff();
@@ -115,7 +115,6 @@ export default async function ChangeOrdersPage({ params }: { params: Promise<{ i
           </Table>
         </>
       )}
-      <CardHeader title="" className="hidden" />
     </div>
   );
 }
