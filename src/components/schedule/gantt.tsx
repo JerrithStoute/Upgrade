@@ -30,7 +30,6 @@ export function Gantt({
   const leftW = compact ? 200 : 272;
   const rowH = compact ? 32 : 44;
   const headerH = compact ? 36 : 40;
-  const weekPct = 700 / win.days / 7; // not used for layout — only for label density heuristics
   const weekCount = win.weeks.length;
   // Assume ~700px of chart width at desktop; label every week when there's room, else thin out.
   const estWeekPx = 700 / weekCount;
@@ -40,7 +39,6 @@ export function Gantt({
   const todayVisible = todayIdx >= 0 && todayIdx < win.days;
   const todayLeft = pctOfDay(todayIdx + 0.5);
   const groups = groupByPhase(tasks);
-  void weekPct;
 
   if (tasks.length === 0) {
     return (
@@ -124,7 +122,7 @@ export function Gantt({
               // Put the label on the left of the bar when the bar sits in the right quarter of the window.
               const labelLeft = geo ? (geo.left + geo.width) / win.days > 0.72 : false;
               const labelClass = cn(
-                "flex items-center gap-1 whitespace-nowrap font-medium text-slate-700 group-hover:underline",
+                "flex items-center gap-1 whitespace-nowrap font-medium text-slate-700 hover:underline",
                 compact ? "text-[10px]" : "text-[11px]",
               );
               const ownerChip = owner ? (
@@ -185,49 +183,60 @@ export function Gantt({
                   <div className="relative min-w-0 flex-1 overflow-hidden">
                     {geo ? (
                       t.isMilestone ? (
-                        <Link
-                          href={href}
-                          className={cn("group absolute inset-y-0 flex items-center gap-2", labelLeft && "flex-row-reverse")}
-                          style={
-                            labelLeft
-                              ? { right: `calc(${pctOfDay(win.days - geo.left - 0.5)} - ${compact ? 5 : 7}px)` }
-                              : { left: `calc(${pctOfDay(geo.left + 0.5)} - ${compact ? 5 : 7}px)` }
-                          }
-                          title={`${t.name} — ${format(t.startDate, "MMM d")}`}
-                        >
-                          <span
-                            className={cn("block shrink-0 rotate-45 rounded-[2px]", compact ? "h-2.5 w-2.5" : "h-3.5 w-3.5")}
-                            style={{ backgroundColor: done ? t.color : "#fff", boxShadow: `0 0 0 2px ${t.color}` }}
-                          />
-                          <span className={labelClass}>
+                        <>
+                          <Link
+                            href={href}
+                            className="absolute top-1/2 z-[1] -translate-x-1/2 -translate-y-1/2"
+                            style={{ left: pctOfDay(geo.left + 0.5) }}
+                            title={`${t.name} — ${format(t.startDate, "MMM d")}`}
+                          >
+                            <span
+                              className={cn("block rotate-45 rounded-[2px]", compact ? "h-2.5 w-2.5" : "h-3.5 w-3.5")}
+                              style={{ backgroundColor: done ? t.color : "#fff", boxShadow: `0 0 0 2px ${t.color}` }}
+                            />
+                          </Link>
+                          <Link
+                            href={href}
+                            className={cn(labelClass, "absolute inset-y-0")}
+                            style={
+                              labelLeft
+                                ? { right: `calc(${pctOfDay(win.days - geo.left - 0.5)} + ${compact ? 12 : 14}px)` }
+                                : { left: `calc(${pctOfDay(geo.left + 0.5)} + ${compact ? 12 : 14}px)` }
+                            }
+                          >
                             {t.name}
                             {ownerChip}
-                          </span>
-                        </Link>
+                          </Link>
+                        </>
                       ) : (
-                        <Link
-                          href={href}
-                          className={cn("group absolute inset-y-0 flex items-center gap-1.5", labelLeft && "flex-row-reverse")}
-                          style={labelLeft ? { right: pctOfDay(win.days - geo.left - geo.width) } : { left: pctOfDay(geo.left) }}
-                          title={`${t.name}: ${format(t.startDate, "MMM d")} – ${format(t.endDate, "MMM d")} (${t.percentComplete}%)`}
-                        >
-                          <span
+                        <>
+                          <Link
+                            href={href}
                             className={cn(
-                              "relative block shrink-0 overflow-hidden rounded",
+                              "absolute top-1/2 z-[1] block -translate-y-1/2 overflow-hidden rounded",
                               compact ? "h-4" : "h-5",
                               overdue && "ring-2 ring-rose-400 ring-offset-1",
                               geo.clippedStart && "rounded-l-none",
                               geo.clippedEnd && "rounded-r-none",
                             )}
-                            style={{ width: `max(6px, ${pctOfDay(geo.width)})`, minWidth: 6, backgroundColor: `${t.color}40` }}
+                            style={{ left: pctOfDay(geo.left), width: pctOfDay(geo.width), minWidth: 6, backgroundColor: `${t.color}40` }}
+                            title={`${t.name}: ${format(t.startDate, "MMM d")} – ${format(t.endDate, "MMM d")} (${t.percentComplete}%)`}
                           >
                             <span className="absolute inset-y-0 left-0 block" style={{ width: `${pctW}%`, backgroundColor: t.color }} />
-                          </span>
-                          <span className={labelClass}>
+                          </Link>
+                          <Link
+                            href={href}
+                            className={cn(labelClass, "absolute inset-y-0")}
+                            style={
+                              labelLeft
+                                ? { right: `calc(${pctOfDay(win.days - geo.left)} + 6px)` }
+                                : { left: `calc(${pctOfDay(geo.left + geo.width)} + 6px)` }
+                            }
+                          >
                             {t.name}
                             {ownerChip}
-                          </span>
-                        </Link>
+                          </Link>
+                        </>
                       )
                     ) : null}
                   </div>
