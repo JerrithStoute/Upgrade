@@ -79,3 +79,8 @@ export function isOverdue(inv: { status: string; dueDate: Date | null }, now = n
   if (inv.status !== "SENT" && inv.status !== "PARTIAL") return false;
   return inv.dueDate.getTime() < now.getTime();
 }
+
+/** Price (incl. markup) of a set of change-order lines — what the client is billed. */
+export function linePriceOfChangeOrder(items: CostLine[]) {
+  return lineTotals(items, { includeOptional: true }).price;
+}
