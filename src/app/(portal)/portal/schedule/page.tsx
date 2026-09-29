@@ -56,7 +56,11 @@ export default async function PortalSchedulePage({ searchParams }: { searchParam
       />
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          <Stat label="Overall progress" value={`${progress}%`} hint={<Progress value={progress} className="mt-2" />} />
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Overall progress</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight text-slate-900">{progress}%</p>
+            <Progress value={progress} className="mt-2" />
+          </div>
           <Stat label="Target completion" value={fmtDate(project.targetEndDate ?? lastEnd)} hint={project.targetEndDate && lastEnd && lastEnd > project.targetEndDate ? `Schedule currently ends ${fmtDate(lastEnd)}` : undefined} tone={project.targetEndDate && lastEnd && lastEnd > project.targetEndDate ? "warn" : "default"} />
           <Stat label="Tasks complete" value={`${done} / ${tasks.length}`} tone="good" />
           <Stat label="In progress" value={active} />

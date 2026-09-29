@@ -119,7 +119,7 @@ export default async function SelectionsPage({
                       <Link href={`${base}/${s.id}`} className="font-medium text-slate-900 hover:underline">
                         {s.title}
                       </Link>
-                      {s.options.length ? <span className="ml-2 text-xs text-slate-400">{s.options.length} option{s.options.length === 1 ? "" : "s"}</span> : null}
+                      {s.options.length ? <span className="ml-2 whitespace-nowrap text-xs text-slate-400">{s.options.length} option{s.options.length === 1 ? "" : "s"}</span> : null}
                     </Td>
                     <Td className="text-slate-500">{s.location ?? "—"}</Td>
                     <Td right>{money(s.allowance)}</Td>

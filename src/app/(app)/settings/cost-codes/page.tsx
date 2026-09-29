@@ -157,8 +157,10 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
             <Td className={cn("font-medium", c.active ? "text-slate-900" : "text-slate-400")}>{c.name}</Td>
             <Td>{c.division}</Td>
             <Td right>{c.sortOrder}</Td>
-            <Td right title={`${c._count.estimateItems} estimate items · ${c._count.changeOrderItems} change order items · ${c._count.expenses} expenses · ${c._count.selections} selections`}>
-              {refs || "—"}
+            <Td right>
+              <span title={`${c._count.estimateItems} estimate items · ${c._count.changeOrderItems} change order items · ${c._count.expenses} expenses · ${c._count.selections} selections`}>
+                {refs || "—"}
+              </span>
             </Td>
             <Td>
               <form action={toggleCostCodeActive}>
