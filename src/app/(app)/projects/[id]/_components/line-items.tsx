@@ -195,16 +195,17 @@ export function LineItemsEditor({
     }
     return (
       <Tr className={item.isOptional ? "text-slate-500" : undefined}>
-        <Td className="whitespace-nowrap text-xs text-slate-500">
+        <Td className="max-w-[170px] text-xs text-slate-500">
           {item.costCode ? (
             <>
-              <span className="font-mono text-slate-700">{item.costCode.code}</span> – {item.costCode.name}
+              <span className="block font-mono text-slate-700">{item.costCode.code}</span>
+              <span className="block leading-tight">{item.costCode.name}</span>
             </>
           ) : (
             "—"
           )}
         </Td>
-        <Td className="min-w-[200px]">{item.description}</Td>
+        <Td className="min-w-[220px] text-slate-900">{item.description}</Td>
         <Td right>{num(item.quantity)}</Td>
         <Td>{item.unit}</Td>
         <Td right>{money(item.unitCost)}</Td>
