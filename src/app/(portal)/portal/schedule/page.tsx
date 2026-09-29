@@ -3,7 +3,8 @@ import { requireClient } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { portalContext, scheduleProgress } from "@/lib/portal";
 import { cn, fmtDate } from "@/lib/utils";
-import { Card, CardHeader, EmptyState, Progress, Stat } from "@/components/ui";
+import { Card, CardHeader, Collapsible, EmptyState, Progress, Stat } from "@/components/ui";
+import { Gantt } from "@/components/schedule/gantt";
 import { PortalPageHeader } from "@/components/portal/page-header";
 
 export const metadata = { title: "Schedule" };
@@ -31,6 +32,7 @@ export default async function PortalSchedulePage({ searchParams }: { searchParam
   const tasks = await db.scheduleTask.findMany({
     where: { projectId: project.id },
     orderBy: [{ startDate: "asc" }, { sortOrder: "asc" }],
+    include: { assignee: { select: { name: true } } },
   });
   const progress = scheduleProgress(tasks);
   const milestones = tasks.filter((t) => t.isMilestone);
@@ -70,6 +72,10 @@ export default async function PortalSchedulePage({ searchParams }: { searchParam
           <EmptyState icon={CalendarDays} title="No schedule yet" description="Your team hasn't published a schedule for this project." />
         ) : (
           <>
+            <Collapsible summary="Timeline view" defaultOpen>
+              <Gantt tasks={tasks} compact taskHref={(t) => `#task-${t.id}`} />
+            </Collapsible>
+
             {milestones.length ? (
               <Card>
                 <CardHeader title="Milestones" description="Key dates on the project" />
@@ -110,7 +116,7 @@ export default async function PortalSchedulePage({ searchParams }: { searchParam
                       const state = taskState(t);
                       const Icon = state === "done" ? CheckCircle2 : state === "active" ? CircleDot : Circle;
                       return (
-                        <li key={t.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm sm:grid-cols-[auto_1fr_150px_180px_auto]">
+                        <li key={t.id} id={`task-${t.id}`} className="grid scroll-mt-32 grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm sm:grid-cols-[auto_1fr_150px_180px_auto]">
                           <Icon className={cn("h-4 w-4", state === "done" ? "text-emerald-600" : state === "active" ? "text-blue-600" : "text-slate-300")} />
                           <span className={cn("min-w-0 truncate", state === "done" ? "text-slate-500" : "text-slate-900", t.isMilestone && "font-medium")}>
                             {t.isMilestone ? <Flag className="mr-1 inline h-3 w-3 text-slate-400" /> : null}
