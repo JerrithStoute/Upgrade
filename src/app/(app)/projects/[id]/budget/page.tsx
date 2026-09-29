@@ -6,7 +6,7 @@ import { getProject, activeCostCodes } from "@/lib/projects";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { cn, dateInput, fmtDate, lineCost, linePrice, money, pct } from "@/lib/utils";
 import { groupBy } from "@/lib/finance";
-import { Badge, Card, CardHeader, Collapsible, ConfirmForm, Field, Progress, Stat, SubmitButton, Table, THead, TBody, Tr, Th, Td, TFoot, buttonClasses } from "@/components/ui";
+import { Badge, Card, CardHeader, Collapsible, ConfirmForm, Field, Progress, Stat, SubmitButton, Tr, Th, Td, TFoot, buttonClasses } from "@/components/ui";
 import { createExpense, updateExpense, toggleExpensePaid, deleteExpense } from "./actions";
 
 type BudgetRow = {
