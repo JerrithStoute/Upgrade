@@ -39,7 +39,7 @@ Requires Node.js 20+ (22 recommended).
 
 ```bash
 git clone <this repo> upgrade && cd upgrade
-cp .env.example .env        # then edit SESSION_SECRET
+cp .env.example .env        # then set SESSION_SECRET (openssl rand -base64 48)
 npm run setup               # installs deps, creates the SQLite DB, loads demo data
 npm run dev                 # http://localhost:3000
 ```
@@ -79,15 +79,17 @@ npm run create-admin -- "Your Name" you@company.com "a-strong-password" "Your Co
 | Variable | Description |
 | --- | --- |
 | `DATABASE_URL` | SQLite file, default `file:./dev.db` (relative to `prisma/`) |
-| `SESSION_SECRET` | Long random string used to sign login cookies. **Change it.** |
+| `SESSION_SECRET` | Random string of at least 32 characters used to sign login cookies. **Required in production** — the server won't start without it. Generate one with `openssl rand -base64 48`. |
 | `UPLOAD_DIR` | Where uploaded files/photos are stored. Default `./uploads`. |
 
 ## Deploying
 
 Upgrade is a standard Next.js app. Run `npm run build && npm start` on any
 Node host (a small VPS, Railway, Render, Fly.io, a Docker container). Persist
-two paths between deploys: the SQLite database file and `UPLOAD_DIR`. Put it
-behind HTTPS (the session cookie is marked `secure` in production). Back up the
+two paths between deploys: the SQLite database file and `UPLOAD_DIR`. Set `SESSION_SECRET`, and put it
+behind HTTPS (the session cookie is marked `secure` in production). Failed logins are
+rate-limited in memory, which assumes a single app process; if you run it behind a
+reverse proxy, make sure it sets `X-Forwarded-For`. Back up the
 database file regularly — it is the whole system of record.
 
 ## Project layout

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
+import { getSessionKey } from "@/lib/session-secret";
 
 const SESSION_COOKIE = "upgrade_session";
 const PUBLIC_PATHS = ["/login", "/logout"];
@@ -7,9 +8,9 @@ const PUBLIC_PATHS = ["/login", "/logout"];
 async function hasValidSession(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
   if (!token) return false;
+  const key = getSessionKey(); // throws in production if SESSION_SECRET is missing
   try {
-    const secret = process.env.SESSION_SECRET || "dev-only-insecure-secret-change-me";
-    await jwtVerify(token, new TextEncoder().encode(secret));
+    await jwtVerify(token, key);
     return true;
   } catch {
     return false;

@@ -28,6 +28,11 @@ export const metadata = { title: "Team" };
 
 const ROLES = ["ADMIN", "STAFF", "SUB"] as const;
 
+/** Subcontractors can be listed (e.g. for schedule assignments) but can't sign in until a sub portal exists. */
+function roleLabel(r: (typeof ROLES)[number]) {
+  return r === "SUB" ? "Subcontractor (no login)" : r === "ADMIN" ? "Admin" : "Staff";
+}
+
 export default async function TeamSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
   const admin = await requireAdmin();
   const { edit } = await searchParams;
@@ -68,7 +73,7 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
               <select id="new-role" name="role" className="input" defaultValue="STAFF">
                 {ROLES.map((r) => (
                   <option key={r} value={r}>
-                    {r === "SUB" ? "Subcontractor" : r === "ADMIN" ? "Admin" : "Staff"}
+                    {roleLabel(r)}
                   </option>
                 ))}
               </select>
@@ -126,7 +131,7 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                       <select name="role" defaultValue={u.role} className="input" form={EDIT_FORM} disabled={isSelf} aria-label="Role">
                         {ROLES.map((r) => (
                           <option key={r} value={r}>
-                            {r}
+                            {roleLabel(r)}
                           </option>
                         ))}
                       </select>
