@@ -2,8 +2,19 @@ import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
 import { db } from "@/lib/db";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, isStaff } from "@/lib/auth";
 import { uploadDir } from "@/lib/uploads";
+
+/**
+ * Types that are safe to render in the browser. Anything else (HTML, SVG, XML,
+ * JavaScript…) could run script on this origin, so it is always downloaded.
+ */
+const INLINE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "application/pdf"]);
+
+function contentDisposition(kind: "inline" | "attachment", name: string) {
+  const ascii = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
 
 /** Serves an uploaded file to authenticated users (clients only see their own project's files). */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -14,16 +25,24 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const file = await db.fileAsset.findUnique({ where: { id }, include: { project: { select: { clientId: true } } } });
   if (!file) return new NextResponse("Not found", { status: 404 });
 
-  if (user.role === "CLIENT" && (file.project.clientId !== user.clientId || !file.clientVisible)) {
+  if (user.role === "CLIENT") {
+    if (file.project.clientId !== user.clientId || !file.clientVisible) return new NextResponse("Forbidden", { status: 403 });
+  } else if (!isStaff(user)) {
     return new NextResponse("Forbidden", { status: 403 });
   }
+
+  const inline = INLINE_TYPES.has(file.mimeType);
 
   try {
     const data = await fs.readFile(path.join(uploadDir(), file.storagePath));
     return new NextResponse(new Uint8Array(data), {
       headers: {
-        "Content-Type": file.mimeType,
-        "Content-Disposition": `inline; filename="${encodeURIComponent(file.name)}"`,
+        "Content-Type": inline ? file.mimeType : "application/octet-stream",
+        "Content-Disposition": contentDisposition(inline ? "inline" : "attachment", file.name),
+        "X-Content-Type-Options": "nosniff",
+        // Belt and braces for anything that is rendered. Skipped for PDFs because
+        // Chrome's built-in viewer refuses to open sandboxed documents.
+        ...(file.mimeType === "application/pdf" && inline ? {} : { "Content-Security-Policy": "sandbox" }),
         "Cache-Control": "private, max-age=3600",
       },
     });

@@ -5,6 +5,7 @@ import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cache } from "react";
 import { db } from "./db";
+import { getSessionKey } from "./session-secret";
 
 export const SESSION_COOKIE = "upgrade_session";
 const SESSION_DAYS = 14;
@@ -20,8 +21,7 @@ export type SessionUser = {
 };
 
 function secretKey() {
-  const secret = process.env.SESSION_SECRET || "dev-only-insecure-secret-change-me";
-  return new TextEncoder().encode(secret);
+  return getSessionKey();
 }
 
 export async function hashPassword(password: string) {
@@ -91,10 +91,15 @@ export async function requireUser(): Promise<SessionUser> {
   return user;
 }
 
-/** Require an internal team member (ADMIN or STAFF). Clients are sent to the portal. */
+/**
+ * Require an internal team member (ADMIN or STAFF). Clients are sent to the portal.
+ * Any other role (e.g. SUB — subcontractors have no portal yet) is signed out, so a
+ * subcontractor can never see budgets, margins or other clients' projects.
+ */
 export async function requireStaff(): Promise<SessionUser> {
   const user = await requireUser();
   if (user.role === "CLIENT") redirect("/portal");
+  if (!isStaff(user)) redirect("/logout");
   return user;
 }
 
