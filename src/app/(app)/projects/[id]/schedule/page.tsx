@@ -54,7 +54,7 @@ export default async function SchedulePage({
   const editing = taskId ? tasks.find((t) => t.id === taskId) : undefined;
   const overdue = tasks.filter((t) => isTaskOverdue(t, today));
   const pctOverall = overallPercent(tasks);
-  const daysRemaining = project.targetEndDate ? differenceInCalendarDays(project.targetEndDate, today) : null;
+  const scheduleEnd = tasks.reduce<Date | null>((m, t) => (!m || t.endDate > m ? t.endDate : m), null);
   const isList = view === "list";
 
   return (
@@ -62,12 +62,7 @@ export default async function SchedulePage({
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <Stat label="Tasks" value={tasks.length} hint={`${tasks.filter((t) => t.percentComplete >= 100).length} complete`} />
         <Stat label="Overall complete" value={`${pctOverall}%`} hint="Duration-weighted across all tasks" />
-        <Stat
-          label="Days remaining"
-          value={daysRemaining === null ? "—" : daysRemaining}
-          hint={project.targetEndDate ? `Target ${fmtDate(project.targetEndDate)}` : "No target end date"}
-          tone={daysRemaining !== null && daysRemaining < 0 ? "bad" : "default"}
-        />
+        <Stat label="Schedule ends" value={fmtDate(scheduleEnd)} hint="Last task end date (internal only)" />
         <Stat label="Overdue tasks" value={overdue.length} tone={overdue.length ? "bad" : "good"} hint={overdue.length ? overdue.map((t) => t.name).slice(0, 2).join(", ") : "On track"} />
       </div>
 

@@ -1,4 +1,4 @@
-import { dateInput } from "@/lib/utils";
+import { costCodeLabel, dateInput } from "@/lib/utils";
 import { Field, FormGrid } from "@/components/ui";
 
 export function SelectionFields({
@@ -17,7 +17,7 @@ export function SelectionFields({
     notes?: string | null;
   };
   categories: string[];
-  costCodes: { id: string; code: string; name: string }[];
+  costCodes: { id: string; code: string | null; name: string }[];
 }) {
   return (
     <FormGrid>
@@ -40,7 +40,7 @@ export function SelectionFields({
           <option value="">None</option>
           {costCodes.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.code} · {c.name}
+              {costCodeLabel(c, " · ")}
             </option>
           ))}
         </select>

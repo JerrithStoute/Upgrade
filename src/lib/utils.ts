@@ -111,6 +111,11 @@ export function initials(name: string) {
     .join("");
 }
 
+/** "09-410 – Tile Material", or just the name for codes without a number. */
+export function costCodeLabel(c: { code: string | null; name: string }, sep = " – ") {
+  return c.code ? `${c.code}${sep}${c.name}` : c.name;
+}
+
 export function titleCase(s: string) {
   return s
     .toLowerCase()

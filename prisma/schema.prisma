@@ -44,16 +44,16 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  client            Client?
-  managedProjects   Project[]      @relation("ProjectManager")
-  assignedTasks     ScheduleTask[] @relation("TaskAssignee")
-  assignedTodos     Todo[]         @relation("TodoAssignee")
-  createdTodos      Todo[]         @relation("TodoCreator")
-  dailyLogs         DailyLog[]
-  uploadedFiles     FileAsset[]
-  messages          Message[]
-  activities        Activity[]
-  expenses          Expense[]
+  client          Client?
+  managedProjects Project[]      @relation("ProjectManager")
+  assignedTasks   ScheduleTask[] @relation("TaskAssignee")
+  assignedTodos   Todo[]         @relation("TodoAssignee")
+  createdTodos    Todo[]         @relation("TodoCreator")
+  dailyLogs       DailyLog[]
+  uploadedFiles   FileAsset[]
+  messages        Message[]
+  activities      Activity[]
+  expenses        Expense[]
 }
 
 // ---------------------------------------------------------------------------
@@ -113,17 +113,17 @@ model Project {
   managerId String?
   manager   User?   @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
 
-  estimates     Estimate[]
-  selections    Selection[]
-  changeOrders  ChangeOrder[]
-  tasks         ScheduleTask[]
-  expenses      Expense[]
-  invoices      Invoice[]
-  dailyLogs     DailyLog[]
-  todos         Todo[]
-  files         FileAsset[]
-  threads       MessageThread[]
-  activities    Activity[]
+  estimates    Estimate[]
+  selections   Selection[]
+  changeOrders ChangeOrder[]
+  tasks        ScheduleTask[]
+  expenses     Expense[]
+  invoices     Invoice[]
+  dailyLogs    DailyLog[]
+  todos        Todo[]
+  files        FileAsset[]
+  threads      MessageThread[]
+  activities   Activity[]
 }
 
 // ---------------------------------------------------------------------------
@@ -132,14 +132,15 @@ model Project {
 
 model CostCode {
   id        String   @id @default(cuid())
-  code      String   @unique // e.g. "03-100"
+  code      String?  @unique // e.g. "03-100" — optional; some codes are name-only
   name      String // e.g. "Concrete Foundation"
-  division  String // e.g. "03 Concrete"
+  division  String // group, e.g. "03 Concrete"
   sortOrder Int      @default(0)
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 
   estimateItems    EstimateItem[]
+  templateItems    EstimateTemplateItem[]
   changeOrderItems ChangeOrderItem[]
   expenses         Expense[]
   selections       Selection[]
@@ -165,24 +166,95 @@ model Estimate {
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
+  items      EstimateItem[]
+  allowances EstimateAllowance[]
+}
+
+/// A client-facing allowance (e.g. "Flooring") whose amount is built up from the
+/// estimate line items assigned to it — each with its own cost code (tile material,
+/// install labor, …). The client sees one allowance amount; job costing still
+/// tracks every underlying cost code.
+model EstimateAllowance {
+  id          String     @id @default(cuid())
+  estimateId  String
+  estimate    Estimate   @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  name        String // e.g. "Flooring"
+  group       String     @default("General") // section heading on proposal
+  description String? // shown on proposal
+  selectionId String? // selection whose allowance this amount feeds
+  selection   Selection? @relation(fields: [selectionId], references: [id], onDelete: SetNull)
+  sortOrder   Int        @default(0)
+  createdAt   DateTime   @default(now())
+
   items EstimateItem[]
 }
 
 model EstimateItem {
-  id          String    @id @default(cuid())
+  id          String             @id @default(cuid())
   estimateId  String
-  estimate    Estimate  @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  estimate    Estimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   costCodeId  String?
-  costCode    CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
-  group       String    @default("General") // section heading on proposal
+  costCode    CostCode?          @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  group       String             @default("General") // section heading on proposal
   description String
-  quantity    Float     @default(1)
-  unit        String    @default("ea")
-  unitCost    Float     @default(0)
-  markupPct   Float     @default(20)
-  isAllowance Boolean   @default(false)
-  isOptional  Boolean   @default(false)
-  sortOrder   Int       @default(0)
+  quantity    Float              @default(1)
+  unit        String             @default("ea")
+  unitCost    Float              @default(0)
+  markupPct   Float              @default(20)
+  isAllowance Boolean            @default(false)
+  isOptional  Boolean            @default(false)
+  sortOrder   Int                @default(0)
+  allowanceId String?
+  allowance   EstimateAllowance? @relation(fields: [allowanceId], references: [id], onDelete: SetNull)
+}
+
+// ---------------------------------------------------------------------------
+// Estimate templates (admin-managed starting points, copied into job estimates)
+// ---------------------------------------------------------------------------
+
+model EstimateTemplate {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  notes         String? // copied to the estimate (shown on proposal)
+  terms         String?
+  defaultMarkup Float    @default(20)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  items      EstimateTemplateItem[]
+  allowances EstimateTemplateAllowance[]
+}
+
+model EstimateTemplateAllowance {
+  id          String           @id @default(cuid())
+  templateId  String
+  template    EstimateTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name        String
+  group       String           @default("General")
+  description String?
+  sortOrder   Int              @default(0)
+
+  items EstimateTemplateItem[]
+}
+
+model EstimateTemplateItem {
+  id          String                     @id @default(cuid())
+  templateId  String
+  template    EstimateTemplate           @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  costCodeId  String?
+  costCode    CostCode?                  @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  group       String                     @default("General")
+  description String
+  quantity    Float                      @default(1)
+  unit        String                     @default("ea")
+  unitCost    Float                      @default(0)
+  markupPct   Float                      @default(20)
+  isAllowance Boolean                    @default(false)
+  isOptional  Boolean                    @default(false)
+  sortOrder   Int                        @default(0)
+  allowanceId String?
+  allowance   EstimateTemplateAllowance? @relation(fields: [allowanceId], references: [id], onDelete: SetNull)
 }
 
 // ---------------------------------------------------------------------------
@@ -209,8 +281,9 @@ model Selection {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
-  chosenOptionId String?
-  options        SelectionOption[]
+  chosenOptionId     String?
+  options            SelectionOption[]
+  estimateAllowances EstimateAllowance[]
 }
 
 model SelectionOption {
@@ -273,25 +346,25 @@ model ChangeOrderItem {
 // ---------------------------------------------------------------------------
 
 model ScheduleTask {
-  id              String    @id @default(cuid())
+  id              String         @id @default(cuid())
   projectId       String
-  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name            String
-  phase           String    @default("General") // Pre-Construction, Framing, ...
+  phase           String         @default("General") // Pre-Construction, Framing, ...
   startDate       DateTime
   endDate         DateTime
-  percentComplete Int       @default(0)
-  isMilestone     Boolean   @default(false)
-  color           String    @default("#2563eb")
+  percentComplete Int            @default(0)
+  isMilestone     Boolean        @default(false)
+  color           String         @default("#2563eb")
   notes           String?
-  sortOrder       Int       @default(0)
+  sortOrder       Int            @default(0)
   assigneeId      String?
-  assignee        User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assignee        User?          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   predecessorId   String?
   predecessor     ScheduleTask?  @relation("TaskPredecessor", fields: [predecessorId], references: [id], onDelete: SetNull)
   successors      ScheduleTask[] @relation("TaskPredecessor")
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 }
 
 // ---------------------------------------------------------------------------
@@ -436,13 +509,13 @@ model FileAsset {
 // ---------------------------------------------------------------------------
 
 model MessageThread {
-  id            String    @id @default(cuid())
+  id            String   @id @default(cuid())
   projectId     String
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   subject       String
-  clientVisible Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  lastMessageAt DateTime  @default(now())
+  clientVisible Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  lastMessageAt DateTime @default(now())
 
   messages Message[]
 }

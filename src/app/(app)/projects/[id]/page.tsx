@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { differenceInCalendarDays } from "date-fns";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, projectFinancials } from "@/lib/projects";
@@ -60,7 +59,6 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
 
   const progress = avgTaskProgress(tasks);
   const upcomingTasks = tasks.filter((t) => t.percentComplete < 100).slice(0, 6);
-  const daysRemaining = project.targetEndDate ? differenceInCalendarDays(project.targetEndDate, now) : null;
   const address = [project.address, [project.city, project.state].filter(Boolean).join(", "), project.zip].filter(Boolean).join(" · ");
   const client = project.client;
 
@@ -80,13 +78,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
         <Stat
           label="Schedule"
           value={`${progress}%`}
-          hint={
-            daysRemaining === null
-              ? `${tasks.length} tasks · no target end date`
-              : daysRemaining < 0
-                ? `${Math.abs(daysRemaining)} days past target`
-                : `${daysRemaining} days remaining`
-          }
+          hint={`${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
         />
       </div>
 
@@ -100,10 +92,6 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
                   <dt className="text-xs uppercase tracking-wide text-slate-500">Type</dt>
                   <dd className="text-slate-900">{titleCase(project.type)}</dd>
                 </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">Square feet</dt>
-                  <dd className="text-slate-900">{project.squareFeet ? num(project.squareFeet, 0) : "—"}</dd>
-                </div>
                 <div className="sm:col-span-2">
                   <dt className="text-xs uppercase tracking-wide text-slate-500">Address</dt>
                   <dd className="text-slate-900">{address || "—"}</dd>
@@ -112,13 +100,12 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
                   <dt className="text-xs uppercase tracking-wide text-slate-500">Start</dt>
                   <dd className="text-slate-900">{fmtDate(project.startDate)}</dd>
                 </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-wide text-slate-500">Target end</dt>
-                  <dd className="text-slate-900">
-                    {fmtDate(project.targetEndDate)}
-                    {project.actualEndDate ? <span className="text-slate-500"> · actual {fmtDate(project.actualEndDate)}</span> : null}
-                  </dd>
-                </div>
+                {project.actualEndDate ? (
+                  <div>
+                    <dt className="text-xs uppercase tracking-wide text-slate-500">Completed</dt>
+                    <dd className="text-slate-900">{fmtDate(project.actualEndDate)}</dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt className="text-xs uppercase tracking-wide text-slate-500">Project manager</dt>
                   <dd className="text-slate-900">{project.manager?.name ?? "Unassigned"}</dd>

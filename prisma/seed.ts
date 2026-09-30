@@ -34,7 +34,11 @@ const COST_CODES: [string, string, string][] = [
   ["09-100", "Drywall", "09 Finishes"],
   ["09-200", "Paint", "09 Finishes"],
   ["09-300", "Flooring", "09 Finishes"],
+  ["09-310", "Flooring Material", "09 Finishes"],
+  ["09-320", "Flooring Installation", "09 Finishes"],
   ["09-400", "Tile", "09 Finishes"],
+  ["09-410", "Tile Material", "09 Finishes"],
+  ["09-420", "Tile Installation", "09 Finishes"],
   ["10-100", "Specialties & Accessories", "10 Specialties"],
   ["11-100", "Appliances", "11 Equipment"],
   ["15-100", "Plumbing Rough", "15 Mechanical"],
@@ -45,6 +49,45 @@ const COST_CODES: [string, string, string][] = [
   ["17-100", "Landscaping", "17 Exterior"],
   ["17-200", "Decks & Porches", "17 Exterior"],
 ];
+
+/** Creates an estimate allowance whose amount is built from the given cost-code lines. */
+async function createBuiltAllowance(
+  estimateId: string,
+  name: string,
+  group: string,
+  description: string,
+  sortOrder: number,
+  codes: Record<string, string>,
+  lines: Array<[string, string, number, string, number, number]>,
+) {
+  const last = await db.estimateItem.aggregate({ where: { estimateId }, _max: { sortOrder: true } });
+  const base = (last._max.sortOrder ?? 0) + 1;
+  // Slot the allowance right after the last line of its group.
+  const lastInGroup = await db.estimateItem.findFirst({ where: { estimateId, group }, orderBy: { sortOrder: "desc" } });
+  await db.estimateAllowance.create({
+    data: {
+      estimateId,
+      name,
+      group,
+      description,
+      sortOrder: lastInGroup ? lastInGroup.sortOrder + 5 : sortOrder,
+      items: {
+        create: lines.map(([code, desc, quantity, unit, unitCost, markupPct], i) => ({
+          estimateId,
+          costCodeId: codes[code],
+          group,
+          description: desc,
+          quantity,
+          unit,
+          unitCost,
+          markupPct,
+          isAllowance: true,
+          sortOrder: base + i,
+        })),
+      },
+    },
+  });
+}
 
 async function main() {
   console.log("Seeding…");
@@ -70,6 +113,7 @@ async function main() {
   await db.project.deleteMany();
   await db.client.deleteMany();
   await db.user.deleteMany();
+  await db.estimateTemplate.deleteMany();
   await db.costCode.deleteMany();
   await db.company.deleteMany();
 
@@ -107,6 +151,49 @@ async function main() {
     const c = await db.costCode.create({ data: { code, name, division, sortOrder: i } });
     codes[code] = c.id;
   }
+
+  // Estimate template: picked when creating a new project, or added to a draft estimate.
+  const kitchenTemplate = await db.estimateTemplate.create({
+    data: {
+      name: "Kitchen Remodel",
+      description: "Standard mid-range kitchen, ~200 sf",
+      defaultMarkup: 20,
+      notes: "Pricing valid for 30 days. Allowances are credited/debited at cost on final invoice.",
+      terms: "10% deposit at signing, 40% at demo complete, 40% at cabinets installed, 10% at substantial completion.",
+    },
+  });
+  const kitchenTemplateItems: Array<[string, string, string, number, string, number, number]> = [
+    // group, costCode, description, qty, unit, unitCost, markup
+    ["General Conditions", "01-100", "Building permit & inspections", 1, "ls", 1500, 10],
+    ["General Conditions", "01-300", "Dumpster & site protection", 1, "ls", 1200, 15],
+    ["Demolition", "02-100", "Demo kitchen to studs, haul off", 1, "ls", 4500, 20],
+    ["Plumbing", "15-100", "Plumbing rough — sink, dishwasher, ice maker", 1, "ls", 3800, 20],
+    ["Electrical", "16-100", "Electrical rough — circuits, under-cabinet, recessed cans", 1, "ls", 5200, 20],
+    ["Drywall & Paint", "09-100", "Drywall patch, hang & finish", 1, "ls", 2800, 20],
+    ["Drywall & Paint", "09-200", "Paint walls, ceiling & trim", 1, "ls", 2200, 20],
+    ["Tile & Flooring", "09-420", "Tile installation — backsplash", 40, "sf", 18, 20],
+    ["Tile & Flooring", "09-320", "Flooring installation", 200, "sf", 5.5, 20],
+  ];
+  for (const [i, [group, code, description, quantity, unit, unitCost, markupPct]] of kitchenTemplateItems.entries()) {
+    await db.estimateTemplateItem.create({
+      data: { templateId: kitchenTemplate.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, sortOrder: i * 10 },
+    });
+  }
+  await db.estimateTemplateAllowance.create({
+    data: {
+      templateId: kitchenTemplate.id,
+      name: "Flooring",
+      group: "Tile & Flooring",
+      description: "Tile and flooring material",
+      sortOrder: kitchenTemplateItems.length * 10,
+      items: {
+        create: [
+          { templateId: kitchenTemplate.id, costCodeId: codes["09-410"], group: "Tile & Flooring", description: "Tile material — backsplash", quantity: 40, unit: "sf", unitCost: 12, markupPct: 15, isAllowance: true, sortOrder: kitchenTemplateItems.length * 10 + 1 },
+          { templateId: kitchenTemplate.id, costCodeId: codes["09-310"], group: "Tile & Flooring", description: "Flooring material", quantity: 200, unit: "sf", unitCost: 7, markupPct: 15, isAllowance: true, sortOrder: kitchenTemplateItems.length * 10 + 2 },
+        ],
+      },
+    },
+  });
 
   const whitfield = await db.client.create({
     data: {
@@ -183,18 +270,22 @@ async function main() {
     ["Drywall & Paint", "09-200", "Paint kitchen, bath, ceilings & trim", 1, "ls", 3400, 20],
     ["Cabinets & Counters", "06-400", "Custom cabinetry — kitchen & vanity (allowance)", 1, "ls", 24000, 15, true],
     ["Cabinets & Counters", "06-500", "Quartz countertops allowance", 85, "sf", 95, 15, true],
-    ["Tile & Flooring", "09-400", "Tile labor — shower, bath floor, backsplash", 1, "ls", 7800, 20],
-    ["Tile & Flooring", "09-400", "Tile material allowance", 1, "ls", 3200, 15, true],
-    ["Tile & Flooring", "09-300", "Engineered hardwood — kitchen (material + install)", 320, "sf", 14.5, 20],
+    ["Tile & Flooring", "09-420", "Tile labor — shower, bath floor, backsplash", 1, "ls", 7800, 20],
+    ["Tile & Flooring", "09-320", "Engineered hardwood install — kitchen", 320, "sf", 5.5, 20],
     ["Finish", "06-300", "Finish carpentry — trim, casing, floating shelves", 1, "ls", 2900, 20],
     ["Finish", "11-100", "Appliance allowance", 1, "ls", 9500, 10, true],
     ["Finish", "10-100", "Bath accessories & glass shower enclosure", 1, "ls", 2650, 20],
   ];
   for (const [i, [group, code, description, quantity, unit, unitCost, markupPct, isAllowance]] of est1Items.entries()) {
     await db.estimateItem.create({
-      data: { estimateId: est1.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, isAllowance: !!isAllowance, sortOrder: i },
+      data: { estimateId: est1.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, isAllowance: !!isAllowance, sortOrder: i * 10 },
     });
   }
+  // A built-up allowance: the client sees one "Flooring" amount, built from separate material cost codes.
+  await createBuiltAllowance(est1.id, "Flooring", "Tile & Flooring", "Tile and hardwood material for kitchen and master bath", 15, codes, [
+    ["09-410", "Tile material — shower, bath floor, backsplash", 1, "ls", 3200, 15],
+    ["09-310", "Engineered hardwood material — kitchen", 320, "sf", 9, 15],
+  ]);
 
   // Selections
   const selFaucet = await db.selection.create({
@@ -468,14 +559,19 @@ async function main() {
     ["Mechanical", "16-100", "Electrical complete", 1, "ls", 48000, 18],
     ["Interior", "09-100", "Drywall", 3400, "sf", 5.25, 18],
     ["Interior", "06-400", "Cabinetry allowance", 1, "ls", 62000, 15, true],
-    ["Interior", "09-300", "Flooring allowance", 3200, "sf", 11, 15, true],
     ["Interior", "09-200", "Interior & exterior paint", 1, "ls", 27000, 18],
     ["Interior", "11-100", "Appliance allowance", 1, "ls", 22000, 10, true],
     ["Exterior", "17-100", "Landscaping & irrigation allowance", 1, "ls", 30000, 15, true],
   ];
   for (const [i, [group, code, description, quantity, unit, unitCost, markupPct, isAllowance]] of est2Items.entries()) {
-    await db.estimateItem.create({ data: { estimateId: est2.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, isAllowance: !!isAllowance, sortOrder: i } });
+    await db.estimateItem.create({ data: { estimateId: est2.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, isAllowance: !!isAllowance, sortOrder: i * 10 } });
   }
+  await createBuiltAllowance(est2.id, "Flooring", "Interior", "Hardwood, tile and carpet — material and installation", 15, codes, [
+    ["09-310", "Wide-plank hardwood material", 2400, "sf", 6.5, 15],
+    ["09-410", "Tile material — baths & laundry", 800, "sf", 5, 15],
+    ["09-320", "Hardwood installation", 2400, "sf", 3.25, 15],
+    ["09-420", "Tile installation", 800, "sf", 6, 15],
+  ]);
   const sched2: Array<[string, string, number, number, boolean?]> = [
     ["Pre-construction meeting", "Pre-Construction", 10, 1, true],
     ["Site clearing & grading", "Site Work", 12, 8],

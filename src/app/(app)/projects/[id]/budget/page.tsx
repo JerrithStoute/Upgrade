@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
-import { cn, dateInput, fmtDate, lineCost, linePrice, money, pct } from "@/lib/utils";
+import { cn, costCodeLabel, dateInput, fmtDate, lineCost, linePrice, money, pct } from "@/lib/utils";
 import { groupBy } from "@/lib/finance";
 import { Badge, Card, CardHeader, Collapsible, ConfirmForm, Field, Progress, Stat, SubmitButton, Tr, Th, Td, TFoot, buttonClasses } from "@/components/ui";
 import { createExpense, updateExpense, toggleExpensePaid, deleteExpense } from "./actions";
@@ -47,12 +47,12 @@ export default async function BudgetPage({
 
   // --- Budget rows by cost code -------------------------------------------
   const rows = new Map<string, BudgetRow>();
-  function rowFor(cc: { id: string; code: string; name: string; division: string; sortOrder: number } | null) {
+  function rowFor(cc: { id: string; code: string | null; name: string; division: string; sortOrder: number } | null) {
     const key = cc?.id ?? UNASSIGNED;
     let row = rows.get(key);
     if (!row) {
       row = cc
-        ? { key, code: cc.code, name: cc.name, division: cc.division, sortOrder: cc.sortOrder, budgetCost: 0, budgetPrice: 0, actual: 0 }
+        ? { key, code: cc.code ?? "", name: cc.name, division: cc.division, sortOrder: cc.sortOrder, budgetCost: 0, budgetPrice: 0, actual: 0 }
         : { key, code: "—", name: UNASSIGNED, division: UNASSIGNED, sortOrder: Number.MAX_SAFE_INTEGER, budgetCost: 0, budgetPrice: 0, actual: 0 };
       rows.set(key, row);
     }
@@ -208,7 +208,7 @@ export default async function BudgetPage({
                     <Tr key={e.id}>
                       <Td className="whitespace-nowrap">{fmtDate(e.date)}</Td>
                       <Td className="font-medium text-slate-900">{e.vendor}</Td>
-                      <Td className="text-xs text-slate-600">{e.costCode ? `${e.costCode.code} – ${e.costCode.name}` : "—"}</Td>
+                      <Td className="text-xs text-slate-600">{e.costCode ? costCodeLabel(e.costCode) : "—"}</Td>
                       <Td>
                         <Badge>{e.category.charAt(0) + e.category.slice(1).toLowerCase()}</Badge>
                       </Td>
@@ -276,7 +276,7 @@ function ExpenseFields({
   idPrefix,
 }: {
   expense?: { date: Date; vendor: string; costCodeId: string | null; category: string; amount: number; description: string | null; reference: string | null; status: string };
-  costCodes: { id: string; code: string; name: string }[];
+  costCodes: { id: string; code: string | null; name: string }[];
   idPrefix: string;
 }) {
   return (
@@ -292,7 +292,7 @@ function ExpenseFields({
           <option value="">— Unassigned —</option>
           {costCodes.map((c) => (
             <option key={c.id} value={c.id}>
-              {c.code} – {c.name}
+              {costCodeLabel(c)}
             </option>
           ))}
         </select>
@@ -340,7 +340,7 @@ function BudgetLine({ row }: { row: BudgetRow }) {
   const variance = row.budgetCost - row.actual;
   return (
     <Tr>
-      <Td className="font-mono text-xs text-slate-600">{row.code}</Td>
+      <Td className="font-mono text-xs text-slate-600">{row.code || "—"}</Td>
       <Td className="text-slate-900">{row.name}</Td>
       <Td right>{money(row.budgetCost)}</Td>
       <Td right className="text-slate-500">

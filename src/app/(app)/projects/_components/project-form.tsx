@@ -6,6 +6,7 @@ import { ButtonLink, Card, CardBody, CardHeader, Field, FormGrid, SubmitButton }
 
 type ClientOption = { id: string; firstName: string; lastName: string; company: string | null };
 type ManagerOption = { id: string; name: string };
+type TemplateOption = { id: string; name: string; _count: { items: number } };
 
 export function ProjectForm({
   action,
@@ -13,12 +14,15 @@ export function ProjectForm({
   clients,
   managers,
   defaultManagerId,
+  templates,
 }: {
   action: (formData: FormData) => Promise<void>;
   project?: Project;
   clients: ClientOption[];
   managers: ManagerOption[];
   defaultManagerId?: string;
+  /** Estimate templates offered when creating a project (omit when editing). */
+  templates?: TemplateOption[];
 }) {
   const editing = Boolean(project);
   return (
@@ -101,47 +105,45 @@ export function ProjectForm({
                 <input id="zip" name="zip" className="input" defaultValue={project?.zip ?? ""} />
               </Field>
             </div>
-            <Field label="Square feet" htmlFor="squareFeet">
-              <input id="squareFeet" name="squareFeet" type="number" min={0} className="input" defaultValue={project?.squareFeet ?? ""} />
-            </Field>
           </FormGrid>
         </CardBody>
       </Card>
 
       <Card>
-        <CardHeader title="Schedule & contract" />
+        <CardHeader title="Schedule" />
         <CardBody>
           <FormGrid>
             <Field label="Start date" htmlFor="startDate">
               <input id="startDate" name="startDate" type="date" className="input" defaultValue={dateInput(project?.startDate)} />
-            </Field>
-            <Field label="Target end date" htmlFor="targetEndDate">
-              <input id="targetEndDate" name="targetEndDate" type="date" className="input" defaultValue={dateInput(project?.targetEndDate)} />
             </Field>
             {editing ? (
               <Field label="Actual end date" htmlFor="actualEndDate">
                 <input id="actualEndDate" name="actualEndDate" type="date" className="input" defaultValue={dateInput(project?.actualEndDate)} />
               </Field>
             ) : null}
-            <Field
-              label="Contract amount"
-              htmlFor="contractAmount"
-              hint="Used until an estimate is approved; approved estimates and change orders take over."
-            >
-              <input
-                id="contractAmount"
-                name="contractAmount"
-                type="number"
-                step="0.01"
-                min={0}
-                className="input"
-                defaultValue={project?.contractAmount ?? ""}
-                placeholder="0.00"
-              />
-            </Field>
           </FormGrid>
         </CardBody>
       </Card>
+
+      {!editing && templates ? (
+        <Card>
+          <CardHeader title="Estimate" description="Start this job's estimate from one of your templates. You can adjust every line afterwards." />
+          <CardBody>
+            <FormGrid>
+              <Field label="Estimate template" htmlFor="templateId" hint={templates.length ? undefined : "No templates yet — an admin can create them in Settings → Estimate templates."}>
+                <select id="templateId" name="templateId" className="input" defaultValue="" disabled={templates.length === 0}>
+                  <option value="">None — I&apos;ll build the estimate later</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t._count.items} lines)
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </FormGrid>
+          </CardBody>
+        </Card>
+      ) : null}
 
       <div className="flex items-center gap-2">
         <SubmitButton>{editing ? "Save changes" : "Create project"}</SubmitButton>

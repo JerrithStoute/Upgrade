@@ -165,7 +165,6 @@ export default async function ProjectsPage({
               <Th>Status</Th>
               <Th>Manager</Th>
               <Th>Start</Th>
-              <Th>Target end</Th>
               <Th right>Contract</Th>
               <Th className="w-36">Progress</Th>
             </tr>
@@ -189,7 +188,6 @@ export default async function ProjectsPage({
                   </Td>
                   <Td>{p.manager?.name ?? <span className="text-slate-400">—</span>}</Td>
                   <Td className="whitespace-nowrap">{fmtDate(p.startDate)}</Td>
-                  <Td className="whitespace-nowrap">{fmtDate(p.targetEndDate)}</Td>
                   <Td right>{money(values[i], true)}</Td>
                   <Td>
                     <div className="flex items-center gap-2">

@@ -70,7 +70,7 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                         <span className="text-slate-400">#{p.number}</span> {p.name}
                       </Link>
                       <p className="text-xs text-slate-500">
-                        {fmtDate(p.startDate)} – {fmtDate(p.targetEndDate)}
+                        {p.startDate ? `Start ${fmtDate(p.startDate)}` : "Not started"}
                       </p>
                     </div>
                     <Badge status={p.status} />

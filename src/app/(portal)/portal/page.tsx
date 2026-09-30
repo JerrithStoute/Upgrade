@@ -141,9 +141,6 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
                   <p className="flex items-center gap-1.5">
                     <CalendarDays className="h-3.5 w-3.5 text-slate-400" /> Start: {fmtDate(project.startDate)}
                   </p>
-                  <p className="flex items-center gap-1.5">
-                    <CalendarDays className="h-3.5 w-3.5 text-slate-400" /> Target completion: {fmtDate(project.targetEndDate)}
-                  </p>
                   {project.actualEndDate ? <p className="text-emerald-700">Completed {fmtDate(project.actualEndDate)}</p> : null}
                 </div>
               </div>

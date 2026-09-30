@@ -1,7 +1,7 @@
-import { Pencil, Plus, X, Hash } from "lucide-react";
+import { Pencil, Plus, X, Hash, FileUp, CheckCircle2 } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { cn } from "@/lib/utils";
+import { cn, costCodeLabel } from "@/lib/utils";
 import {
   Button,
   ButtonLink,
@@ -20,24 +20,49 @@ import {
   Th,
   Td,
 } from "@/components/ui";
-import { createCostCode, updateCostCode, toggleCostCodeActive, deleteCostCode } from "./actions";
+import { createCostCode, updateCostCode, toggleCostCodeActive, deleteCostCode, replaceCostCodesFromCsv } from "./actions";
+import { CostCodeCsvImport } from "./_components/csv-import";
 
 export const metadata = { title: "Cost codes" };
 
-export default async function CostCodesSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
+export default async function CostCodesSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; imported?: string }> }) {
   await requireAdmin();
-  const { edit } = await searchParams;
+  const { edit, imported } = await searchParams;
 
   const codes = await db.costCode.findMany({
-    orderBy: [{ division: "asc" }, { sortOrder: "asc" }, { code: "asc" }],
-    include: { _count: { select: { estimateItems: true, changeOrderItems: true, expenses: true, selections: true } } },
+    // Sort order first so groups appear in the order they were entered / imported.
+    orderBy: [{ sortOrder: "asc" }, { code: "asc" }, { name: "asc" }],
+    include: { _count: { select: { estimateItems: true, templateItems: true, changeOrderItems: true, expenses: true, selections: true } } },
   });
   const divisions = [...new Set(codes.map((c) => c.division))];
+  const existingForImport = codes.map((c) => ({
+    id: c.id,
+    code: c.code,
+    name: c.name,
+    division: c.division,
+    refs: Object.values(c._count).reduce((a, b) => a + b, 0),
+  }));
   const groups = divisions.map((d) => ({ division: d, codes: codes.filter((c) => c.division === d) }));
   const EDIT_FORM = "edit-cost-code";
 
   return (
     <div className="space-y-6">
+      {imported ? (
+        <p className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+          <CheckCircle2 className="h-4 w-4" /> Cost codes replaced from your CSV file.
+        </p>
+      ) : null}
+
+      <Collapsible
+        summary={
+          <span className="inline-flex items-center gap-2">
+            <FileUp className="h-4 w-4 text-slate-500" /> Import from CSV (replaces all cost codes)
+          </span>
+        }
+      >
+        <CostCodeCsvImport existing={existingForImport} action={replaceCostCodesFromCsv} />
+      </Collapsible>
+
       <Collapsible
         summary={
           <span className="inline-flex items-center gap-2">
@@ -47,13 +72,13 @@ export default async function CostCodesSettingsPage({ searchParams }: { searchPa
       >
         <form action={createCostCode} className="space-y-4">
           <FormGrid className="md:grid-cols-4">
-            <Field label="Code" htmlFor="new-code" hint='e.g. "06-100"'>
-              <input id="new-code" name="code" className="input font-mono" required />
+            <Field label="Code (optional)" htmlFor="new-code" hint='e.g. "06-100"'>
+              <input id="new-code" name="code" className="input font-mono" />
             </Field>
             <Field label="Name" htmlFor="new-name">
               <input id="new-name" name="name" className="input" required />
             </Field>
-            <Field label="Division" htmlFor="new-division" hint="Pick an existing division or type a new one.">
+            <Field label="Group" htmlFor="new-division" hint="Pick an existing group or type a new one.">
               <input id="new-division" name="division" className="input" list="division-options" required />
               <datalist id="division-options">
                 {divisions.map((d) => (
@@ -75,13 +100,13 @@ export default async function CostCodesSettingsPage({ searchParams }: { searchPa
         <EmptyState icon={Hash} title="No cost codes" description="Add cost codes to organize estimates, change orders and expenses." />
       ) : (
         <Card>
-          <CardHeader title="Cost code library" description={`${codes.filter((c) => c.active).length} active · ${codes.length} total across ${divisions.length} divisions`} />
+          <CardHeader title="Cost code library" description={`${codes.filter((c) => c.active).length} active · ${codes.length} total across ${divisions.length} groups`} />
           <Table className="rounded-t-none border-0 shadow-none">
             <THead>
               <tr>
                 <Th>Code</Th>
                 <Th>Name</Th>
-                <Th>Division</Th>
+                <Th>Group</Th>
                 <Th right>Sort</Th>
                 <Th right>In use</Th>
                 <Th>Active</Th>
@@ -102,12 +127,12 @@ export default async function CostCodesSettingsPage({ searchParams }: { searchPa
 
 type CodeRow = {
   id: string;
-  code: string;
+  code: string | null;
   name: string;
   division: string;
   sortOrder: number;
   active: boolean;
-  _count: { estimateItems: number; changeOrderItems: number; expenses: number; selections: number };
+  _count: { estimateItems: number; templateItems: number; changeOrderItems: number; expenses: number; selections: number };
 };
 
 function GroupRows({ division, codes, edit, formId }: { division: string; codes: CodeRow[]; edit?: string; formId: string }) {
@@ -119,19 +144,19 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
         </td>
       </tr>
       {codes.map((c) => {
-        const refs = c._count.estimateItems + c._count.changeOrderItems + c._count.expenses + c._count.selections;
+        const refs = c._count.estimateItems + c._count.templateItems + c._count.changeOrderItems + c._count.expenses + c._count.selections;
         if (edit === c.id) {
           return (
             <Tr key={c.id} className="bg-blue-50/40">
               <Td>
                 <input type="hidden" name="id" value={c.id} form={formId} />
-                <input name="code" defaultValue={c.code} className="input font-mono" required form={formId} aria-label="Code" />
+                <input name="code" defaultValue={c.code ?? ""} className="input font-mono" form={formId} aria-label="Code" />
               </Td>
               <Td>
                 <input name="name" defaultValue={c.name} className="input" required form={formId} aria-label="Name" />
               </Td>
               <Td>
-                <input name="division" defaultValue={c.division} className="input" list="division-options" required form={formId} aria-label="Division" />
+                <input name="division" defaultValue={c.division} className="input" list="division-options" required form={formId} aria-label="Group" />
               </Td>
               <Td right>
                 <input name="sortOrder" type="number" defaultValue={c.sortOrder} className="input !w-20" form={formId} aria-label="Sort order" />
@@ -153,12 +178,12 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
         }
         return (
           <Tr key={c.id} className={cn(!c.active && "text-slate-400")}>
-            <Td className="font-mono text-slate-900">{c.code}</Td>
+            <Td className="font-mono text-slate-900">{c.code ?? <span className="text-slate-300">—</span>}</Td>
             <Td className={cn("font-medium", c.active ? "text-slate-900" : "text-slate-400")}>{c.name}</Td>
             <Td>{c.division}</Td>
             <Td right>{c.sortOrder}</Td>
             <Td right>
-              <span title={`${c._count.estimateItems} estimate items · ${c._count.changeOrderItems} change order items · ${c._count.expenses} expenses · ${c._count.selections} selections`}>
+              <span title={`${c._count.estimateItems} estimate items · ${c._count.templateItems} template items · ${c._count.changeOrderItems} change order items · ${c._count.expenses} expenses · ${c._count.selections} selections`}>
                 {refs || "—"}
               </span>
             </Td>
@@ -189,8 +214,8 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
                   hidden={{ id: c.id }}
                   message={
                     refs > 0
-                      ? `${c.code} is referenced by ${refs} record${refs === 1 ? "" : "s"} and cannot be deleted. Deactivate it instead?`
-                      : `Delete cost code ${c.code} ${c.name}?`
+                      ? `${costCodeLabel(c, " ")} is referenced by ${refs} record${refs === 1 ? "" : "s"} and cannot be deleted. Deactivate it instead?`
+                      : `Delete cost code ${costCodeLabel(c, " ")}?`
                   }
                 >
                   {refs > 0 ? "Deactivate" : "Delete"}

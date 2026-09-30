@@ -41,7 +41,7 @@ export default async function DashboardPage() {
     db.project.findMany({
       where: { status: { in: ACTIVE_STATUSES } },
       include: { client: { select: { firstName: true, lastName: true } } },
-      orderBy: [{ status: "asc" }, { targetEndDate: "asc" }],
+      orderBy: [{ status: "asc" }, { startDate: "asc" }],
     }),
     db.invoice.findMany({
       where: { status: { not: "VOID" } },
@@ -202,10 +202,6 @@ export default async function DashboardPage() {
                           <span className="tabular-nums">{progress}%</span>
                         </div>
                         <Progress value={progress} />
-                      </div>
-                      <div className="w-28 text-right text-xs text-slate-500">
-                        <span className="block text-[11px] uppercase tracking-wide">Target end</span>
-                        <span className="text-slate-700">{fmtDate(p.targetEndDate)}</span>
                       </div>
                     </li>
                   );

@@ -115,7 +115,6 @@ export default async function GlobalSchedulePage() {
                     <Badge status={p.status} />
                     <span>
                       {p.tasks.length} task{p.tasks.length === 1 ? "" : "s"} in the next four weeks
-                      {p.targetEndDate ? ` · target ${fmtDate(p.targetEndDate)}` : ""}
                     </span>
                   </span>
                 }

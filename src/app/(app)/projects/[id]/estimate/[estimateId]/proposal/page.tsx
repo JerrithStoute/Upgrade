@@ -16,7 +16,10 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
   const [estimate, company] = await Promise.all([
     db.estimate.findFirst({
       where: { id: estimateId, projectId: project.id },
-      include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
+      include: {
+        items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
+        allowances: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
+      },
     }),
     db.company.findFirst(),
   ]);
@@ -24,9 +27,27 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
 
   const included = estimate.items.filter((i) => !i.isOptional);
   const optional = estimate.items.filter((i) => i.isOptional);
-  const groups = groupBy(included, (i) => i.group);
   const totals = lineTotals(included);
-  const allowances = included.filter((i) => i.isAllowance);
+  // Built-up allowances show as one line (their total) — the cost-code breakdown stays internal.
+  const allowanceIds = new Set(estimate.allowances.map((a) => a.id));
+  const rows: ProposalRow[] = [
+    ...included
+      .filter((i) => !i.allowanceId || !allowanceIds.has(i.allowanceId))
+      .map((i) => ({ id: i.id, group: i.group, sortOrder: i.sortOrder, description: i.description, quantity: i.quantity, unit: i.unit, price: linePrice(i), isAllowance: i.isAllowance, note: null })),
+    ...estimate.allowances.map((a) => ({
+      id: a.id,
+      group: a.group,
+      sortOrder: a.sortOrder,
+      description: `${a.name} allowance`,
+      quantity: null,
+      unit: null,
+      price: lineTotals(included.filter((i) => i.allowanceId === a.id)).price,
+      isAllowance: true,
+      note: a.description,
+    })),
+  ].sort((a, b) => a.sortOrder - b.sortOrder);
+  const groups = groupBy(rows, (r) => r.group);
+  const allowances = rows.filter((r) => r.isAllowance);
   const client = project.client;
   const companyAddress = [company?.address, [company?.city, company?.state].filter(Boolean).join(", "), company?.zip].filter(Boolean).join(" · ");
   const projectAddress = [project.address, [project.city, project.state].filter(Boolean).join(", "), project.zip].filter(Boolean).join(" · ");
@@ -126,8 +147,11 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
             <ul className="mt-2 space-y-1 text-sm">
               {allowances.map((a) => (
                 <li key={a.id} className="flex justify-between gap-4">
-                  <span>{a.description}</span>
-                  <span className="tabular-nums">{money(linePrice(a))}</span>
+                  <span>
+                    {a.description}
+                    {a.note ? <span className="block text-xs text-slate-500">{a.note}</span> : null}
+                  </span>
+                  <span className="tabular-nums">{money(a.price)}</span>
                 </li>
               ))}
             </ul>
@@ -189,14 +213,20 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
   );
 }
 
-function GroupSection({
-  group,
-  items,
-}: {
+type ProposalRow = {
+  id: string;
   group: string;
-  items: { id: string; description: string; quantity: number; unit: string; unitCost: number; markupPct: number; isAllowance: boolean }[];
-}) {
-  const subtotal = lineTotals(items).price;
+  sortOrder: number;
+  description: string;
+  quantity: number | null;
+  unit: string | null;
+  price: number;
+  isAllowance: boolean;
+  note: string | null;
+};
+
+function GroupSection({ group, items }: { group: string; items: ProposalRow[] }) {
+  const subtotal = items.reduce((s, i) => s + i.price, 0);
   return (
     <>
       <tr>
@@ -209,10 +239,11 @@ function GroupSection({
           <td className="py-1.5 pr-3">
             {i.description}
             {i.isAllowance ? " *" : ""}
+            {i.note ? <span className="block text-xs text-slate-500">{i.note}</span> : null}
           </td>
-          <td className="py-1.5 pr-3 text-right tabular-nums">{num(i.quantity)}</td>
-          <td className="py-1.5 pr-3">{i.unit}</td>
-          <td className="py-1.5 text-right tabular-nums">{money(linePrice(i))}</td>
+          <td className="py-1.5 pr-3 text-right tabular-nums">{i.quantity == null ? "" : num(i.quantity)}</td>
+          <td className="py-1.5 pr-3">{i.unit ?? ""}</td>
+          <td className="py-1.5 text-right tabular-nums">{money(i.price)}</td>
         </tr>
       ))}
       <tr>

@@ -6,8 +6,9 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { nextProjectNumber } from "@/lib/projects";
+import { createProjectEstimate } from "@/lib/estimate-lines";
 import { PROJECT_STATUSES, PROJECT_TYPES } from "@/lib/constants";
-import { intField, numField, parseDateInput, str, strOrNull, titleCase } from "@/lib/utils";
+import { parseDateInput, str, strOrNull, titleCase } from "@/lib/utils";
 
 function readProjectFields(fd: FormData) {
   const name = str(fd, "name");
@@ -16,7 +17,8 @@ function readProjectFields(fd: FormData) {
   const status = str(fd, "status");
   if (!(PROJECT_TYPES as readonly string[]).includes(type)) throw new Error("Invalid project type.");
   if (!(PROJECT_STATUSES as readonly string[]).includes(status)) throw new Error("Invalid project status.");
-  const sqft = intField(fd, "squareFeet", 0);
+  // Square feet, target end date and contract amount are no longer entered here;
+  // they are left untouched on save so existing values are kept.
   return {
     name,
     type,
@@ -27,10 +29,7 @@ function readProjectFields(fd: FormData) {
     city: strOrNull(fd, "city"),
     state: strOrNull(fd, "state"),
     zip: strOrNull(fd, "zip"),
-    squareFeet: sqft > 0 ? sqft : null,
     startDate: parseDateInput(fd.get("startDate")),
-    targetEndDate: parseDateInput(fd.get("targetEndDate")),
-    contractAmount: numField(fd, "contractAmount", 0),
     description: strOrNull(fd, "description"),
   };
 }
@@ -46,9 +45,20 @@ export async function createProject(formData: FormData) {
     type: "project.created",
     description: `Created project #${project.number} ${project.name}`,
   });
+  // Optionally start the estimate from a template.
+  const templateId = strOrNull(formData, "templateId");
+  if (templateId) {
+    const { estimate, template } = await createProjectEstimate(project.id, templateId);
+    await logActivity({
+      projectId: project.id,
+      userId: user.id,
+      type: "estimate.created",
+      description: `Estimate v${estimate.version} created from template "${template?.name}"`,
+    });
+  }
   revalidatePath("/projects");
   revalidatePath("/dashboard");
-  redirect(`/projects/${project.id}`);
+  redirect(templateId ? `/projects/${project.id}/estimate` : `/projects/${project.id}`);
 }
 
 export async function updateProject(formData: FormData) {

@@ -4,7 +4,7 @@ import { ArrowLeft, Check, Plus, Star, Pencil, RotateCcw, Package, Wrench, Thumb
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
-import { money, fmtDate, cn } from "@/lib/utils";
+import { money, fmtDate, cn, costCodeLabel } from "@/lib/utils";
 import { Card, CardHeader, CardBody, Badge, Button, ButtonLink, SubmitButton, ConfirmForm, Collapsible, Field, FormGrid } from "@/components/ui";
 import { SelectionFields } from "../_components/selection-fields";
 import { chosenOption, isSelectionOverdue } from "../_helpers";
@@ -94,7 +94,7 @@ export default async function SelectionDetailPage({
             <span>
               {sel.category}
               {sel.location ? ` · ${sel.location}` : ""}
-              {sel.costCode ? ` · ${sel.costCode.code} ${sel.costCode.name}` : ""}
+              {sel.costCode ? ` · ${costCodeLabel(sel.costCode, " ")}` : ""}
             </span>
           }
           actions={
