@@ -1,0 +1,473 @@
+// Upgrade — Construction Project Management
+// Data model covering projects, clients, estimates, selections, change orders,
+// scheduling, budgets/job costing, invoicing, daily logs, to-dos, files and messaging.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------------
+// Company & users
+// ---------------------------------------------------------------------------
+
+model Company {
+  id            String   @id @default(cuid())
+  name          String
+  address       String?
+  city          String?
+  state         String?
+  zip           String?
+  phone         String?
+  email         String?
+  website       String?
+  licenseNumber String?
+  defaultMarkup Float    @default(20) // percent
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+/// ADMIN: full access. STAFF: internal team. CLIENT: portal only. SUB: subcontractor (limited).
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         String   @default("STAFF") // ADMIN | STAFF | CLIENT | SUB
+  phone        String?
+  title        String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  client            Client?
+  managedProjects   Project[]      @relation("ProjectManager")
+  assignedTasks     ScheduleTask[] @relation("TaskAssignee")
+  assignedTodos     Todo[]         @relation("TodoAssignee")
+  createdTodos      Todo[]         @relation("TodoCreator")
+  dailyLogs         DailyLog[]
+  uploadedFiles     FileAsset[]
+  messages          Message[]
+  activities        Activity[]
+  expenses          Expense[]
+}
+
+// ---------------------------------------------------------------------------
+// Clients (CRM)
+// ---------------------------------------------------------------------------
+
+model Client {
+  id        String   @id @default(cuid())
+  firstName String
+  lastName  String
+  company   String?
+  email     String?
+  phone     String?
+  address   String?
+  city      String?
+  state     String?
+  zip       String?
+  notes     String?
+  source    String? // referral, website, etc.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  userId String? @unique
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  projects Project[]
+}
+
+// ---------------------------------------------------------------------------
+// Projects
+// ---------------------------------------------------------------------------
+
+/// status: LEAD | ESTIMATING | PROPOSAL_SENT | CONTRACTED | IN_PROGRESS | ON_HOLD | COMPLETED | CANCELLED
+/// type: NEW_HOME | REMODEL | ADDITION | COMMERCIAL | OTHER
+model Project {
+  id             String    @id @default(cuid())
+  number         Int       @unique
+  name           String
+  status         String    @default("LEAD")
+  type           String    @default("REMODEL")
+  description    String?
+  address        String?
+  city           String?
+  state          String?
+  zip            String?
+  squareFeet     Int?
+  startDate      DateTime?
+  targetEndDate  DateTime?
+  actualEndDate  DateTime?
+  contractAmount Float     @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
+
+  managerId String?
+  manager   User?   @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
+
+  estimates     Estimate[]
+  selections    Selection[]
+  changeOrders  ChangeOrder[]
+  tasks         ScheduleTask[]
+  expenses      Expense[]
+  invoices      Invoice[]
+  dailyLogs     DailyLog[]
+  todos         Todo[]
+  files         FileAsset[]
+  threads       MessageThread[]
+  activities    Activity[]
+}
+
+// ---------------------------------------------------------------------------
+// Cost codes (used across estimates, change orders, expenses, budget)
+// ---------------------------------------------------------------------------
+
+model CostCode {
+  id        String   @id @default(cuid())
+  code      String   @unique // e.g. "03-100"
+  name      String // e.g. "Concrete Foundation"
+  division  String // e.g. "03 Concrete"
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  estimateItems    EstimateItem[]
+  changeOrderItems ChangeOrderItem[]
+  expenses         Expense[]
+  selections       Selection[]
+}
+
+// ---------------------------------------------------------------------------
+// Estimates & proposals
+// ---------------------------------------------------------------------------
+
+/// status: DRAFT | SENT | APPROVED | DECLINED
+model Estimate {
+  id            String    @id @default(cuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String    @default("Estimate")
+  version       Int       @default(1)
+  status        String    @default("DRAFT")
+  notes         String? // shown on proposal
+  terms         String?
+  defaultMarkup Float     @default(20)
+  sentAt        DateTime?
+  approvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  items EstimateItem[]
+}
+
+model EstimateItem {
+  id          String    @id @default(cuid())
+  estimateId  String
+  estimate    Estimate  @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  costCodeId  String?
+  costCode    CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  group       String    @default("General") // section heading on proposal
+  description String
+  quantity    Float     @default(1)
+  unit        String    @default("ea")
+  unitCost    Float     @default(0)
+  markupPct   Float     @default(20)
+  isAllowance Boolean   @default(false)
+  isOptional  Boolean   @default(false)
+  sortOrder   Int       @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Selections (client choices with allowances)
+// ---------------------------------------------------------------------------
+
+/// status: PENDING | CHOSEN | APPROVED | ORDERED | INSTALLED
+model Selection {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costCodeId  String?
+  costCode    CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  title       String
+  category    String    @default("General") // Flooring, Plumbing Fixtures, etc.
+  location    String? // Kitchen, Master Bath
+  description String?
+  allowance   Float     @default(0)
+  dueDate     DateTime?
+  status      String    @default("PENDING")
+  chosenAt    DateTime?
+  approvedAt  DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  chosenOptionId String?
+  options        SelectionOption[]
+}
+
+model SelectionOption {
+  id            String    @id @default(cuid())
+  selectionId   String
+  selection     Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+  name          String
+  description   String?
+  vendor        String?
+  modelNumber   String?
+  price         Float     @default(0)
+  imageUrl      String?
+  isRecommended Boolean   @default(false)
+  sortOrder     Int       @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Change orders
+// ---------------------------------------------------------------------------
+
+/// status: DRAFT | PENDING_APPROVAL | APPROVED | DECLINED | VOID
+model ChangeOrder {
+  id                 String    @id @default(cuid())
+  projectId          String
+  project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number             Int
+  title              String
+  description        String?
+  reason             String?
+  status             String    @default("DRAFT")
+  scheduleImpactDays Int       @default(0)
+  sentAt             DateTime?
+  decidedAt          DateTime?
+  decidedBy          String? // name of approver
+  decisionNote       String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  items ChangeOrderItem[]
+
+  @@unique([projectId, number])
+}
+
+model ChangeOrderItem {
+  id            String      @id @default(cuid())
+  changeOrderId String
+  changeOrder   ChangeOrder @relation(fields: [changeOrderId], references: [id], onDelete: Cascade)
+  costCodeId    String?
+  costCode      CostCode?   @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  description   String
+  quantity      Float       @default(1)
+  unit          String      @default("ea")
+  unitCost      Float       @default(0)
+  markupPct     Float       @default(20)
+  sortOrder     Int         @default(0)
+}
+
+// ---------------------------------------------------------------------------
+// Schedule
+// ---------------------------------------------------------------------------
+
+model ScheduleTask {
+  id              String    @id @default(cuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String
+  phase           String    @default("General") // Pre-Construction, Framing, ...
+  startDate       DateTime
+  endDate         DateTime
+  percentComplete Int       @default(0)
+  isMilestone     Boolean   @default(false)
+  color           String    @default("#2563eb")
+  notes           String?
+  sortOrder       Int       @default(0)
+  assigneeId      String?
+  assignee        User?     @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  predecessorId   String?
+  predecessor     ScheduleTask?  @relation("TaskPredecessor", fields: [predecessorId], references: [id], onDelete: SetNull)
+  successors      ScheduleTask[] @relation("TaskPredecessor")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Job costing: expenses (actual costs)
+// ---------------------------------------------------------------------------
+
+/// category: MATERIAL | LABOR | SUBCONTRACTOR | EQUIPMENT | PERMIT | OTHER
+/// status: UNPAID | PAID
+model Expense {
+  id          String    @id @default(cuid())
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costCodeId  String?
+  costCode    CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  date        DateTime  @default(now())
+  vendor      String
+  description String?
+  category    String    @default("MATERIAL")
+  amount      Float
+  status      String    @default("UNPAID")
+  reference   String? // vendor invoice #
+  enteredById String?
+  enteredBy   User?     @relation(fields: [enteredById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Invoicing
+// ---------------------------------------------------------------------------
+
+/// status: DRAFT | SENT | PARTIAL | PAID | VOID
+model Invoice {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number    Int       @unique
+  title     String    @default("Invoice")
+  status    String    @default("DRAFT")
+  issueDate DateTime  @default(now())
+  dueDate   DateTime?
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  items    InvoiceItem[]
+  payments Payment[]
+}
+
+model InvoiceItem {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Float   @default(1)
+  unitPrice   Float   @default(0)
+  sortOrder   Int     @default(0)
+}
+
+model Payment {
+  id        String   @id @default(cuid())
+  invoiceId String
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  amount    Float
+  date      DateTime @default(now())
+  method    String   @default("CHECK") // CHECK | ACH | CARD | CASH | OTHER
+  reference String?
+  createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Daily logs
+// ---------------------------------------------------------------------------
+
+model DailyLog {
+  id            String   @id @default(cuid())
+  projectId     String
+  project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  authorId      String?
+  author        User?    @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  date          DateTime
+  weather       String? // Sunny, Rain, ...
+  tempHigh      Int?
+  tempLow       Int?
+  crewCount     Int      @default(0)
+  hoursWorked   Float    @default(0)
+  workCompleted String?
+  issues        String?
+  notes         String?
+  clientVisible Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  files FileAsset[]
+}
+
+// ---------------------------------------------------------------------------
+// To-dos
+// ---------------------------------------------------------------------------
+
+/// priority: LOW | NORMAL | HIGH ; status: OPEN | DONE
+model Todo {
+  id          String    @id @default(cuid())
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  dueDate     DateTime?
+  priority    String    @default("NORMAL")
+  status      String    @default("OPEN")
+  completedAt DateTime?
+  assigneeId  String?
+  assignee    User?     @relation("TodoAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  createdById String?
+  createdBy   User?     @relation("TodoCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Files & photos
+// ---------------------------------------------------------------------------
+
+model FileAsset {
+  id            String    @id @default(cuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dailyLogId    String?
+  dailyLog      DailyLog? @relation(fields: [dailyLogId], references: [id], onDelete: SetNull)
+  uploadedById  String?
+  uploadedBy    User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  name          String
+  storagePath   String // relative to uploads dir
+  mimeType      String
+  size          Int
+  folder        String    @default("Documents") // Photos | Plans | Documents | Contracts
+  clientVisible Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Messaging
+// ---------------------------------------------------------------------------
+
+model MessageThread {
+  id            String    @id @default(cuid())
+  projectId     String
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  subject       String
+  clientVisible Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  lastMessageAt DateTime  @default(now())
+
+  messages Message[]
+}
+
+model Message {
+  id        String        @id @default(cuid())
+  threadId  String
+  thread    MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorId  String?
+  author    User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  body      String
+  createdAt DateTime      @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Activity feed
+// ---------------------------------------------------------------------------
+
+model Activity {
+  id          String   @id @default(cuid())
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  type        String // e.g. "project.created", "change_order.approved"
+  description String
+  createdAt   DateTime @default(now())
+}

@@ -1,0 +1,84 @@
+import "server-only";
+import { notFound } from "next/navigation";
+import { db } from "./db";
+import { linePrice } from "./utils";
+
+/** Load a project or 404. */
+export async function getProject(id: string) {
+  const project = await db.project.findUnique({
+    where: { id },
+    include: { client: true, manager: true },
+  });
+  if (!project) notFound();
+  return project;
+}
+
+/** Approved-estimate total (price incl. markup). */
+export async function approvedEstimateTotal(projectId: string) {
+  const est = await db.estimate.findFirst({
+    where: { projectId, status: "APPROVED" },
+    orderBy: { version: "desc" },
+    include: { items: true },
+  });
+  if (!est) return 0;
+  return est.items.filter((i) => !i.isOptional).reduce((s, i) => s + linePrice(i), 0);
+}
+
+/** Approved change-order total (price incl. markup). */
+export async function approvedChangeOrderTotal(projectId: string) {
+  const cos = await db.changeOrder.findMany({
+    where: { projectId, status: "APPROVED" },
+    include: { items: true },
+  });
+  return cos.reduce((s, co) => s + co.items.reduce((t, i) => t + linePrice(i), 0), 0);
+}
+
+/** Contract value = approved estimate + approved change orders (falls back to project.contractAmount). */
+export async function contractValue(projectId: string, fallback = 0) {
+  const est = await approvedEstimateTotal(projectId);
+  const cos = await approvedChangeOrderTotal(projectId);
+  return est > 0 ? est + cos : fallback + cos;
+}
+
+/** Financial summary used on the project overview and dashboard. */
+export async function projectFinancials(projectId: string, fallbackContract = 0) {
+  const [contract, expenses, invoices] = await Promise.all([
+    contractValue(projectId, fallbackContract),
+    db.expense.aggregate({ where: { projectId }, _sum: { amount: true } }),
+    db.invoice.findMany({
+      where: { projectId, status: { not: "VOID" } },
+      include: { items: true, payments: true },
+    }),
+  ]);
+  const invoiced = invoices.reduce((s, inv) => s + inv.items.reduce((t, i) => t + i.quantity * i.unitPrice, 0), 0);
+  const paid = invoices.reduce((s, inv) => s + inv.payments.reduce((t, p) => t + p.amount, 0), 0);
+  const spent = expenses._sum.amount ?? 0;
+  return { contract, spent, invoiced, paid, outstanding: invoiced - paid, remainingToInvoice: contract - invoiced };
+}
+
+export async function nextProjectNumber() {
+  const last = await db.project.findFirst({ orderBy: { number: "desc" }, select: { number: true } });
+  return (last?.number ?? 1000) + 1;
+}
+
+export async function nextInvoiceNumber() {
+  const last = await db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } });
+  return (last?.number ?? 1000) + 1;
+}
+
+export async function nextChangeOrderNumber(projectId: string) {
+  const last = await db.changeOrder.findFirst({ where: { projectId }, orderBy: { number: "desc" }, select: { number: true } });
+  return (last?.number ?? 0) + 1;
+}
+
+export async function staffUsers() {
+  return db.user.findMany({
+    where: { role: { in: ["ADMIN", "STAFF"] }, active: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, role: true },
+  });
+}
+
+export async function activeCostCodes() {
+  return db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }] });
+}
