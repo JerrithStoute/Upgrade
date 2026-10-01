@@ -35,6 +35,7 @@ export default async function ProjectLayout({
         className="mb-6"
         items={[
           { href: base, label: "Overview", exact: true },
+          { href: `${base}/takeoff`, label: "Takeoff" },
           { href: `${base}/estimate`, label: "Estimate" },
           { href: `${base}/selections`, label: "Selections" },
           { href: `${base}/change-orders`, label: "Change Orders" },

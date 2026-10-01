@@ -5,7 +5,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
   await requireAdmin();
   return (
     <div>
-      <PageHeader title="Settings" description="Company profile, team access, the cost code library and estimate templates." />
+      <PageHeader title="Settings" description="Company profile, team access, the cost code library, estimate templates, and the takeoff Item List, member sizes and templates." />
       <Tabs
         className="mb-6"
         items={[
@@ -13,6 +13,9 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           { href: "/settings/team", label: "Team" },
           { href: "/settings/cost-codes", label: "Cost codes" },
           { href: "/settings/estimate-templates", label: "Estimate templates" },
+          { href: "/settings/items", label: "Item list" },
+          { href: "/settings/member-sizes", label: "Member sizes" },
+          { href: "/settings/takeoff-templates", label: "Takeoff templates" },
         ]}
       />
       {children}

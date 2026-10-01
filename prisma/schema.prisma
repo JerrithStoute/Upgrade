@@ -1,6 +1,7 @@
 // Upgrade — Construction Project Management
 // Data model covering projects, clients, estimates, selections, change orders,
-// scheduling, budgets/job costing, invoicing, daily logs, to-dos, files and messaging.
+// scheduling, budgets/job costing, invoicing, daily logs, to-dos, files, messaging
+// and plan takeoffs.
 
 generator client {
   provider = "prisma-client-js"
@@ -113,17 +114,19 @@ model Project {
   managerId String?
   manager   User?   @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
 
-  estimates    Estimate[]
-  selections   Selection[]
-  changeOrders ChangeOrder[]
-  tasks        ScheduleTask[]
-  expenses     Expense[]
-  invoices     Invoice[]
-  dailyLogs    DailyLog[]
-  todos        Todo[]
-  files        FileAsset[]
-  threads      MessageThread[]
-  activities   Activity[]
+  estimates         Estimate[]
+  selections        Selection[]
+  changeOrders      ChangeOrder[]
+  tasks             ScheduleTask[]
+  expenses          Expense[]
+  invoices          Invoice[]
+  dailyLogs         DailyLog[]
+  todos             Todo[]
+  files             FileAsset[]
+  threads           MessageThread[]
+  activities        Activity[]
+  takeoffPlans      TakeoffPlan[]
+  takeoffConditions TakeoffCondition[]
 }
 
 // ---------------------------------------------------------------------------
@@ -139,11 +142,16 @@ model CostCode {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  estimateItems    EstimateItem[]
-  templateItems    EstimateTemplateItem[]
-  changeOrderItems ChangeOrderItem[]
-  expenses         Expense[]
-  selections       Selection[]
+  estimateItems             EstimateItem[]
+  templateItems             EstimateTemplateItem[]
+  changeOrderItems          ChangeOrderItem[]
+  expenses                  Expense[]
+  selections                Selection[]
+  takeoffConditions         TakeoffCondition[]
+  takeoffItems              TakeoffAssemblyItem[]
+  materialItems             MaterialItem[]
+  takeoffTemplateConditions TakeoffTemplateCondition[]
+  takeoffTemplateItems      TakeoffTemplateItem[]
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +214,12 @@ model EstimateItem {
   sortOrder   Int                @default(0)
   allowanceId String?
   allowance   EstimateAllowance? @relation(fields: [allowanceId], references: [id], onDelete: SetNull)
+
+  // Set when the line was sent from a takeoff, so re-sending updates it in place.
+  takeoffConditionId String?
+  takeoffCondition   TakeoffCondition?    @relation(fields: [takeoffConditionId], references: [id], onDelete: SetNull)
+  takeoffItemId      String?
+  takeoffItem        TakeoffAssemblyItem? @relation(fields: [takeoffItemId], references: [id], onDelete: SetNull)
 }
 
 // ---------------------------------------------------------------------------
@@ -502,6 +516,231 @@ model FileAsset {
   folder        String    @default("Documents") // Photos | Plans | Documents | Contracts
   clientVisible Boolean   @default(true)
   createdAt     DateTime  @default(now())
+
+  takeoffPlan TakeoffPlan?
+}
+
+// ---------------------------------------------------------------------------
+// Takeoffs (measure quantities on plan sheets, push them into an estimate)
+// ---------------------------------------------------------------------------
+
+/// A plan set (PDF or image) uploaded for takeoff. The file itself lives in Files → Plans.
+/// kind: PDF | IMAGE
+model TakeoffPlan {
+  id        String    @id @default(cuid())
+  projectId String
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fileId    String    @unique
+  file      FileAsset @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  name      String
+  kind      String    @default("PDF")
+  pageCount Int? // filled in the first time the plan is opened
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  sheets TakeoffSheet[]
+}
+
+/// One page of a plan set. Points are stored in page units (PDF points at 100%,
+/// or image pixels); `unitsPerFoot` converts them to real-world feet.
+model TakeoffSheet {
+  id           String      @id @default(cuid())
+  planId       String
+  plan         TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  pageNumber   Int
+  name         String
+  unitsPerFoot Float? // null until the scale is set
+  scaleLabel   String? // e.g. 1/4" = 1'-0" or "Calibrated"
+
+  measurements TakeoffMeasurement[]
+
+  @@unique([planId, pageNumber])
+}
+
+/// What gets measured (e.g. "LVP Flooring", "2x10 Floor Joists").
+/// type: AREA | LINEAR | COUNT | FRAMING
+/// metric: which computed quantity is the condition's quantity (see src/lib/takeoff.ts)
+/// pitchMode (LINEAR): COMMON (rakes, rafters) | HIP (hips & valleys)
+model TakeoffCondition {
+  id            String      @id @default(cuid())
+  projectId     String
+  project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String
+  type          String      @default("AREA")
+  metric        String      @default("area")
+  color         String      @default("#2563eb")
+  group         String      @default("Takeoff") // estimate section heading
+  costCodeId    String?
+  costCode      CostCode?   @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  unitCost      Float       @default(0)
+  markupPct     Float       @default(20)
+  wastePct      Float       @default(0)
+  pitch         Float       @default(0) // rise in inches per 12" of run
+  pitchMode     String      @default("COMMON")
+  height        Float       @default(0) // feet — linear × height = wall area
+  depth         Float       @default(0) // inches — area × depth = volume
+  spacing       Float       @default(16) // inches on center — framing
+  overhang      Float       @default(0) // inches of horizontal overhang per member — framing
+  memberSize    String? // framing: "2x8", "LVL 1-3/4x11-7/8" — nominal size for board feet
+  memberSizeId  String?
+  memberSizeRef MemberSize? @relation(fields: [memberSizeId], references: [id], onDelete: SetNull)
+  stockLengths  String? // framing: lengths you buy, in feet, e.g. "8,10,12,14,16" (blank = even lengths from 8')
+  sortOrder     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  measurements  TakeoffMeasurement[]
+  items         TakeoffAssemblyItem[]
+  estimateItems EstimateItem[]
+}
+
+/// A shape drawn on a sheet. `points` is a JSON array of [x, y] page-unit pairs.
+/// `angle` (radians) is the member direction for FRAMING areas.
+model TakeoffMeasurement {
+  id          String           @id @default(cuid())
+  sheetId     String
+  sheet       TakeoffSheet     @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  conditionId String
+  condition   TakeoffCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
+  points      String
+  isDeduction Boolean          @default(false)
+  angle       Float            @default(0)
+  createdAt   DateTime         @default(now())
+}
+
+/// Assembly: an estimate line derived from a condition's quantities,
+/// e.g. drywall area → "1 sheet per 32 sf", "0.05 gal mud per 1 sf".
+/// quantity = metric value × qty ÷ per × (1 + waste%), optionally rounded up.
+model TakeoffAssemblyItem {
+  id             String           @id @default(cuid())
+  conditionId    String
+  condition      TakeoffCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
+  description    String
+  costCodeId     String?
+  costCode       CostCode?        @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  metric         String
+  qty            Float            @default(1)
+  per            Float            @default(1)
+  unit           String           @default("ea")
+  roundUp        Boolean          @default(false)
+  wastePct       Float            @default(0)
+  unitCost       Float            @default(0)
+  markupPct      Float            @default(20)
+  sortOrder      Int              @default(0)
+  // The Item List entry this was picked from. Prices are copied, not live (see Rebid).
+  materialItemId String?
+  materialItem   MaterialItem?    @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
+
+  estimateItems EstimateItem[]
+}
+
+/// Company-wide Item List: materials and labor picked into takeoff assemblies.
+/// New items typed into an assembly are added here automatically.
+model MaterialItem {
+  id         String    @id @default(cuid())
+  name       String
+  nameKey    String    @unique // lower-cased, single-spaced name — keeps "Concrete" and "concrete" one item
+  category   String    @default("General")
+  unit       String    @default("ea")
+  unitCost   Float     @default(0)
+  markupPct  Float     @default(20)
+  wastePct   Float     @default(0)
+  roundUp    Boolean   @default(false)
+  costCodeId String?
+  costCode   CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  vendor     String?
+  sku        String?
+  notes      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  assemblyItems TakeoffAssemblyItem[]
+  templateItems TakeoffTemplateItem[]
+}
+
+/// Framing member library (Settings → Member sizes).
+/// kind: DIMENSIONAL | I_JOIST | OPEN_WEB | ENGINEERED | OTHER
+/// soldAs: STOCK (pieces rounded up to stock lengths, priced each)
+///       | EXACT_LF (made to exact length, listed per length, priced per lf)
+///       | LF (one lineal-foot total, priced per lf)
+model MemberSize {
+  id           String   @id @default(cuid())
+  name         String
+  nameKey      String   @unique
+  kind         String   @default("DIMENSIONAL")
+  widthIn      Float    @default(1.5) // actual thickness, inches
+  depthIn      Float    @default(5.5) // actual depth, inches
+  soldAs       String   @default("STOCK")
+  stockLengths String? // default stock lengths in feet, e.g. "8-24"
+  boardFeet    Boolean  @default(true) // report board feet (nominal size from the name)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  conditions         TakeoffCondition[]
+  templateConditions TakeoffTemplateCondition[]
+}
+
+/// Reusable set of takeoff conditions (Settings → Takeoff templates), copied into jobs.
+model TakeoffTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  conditions TakeoffTemplateCondition[]
+}
+
+model TakeoffTemplateCondition {
+  id            String          @id @default(cuid())
+  templateId    String
+  template      TakeoffTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name          String
+  type          String          @default("AREA")
+  metric        String          @default("area")
+  color         String          @default("#2563eb")
+  group         String          @default("Takeoff")
+  costCodeId    String?
+  costCode      CostCode?       @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  unitCost      Float           @default(0)
+  markupPct     Float           @default(20)
+  wastePct      Float           @default(0)
+  pitch         Float           @default(0)
+  pitchMode     String          @default("COMMON")
+  height        Float           @default(0)
+  depth         Float           @default(0)
+  spacing       Float           @default(16)
+  overhang      Float           @default(0)
+  memberSize    String?
+  memberSizeId  String?
+  memberSizeRef MemberSize?     @relation(fields: [memberSizeId], references: [id], onDelete: SetNull)
+  stockLengths  String?
+  sortOrder     Int             @default(0)
+
+  items TakeoffTemplateItem[]
+}
+
+/// A template condition's assembly / add-on item. Linked Item List entries take
+/// the Item List's current price when the template is applied to a job.
+model TakeoffTemplateItem {
+  id             String                   @id @default(cuid())
+  conditionId    String
+  condition      TakeoffTemplateCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
+  description    String
+  costCodeId     String?
+  costCode       CostCode?                @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  materialItemId String?
+  materialItem   MaterialItem?            @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
+  metric         String
+  qty            Float                    @default(1)
+  per            Float                    @default(1)
+  unit           String                   @default("ea")
+  roundUp        Boolean                  @default(false)
+  wastePct       Float                    @default(0)
+  unitCost       Float                    @default(0)
+  markupPct      Float                    @default(20)
+  sortOrder      Int                      @default(0)
 }
 
 // ---------------------------------------------------------------------------

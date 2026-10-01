@@ -32,6 +32,9 @@ export type SourceItem = {
   isOptional: boolean;
   sortOrder: number;
   allowanceId: string | null;
+  // Only on job estimates: lines sent from a takeoff.
+  takeoffConditionId?: string | null;
+  takeoffItemId?: string | null;
 };
 
 export type LineSet = { items: SourceItem[]; allowances: SourceAllowance[] };
@@ -129,7 +132,15 @@ export async function copyIntoEstimate(
     allowanceMap.set(a.id, copy.id);
   }
   if (source.items.length) {
-    await tx.estimateItem.createMany({ data: source.items.map((i) => ({ estimateId, ...itemCopy(i, sortOffset, allowanceMap) })) });
+    await tx.estimateItem.createMany({
+      data: source.items.map((i) => ({
+        estimateId,
+        ...itemCopy(i, sortOffset, allowanceMap),
+        // A new version keeps its takeoff links so re-sending the takeoff updates these lines.
+        takeoffConditionId: i.takeoffConditionId ?? null,
+        takeoffItemId: i.takeoffItemId ?? null,
+      })),
+    });
   }
 }
 

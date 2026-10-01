@@ -9,11 +9,13 @@ export function uploadDir() {
 }
 
 const MAX_BYTES = 25 * 1024 * 1024;
+/** Plan sets uploaded for takeoff are often large. */
+export const PLAN_MAX_BYTES = 100 * 1024 * 1024;
 
 /** Persist an uploaded File to disk; returns storage metadata for a FileAsset row. */
-export async function saveUpload(file: File, projectId: string) {
+export async function saveUpload(file: File, projectId: string, maxBytes = MAX_BYTES) {
   if (file.size === 0) throw new Error("Empty file");
-  if (file.size > MAX_BYTES) throw new Error("File exceeds 25 MB limit");
+  if (file.size > maxBytes) throw new Error(`File exceeds ${Math.round(maxBytes / (1024 * 1024))} MB limit`);
   const ext = path.extname(file.name).toLowerCase().slice(0, 10);
   const relDir = projectId;
   const relPath = path.join(relDir, `${randomUUID()}${ext}`);
