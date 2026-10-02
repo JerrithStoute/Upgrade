@@ -558,7 +558,7 @@ model TakeoffSheet {
 }
 
 /// What gets measured (e.g. "LVP Flooring", "2x10 Floor Joists").
-/// type: AREA | LINEAR | COUNT | FRAMING
+/// type: AREA | LINEAR | COUNT | FRAMING | HIP_VALLEY | WALL | OPENING
 /// metric: which computed quantity is the condition's quantity (see src/lib/takeoff.ts)
 /// pitchMode (LINEAR): COMMON (rakes, rafters) | HIP (hips & valleys)
 model TakeoffCondition {
@@ -577,6 +577,7 @@ model TakeoffCondition {
   wastePct      Float       @default(0)
   pitch         Float       @default(0) // rise in inches per 12" of run
   pitchMode     String      @default("COMMON")
+  pitch2        Float? // hips & valleys: the other side's pitch (null = same as pitch)
   height        Float       @default(0) // feet — linear × height = wall area
   depth         Float       @default(0) // inches — area × depth = volume
   spacing       Float       @default(16) // inches on center — framing
@@ -584,6 +585,7 @@ model TakeoffCondition {
   memberSize    String? // framing: "2x8", "LVL 1-3/4x11-7/8" — nominal size for board feet
   memberSizeId  String?
   memberSizeRef MemberSize? @relation(fields: [memberSizeId], references: [id], onDelete: SetNull)
+  options       String? // walls / openings: their settings as JSON (plates, sheathing, headers…)
   stockLengths  String? // framing: lengths you buy, in feet, e.g. "8,10,12,14,16" (blank = even lengths from 8')
   sortOrder     Int         @default(0)
   createdAt     DateTime    @default(now())
@@ -605,6 +607,9 @@ model TakeoffMeasurement {
   points      String
   isDeduction Boolean          @default(false)
   angle       Float            @default(0)
+  // Joists/rafters and hips/valleys: this shape's own pitch (null = the condition's).
+  pitch       Float?
+  pitch2      Float?
   createdAt   DateTime         @default(now())
 }
 
@@ -708,6 +713,7 @@ model TakeoffTemplateCondition {
   wastePct      Float           @default(0)
   pitch         Float           @default(0)
   pitchMode     String          @default("COMMON")
+  pitch2        Float? // hips & valleys: the other side's pitch (null = same as pitch)
   height        Float           @default(0)
   depth         Float           @default(0)
   spacing       Float           @default(16)
@@ -715,6 +721,7 @@ model TakeoffTemplateCondition {
   memberSize    String?
   memberSizeId  String?
   memberSizeRef MemberSize?     @relation(fields: [memberSizeId], references: [id], onDelete: SetNull)
+  options       String?
   stockLengths  String?
   sortOrder     Int             @default(0)
 

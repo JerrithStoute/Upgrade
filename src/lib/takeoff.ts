@@ -6,7 +6,7 @@
 
 export type Pt = [number, number];
 
-export const CONDITION_TYPES = ["AREA", "LINEAR", "COUNT", "FRAMING"] as const;
+export const CONDITION_TYPES = ["AREA", "LINEAR", "WALL", "OPENING", "COUNT", "FRAMING", "HIP_VALLEY"] as const;
 export type ConditionType = (typeof CONDITION_TYPES)[number];
 
 export const CONDITION_TYPE_LABELS: Record<ConditionType, string> = {
@@ -14,6 +14,9 @@ export const CONDITION_TYPE_LABELS: Record<ConditionType, string> = {
   LINEAR: "Linear",
   COUNT: "Count",
   FRAMING: "Joists / Rafters",
+  HIP_VALLEY: "Hip / Valley",
+  WALL: "Walls",
+  OPENING: "Openings / Headers",
 };
 
 export const PITCH_MODES = ["COMMON", "HIP"] as const;
@@ -44,6 +47,9 @@ export const METRICS_BY_TYPE: Record<ConditionType, MetricKey[]> = {
   LINEAR: ["length", "plan_length", "wall_area"],
   COUNT: ["count"],
   FRAMING: ["members", "member_lf", "stock_lf", "board_feet", "area", "plan_area"],
+  HIP_VALLEY: ["members", "member_lf", "stock_lf", "board_feet", "plan_length"],
+  WALL: ["length", "wall_area"],
+  OPENING: ["count", "length"],
 };
 
 export const DEFAULT_METRIC: Record<ConditionType, MetricKey> = {
@@ -51,9 +57,14 @@ export const DEFAULT_METRIC: Record<ConditionType, MetricKey> = {
   LINEAR: "length",
   COUNT: "count",
   FRAMING: "members",
+  HIP_VALLEY: "members",
+  WALL: "length",
+  OPENING: "count",
 };
 
 export function metricLabel(key: string) {
+  if (key.startsWith(WALL_METRIC_PREFIX)) return "From the walls";
+  if (key.startsWith(OPENING_METRIC_PREFIX)) return "From the openings";
   if (key === LUMBER_LF_METRIC) return "Member length (lf)";
   if (isLumberMetric(key)) return `${key.slice(LUMBER_METRIC_PREFIX.length)}' pieces (ea)`;
   const m = METRICS[key as MetricKey];
@@ -125,6 +136,69 @@ export function centroid(pts: Pt[]): Pt {
   const sx = pts.reduce((s, p) => s + p[0], 0);
   const sy = pts.reduce((s, p) => s + p[1], 0);
   return [sx / pts.length, sy / pts.length];
+}
+
+// --- Arcs ------------------------------------------------------------------------
+// A shape's vertices can include arc points: the curve from the vertex before it to
+// the vertex after it passes through that point (a 3-point arc). Every quantity is
+// worked out on the curve, sampled every 2° (well under 1/100" off on a 20' radius).
+
+const ARC_STEP = (2 * Math.PI) / 180;
+
+/** Points along the circular arc from `a` through `m` to `b` — not including `a`, ending at `b`. Straight if the three line up. */
+export function arcThrough(a: Pt, m: Pt, b: Pt): Pt[] {
+  const d = 2 * (a[0] * (m[1] - b[1]) + m[0] * (b[1] - a[1]) + b[0] * (a[1] - m[1]));
+  const span = Math.max(dist(a, m), dist(m, b), dist(a, b));
+  if (Math.abs(d) < 1e-9 * span * span) return [m, b];
+  const sq = (p: Pt) => p[0] * p[0] + p[1] * p[1];
+  const cx = (sq(a) * (m[1] - b[1]) + sq(m) * (b[1] - a[1]) + sq(b) * (a[1] - m[1])) / d;
+  const cy = (sq(a) * (b[0] - m[0]) + sq(m) * (a[0] - b[0]) + sq(b) * (m[0] - a[0])) / d;
+  const r = Math.hypot(a[0] - cx, a[1] - cy);
+  const ang = (p: Pt) => Math.atan2(p[1] - cy, p[0] - cx);
+  const a0 = ang(a);
+  const TAU = 2 * Math.PI;
+  const norm = (x: number) => ((x % TAU) + TAU) % TAU;
+  // Sweep counter-clockwise from a to b; if m isn't on that side, go the other way.
+  let sweep = norm(ang(b) - a0);
+  if (norm(ang(m) - a0) > sweep) sweep -= TAU;
+  const n = Math.max(2, Math.ceil(Math.abs(sweep) / ARC_STEP));
+  const out: Pt[] = [];
+  for (let i = 1; i < n; i++) {
+    const t = a0 + (sweep * i) / n;
+    out.push([cx + r * Math.cos(t), cy + r * Math.sin(t)]);
+  }
+  out.push(b);
+  return out;
+}
+
+/**
+ * The path a shape really follows: its vertices with each arc point replaced by
+ * the curve through it. `closed` outlines may curve on the closing edge too.
+ */
+export function arcPath(points: Pt[], arcs: number[] | null | undefined, closed: boolean): Pt[] {
+  if (!arcs?.length || points.length < 3) return points;
+  const isArc = new Set(arcs.filter((i) => i > 0 && (closed || i < points.length - 1)));
+  if (!isArc.size) return points;
+  const out: Pt[] = [points[0]];
+  for (let i = 1; i < points.length; i++) {
+    if (isArc.has(i)) {
+      const next = i + 1 < points.length ? points[i + 1] : points[0];
+      out.push(...arcThrough(points[i - 1], points[i], next));
+      if (i + 1 < points.length) i++; // the arc ended on the next vertex
+      else out.pop(); // closing arc ends back on the first point (the polygon closes itself)
+    } else out.push(points[i]);
+  }
+  return out;
+}
+
+/** Outlines (areas, joist/rafter areas) close on themselves; everything else is an open line. */
+export function isClosedType(type: string) {
+  return type === "AREA" || type === "FRAMING";
+}
+
+/** A measurement's real path (arcs drawn out), for quantities and drawing. */
+export function shapePath(type: string, m: { points: Pt[]; arcs?: number[] | null }) {
+  return arcPath(m.points, m.arcs, isClosedType(type));
 }
 
 /** Direction of a polygon's first edge — framing members run parallel to it by default. */
@@ -230,10 +304,18 @@ export function slopeFactor(pitch: number) {
   return Math.sqrt(1 + (pitch / 12) ** 2);
 }
 
-/** Multiplier from the plan length of a hip/valley line to its true length. */
-export function hipFactor(pitch: number) {
-  const run = Math.SQRT2 * 12; // a hip covers 16.97" of plan run per 12" of common run
-  return Math.sqrt(run ** 2 + pitch ** 2) / run;
+/**
+ * Multiplier from the plan length of a hip/valley line to its true length, for the
+ * two roof planes it joins (pitches in inches of rise per 12"). Both planes climb to
+ * the same height, so a point on the hip a feet from one eave and b feet from the
+ * other has a·p1 = b·p2; the rise over a plan length L works out to
+ * L·p1·p2 / (12·√(p1² + p2²)). Equal pitches give the familiar 45° hip
+ * (16.97" of plan run per 12" of common run); a 0 pitch on either side is level (ridges).
+ */
+export function hipFactor(pitch: number, otherPitch: number = pitch) {
+  if (!(pitch > 0) || !(otherPitch > 0)) return 1;
+  const risePerPlan = (pitch * otherPitch) / (12 * Math.sqrt(pitch ** 2 + otherPitch ** 2));
+  return Math.sqrt(1 + risePerPlan ** 2);
 }
 
 /** Lumber is sold in 2' increments — round a member up to the next even length (8' minimum). */
@@ -307,6 +389,7 @@ export type ConditionCalc = {
   type: string;
   pitch: number;
   pitchMode: string;
+  pitch2?: number | null; // hips & valleys: the other side (null = same as pitch)
   height: number; // ft
   depth: number; // in
   spacing: number; // in
@@ -350,7 +433,58 @@ export function withMemberSize<T extends ConditionCalc>(
   return { ...c, memberWidthIn: ref.widthIn, boardFeetPerLf: boardFeetPerLf(ref), soldAs: ref.soldAs };
 }
 
-export type MeasurementShape = { points: Pt[]; isDeduction: boolean; angle: number };
+export type MeasurementShape = {
+  points: Pt[];
+  isDeduction: boolean;
+  angle: number;
+  // This shape's own pitch (joists/rafters, hips/valleys); null/undefined = the condition's.
+  pitch?: number | null;
+  pitch2?: number | null;
+  arcs?: number[] | null; // indexes of arc points (see arcPath)
+};
+
+/** Conditions whose shapes become pieces of lumber. */
+export function isMemberType(type: string) {
+  return type === "FRAMING" || type === "HIP_VALLEY";
+}
+
+/** Conditions whose material lines the takeoff writes itself (lumber, wall and opening materials). */
+export function hasAutoLines(type: string) {
+  return isMemberType(type) || type === "WALL" || type === "OPENING";
+}
+
+/** The pitches a shape uses: its own when set, otherwise the condition's (side 2 defaults to side 1). */
+export function shapePitches(c: { pitch: number; pitch2?: number | null }, m: { pitch?: number | null; pitch2?: number | null }) {
+  const p1 = m.pitch ?? c.pitch;
+  const p2 = m.pitch2 ?? (m.pitch != null ? m.pitch : (c.pitch2 ?? c.pitch));
+  return { p1, p2 };
+}
+
+/**
+ * Plan length a hip or valley runs past the wall corner into an overhang of
+ * `overhangFt` (horizontal, measured out from the walls). With equal pitches it
+ * runs diagonally through the soffit corner (× 1.414); with different pitches it
+ * reaches the steeper side's fascia first. Level lines (ridges) just add it straight.
+ */
+export function hipOverhangPlan(overhangFt: number, p1: number, p2: number) {
+  if (!(overhangFt > 0)) return 0;
+  if (!(p1 > 0) || !(p2 > 0)) return overhangFt;
+  const ratio = Math.min(p1, p2) / Math.max(p1, p2);
+  return overhangFt * Math.sqrt(1 + ratio ** 2);
+}
+
+/** One hip / valley / ridge piece: true length of the traced line plus its overhang. */
+export function hipLength(c: ConditionCalc, m: MeasurementShape, unitsPerFoot: number) {
+  const { p1, p2 } = shapePitches(c, m);
+  const plan = polylineLength(shapePath(c.type, m)) / unitsPerFoot + hipOverhangPlan(c.overhang / 12, p1, p2);
+  return { plan, length: plan * hipFactor(p1, p2) };
+}
+
+/** Member lengths in feet for a joist/rafter outline (many) or a hip/valley line (one). */
+export function memberLengths(c: ConditionCalc, m: MeasurementShape, unitsPerFoot: number) {
+  if (c.type === "HIP_VALLEY") return [hipLength(c, m, unitsPerFoot).length];
+  return framingLengths(c, m, unitsPerFoot);
+}
 
 export type Metrics = Record<MetricKey, number>;
 
@@ -366,8 +500,8 @@ export function addMetrics(a: Metrics, b: Metrics): Metrics {
 
 /** Framing members for one shape, in feet, with pitch and overhang applied. */
 export function framingLengths(c: ConditionCalc, m: MeasurementShape, unitsPerFoot: number) {
-  const members = framingMembers(m.points, m.angle, (c.spacing / 12) * unitsPerFoot, memberThickness(c.memberSize, unitsPerFoot, c.memberWidthIn));
-  const factor = slopeFactor(c.pitch);
+  const members = framingMembers(shapePath(c.type, m), m.angle, (c.spacing / 12) * unitsPerFoot, memberThickness(c.memberSize, unitsPerFoot, c.memberWidthIn));
+  const factor = slopeFactor(m.pitch ?? c.pitch);
   return members.map(([a, b]) => (dist(a, b) / unitsPerFoot + c.overhang / 12) * factor);
 }
 
@@ -382,27 +516,58 @@ export function measurementMetrics(c: ConditionCalc, m: MeasurementShape, unitsP
     out.count = sign * Math.max(1, m.points.length);
     return out;
   }
+  if (c.type === "OPENING") {
+    // One line per opening, drawn across it: its length is the opening width.
+    out.count = sign;
+    if (unitsPerFoot && unitsPerFoot > 0) {
+      out.plan_length = sign * (polylineLength(shapePath(c.type, m)) / unitsPerFoot);
+      out.length = out.plan_length;
+    }
+    return out;
+  }
   if (!unitsPerFoot || unitsPerFoot <= 0) return out;
   const sqft = unitsPerFoot * unitsPerFoot;
 
+  if (c.type === "WALL") {
+    const plan = polylineLength(shapePath(c.type, m)) / unitsPerFoot;
+    out.plan_length = plan;
+    out.length = plan;
+    out.wall_area = plan * c.height;
+    return out;
+  }
+
   if (c.type === "LINEAR") {
-    const plan = polylineLength(m.points) / unitsPerFoot;
-    const factor = c.pitchMode === "HIP" ? hipFactor(c.pitch) : slopeFactor(c.pitch);
+    const plan = polylineLength(shapePath(c.type, m)) / unitsPerFoot;
+    const factor = c.pitchMode === "HIP" ? hipFactor(c.pitch, c.pitch2 ?? c.pitch) : slopeFactor(c.pitch);
     out.plan_length = sign * plan;
     out.length = sign * plan * factor;
     out.wall_area = sign * plan * c.height;
     return out;
   }
 
-  const plan = polygonArea(m.points) / sqft;
-  const area = plan * slopeFactor(c.pitch);
+  if (c.type === "HIP_VALLEY") {
+    if (m.isDeduction) return out;
+    const { plan, length } = hipLength(c, m, unitsPerFoot);
+    const stock = parseStockLengths(c.stockLengths);
+    const size = parseMemberSize(c.memberSize);
+    out.plan_length = plan;
+    out.members = 1;
+    out.member_lf = length;
+    out.stock_lf = stockPieces(length, stock, c.soldAs).reduce((a, b) => a + b, 0);
+    out.board_feet = out.stock_lf * (c.boardFeetPerLf ?? (size ? (size.t * size.w) / 12 : 0));
+    return out;
+  }
+
+  const path = shapePath(c.type, m);
+  const plan = polygonArea(path) / sqft;
+  const area = plan * slopeFactor(c.type === "FRAMING" ? (m.pitch ?? c.pitch) : c.pitch);
   out.plan_area = sign * plan;
   out.area = sign * area;
 
   if (c.type === "AREA") {
     out.area_sy = (sign * area) / 9;
     out.squares = (sign * area) / 100;
-    out.perimeter = sign * (polygonPerimeter(m.points) / unitsPerFoot);
+    out.perimeter = sign * (polygonPerimeter(path) / unitsPerFoot);
     out.volume = (sign * (area * (c.depth / 12))) / 27;
     return out;
   }
@@ -422,18 +587,128 @@ export function measurementMetrics(c: ConditionCalc, m: MeasurementShape, unitsP
 
 /** Cut list for framing: piece count by stock length, e.g. [[14, 22], [16, 3]]. */
 export function framingCutList(c: ConditionCalc, shapes: { m: MeasurementShape; unitsPerFoot: number | null }[]) {
-  const list = new Map<number, number>();
-  const stock = parseStockLengths(c.stockLengths);
+  return framingBoards(c, shapes).cutList;
+}
+
+/** Saw kerf allowed between cuts on one board: 1/8". */
+export const SAW_KERF_FT = 1 / 96;
+
+/** Default stock lengths (when a condition has none): even lengths 8'–24'. */
+const DEFAULT_STOCK = [8, 10, 12, 14, 16, 18, 20, 22, 24];
+
+/** Boards cut the same way. One-piece boards are grouped by length, with `cutsMax` the longest cut. */
+export type BoardPattern = { length: number; cuts: number[]; count: number; cutsMax?: number };
+
+/**
+ * Packs cut lengths into stock boards the way a framer would: longest cuts first,
+ * each into the board it fits most snugly (with a saw kerf between cuts), then
+ * each board is shrunk to the shortest stock length that holds its cuts. It tries
+ * each stock length as the board size and keeps the layout that orders the fewest
+ * lineal feet (shorter boards on a tie), so short pieces share boards without
+ * jumping to the longest stock. A cut longer than the longest stock is spliced:
+ * full-length boards plus a remainder cut that is packed with the rest.
+ */
+export function packBoards(cutLengths: number[], stockList: number[] | null): { boards: BoardPattern[]; cutList: [number, number][] } {
+  const stock = stockList?.length ? stockList : DEFAULT_STOCK;
+  const max = stock[stock.length - 1];
+  const fullBoards: number[] = [];
+  const cuts: number[] = [];
+  for (const raw of cutLengths) {
+    if (!(raw > 0)) continue;
+    let left = raw;
+    if (!stockList?.length && left > max + 1e-9) {
+      // No stock list: longer members are ordered at their own (even) length, as before.
+      fullBoards.push(stockLength(left));
+      continue;
+    }
+    while (left > max + 1e-9) {
+      fullBoards.push(max);
+      left -= max;
+    }
+    cuts.push(left);
+  }
+  cuts.sort((a, b) => b - a);
+
+  const packInto = (capacity: number) => {
+    const bins: { cuts: number[]; used: number }[] = [];
+    for (const cut of cuts) {
+      let best: (typeof bins)[number] | null = null;
+      let bestLeft = Infinity;
+      for (const bin of bins) {
+        const left = capacity - (bin.used + SAW_KERF_FT + cut);
+        if (left >= -1e-9 && left < bestLeft) {
+          best = bin;
+          bestLeft = left;
+        }
+      }
+      if (best) {
+        best.cuts.push(cut);
+        best.used += SAW_KERF_FT + cut;
+      } else {
+        bins.push({ cuts: [cut], used: cut });
+      }
+    }
+    const total = bins.reduce((sum, b) => sum + (stock.find((l) => l >= b.used - 1e-9) ?? max), 0);
+    return { bins, total };
+  };
+  const longest = cuts[0] ?? 0;
+  let bins: { cuts: number[]; used: number }[] = [];
+  let bestTotal = Infinity;
+  for (const capacity of stock) {
+    if (capacity < longest - 1e-9) continue;
+    const tryIt = packInto(capacity);
+    if (tryIt.total < bestTotal - 1e-9) {
+      bins = tryIt.bins;
+      bestTotal = tryIt.total;
+    }
+  }
+
+  const patterns = new Map<string, BoardPattern>();
+  const addBoard = (length: number, boardCuts: number[]) => {
+    // One-piece boards group by length (cut range); multi-piece boards by their exact cuts.
+    const single = boardCuts.length === 1;
+    const key = single ? `${length}|1` : `${length}|${boardCuts.map((x) => Math.round(x * 96)).join(",")}`;
+    const p = patterns.get(key) ?? { length, cuts: [...boardCuts], count: 0, ...(single ? { cutsMax: boardCuts[0] } : {}) };
+    if (single && p.count > 0) {
+      p.cuts = [Math.min(p.cuts[0], boardCuts[0])];
+      p.cutsMax = Math.max(p.cutsMax ?? 0, boardCuts[0]);
+    }
+    p.count++;
+    patterns.set(key, p);
+  };
+  for (const len of fullBoards) addBoard(len, [len]);
+  for (const bin of bins) addBoard(stock.find((l) => l >= bin.used - 1e-9) ?? max, bin.cuts);
+
+  const boards = Array.from(patterns.values()).sort((a, b) => b.length - a.length || b.count - a.count);
+  const counts = new Map<number, number>();
+  for (const b of boards) counts.set(b.length, (counts.get(b.length) ?? 0) + b.count);
+  return { boards, cutList: Array.from(counts.entries()).sort((a, b) => a[0] - b[0]) };
+}
+
+/**
+ * The lumber a joist/rafter or hip/valley condition orders. Joist/rafter
+ * stock-length sizes are packed into boards (short pieces share a board). Hips,
+ * valleys and ridges get a board each (rounded up, spliced past the longest
+ * stock), and made-to-order and lineal-foot sizes list each member at its own length.
+ */
+export function framingBoards(c: ConditionCalc, shapes: { m: MeasurementShape; unitsPerFoot: number | null }[]) {
+  const lengths: number[] = [];
   for (const { m, unitsPerFoot } of shapes) {
     if (!unitsPerFoot || m.isDeduction) continue;
-    for (const l of framingLengths(c, m, unitsPerFoot)) {
+    lengths.push(...memberLengths(c, m, unitsPerFoot));
+  }
+  if (c.soldAs === "EXACT_LF" || c.soldAs === "LF" || c.type === "HIP_VALLEY") {
+    const stock = c.type === "HIP_VALLEY" ? parseStockLengths(c.stockLengths) : null;
+    const list = new Map<number, number>();
+    for (const l of lengths) {
       for (const s of stockPieces(l, stock, c.soldAs)) {
         const key = Math.round(s * 10000) / 10000;
         list.set(key, (list.get(key) ?? 0) + 1);
       }
     }
+    return { boards: [] as BoardPattern[], cutList: Array.from(list.entries()).sort((a, b) => a[0] - b[0]), lengths };
   }
-  return Array.from(list.entries()).sort((a, b) => a[0] - b[0]);
+  return { ...packBoards(lengths, parseStockLengths(c.stockLengths)), lengths };
 }
 
 /** Condition quantity with waste. */
@@ -449,8 +724,21 @@ export const LUMBER_METRIC_PREFIX = "pieces:";
 /** Lumber sold by the lineal foot in one total (I-joists bought by the foot). */
 export const LUMBER_LF_METRIC = "lumber:lf";
 
+/** Walls conditions: every material line is "wall:<key>", worked out by wallTakeoff. */
+export const WALL_METRIC_PREFIX = "wall:";
+/** Openings conditions: headers and king & jack studs, "opening:<key>" (openingTakeoff). */
+export const OPENING_METRIC_PREFIX = "opening:";
+
+/** The metric prefix for a condition type's auto material lines (walls, openings). */
+export function autoMetricPrefix(type: string) {
+  return type === "OPENING" ? OPENING_METRIC_PREFIX : WALL_METRIC_PREFIX;
+}
+
+/** Lines the takeoff writes itself (lumber from layouts, wall & opening materials) — not edited by hand. */
 export function isLumberMetric(metric: string) {
-  return metric.startsWith(LUMBER_METRIC_PREFIX) || metric === LUMBER_LF_METRIC;
+  return (
+    metric.startsWith(LUMBER_METRIC_PREFIX) || metric === LUMBER_LF_METRIC || metric.startsWith(WALL_METRIC_PREFIX) || metric.startsWith(OPENING_METRIC_PREFIX)
+  );
 }
 
 export function lumberMetric(lengthFt: number) {
@@ -465,8 +753,9 @@ export function lumberItemName(memberSize: string | null | undefined, conditionN
   return `${base} × ${len}'`;
 }
 
-/** The quantity an assembly item multiplies: a condition metric, or a count of lumber pieces. */
-export function assemblyBase(item: { metric: string }, metrics: Metrics, cutList: [number, number][] = []) {
+/** The quantity an assembly item multiplies: a condition metric, a count of lumber pieces, or a wall / opening material. */
+export function assemblyBase(item: { metric: string }, metrics: Metrics, cutList: [number, number][] = [], auto: Record<string, number> = {}) {
+  if (item.metric.startsWith(WALL_METRIC_PREFIX) || item.metric.startsWith(OPENING_METRIC_PREFIX)) return auto[item.metric] ?? 0;
   if (item.metric === LUMBER_LF_METRIC) return metrics.member_lf;
   if (isLumberMetric(item.metric)) {
     const len = Number(item.metric.slice(LUMBER_METRIC_PREFIX.length));
@@ -480,21 +769,38 @@ export function assemblyQuantity(
   item: { qty: number; per: number; wastePct: number; roundUp: boolean; metric: string },
   metrics: Metrics,
   cutList: [number, number][] = [],
+  auto: Record<string, number> = {},
 ) {
-  const base = assemblyBase(item, metrics, cutList);
+  const base = assemblyBase(item, metrics, cutList, auto);
   const per = item.per > 0 ? item.per : 1;
   const q = withWaste((base * item.qty) / per, item.wastePct);
   return item.roundUp ? Math.ceil(q - 1e-9) : q;
 }
 
-export function parsePoints(json: string): Pt[] {
+/** Stored points: [x, y] vertices, [x, y, 1] for an arc point. */
+function storedPoints(json: string): number[][] {
   try {
     const v = JSON.parse(json);
     if (!Array.isArray(v)) return [];
-    return v.filter((p): p is Pt => Array.isArray(p) && p.length === 2 && p.every((n) => typeof n === "number" && Number.isFinite(n)));
+    return v.filter((p): p is number[] => Array.isArray(p) && (p.length === 2 || p.length === 3) && p.every((n) => typeof n === "number" && Number.isFinite(n)));
   } catch {
     return [];
   }
+}
+
+export function parsePoints(json: string): Pt[] {
+  return storedPoints(json).map((p) => [p[0], p[1]]);
+}
+
+/** Indexes of a stored shape's arc points. */
+export function parseArcs(json: string): number[] {
+  return storedPoints(json).flatMap((p, i) => (p[2] === 1 ? [i] : []));
+}
+
+/** Points (and arc points) as stored, rounded to 1/100 page unit. */
+export function pointsJson(points: Pt[], arcs?: number[] | null) {
+  const set = new Set(arcs ?? []);
+  return JSON.stringify(points.map(([x, y], i) => (set.has(i) ? [Math.round(x * 100) / 100, Math.round(y * 100) / 100, 1] : [Math.round(x * 100) / 100, Math.round(y * 100) / 100])));
 }
 
 /** 12.5 → 12'-6" */
@@ -521,4 +827,309 @@ export function itemNameKey(name: string) {
     .trim()
     .replace(/\s+/g, " ")
     .toLowerCase();
+}
+
+/** "16' → 9'-2" + 6'-5" (offcut 0'-4")" — what one stock board is cut into. */
+export function boardPatternText(b: { length: number; cuts: number[]; cutsMax?: number }) {
+  const len = Number.isInteger(b.length) ? `${b.length}'` : feetInches(b.length);
+  if (b.cuts.length === 1) {
+    const lo = b.cuts[0];
+    const hi = b.cutsMax ?? lo;
+    if (Math.abs(lo - b.length) < 1e-6 && Math.abs(hi - b.length) < 1e-6) return `${len} → full length`;
+    return `${len} → 1 piece, ${hi - lo >= 1 / 12 ? `${feetInches(lo)} – ${feetInches(hi)}` : feetInches(hi)}`;
+  }
+  const used = b.cuts.reduce((s, x) => s + x, 0) + SAW_KERF_FT * (b.cuts.length - 1);
+  const offcut = b.length - used;
+  return `${len} → ${b.cuts.map(feetInches).join(" + ")}${offcut >= 1 / 12 ? ` (offcut ${feetInches(offcut)})` : ""}`;
+}
+
+
+// --- Walls ------------------------------------------------------------------------
+
+export const SHEET_SIZES: Record<string, number> = { "4x8": 32, "4x9": 36, "4x10": 40, "4x12": 48 };
+
+// --- Material List order ----------------------------------------------------------
+
+/**
+ * How lumber reads in a list: "2x6 × 16'" → size 2x6, 16', whether it's a stud
+ * (precut) or treated. Null for anything that doesn't start with a size (LVLs,
+ * I-joists, sheet goods…).
+ */
+export function lumberSortKey(name: string) {
+  const m = name.match(/^\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)(.*)$/i);
+  if (!m) return null;
+  const rest = m[3];
+  const inches = rest.match(/(\d+)(?:-(\d+)\/(\d+))?\s*(?:"|in\b)/i);
+  const feet = rest.match(/(?:^|[x×\s])\s*(\d+(?:\.\d+)?)\s*(?:'|ft\b|$)/i);
+  const length = inches ? (Number(inches[1]) + (inches[2] ? Number(inches[2]) / Number(inches[3]) : 0)) / 12 : feet ? Number(feet[1]) : 0;
+  return {
+    thick: Number(m[1]),
+    width: Number(m[2]),
+    treated: /treat|\bp\.?t\.?\b|ground.?contact/i.test(rest) ? 1 : 0,
+    board: /stud|precut/i.test(rest) ? 0 : 1,
+    length,
+  };
+}
+
+/**
+ * Material List order within a category: precut studs first, then treated lumber
+ * (plates), then the rest of the lumber — each by size (2x4, 2x6, 2x8…) then length
+ * — then everything else by name (2 before 10).
+ */
+export function compareMaterialNames(a: string, b: string) {
+  const ka = lumberSortKey(a);
+  const kb = lumberSortKey(b);
+  const natural = a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+  const tier = (k: NonNullable<ReturnType<typeof lumberSortKey>>) => (k.board === 0 ? 0 : k.treated ? 1 : 2);
+  if (ka && kb) return tier(ka) - tier(kb) || ka.thick - kb.thick || ka.width - kb.width || ka.length - kb.length || natural;
+  if (ka) return -1;
+  if (kb) return 1;
+  return natural;
+}
+
+/** 92.625 → 92-5/8" (to the nearest 1/8"). */
+export function inchesText(inches: number) {
+  const eighths = Math.round(inches * 8);
+  const whole = Math.floor(eighths / 8);
+  let num = eighths % 8;
+  let den = 8;
+  while (num && num % 2 === 0) {
+    num /= 2;
+    den /= 2;
+  }
+  return `${whole}${num ? `-${num}/${den}` : ""}"`;
+}
+
+/** Precut stud length for a wall height with the given plates: 8' → 92-5/8", 9' → 104-5/8", 10' → 116-5/8". */
+export function precutStudLength(heightFt: number, plates = 3) {
+  return heightFt * 12 + 1.125 - 1.5 * plates;
+}
+
+const SHEET_SIZE_RE = /\b4\s*[x×']\s*(8|9|10|12)(?!\d)/i;
+
+/** The sheet size named in an item, e.g. '1/2" Drywall 4x12' → "4x12" (null if none). */
+export function sheetSizeInName(name: string): string | null {
+  const m = name.match(SHEET_SIZE_RE);
+  return m ? `4x${m[1]}` : null;
+}
+
+/** An item name with its sheet size swapped for `sheet` (names without a size are left alone). */
+export function withSheetSize(name: string, sheet: string) {
+  return SHEET_SIZE_RE.test(name) && SHEET_SIZES[sheet] ? name.replace(SHEET_SIZE_RE, sheet) : name;
+}
+
+/** Walls: everything besides stud size (the condition's member size), spacing and height. */
+export type WallOptions = {
+  studPrecut: boolean; // precut studs, or cut from stock lengths
+  studLengthIn: number; // the precut, or the stock length (in inches)
+  cornerStuds: number; // extra studs at each corner of a traced run
+  topPlates: number;
+  topPlateSize: string; // blank = same as the studs
+  topPlateStock: string; // feet, e.g. "16" or "12, 16"
+  bottomPlates: number;
+  bottomPlateSize: string;
+  bottomPlateStock: string;
+  treatedBottom: boolean;
+  sheathingSides: number; // 0, 1 or 2
+  sheathingItem: string;
+  sheathingSheet: string;
+  drywallSides: number;
+  drywallItem: string;
+  drywallSheet: string;
+  baseSides: number;
+  baseItem: string;
+};
+
+export const DEFAULT_WALL_OPTIONS: WallOptions = {
+  studPrecut: true,
+  studLengthIn: 92.625,
+  cornerStuds: 2,
+  topPlates: 2,
+  topPlateSize: "",
+  topPlateStock: "16",
+  bottomPlates: 1,
+  bottomPlateSize: "",
+  bottomPlateStock: "16",
+  treatedBottom: false,
+  sheathingSides: 0,
+  sheathingItem: '7/16" OSB 4x8',
+  sheathingSheet: "4x8",
+  drywallSides: 2,
+  drywallItem: '1/2" Drywall 4x8',
+  drywallSheet: "4x8",
+  baseSides: 0,
+  baseItem: "Baseboard",
+};
+
+/** Openings: header size and stock lengths are the condition's member size and stock lengths. */
+export type OpeningOptions = {
+  headerPlies: number;
+  headerExtraIn: number; // added to the opening width for the header length (bearing)
+  kingStuds: number; // per opening
+  jackStuds: number; // per opening
+  studSize: string;
+  studPrecut: boolean;
+  studLengthIn: number;
+};
+
+export const DEFAULT_OPENING_OPTIONS: OpeningOptions = {
+  headerPlies: 2,
+  headerExtraIn: 3,
+  kingStuds: 2,
+  jackStuds: 2,
+  studSize: "2x4",
+  studPrecut: true,
+  studLengthIn: 92.625,
+};
+
+/** A condition's stored options (JSON) over the defaults; anything missing or the wrong type falls back. */
+export function parseOptions<T extends Record<string, unknown>>(json: string | null | undefined, defaults: T): T {
+  let raw: Record<string, unknown> = {};
+  try {
+    const v = json ? JSON.parse(json) : null;
+    if (v && typeof v === "object" && !Array.isArray(v)) raw = v as Record<string, unknown>;
+  } catch {
+    /* bad JSON: defaults */
+  }
+  const out: Record<string, unknown> = { ...defaults };
+  for (const k of Object.keys(defaults)) if (typeof raw[k] === typeof defaults[k] && (typeof raw[k] !== "number" || Number.isFinite(raw[k]))) out[k] = raw[k];
+  return out as T;
+}
+
+/** A material line the takeoff writes for a Walls or Openings condition. `key` is stable (the estimate line follows it). */
+export type AutoLine = { key: string; name: string; unit: "ea" | "sf" | "lf"; qty: number; category: string; waste: boolean };
+export type WallLine = AutoLine;
+
+/** One traced wall run, in feet: corners are the bends (and the closing corner of a closed run). */
+export type WallRun = { lengthFt: number; closed: boolean; corners: number };
+
+export function wallRun(points: Pt[], unitsPerFoot: number, arcs: number[] = []): WallRun {
+  const lengthFt = polylineLength(arcPath(points, arcs, false)) / unitsPerFoot;
+  const closed = points.length > 2 && dist(points[0], points[points.length - 1]) / unitsPerFoot < 0.5;
+  // Bends are the inside vertices; arc points sit on a curved wall, not at a corner.
+  const bends = points.slice(1, -1).filter((_, i) => !arcs.includes(i + 1)).length;
+  return { lengthFt, closed, corners: bends + (closed ? 1 : 0) };
+}
+
+/** Precut stud lengths sold for 8', 9' and 10' walls. */
+export const STUD_PRECUTS_IN = [92.625, 104.625, 116.625];
+/** Stock lengths studs can be cut from (feet). */
+export const STUD_STOCK_FT = [8, 10, 12, 14, 16, 18, 20];
+
+/** The stud a wall height calls for: its precut, or the shortest stock length that covers it (less 3 plates). */
+export function defaultStudLength(heightFt: number, precut: boolean) {
+  if (precut) return precutStudLength(heightFt);
+  const needFt = (heightFt * 12 - 4.5) / 12;
+  return (STUD_STOCK_FT.find((l) => l >= needFt - 1e-9) ?? Math.ceil(needFt / 2) * 2) * 12;
+}
+
+/**
+ * "2x6 × 92-5/8" precut stud", or for studs cut from stock "2x6 × 10'" (the same
+ * item as 10' plates). Walls and openings use the same names so they add up on
+ * the Material List.
+ */
+export function studItemName(size: string, lengthIn: number, precut = true) {
+  const s = size.trim() || "2x4";
+  return precut ? `${s} × ${inchesText(lengthIn)} precut stud` : lumberItemName(s, s, lengthIn / 12);
+}
+
+/**
+ * Every material for a Walls condition's runs. Openings aren't taken out (they're
+ * their own condition), so the wall is figured full length and height:
+ * - studs: one per spacing along each run, plus one to close an open run, plus the
+ *   extra corner studs at each bend;
+ * - top and bottom plates: each run × plates, packed into their stock lengths
+ *   (together when they're the same lumber);
+ * - sheathing and drywall sheets: length × height × sides ÷ sheet size;
+ * - baseboard: length × sides.
+ */
+export function wallTakeoff(wall: { studSize: string; spacing: number; heightFt: number }, o: WallOptions, runs: WallRun[]) {
+  let studs = 0;
+  let length = 0;
+  const topCuts: number[] = [];
+  const bottomCuts: number[] = [];
+  for (const r of runs) {
+    if (!(r.lengthFt > 0)) continue;
+    length += r.lengthFt;
+    studs += Math.ceil((r.lengthFt * 12) / Math.max(1, wall.spacing) - 1e-9) + (r.closed ? 0 : 1) + r.corners * Math.max(0, o.cornerStuds);
+    for (let i = 0; i < Math.max(0, o.topPlates); i++) topCuts.push(r.lengthFt);
+    for (let i = 0; i < Math.max(0, o.bottomPlates); i++) bottomCuts.push(r.lengthFt);
+  }
+  const area = length * wall.heightFt;
+  const stud = wall.studSize.trim() || "2x4";
+  const lines: AutoLine[] = [];
+  if (studs > 0) lines.push({ key: "studs", name: studItemName(stud, o.studLengthIn, o.studPrecut), unit: "ea", qty: studs, category: "Framing Lumber", waste: true });
+
+  const topSize = o.topPlateSize.trim() || stud;
+  const bottomSize = `${o.bottomPlateSize.trim() || stud}${o.treatedBottom ? " treated" : ""}`;
+  const plateLines = (key: string, size: string, cuts: number[], stock: string) => {
+    for (const [len, n] of packBoards(cuts, parseStockLengths(stock)).cutList)
+      lines.push({ key: `${key}:${len}`, name: lumberItemName(size, size, len), unit: "ea", qty: n, category: "Framing Lumber", waste: false });
+  };
+  if (itemNameKey(topSize) === itemNameKey(bottomSize) && o.topPlateStock.trim() === o.bottomPlateStock.trim()) {
+    plateLines("plates", topSize, [...topCuts, ...bottomCuts], o.topPlateStock);
+  } else {
+    plateLines("top", topSize, topCuts, o.topPlateStock);
+    plateLines("bottom", bottomSize, bottomCuts, o.bottomPlateStock);
+  }
+
+  // The sheet size picked is what's counted, and the item's name says the same size.
+  const sheet = (k: string) => SHEET_SIZES[k] ?? 32;
+  if (o.sheathingSides > 0 && o.sheathingItem.trim() && area > 0)
+    lines.push({ key: "sheathing", name: withSheetSize(o.sheathingItem.trim(), o.sheathingSheet), unit: "ea", qty: (o.sheathingSides * area) / sheet(o.sheathingSheet), category: "Sheathing", waste: true });
+  if (o.drywallSides > 0 && o.drywallItem.trim() && area > 0)
+    lines.push({ key: "drywall", name: withSheetSize(o.drywallItem.trim(), o.drywallSheet), unit: "ea", qty: (o.drywallSides * area) / sheet(o.drywallSheet), category: "Drywall", waste: true });
+  if (o.baseSides > 0 && o.baseItem.trim() && length > 0)
+    lines.push({ key: "base", name: o.baseItem.trim(), unit: "lf", qty: o.baseSides * length, category: "Trim", waste: true });
+  return { lines, length, area, studs };
+}
+
+/**
+ * Every material for an Openings condition, one opening per traced line (its
+ * length is the opening width):
+ * - header: plies × (width + extra), packed into the header's stock lengths;
+ * - king & jack studs per opening.
+ */
+export function openingTakeoff(header: { size: string | null; stockLengths: string | null }, o: OpeningOptions, widthsFt: number[]) {
+  const widths = widthsFt.filter((w) => w > 0);
+  const lines: AutoLine[] = [];
+  const size = header.size?.trim();
+  if (size && widths.length) {
+    const cuts = widths.flatMap((w) => Array.from({ length: Math.max(1, o.headerPlies) }, () => w + o.headerExtraIn / 12));
+    for (const [len, n] of packBoards(cuts, parseStockLengths(header.stockLengths)).cutList)
+      lines.push({ key: `header:${len}`, name: lumberItemName(size, size, len), unit: "ea", qty: n, category: "Framing Lumber", waste: false });
+  }
+  const studs = widths.length * (Math.max(0, o.kingStuds) + Math.max(0, o.jackStuds));
+  if (studs > 0) lines.push({ key: "studs", name: studItemName(o.studSize, o.studLengthIn, o.studPrecut), unit: "ea", qty: studs, category: "Framing Lumber", waste: true });
+  return { lines, openings: widths.length };
+}
+
+/** "2x6 studs @ 16" o.c. · 8' walls (92-5/8" precuts) · 2 top + 1 bottom plate · 1/2" Drywall both sides" */
+export function wallSummary(wall: { studSize: string | null; spacing: number; heightFt: number }, o: WallOptions) {
+  const side = (n: number) => (n === 2 ? "both sides" : "1 side");
+  const parts = [
+    `${wall.studSize || "—"} studs @ ${num0(wall.spacing)}" o.c.`,
+    `${num0(wall.heightFt)}' walls (${studText(o.studLengthIn, o.studPrecut)} studs)`,
+    `${o.topPlates} top + ${o.bottomPlates} bottom plate${o.bottomPlates === 1 ? "" : "s"}${o.treatedBottom ? " (treated)" : ""}`,
+  ];
+  if (o.sheathingSides > 0 && o.sheathingItem) parts.push(`${o.sheathingItem} ${side(o.sheathingSides)}`);
+  if (o.drywallSides > 0 && o.drywallItem) parts.push(`${o.drywallItem} ${side(o.drywallSides)}`);
+  if (o.baseSides > 0 && o.baseItem) parts.push(`${o.baseItem} ${side(o.baseSides)}`);
+  return parts.join(" · ");
+}
+
+/** "2-ply 2x10 headers (+3") · 2 king + 2 jack 2x4 studs (92-5/8" precut)" */
+export function openingSummary(header: string | null, o: OpeningOptions) {
+  const parts = [header ? `${o.headerPlies}-ply ${header} headers (+${num0(o.headerExtraIn)}")` : "no header"];
+  if (o.kingStuds + o.jackStuds > 0) parts.push(`${o.kingStuds} king + ${o.jackStuds} jack ${o.studSize} studs (${studText(o.studLengthIn, o.studPrecut)})`);
+  return parts.join(" · ");
+}
+
+/** 104.625, precut → 104-5/8" precut; 120, stock → 10' */
+export function studText(lengthIn: number, precut: boolean) {
+  return precut ? `${inchesText(lengthIn)} precut` : `${num0(lengthIn / 12)}'`;
+}
+
+function num0(n: number) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
 }

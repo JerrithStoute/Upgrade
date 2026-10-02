@@ -1,9 +1,10 @@
 import { notFound } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getProject } from "@/lib/projects";
+import { activeCostCodes, getProject } from "@/lib/projects";
 import { conditionTotals, loadConditions } from "@/lib/takeoff-data";
-import { boardFeetPerLf, parsePoints, type MetricKey } from "@/lib/takeoff";
+import { materialItemOptions } from "@/lib/material-items";
+import { CONDITION_COLORS, boardFeetPerLf, parseArcs, parsePoints, type MetricKey } from "@/lib/takeoff";
 import { PlanViewer } from "./_components/plan-viewer";
 
 export default async function PlanViewerPage({
@@ -11,11 +12,11 @@ export default async function PlanViewerPage({
   searchParams,
 }: {
   params: Promise<{ id: string; planId: string }>;
-  searchParams: Promise<{ page?: string }>;
+  searchParams: Promise<{ page?: string; cond?: string }>;
 }) {
   await requireStaff();
   const { id, planId } = await params;
-  const { page } = await searchParams;
+  const { page, cond } = await searchParams;
   const project = await getProject(id);
   const [plan, plans, conditions] = await Promise.all([
     db.takeoffPlan.findFirst({
@@ -29,6 +30,65 @@ export default async function PlanViewerPage({
 
   const pageNumber = Math.max(1, Math.min(Number(page) || 1, plan.pageCount ?? Number.MAX_SAFE_INTEGER));
   const sheet = plan.sheets.find((s) => s.pageNumber === pageNumber) ?? null;
+
+  // Condition edit panel (?cond=<id> or ?cond=new): load what its forms need.
+  const editing = cond === "new" ? null : (conditions.find((c) => c.id === cond) ?? null);
+  let editor = null;
+  if (cond === "new" || editing) {
+    const [costCodes, memberSizes, items, company] = await Promise.all([
+      activeCostCodes(),
+      db.memberSize.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, kind: true, soldAs: true, stockLengths: true } }),
+      materialItemOptions(),
+      db.company.findFirst({ select: { defaultMarkup: true } }),
+    ]);
+    editor = {
+      condition: editing
+        ? {
+            id: editing.id,
+            name: editing.name,
+            type: editing.type,
+            metric: editing.metric,
+            color: editing.color,
+            group: editing.group,
+            costCodeId: editing.costCodeId,
+            unitCost: editing.unitCost,
+            markupPct: editing.markupPct,
+            wastePct: editing.wastePct,
+            pitch: editing.pitch,
+            pitchMode: editing.pitchMode,
+            pitch2: editing.pitch2,
+            height: editing.height,
+            depth: editing.depth,
+            spacing: editing.spacing,
+            overhang: editing.overhang,
+            memberSize: editing.memberSize,
+            memberSizeId: editing.memberSizeId,
+            options: editing.options,
+            stockLengths: editing.stockLengths,
+            hasMeasurements: editing.measurements.length > 0,
+            items: editing.items.map((i) => ({
+              id: i.id,
+              description: i.description,
+              costCodeId: i.costCodeId,
+              costCode: i.costCode ? { code: i.costCode.code, name: i.costCode.name } : null,
+              metric: i.metric,
+              qty: i.qty,
+              per: i.per,
+              unit: i.unit,
+              roundUp: i.roundUp,
+              wastePct: i.wastePct,
+              unitCost: i.unitCost,
+              markupPct: i.markupPct,
+            })),
+          }
+        : null,
+      costCodes,
+      memberSizes,
+      items,
+      defaultMarkup: company?.defaultMarkup ?? 20,
+      nextColor: CONDITION_COLORS[conditions.length % CONDITION_COLORS.length],
+    };
+  }
 
   return (
     <PlanViewer
@@ -50,6 +110,7 @@ export default async function PlanViewerPage({
           unit: totals.unit,
           pitch: c.pitch,
           pitchMode: c.pitchMode,
+          pitch2: c.pitch2,
           height: c.height,
           depth: c.depth,
           spacing: c.spacing,
@@ -66,8 +127,18 @@ export default async function PlanViewerPage({
       measurements={conditions.flatMap((c) =>
         c.measurements
           .filter((m) => m.sheetId === sheet?.id)
-          .map((m) => ({ id: m.id, conditionId: c.id, points: parsePoints(m.points), isDeduction: m.isDeduction, angle: m.angle })),
+          .map((m) => ({
+            id: m.id,
+            conditionId: c.id,
+            points: parsePoints(m.points),
+            arcs: parseArcs(m.points),
+            isDeduction: m.isDeduction,
+            angle: m.angle,
+            pitch: m.pitch,
+            pitch2: m.pitch2,
+          })),
       )}
+      editor={editor}
     />
   );
 }

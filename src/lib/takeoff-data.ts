@@ -4,12 +4,25 @@ import {
   addMetrics,
   assemblyQuantity,
   emptyMetrics,
-  framingCutList,
+  framingBoards,
+  isMemberType,
   measurementMetrics,
   metricUnit,
+  parseArcs,
   parsePoints,
+  polylineLength,
   withMemberSize,
   withWaste,
+  DEFAULT_OPENING_OPTIONS,
+  arcPath,
+  DEFAULT_WALL_OPTIONS,
+  autoMetricPrefix,
+  openingTakeoff,
+  parseOptions,
+  wallRun,
+  wallTakeoff,
+  type AutoLine,
+  type BoardPattern,
   type MetricKey,
   type Metrics,
 } from "./takeoff";
@@ -30,7 +43,9 @@ export function loadConditions(projectId: string) {
         },
       },
       measurements: {
-        include: { sheet: { select: { id: true, name: true, pageNumber: true, unitsPerFoot: true, plan: { select: { id: true, name: true } } } } },
+        include: {
+          sheet: { select: { id: true, name: true, pageNumber: true, unitsPerFoot: true, plan: { select: { id: true, name: true } } } },
+        },
       },
     },
   });
@@ -44,7 +59,10 @@ export type ConditionTotals = {
   quantityWithWaste: number;
   unit: string;
   bySheet: { sheetId: string; label: string; planId: string; pageNumber: number; metrics: Metrics; unscaled: boolean }[];
-  cutList: [number, number][];
+  cutList: [number, number][]; // boards to order: [stock length, count]
+  wall: Record<string, number>; // walls & openings: material quantities by "wall:<key>" / "opening:<key>"
+  wallLines: AutoLine[];
+  boards: BoardPattern[]; // what each stock board is cut into (stock-length sizes)
   unscaledShapes: number;
 };
 
@@ -55,7 +73,7 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
   const bySheet = new Map<string, ConditionTotals["bySheet"][number]>();
   let unscaledShapes = 0;
   const shapes = c.measurements.map((m) => ({
-    m: { points: parsePoints(m.points), isDeduction: m.isDeduction, angle: m.angle },
+    m: { points: parsePoints(m.points), arcs: parseArcs(m.points), isDeduction: m.isDeduction, angle: m.angle, pitch: m.pitch, pitch2: m.pitch2 },
     unitsPerFoot: m.sheet.unitsPerFoot,
     sheet: m.sheet,
   }));
@@ -74,6 +92,24 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
     row.metrics = addMetrics(row.metrics, mm);
     bySheet.set(s.sheet.id, row);
   }
+  // Lumber is ordered as packed boards (short pieces share a board), so the
+  // ordered length and board feet come from the packing, not shape by shape.
+  const lumber = isMemberType(c.type) ? framingBoards(calc, shapes) : null;
+  if (lumber && lumber.boards.length) {
+    const orderedLf = lumber.cutList.reduce((sum, [len, n]) => sum + len * n, 0);
+    const bfPerLf = metrics.stock_lf > 0 ? metrics.board_feet / metrics.stock_lf : 0;
+    metrics = { ...metrics, stock_lf: orderedLf, board_feet: orderedLf * bfPerLf };
+  }
+  // Walls and openings: materials from the traced lines and the condition's options.
+  const wallLines: AutoLine[] = [];
+  const scaled = c.measurements.filter((m) => m.sheet.unitsPerFoot && !m.isDeduction);
+  if (c.type === "WALL") {
+    const runs = scaled.map((m) => wallRun(parsePoints(m.points), m.sheet.unitsPerFoot!, parseArcs(m.points)));
+    wallLines.push(...wallTakeoff({ studSize: c.memberSize ?? "", spacing: c.spacing, heightFt: c.height }, parseOptions(c.options, DEFAULT_WALL_OPTIONS), runs).lines);
+  } else if (c.type === "OPENING") {
+    const widths = scaled.map((m) => polylineLength(arcPath(parsePoints(m.points), parseArcs(m.points), false)) / m.sheet.unitsPerFoot!);
+    wallLines.push(...openingTakeoff({ size: c.memberSize, stockLengths: c.stockLengths }, parseOptions(c.options, DEFAULT_OPENING_OPTIONS), widths).lines);
+  }
   const quantity = metrics[c.metric as MetricKey] ?? 0;
   return {
     metrics,
@@ -81,14 +117,17 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
     quantityWithWaste: withWaste(quantity, c.wastePct),
     unit: metricUnit(c.metric),
     bySheet: Array.from(bySheet.values()),
-    cutList: c.type === "FRAMING" ? framingCutList(calc, shapes) : [],
+    cutList: lumber?.cutList ?? [],
+    wall: Object.fromEntries(wallLines.map((l) => [`${autoMetricPrefix(c.type)}${l.key}`, l.qty])),
+    wallLines,
+    boards: lumber?.boards ?? [],
     unscaledShapes,
   };
 }
 
 /** Framing lines name their lumber size unless the condition name already does. */
 function withSize(c: LoadedCondition) {
-  const size = c.type === "FRAMING" ? c.memberSize?.trim() : null;
+  const size = isMemberType(c.type) ? c.memberSize?.trim() : null;
   return size && !c.name.toLowerCase().includes(size.toLowerCase()) ? `${c.name} (${size})` : c.name;
 }
 
@@ -131,7 +170,7 @@ export function conditionEstimateLines(c: LoadedCondition, totals: ConditionTota
     costCodeId: i.costCodeId,
     group: c.group,
     description: `${withSize(c)} — ${i.description}`,
-    quantity: round(assemblyQuantity(i, totals.metrics, totals.cutList)),
+    quantity: round(assemblyQuantity(i, totals.metrics, totals.cutList, totals.wall)),
     unit: i.unit,
     unitCost: i.unitCost,
     markupPct: i.markupPct,

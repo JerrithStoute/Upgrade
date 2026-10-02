@@ -75,6 +75,8 @@ npm run create-admin -- "Your Name" you@company.com "a-strong-password" "Your Co
 | `npm run db:studio` | Open Prisma Studio to browse the database |
 | `npm run create-admin` | Create an admin login without demo data |
 | `npm run typecheck` / `npm run lint` | Type checking and linting |
+| `npm test` | Checks for the takeoff math (joists, rafters, hips, packing, assemblies…) |
+| `npm run backup` | Back up the database and uploads now |
 
 ### Configuration (`.env`)
 
@@ -83,6 +85,8 @@ npm run create-admin -- "Your Name" you@company.com "a-strong-password" "Your Co
 | `DATABASE_URL` | SQLite file, default `file:./dev.db` (relative to `prisma/`) |
 | `SESSION_SECRET` | Random string of at least 32 characters used to sign login cookies. **Required in production** — the server won't start without it. Generate one with `openssl rand -base64 48`. |
 | `UPLOAD_DIR` | Where uploaded files/photos are stored. Default `./uploads`. |
+| `BACKUP_DIR` | Where backups go. Default `./backups` — point it at another drive or a synced cloud folder. |
+| `BACKUP_KEEP` | How many database backups to keep. Default `30`. `BACKUP_AUTO="off"` turns off the nightly backup. |
 
 ## Deploying
 
@@ -91,8 +95,9 @@ Node host (a small VPS, Railway, Render, Fly.io, a Docker container). Persist
 two paths between deploys: the SQLite database file and `UPLOAD_DIR`. Set `SESSION_SECRET`, and put it
 behind HTTPS (the session cookie is marked `secure` in production). Failed logins are
 rate-limited in memory, which assumes a single app process; if you run it behind a
-reverse proxy, make sure it sets `X-Forwarded-For`. Back up the
-database file regularly — it is the whole system of record.
+reverse proxy, make sure it sets `X-Forwarded-For`. The server backs up the
+database and uploads once a day (see Settings → Company → Backups, or run `npm run backup`);
+set `BACKUP_DIR` to a different drive or cloud folder — the database is the whole system of record.
 
 ## Project layout
 

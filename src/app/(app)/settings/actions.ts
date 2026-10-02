@@ -30,3 +30,13 @@ export async function saveCompany(formData: FormData) {
   revalidatePath("/", "layout");
   redirect("/settings?saved=1");
 }
+
+/** Admins: take a backup right now (database + uploads). */
+export async function backupNow() {
+  const admin = await requireAdmin();
+  const { runBackup } = await import("@/lib/backup");
+  const s = await runBackup(db);
+  await logActivity({ userId: admin.id, type: "backup.created", description: `Backup ${s.file} (${(s.bytes / 1024 / 1024).toFixed(1)} MB)` });
+  revalidatePath("/settings");
+  redirect("/settings?backup=1");
+}

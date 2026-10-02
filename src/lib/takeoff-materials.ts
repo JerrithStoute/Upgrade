@@ -1,7 +1,7 @@
 import "server-only";
 import { conditionTotals, loadConditions } from "./takeoff-data";
-import { LUMBER_METRIC_PREFIX, METRICS, assemblyBase, itemNameKey, type MetricKey } from "./takeoff";
-import { syncLumberItems } from "./lumber";
+import { LUMBER_METRIC_PREFIX, METRICS, assemblyBase, compareMaterialNames, isMemberType, itemNameKey, type BoardPattern, type MetricKey } from "./takeoff";
+import { syncAutoItems } from "./walls";
 
 export type MaterialLine = {
   key: string;
@@ -17,7 +17,7 @@ export type MaterialLine = {
   pieces: number | null; // made-to-order members listed in lf: how many pieces that is
 };
 
-export type CutList = { condition: string; size: string | null; pieces: [number, number][]; exact: boolean };
+export type CutList = { condition: string; size: string | null; pieces: [number, number][]; exact: boolean; boards: BoardPattern[] };
 
 type Acc = Omit<MaterialLine, "quantity" | "unitCost" | "extended" | "usedIn" | "pieces"> & {
   raw: number;
@@ -36,7 +36,7 @@ type Acc = Omit<MaterialLine, "quantity" | "unitCost" | "extended" | "usedIn" | 
  * Costs are job costs (no markup). `planId` limits it to one plan set.
  */
 export async function buildMaterialList(projectId: string, planId?: string | null) {
-  await syncLumberItems(projectId);
+  await syncAutoItems(projectId);
   const conditions = await loadConditions(projectId);
   const acc = new Map<string, Acc>();
   const cutLists: CutList[] = [];
@@ -67,7 +67,7 @@ export async function buildMaterialList(projectId: string, planId?: string | nul
 
     if (c.items.length > 0) {
       for (const i of c.items) {
-        const base = assemblyBase(i, totals.metrics, totals.cutList);
+        const base = assemblyBase(i, totals.metrics, totals.cutList, totals.wall);
         const raw = ((base * i.qty) / (i.per > 0 ? i.per : 1)) * (1 + i.wastePct / 100);
         // Made-to-order members share one Item List entry (priced per lf) but are listed per exact length.
         const exactLength = i.metric.startsWith(LUMBER_METRIC_PREFIX) && i.unit === "lf";
@@ -88,7 +88,7 @@ export async function buildMaterialList(projectId: string, planId?: string | nul
           exactLength ? Math.ceil(base * (1 + i.wastePct / 100) - 1e-9) : null,
         );
       }
-      if (c.type === "FRAMING" && totals.cutList.length) cutLists.push({ condition: c.name, size: c.memberSize, pieces: totals.cutList, exact: c.memberSizeRef?.soldAs === "EXACT_LF" });
+      if (isMemberType(c.type) && totals.cutList.length) cutLists.push({ condition: c.name, size: c.memberSize, pieces: totals.cutList, exact: c.memberSizeRef?.soldAs === "EXACT_LF", boards: totals.boards });
       continue;
     }
 
@@ -137,6 +137,13 @@ export async function buildMaterialList(projectId: string, planId?: string | nul
       pieces: r.pieces,
     };
   });
-  lines.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name, undefined, { numeric: true }));
+  // One heading per category whatever its capitalization ("Framing lumber" / "Framing Lumber").
+  const heading = new Map<string, string>();
+  for (const l of lines) {
+    const k = l.category.trim().toLowerCase();
+    if (!heading.has(k) || /[A-Z]/.test(l.category.split(" ").slice(1).join(" "))) heading.set(k, l.category.trim());
+  }
+  for (const l of lines) l.category = heading.get(l.category.trim().toLowerCase()) ?? l.category;
+  lines.sort((a, b) => a.category.localeCompare(b.category) || compareMaterialNames(a.name, b.name));
   return { lines, cutLists, total: lines.reduce((s, l) => s + l.extended, 0) };
 }

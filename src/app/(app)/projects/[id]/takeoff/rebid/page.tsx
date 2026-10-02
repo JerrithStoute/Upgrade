@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { conditionTotals, loadConditions } from "@/lib/takeoff-data";
-import { syncLumberItems } from "@/lib/lumber";
+import { syncAutoItems } from "@/lib/walls";
 import { assemblyQuantity } from "@/lib/takeoff";
 import { cn, fmtDate, money, num } from "@/lib/utils";
 import { Badge, Card, CardBody, CardHeader, SubmitButton, TBody, TFoot, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
@@ -15,7 +15,7 @@ export default async function RebidPage({ params }: { params: Promise<{ id: stri
   await requireStaff();
   const { id } = await params;
   const project = await getProject(id);
-  await syncLumberItems(project.id);
+  await syncAutoItems(project.id);
   const [conditions, latest] = await Promise.all([
     loadConditions(project.id),
     db.estimate.findFirst({ where: { projectId: project.id }, orderBy: { version: "desc" }, select: { name: true, version: true, status: true, createdAt: true } }),
@@ -24,7 +24,7 @@ export default async function RebidPage({ params }: { params: Promise<{ id: stri
   const rows = conditions.flatMap((c) => {
     const totals = conditionTotals(c);
     return c.items.map((i) => {
-      const qty = assemblyQuantity(i, totals.metrics, totals.cutList);
+      const qty = assemblyQuantity(i, totals.metrics, totals.cutList, totals.wall);
       const listPrice = i.materialItem?.unitCost ?? null;
       const markup = 1 + i.markupPct / 100;
       return {

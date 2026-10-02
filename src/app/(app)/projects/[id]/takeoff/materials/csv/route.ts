@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser, isStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { buildMaterialList } from "@/lib/takeoff-materials";
+import { boardPatternText } from "@/lib/takeoff";
 
 function cell(v: string | number) {
   const s = String(v);
@@ -22,7 +23,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const planParam = url.searchParams.get("plan");
   const plan = planParam ? await db.takeoffPlan.findFirst({ where: { id: planParam, projectId: id }, select: { id: true } }) : null;
   const showPrices = url.searchParams.get("prices") !== "0";
-  const { lines, total } = await buildMaterialList(id, plan?.id ?? null);
+  const { lines, total, cutLists } = await buildMaterialList(id, plan?.id ?? null);
 
   const header = ["Category", "Item", "SKU", "Vendor", "Qty", "Unit", "Used in", ...(showPrices ? ["Unit cost", "Extended"] : [])];
   const rows = lines.map((l) => [
@@ -36,6 +37,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     ...(showPrices ? [l.unitCost.toFixed(2), l.extended.toFixed(2)] : []),
   ]);
   if (showPrices) rows.push(["", "Total", "", "", "", "", "", "", total.toFixed(2)]);
+  // Framing cut sheet: what each stock board is cut into.
+  const sheet = cutLists.filter((c) => c.boards.length);
+  if (sheet.length) {
+    rows.push([], ["Framing cut sheet"], ["Condition", "Size", "Boards", "Cut into"]);
+    for (const c of sheet) for (const b of c.boards) rows.push([c.condition, c.size ?? "", b.count, boardPatternText(b)]);
+  }
   const csv = [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");
   const filename = `material-list-${project.number}.csv`;
   return new NextResponse(csv, {

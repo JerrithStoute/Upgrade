@@ -15,12 +15,14 @@ function conditionData(c: {
   wastePct: number;
   pitch: number;
   pitchMode: string;
+  pitch2: number | null;
   height: number;
   depth: number;
   spacing: number;
   overhang: number;
   memberSize: string | null;
   memberSizeId: string | null;
+  options: string | null;
   stockLengths: string | null;
 }) {
   return {
@@ -35,12 +37,14 @@ function conditionData(c: {
     wastePct: c.wastePct,
     pitch: c.pitch,
     pitchMode: c.pitchMode,
+    pitch2: c.pitch2,
     height: c.height,
     depth: c.depth,
     spacing: c.spacing,
     overhang: c.overhang,
     memberSize: c.memberSize,
     memberSizeId: c.memberSizeId,
+    options: c.options,
     stockLengths: c.stockLengths,
   };
 }

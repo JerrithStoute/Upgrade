@@ -48,6 +48,7 @@ export function AssemblyForm({
   items,
   values,
   cancelHref,
+  onCancel,
 }: {
   action: (fd: FormData) => Promise<void>;
   /** Hidden fields identifying where the item lives (projectId, or templateId). */
@@ -57,6 +58,7 @@ export function AssemblyForm({
   items: ItemOption[];
   values?: AssemblyFormValues;
   cancelHref?: string;
+  onCancel?: () => void;
 }) {
   const metrics = METRICS_BY_TYPE[condition.type as ConditionType] ?? [];
   const p = (k: string) => `asm-${values?.id ?? `new-${condition.id}`}-${k}`;
@@ -176,7 +178,11 @@ export function AssemblyForm({
         </label>
         <div className="ml-auto flex items-center gap-2 pb-0.5">
           <SubmitButton size="sm">{values ? "Save item" : "Add item"}</SubmitButton>
-          {cancelHref ? (
+          {onCancel ? (
+            <button type="button" onClick={onCancel} className={buttonClasses("ghost", "sm")}>
+              Cancel
+            </button>
+          ) : cancelHref ? (
             <Link href={cancelHref} className={buttonClasses("ghost", "sm")}>
               Cancel
             </Link>

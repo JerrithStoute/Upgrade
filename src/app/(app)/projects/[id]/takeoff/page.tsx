@@ -1,14 +1,30 @@
 import Link from "next/link";
-import { Ruler, FileText, ClipboardList, RefreshCw, LayoutTemplate, Image as ImageIcon, Send, Plus, Pencil, Layers } from "lucide-react";
+import { Ruler, FileText, ClipboardList, RefreshCw, LayoutTemplate, Printer, Image as ImageIcon, Send, Plus, Pencil, Layers } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { cn, costCodeLabel, linePrice, money, num } from "@/lib/utils";
 import { conditionEstimateLines, conditionTotals, loadConditions } from "@/lib/takeoff-data";
 import { materialItemOptions } from "@/lib/material-items";
-import { syncLumberItems } from "@/lib/lumber";
+import { syncAutoItems } from "@/lib/walls";
 import { templateOptions } from "@/lib/takeoff-templates";
-import { CONDITION_COLORS, CONDITION_TYPE_LABELS, METRICS_BY_TYPE, feetInches, isLumberMetric, metricLabel, metricUnit, type ConditionType } from "@/lib/takeoff";
+import {
+  CONDITION_COLORS,
+  CONDITION_TYPE_LABELS,
+  DEFAULT_OPENING_OPTIONS,
+  DEFAULT_WALL_OPTIONS,
+  METRICS_BY_TYPE,
+  boardPatternText,
+  feetInches,
+  isLumberMetric,
+  isMemberType,
+  metricLabel,
+  metricUnit,
+  openingSummary,
+  parseOptions,
+  wallSummary,
+  type ConditionType,
+} from "@/lib/takeoff";
 import { Badge, Card, CardBody, CardHeader, Collapsible, ConfirmForm, EmptyState, Stat, SubmitButton, Table, TBody, TFoot, THead, Td, Th, Tr, buttonClasses } from "@/components/ui";
 import { ConditionForm } from "./_components/condition-form";
 import { AssemblyForm } from "./_components/assembly-form";
@@ -32,15 +48,15 @@ export default async function TakeoffPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ edit?: string; editItem?: string; renamePlan?: string; applied?: string; skipped?: string }>;
+  searchParams: Promise<{ tab?: string; edit?: string; editItem?: string; renamePlan?: string; applied?: string; skipped?: string }>;
 }) {
   const user = await requireStaff();
   const isAdmin = user.role === "ADMIN";
   const { id } = await params;
-  const { edit, editItem, renamePlan: renamePlanId, applied, skipped } = await searchParams;
+  const { tab: tabParam, edit, editItem, renamePlan: renamePlanId, applied, skipped } = await searchParams;
   const project = await getProject(id);
   // Joist / rafter lumber lines follow the layout (also covers layouts drawn before this existed).
-  await syncLumberItems(project.id);
+  await syncAutoItems(project.id);
   const base = `/projects/${project.id}/takeoff`;
 
   const [plans, conditions, costCodes, drafts, company, items, memberSizes, templates] = await Promise.all([
@@ -71,6 +87,30 @@ export default async function TakeoffPage({
   const scaledCount = plans.reduce((s, p) => s + p.sheets.filter((sh) => sh.unitsPerFoot).length, 0);
   const shapeCount = conditions.reduce((s, c) => s + c.measurements.length, 0);
   const totalPrice = rows.reduce((s, r) => s + r.price, 0);
+  // Plans | Conditions | Estimate — one section at a time.
+  const tab: "plans" | "conditions" | "estimate" =
+    tabParam === "plans" || tabParam === "conditions" || tabParam === "estimate"
+      ? tabParam
+      : edit || editItem || applied !== undefined
+        ? "conditions"
+        : renamePlanId
+          ? "plans"
+          : plans.length === 0
+            ? "plans"
+            : "conditions";
+  const condHref = `${base}?tab=conditions`;
+  const tabLink = (key: typeof tab, label: string, count?: number) => (
+    <Link
+      href={`${base}?tab=${key}`}
+      className={cn(
+        "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-medium",
+        tab === key ? "border-blue-700 text-blue-800" : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800",
+      )}
+    >
+      {label}
+      {typeof count === "number" ? <span className="rounded-full bg-slate-100 px-1.5 text-[11px] text-slate-600">{count}</span> : null}
+    </Link>
+  );
 
   return (
     <div className="space-y-6">
@@ -89,7 +129,14 @@ export default async function TakeoffPage({
         <Stat label="Takeoff price" value={money(totalPrice, true)} hint="Incl. markup, before sending to an estimate" />
       </div>
 
+      <nav className="-mb-2 flex gap-1 border-b border-slate-200">
+        {tabLink("plans", "Plans", plans.length)}
+        {tabLink("conditions", "Conditions", conditions.length)}
+        {tabLink("estimate", "Estimate")}
+      </nav>
+
       {/* Plans ------------------------------------------------------------- */}
+      {tab === "plans" ? (
       <Card>
         <CardHeader title="Plans" description="Upload plan sets, set each sheet's scale, then measure on them." />
         <CardBody className="space-y-4">
@@ -109,7 +156,7 @@ export default async function TakeoffPage({
                         <input type="hidden" name="id" value={plan.id} />
                         <input name="name" defaultValue={plan.name} required className="input !w-72" aria-label="Plan name" autoFocus />
                         <SubmitButton size="sm">Save</SubmitButton>
-                        <Link href={base} className={buttonClasses("ghost", "sm")}>
+                        <Link href={`${base}?tab=plans`} className={buttonClasses("ghost", "sm")}>
                           Cancel
                         </Link>
                       </form>
@@ -125,7 +172,10 @@ export default async function TakeoffPage({
                       <Link href={`${base}/${plan.id}`} className={buttonClasses("primary", "sm")}>
                         <Ruler className="h-3.5 w-3.5" /> Measure
                       </Link>
-                      <Link href={`${base}?renamePlan=${plan.id}`} className={buttonClasses("ghost", "sm")}>
+                      <Link href={`${base}/${plan.id}/print?pages=all`} className={buttonClasses("ghost", "sm")} title="Print or save the measured sheets with the takeoff drawn on them">
+                        <Printer className="h-3.5 w-3.5" /> Print
+                      </Link>
+                      <Link href={`${base}?tab=plans&renamePlan=${plan.id}`} className={buttonClasses("ghost", "sm")}>
                         Rename
                       </Link>
                       <ConfirmForm
@@ -159,8 +209,10 @@ export default async function TakeoffPage({
           )}
         </CardBody>
       </Card>
+      ) : null}
 
       {/* Conditions -------------------------------------------------------- */}
+      {tab === "conditions" ? (
       <Card>
         <CardHeader
           title={<span id="conditions" className="scroll-mt-24">Conditions</span>}
@@ -232,8 +284,13 @@ export default async function TakeoffPage({
                       <span className="h-3.5 w-3.5 shrink-0 rounded-sm" style={{ background: c.color }} />
                       <span className="font-medium text-slate-900">{c.name}</span>
                       <Badge>{CONDITION_TYPE_LABELS[c.type as ConditionType] ?? c.type}</Badge>
-                      {c.pitch > 0 ? <Badge>{num(c.pitch, 2)}/12 pitch{c.type === "LINEAR" && c.pitchMode === "HIP" ? " (hip)" : ""}</Badge> : null}
-                      {c.type === "FRAMING" && c.memberSize ? <Badge>{c.memberSize}</Badge> : null}
+                      {c.pitch > 0 ? (
+                        <Badge>
+                          {num(c.pitch, 2)}/12
+                          {c.type === "HIP_VALLEY" && c.pitch2 != null && c.pitch2 !== c.pitch ? ` & ${num(c.pitch2, 2)}/12` : ""} pitch
+                        </Badge>
+                      ) : null}
+                      {(isMemberType(c.type) || c.type === "WALL") && c.memberSize ? <Badge>{c.memberSize}</Badge> : null}
                       {c.type === "FRAMING" ? <Badge>{num(c.spacing, 2)}&quot; o.c.</Badge> : null}
                       <span className="ml-auto text-right">
                         <span className="block text-sm font-semibold tabular-nums text-slate-900">
@@ -242,9 +299,16 @@ export default async function TakeoffPage({
                         </span>
                         <span className="block text-xs text-slate-500">{metricLabel(c.metric)} · {money(price)}</span>
                       </span>
-                      <Link href={editing ? base : `${base}?edit=${c.id}#condition-${c.id}`} className={buttonClasses("ghost", "sm")}>
+                      <Link href={editing ? `${condHref}#condition-${c.id}` : `${condHref}&edit=${c.id}#condition-${c.id}`} className={buttonClasses("ghost", "sm")}>
                         <Pencil className="h-3.5 w-3.5" /> {editing ? "Close" : "Edit"}
                       </Link>
+                      {c.type === "WALL" || c.type === "OPENING" ? (
+                        <p className="basis-full pl-6 text-xs text-slate-500">
+                          {c.type === "WALL"
+                            ? wallSummary({ studSize: c.memberSize, spacing: c.spacing, heightFt: c.height }, parseOptions(c.options, DEFAULT_WALL_OPTIONS))
+                            : openingSummary(c.memberSize, parseOptions(c.options, DEFAULT_OPENING_OPTIONS))}
+                        </p>
+                      ) : null}
                     </div>
                     {totals.unscaledShapes > 0 ? (
                       <p className="border-t border-amber-100 bg-amber-50 px-4 py-2 text-xs text-amber-800">
@@ -258,6 +322,7 @@ export default async function TakeoffPage({
                           hidden={{ projectId: project.id }}
                           costCodes={costCodes}
                           memberSizes={memberSizes}
+                          itemOptions={items}
                           defaultMarkup={defaultMarkup}
                           values={{
                             id: c.id,
@@ -272,16 +337,18 @@ export default async function TakeoffPage({
                             wastePct: c.wastePct,
                             pitch: c.pitch,
                             pitchMode: c.pitchMode,
+                            pitch2: c.pitch2,
                             height: c.height,
                             depth: c.depth,
                             spacing: c.spacing,
                             overhang: c.overhang,
                             memberSize: c.memberSize,
                             memberSizeId: c.memberSizeId,
+                            options: c.options,
                             stockLengths: c.stockLengths,
                           }}
                           hasMeasurements={c.measurements.length > 0}
-                          cancelHref={`${base}#condition-${c.id}`}
+                          cancelHref={`${condHref}#condition-${c.id}`}
                         />
 
                         <div className="grid gap-4 md:grid-cols-2">
@@ -316,8 +383,18 @@ export default async function TakeoffPage({
                             )}
                             {totals.cutList.length > 0 ? (
                               <>
-                                <p className="label mt-3">Cut list (stock lengths)</p>
-                                <p className="text-sm text-slate-700">{totals.cutList.map(([len, n]) => `${n} × ${c.memberSize ? `${c.memberSize} ` : ""}@ ${c.memberSizeRef?.soldAs === "EXACT_LF" ? feetInches(len) : `${num(len)}'`}`).join(" · ")}</p>
+                                <p className="label mt-3">{totals.boards.length ? "Cut sheet" : "Cut list"}</p>
+                                {totals.boards.length ? (
+                                  <ul className="space-y-0.5 text-sm text-slate-700">
+                                    {totals.boards.map((b, i) => (
+                                      <li key={i} className="tabular-nums">
+                                        {b.count} × {boardPatternText(b)}
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-sm text-slate-700">{totals.cutList.map(([len, n]) => `${n} × ${c.memberSize ? `${c.memberSize} ` : ""}@ ${c.memberSizeRef?.soldAs === "EXACT_LF" ? feetInches(len) : `${num(len)}'`}`).join(" · ")}</p>
+                                )}
                               </>
                             ) : null}
                           </div>
@@ -355,7 +432,7 @@ export default async function TakeoffPage({
                                 return (
                                   <tr key={item.id}>
                                     <td colSpan={5} className="py-3">
-                                      <AssemblyForm action={updateAssemblyItem} hidden={{ projectId: project.id }} condition={c} costCodes={costCodes} items={items} values={item} cancelHref={`${base}#condition-${c.id}`} />
+                                      <AssemblyForm action={updateAssemblyItem} hidden={{ projectId: project.id }} condition={c} costCodes={costCodes} items={items} values={item} cancelHref={`${condHref}#condition-${c.id}`} />
                                     </td>
                                   </tr>
                                 );
@@ -369,7 +446,7 @@ export default async function TakeoffPage({
                                   <td className="py-1.5 text-xs text-slate-600">
                                     {isLumberMetric(item.metric) ? (
                                       <>
-                                        From the {c.name.toLowerCase().includes("rafter") ? "rafter" : "joist"} layout
+                                        {c.type === "WALL" ? "From the walls" : c.type === "OPENING" ? "From the openings" : c.type === "HIP_VALLEY" ? "From the traced lines" : `From the ${c.name.toLowerCase().includes("rafter") ? "rafter" : "joist"} layout`}
                                         {item.wastePct > 0 ? ` + ${num(item.wastePct, 1)}% waste` : ""}
                                         {item.unitCost === 0 ? <span className="block text-amber-700">No price yet — set it in Settings → Item List</span> : null}
                                       </>
@@ -390,7 +467,7 @@ export default async function TakeoffPage({
                                       <span className="text-xs text-slate-400">Auto</span>
                                     ) : (
                                     <div className="flex justify-end gap-1">
-                                      <Link href={`${base}?editItem=${item.id}#condition-${c.id}`} className={buttonClasses("ghost", "sm")}>
+                                      <Link href={`${condHref}&editItem=${item.id}#condition-${c.id}`} className={buttonClasses("ghost", "sm")}>
                                         Edit
                                       </Link>
                                       <ConfirmForm action={deleteAssemblyItem} hidden={{ projectId: project.id, id: item.id }} message={`Remove "${item.description}"?`} variant="ghost">
@@ -407,7 +484,7 @@ export default async function TakeoffPage({
                       ) : null}
                       <details>
                         <summary className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-blue-700 [&::-webkit-details-marker]:hidden">
-                          <Plus className="h-3.5 w-3.5" /> {c.type === "FRAMING" ? "Add an add-on item (hangers, ties, blocking, sheathing…)" : "Add assembly item"}
+                          <Plus className="h-3.5 w-3.5" /> {isMemberType(c.type) || c.type === "WALL" || c.type === "OPENING" ? "Add an add-on item (hangers, ties, blocking, sheathing…)" : "Add assembly item"}
                         </summary>
                         <div className="mt-3">
                           <AssemblyForm action={createAssemblyItem} hidden={{ projectId: project.id }} condition={c} costCodes={costCodes} items={items} />
@@ -433,14 +510,17 @@ export default async function TakeoffPage({
               hidden={{ projectId: project.id }}
               costCodes={costCodes}
               memberSizes={memberSizes}
+              itemOptions={items}
               defaultMarkup={defaultMarkup}
               nextColor={CONDITION_COLORS[conditions.length % CONDITION_COLORS.length]}
             />
           </Collapsible>
         </CardBody>
       </Card>
+      ) : null}
 
       {/* Send to estimate -------------------------------------------------------- */}
+      {tab === "estimate" ? (
       <Card>
         <CardHeader
           title="Send to estimate"
@@ -516,6 +596,7 @@ export default async function TakeoffPage({
           )}
         </CardBody>
       </Card>
+      ) : null}
     </div>
   );
 }

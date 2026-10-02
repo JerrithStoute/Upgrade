@@ -4,7 +4,7 @@ import { ArrowLeft, Layers, Pencil, Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { activeCostCodes } from "@/lib/projects";
 import { materialItemOptions } from "@/lib/material-items";
-import { CONDITION_COLORS, CONDITION_TYPE_LABELS, metricLabel, metricUnit, type ConditionType } from "@/lib/takeoff";
+import { CONDITION_COLORS, CONDITION_TYPE_LABELS, isMemberType, metricLabel, metricUnit, type ConditionType } from "@/lib/takeoff";
 import { costCodeLabel, money, num } from "@/lib/utils";
 import { Badge, Card, CardBody, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { ConditionForm } from "@/app/(app)/projects/[id]/takeoff/_components/condition-form";
@@ -99,7 +99,11 @@ export default async function TakeoffTemplatePage({
                   <Badge>{CONDITION_TYPE_LABELS[c.type as ConditionType] ?? c.type}</Badge>
                   {c.memberSize ? <Badge>{c.memberSize}</Badge> : null}
                   {c.type === "FRAMING" ? <Badge>{num(c.spacing, 2)}&quot; o.c.</Badge> : null}
-                  {c.pitch > 0 ? <Badge>{num(c.pitch, 2)}/12 pitch</Badge> : null}
+                  {c.pitch > 0 ? (
+                    <Badge>
+                      {num(c.pitch, 2)}/12{c.type === "HIP_VALLEY" && c.pitch2 != null && c.pitch2 !== c.pitch ? ` & ${num(c.pitch2, 2)}/12` : ""} pitch
+                    </Badge>
+                  ) : null}
                   <span className="ml-auto text-xs text-slate-500">{metricLabel(c.metric)}</span>
                   <Link href={editing ? base : `${base}?edit=${c.id}#condition-${c.id}`} className={buttonClasses("ghost", "sm")}>
                     <Pencil className="h-3.5 w-3.5" /> {editing ? "Close" : "Edit"}
@@ -112,6 +116,7 @@ export default async function TakeoffTemplatePage({
                       hidden={hidden}
                       costCodes={costCodes}
                       memberSizes={memberSizes}
+                      itemOptions={items}
                       defaultMarkup={defaultMarkup}
                       values={c}
                       cancelHref={`${base}#condition-${c.id}`}
@@ -174,13 +179,13 @@ export default async function TakeoffTemplatePage({
                   ) : null}
                   <details>
                     <summary className="inline-flex cursor-pointer items-center gap-1 text-xs font-medium text-blue-700 [&::-webkit-details-marker]:hidden">
-                      <Plus className="h-3.5 w-3.5" /> {c.type === "FRAMING" ? "Add an add-on item (hangers, ties, blocking, sheathing…)" : "Add assembly item"}
+                      <Plus className="h-3.5 w-3.5" /> {isMemberType(c.type) ? "Add an add-on item (hangers, ties, blocking, sheathing…)" : "Add assembly item"}
                     </summary>
                     <div className="mt-3">
                       <AssemblyForm action={createTemplateItem} hidden={hidden} condition={c} costCodes={costCodes} items={items} />
                     </div>
                   </details>
-                  {c.type === "FRAMING" ? <p className="mt-2 text-xs text-slate-500">Lumber lines are added on each job from its layout.</p> : null}
+                  {isMemberType(c.type) ? <p className="mt-2 text-xs text-slate-500">Lumber lines are added on each job from its layout.</p> : null}
                 </div>
               </div>
             );
@@ -201,6 +206,7 @@ export default async function TakeoffTemplatePage({
           hidden={hidden}
           costCodes={costCodes}
           memberSizes={memberSizes}
+          itemOptions={items}
           defaultMarkup={defaultMarkup}
           nextColor={CONDITION_COLORS[template.conditions.length % CONDITION_COLORS.length]}
         />

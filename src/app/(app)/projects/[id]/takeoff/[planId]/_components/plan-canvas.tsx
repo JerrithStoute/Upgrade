@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
+import { extractSegments } from "./pdf-vectors";
 
 const ASSETS = "/api/pdfjs";
 
@@ -16,6 +17,47 @@ function loadPdfJs() {
   return pdfjsPromise;
 }
 
+/**
+ * One loaded document per URL, shared by every canvas showing it (the viewer, or
+ * several sheets on the print page), so a big plan set downloads once.
+ */
+const docs = new Map<string, { promise: Promise<PDFDocumentProxy>; users: number; destroy: () => void }>();
+
+function acquireDoc(url: string) {
+  let entry = docs.get(url);
+  if (!entry) {
+    let destroy = () => {};
+    const promise = loadPdfJs().then((pdfjs) => {
+      const task = pdfjs.getDocument({
+        url,
+        wasmUrl: `${ASSETS}/wasm/`,
+        cMapUrl: `${ASSETS}/cmaps/`,
+        standardFontDataUrl: `${ASSETS}/standard_fonts/`,
+        iccUrl: `${ASSETS}/iccs/`,
+      });
+      destroy = () => void task.destroy();
+      return task.promise;
+    });
+    entry = { promise, users: 0, destroy: () => destroy() };
+    docs.set(url, entry);
+  }
+  entry.users++;
+  const held = entry;
+  return {
+    promise: held.promise,
+    release() {
+      held.users--;
+      // Keep it briefly in case the same plan opens again (e.g. sheet → print page).
+      window.setTimeout(() => {
+        if (held.users <= 0 && docs.get(url) === held) {
+          docs.delete(url);
+          held.destroy();
+        }
+      }, 30_000);
+    },
+  };
+}
+
 /** Largest canvas we'll render: keeps memory sane on huge sheets at high zoom. */
 const MAX_SIDE = 8192;
 const MAX_PIXELS = 40_000_000;
@@ -23,6 +65,8 @@ const MAX_PIXELS = 40_000_000;
 /**
  * Renders one page of a PDF (or an image) at the current zoom. Page units are
  * PDF points at 100% (or image pixels); `onSize` reports the page size in them.
+ * `onVectors` receives the page's line segments (for snapping). With `fill`, the
+ * page stretches to its container's width (print), rendered at `zoom` resolution.
  */
 export function PlanCanvas({
   url,
@@ -31,6 +75,9 @@ export function PlanCanvas({
   zoom,
   onSize,
   onPageCount,
+  onVectors,
+  onRendered,
+  fill = false,
 }: {
   url: string;
   kind: string;
@@ -38,55 +85,46 @@ export function PlanCanvas({
   zoom: number;
   onSize: (w: number, h: number) => void;
   onPageCount?: (n: number) => void;
+  onVectors?: (segments: Float32Array) => void;
+  onRendered?: () => void;
+  fill?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [doc, setDoc] = useState<PDFDocumentProxy | null>(null);
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const onSizeRef = useRef(onSize);
-  const onPageCountRef = useRef(onPageCount);
+  const callbacks = useRef({ onSize, onPageCount, onVectors, onRendered });
   useEffect(() => {
-    onSizeRef.current = onSize;
-    onPageCountRef.current = onPageCount;
+    callbacks.current = { onSize, onPageCount, onVectors, onRendered };
   });
 
-  // Load the document once per URL.
+  // Load (or share) the document.
   useEffect(() => {
     if (kind !== "PDF") return;
     let cancelled = false;
-    let task: ReturnType<PdfJs["getDocument"]> | null = null;
-    (async () => {
-      try {
-        const pdfjs = await loadPdfJs();
-        if (cancelled) return;
-        task = pdfjs.getDocument({
-          url,
-          wasmUrl: `${ASSETS}/wasm/`,
-          cMapUrl: `${ASSETS}/cmaps/`,
-          standardFontDataUrl: `${ASSETS}/standard_fonts/`,
-          iccUrl: `${ASSETS}/iccs/`,
-        });
-        const loaded = await task.promise;
+    const held = acquireDoc(url);
+    held.promise.then(
+      (loaded) => {
         if (cancelled) return;
         setDoc(loaded);
-        onPageCountRef.current?.(loaded.numPages);
-      } catch (e) {
+        callbacks.current.onPageCount?.(loaded.numPages);
+      },
+      (e) => {
         if (!cancelled) {
           setStatus("error");
           setError(e instanceof Error ? e.message : "Could not open the PDF");
         }
-      }
-    })();
+      },
+    );
     return () => {
       cancelled = true;
-      // Aborts the download and shuts the worker down.
-      task?.destroy();
+      held.release();
     };
   }, [url, kind]);
 
-  // Page size (zoom-independent).
-  const [page, setPage] = useState<Awaited<ReturnType<PDFDocumentProxy["getPage"]>> | null>(null);
+  // Page size (zoom-independent), then its line work for snapping.
+  const [page, setPage] = useState<PDFPageProxy | null>(null);
   useEffect(() => {
     if (!doc) return;
     let cancelled = false;
@@ -97,7 +135,13 @@ export function PlanCanvas({
         const vp = p.getViewport({ scale: 1 });
         setPage(p);
         setSize({ w: vp.width, h: vp.height });
-        onSizeRef.current(vp.width, vp.height);
+        callbacks.current.onSize(vp.width, vp.height);
+        if (callbacks.current.onVectors) {
+          loadPdfJs()
+            .then((pdfjs) => extractSegments(pdfjs, p))
+            .then((segments) => !cancelled && callbacks.current.onVectors?.(segments))
+            .catch(() => !cancelled && callbacks.current.onVectors?.(new Float32Array()));
+        }
       },
       (e) => {
         if (!cancelled) {
@@ -124,13 +168,15 @@ export function PlanCanvas({
       const off = document.createElement("canvas");
       off.width = Math.floor(vp.width);
       off.height = Math.floor(vp.height);
-      task = page.render({ canvas: off, viewport: vp });
+      // Print mode draws without animation frames (works in a background tab) and uses print annotations.
+      task = page.render({ canvas: off, viewport: vp, intent: fill ? "print" : "display" });
       task.promise.then(
         () => {
           canvas.width = off.width;
           canvas.height = off.height;
           canvas.getContext("2d")?.drawImage(off, 0, 0);
           setStatus("ready");
+          callbacks.current.onRendered?.();
         },
         () => {
           /* cancelled or failed; a later render replaces it */
@@ -141,9 +187,15 @@ export function PlanCanvas({
       window.clearTimeout(timer);
       task?.cancel();
     };
-  }, [page, size, zoom]);
+  }, [page, size, zoom, fill]);
 
-  const style = size ? { width: size.w * zoom, height: size.h * zoom } : undefined;
+  // `fill`: pinned to the parent's box (which has the page's exact proportions), so an
+  // overlay pinned to the same box lines up whether or not the image has finished drawing.
+  const style: React.CSSProperties | undefined = fill
+    ? { position: "absolute", inset: 0, width: "100%", height: "100%" }
+    : size
+      ? { width: size.w * zoom, height: size.h * zoom }
+      : undefined;
 
   if (kind !== "PDF") {
     return (
@@ -158,6 +210,8 @@ export function PlanCanvas({
           const img = e.currentTarget;
           setSize({ w: img.naturalWidth, h: img.naturalHeight });
           onSize(img.naturalWidth, img.naturalHeight);
+          onVectors?.(new Float32Array());
+          onRendered?.();
         }}
       />
     );

@@ -16,6 +16,7 @@ import {
   slopeFactor,
   type ConditionType,
 } from "@/lib/takeoff";
+import { OpeningOptionsFields, WallOptionsFields, type ItemChoice } from "./wall-options";
 
 export type ConditionFormValues = {
   id: string;
@@ -30,6 +31,7 @@ export type ConditionFormValues = {
   wastePct: number;
   pitch: number;
   pitchMode: string;
+  pitch2: number | null;
   height: number;
   depth: number;
   spacing: number;
@@ -37,6 +39,7 @@ export type ConditionFormValues = {
   memberSize: string | null;
   memberSizeId: string | null;
   stockLengths: string | null;
+  options?: string | null;
 };
 
 export type MemberSizeOption = { id: string; name: string; kind: string; soldAs: string; stockLengths: string | null };
@@ -46,6 +49,9 @@ const TYPE_HINTS: Record<ConditionType, string> = {
   LINEAR: "Click along a line. Walls, trim, gutters, rakes, hips and valleys.",
   COUNT: "Click once per item. Outlets, fixtures, doors, windows.",
   FRAMING: "Outline the framed area; joists or rafters are laid out at your spacing.",
+  HIP_VALLEY: "Trace each hip, valley or ridge on the roof plan, wall corner to ridge. Every line is one piece of lumber.",
+  WALL: "Trace walls corner to corner; double-click to finish a run, or end on the first corner to close it. Name the condition for the wall (\"Ext 2x6 Wall\").",
+  OPENING: "Draw a line across each door or window opening — one line per opening, its length is the width. Headers and king & jack studs come from here.",
 };
 
 export function ConditionForm({
@@ -53,6 +59,7 @@ export function ConditionForm({
   hidden,
   costCodes,
   memberSizes,
+  itemOptions = [],
   defaultMarkup,
   values,
   hasMeasurements,
@@ -64,6 +71,8 @@ export function ConditionForm({
   hidden: Record<string, string>;
   costCodes: { id: string; code: string | null; name: string }[];
   memberSizes: MemberSizeOption[];
+  /** Item List items, offered for sheathing, drywall and baseboard. */
+  itemOptions?: ItemChoice[];
   defaultMarkup: number;
   values?: ConditionFormValues;
   hasMeasurements?: boolean;
@@ -74,14 +83,27 @@ export function ConditionForm({
   const [metric, setMetric] = useState(values?.metric ?? DEFAULT_METRIC[type]);
   const [pitchText, setPitchText] = useState(String(values?.pitch ?? 0));
   const pitch = Math.max(0, Number(pitchText) || 0);
-  const [pitchMode, setPitchMode] = useState(values?.pitchMode ?? "COMMON");
+  const [pitch2Text, setPitch2Text] = useState(values?.pitch2 == null ? "" : String(values.pitch2));
+  const pitch2 = pitch2Text.trim() === "" ? pitch : Math.max(0, Number(pitch2Text) || 0);
   const [sizeId, setSizeId] = useState(values?.memberSizeId ?? "");
   const [stockText, setStockText] = useState(values?.stockLengths ?? "");
   const size = memberSizes.find((m) => m.id === sizeId) ?? null;
   const metrics = METRICS_BY_TYPE[type];
   const p = (k: string) => `cond-${values?.id ?? "new"}-${k}`;
-  const showPitch = type !== "COUNT";
-  const factor = type === "LINEAR" && pitchMode === "HIP" ? hipFactor(pitch) : slopeFactor(pitch);
+  const isWall = type === "WALL";
+  const isOpening = type === "OPENING";
+  const isAuto = isWall || isOpening;
+  const showPitch = type !== "COUNT" && !isAuto;
+  const isHip = type === "HIP_VALLEY";
+  const isMember = type === "FRAMING" || isHip;
+  const factor = isHip ? hipFactor(pitch, pitch2) : slopeFactor(pitch);
+  const pitchHint = isHip
+    ? pitch > 0 && pitch2 > 0
+      ? `${pitch}/12 & ${pitch2}/12 → plan × ${factor.toFixed(3)}`
+      : "0 on either side = level (ridges)"
+    : pitch > 0
+      ? `${pitch}/12 → plan × ${factor.toFixed(3)}`
+      : "0 = flat";
 
   return (
     <form action={action} className="space-y-4">
@@ -91,7 +113,7 @@ export function ConditionForm({
       {values ? <input type="hidden" name="id" value={values.id} /> : null}
       <FormGrid className="md:grid-cols-4">
         <Field label="Name" htmlFor={p("name")} className="md:col-span-2">
-          <input id={p("name")} name="name" required className="input" defaultValue={values?.name} placeholder={type === "FRAMING" ? "2x10 Floor Joists @ 16\" o.c." : "LVP Flooring"} />
+          <input id={p("name")} name="name" required className="input" defaultValue={values?.name} placeholder={type === "FRAMING" ? "2x10 Floor Joists @ 16\" o.c." : isHip ? "2x10 Hips & Valleys" : isWall ? "Ext 2x6 Wall" : isOpening ? "Window Headers" : "LVP Flooring"} />
         </Field>
         <Field label="Type" htmlFor={p("type")} hint={hasMeasurements ? "Locked — this condition has measurements" : undefined}>
           <select
@@ -116,7 +138,13 @@ export function ConditionForm({
         </Field>
         <Field label="Color" htmlFor={p("color")}>
           <div className="flex items-center gap-2">
-            <input id={p("color")} name="color" type="color" defaultValue={values?.color ?? nextColor ?? CONDITION_COLORS[0]} className="h-9 w-12 cursor-pointer rounded border border-slate-300 bg-white p-0.5" />
+            <input
+              id={p("color")}
+              name="color"
+              type="color"
+              defaultValue={values?.color ?? nextColor ?? CONDITION_COLORS[0]}
+              className="h-9 w-12 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+            />
             <div className="flex flex-wrap gap-1">
               {CONDITION_COLORS.slice(0, 6).map((c) => (
                 <button
@@ -137,6 +165,9 @@ export function ConditionForm({
       </FormGrid>
       <p className="-mt-2 text-xs text-slate-500">{TYPE_HINTS[type]}</p>
 
+      {isWall ? <WallOptionsFields idPrefix={p("wall")} values={values} memberSizes={memberSizes} items={itemOptions} /> : null}
+      {isOpening ? <OpeningOptionsFields idPrefix={p("open")} values={values} memberSizes={memberSizes} /> : null}
+
       <FormGrid className="md:grid-cols-4">
         <Field label="Quantity" htmlFor={p("metric")} hint="What this condition reports and sends to the estimate">
           <select id={p("metric")} name="metric" className="input" value={metric} onChange={(e) => setMetric(e.target.value)}>
@@ -148,16 +179,13 @@ export function ConditionForm({
           </select>
         </Field>
         {showPitch ? (
-          <Field label="Pitch (rise / 12)" htmlFor={p("pitch")} hint={pitch > 0 ? `${pitch}/12 → plan × ${factor.toFixed(3)}` : "0 = flat"}>
+          <Field label={isHip ? "Pitch, side 1 (rise / 12)" : "Pitch (rise / 12)"} htmlFor={p("pitch")} hint={pitchHint}>
             <input id={p("pitch")} name="pitch" type="number" step="0.25" min="0" className="input" value={pitchText} onChange={(e) => setPitchText(e.target.value)} />
           </Field>
         ) : null}
-        {type === "LINEAR" ? (
-          <Field label="Pitch applies as" htmlFor={p("pitchMode")} hint="Rakes & rafters vs. hips & valleys">
-            <select id={p("pitchMode")} name="pitchMode" className="input" value={pitchMode} onChange={(e) => setPitchMode(e.target.value)}>
-              <option value="COMMON">Common (rake / rafter)</option>
-              <option value="HIP">Hip / valley</option>
-            </select>
+        {isHip ? (
+          <Field label="Pitch, side 2 (rise / 12)" htmlFor={p("pitch2")} hint="The other roof plane. Blank = same as side 1 · 0 & 0 = ridge">
+            <input id={p("pitch2")} name="pitch2" type="number" step="0.25" min="0" className="input" value={pitch2Text} onChange={(e) => setPitch2Text(e.target.value)} placeholder={String(pitch)} />
           </Field>
         ) : null}
         {type === "LINEAR" ? (
@@ -171,17 +199,21 @@ export function ConditionForm({
           </Field>
         ) : null}
         {type === "FRAMING" ? (
-          <>
-            <Field label="Spacing (in o.c.)" htmlFor={p("spacing")}>
-              <input id={p("spacing")} name="spacing" type="number" step="0.5" min="1" className="input" defaultValue={values?.spacing ?? 16} />
-            </Field>
-            <Field label="Overhang (in)" htmlFor={p("overhang")} hint="Horizontal, added to each member">
-              <input id={p("overhang")} name="overhang" type="number" step="0.5" min="0" className="input" defaultValue={values?.overhang || ""} placeholder="0" />
-            </Field>
-          </>
+          <Field label="Spacing (in o.c.)" htmlFor={p("spacing")}>
+            <input id={p("spacing")} name="spacing" type="number" step="0.5" min="1" className="input" defaultValue={values?.spacing ?? 16} />
+          </Field>
+        ) : null}
+        {isMember ? (
+          <Field
+            label="Overhang (in)"
+            htmlFor={p("overhang")}
+            hint={isHip ? "Horizontal, out from the wall. Added once per piece at the eave" : "Horizontal, added to each member"}
+          >
+            <input id={p("overhang")} name="overhang" type="number" step="0.5" min="0" className="input" defaultValue={values?.overhang || ""} placeholder="0" />
+          </Field>
         ) : null}
       </FormGrid>
-      {type === "FRAMING" ? (
+      {isMember ? (
         <FormGrid className="md:grid-cols-4">
           <Field label="Member size" htmlFor={p("memberSizeId")} hint={size ? SOLD_AS_LABELS[size.soldAs as keyof typeof SOLD_AS_LABELS] : "Sizes are managed in Settings → Member sizes"}>
             <select
@@ -197,7 +229,7 @@ export function ConditionForm({
               }}
             >
               <option value="">{values?.memberSize && !values.memberSizeId ? `${values.memberSize} (not in list)` : "—"}</option>
-              {memberSizes.map((m) => (
+              {(isHip ? memberSizes.filter((m) => /^2x/i.test(m.name.trim())) : memberSizes).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
                 </option>
@@ -227,9 +259,11 @@ export function ConditionForm({
             ))}
           </select>
         </Field>
-        {type === "FRAMING" ? (
+        {isMember || isAuto ? (
           <p className="self-end pb-2 text-xs text-slate-500 md:col-span-2">
-            Lumber is priced per piece from Settings → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.
+            {isAuto
+              ? `Materials are added automatically from the ${isWall ? "walls" : "openings"} and priced from Settings → Item List.`
+              : <>Lumber is priced per piece from Settings → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.</>}
           </p>
         ) : (
           <>
@@ -241,8 +275,8 @@ export function ConditionForm({
             </Field>
           </>
         )}
-        <Field label="Waste %" htmlFor={p("wastePct")} hint={type === "FRAMING" ? "Extra pieces, rounded up" : undefined}>
-          <input id={p("wastePct")} name="wastePct" type="number" step="0.5" min="0" className="input" defaultValue={values?.wastePct ?? 0} />
+        <Field label="Waste %" htmlFor={p("wastePct")} hint={isMember ? "Extra pieces, rounded up" : isWall ? "Studs, sheets & baseboard" : isOpening ? "King & jack studs" : undefined}>
+          <input key={type} id={p("wastePct")} name="wastePct" type="number" step="0.5" min="0" className="input" defaultValue={values?.wastePct ?? (isWall ? 10 : 0)} />
         </Field>
       </FormGrid>
       <FormGrid className="md:grid-cols-4">

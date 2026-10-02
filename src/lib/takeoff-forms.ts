@@ -2,7 +2,20 @@ import "server-only";
 import { db } from "./db";
 import { UNITS } from "./constants";
 import { boolField, numField, str, strOrNull } from "./utils";
-import { CONDITION_COLORS, CONDITION_TYPES, DEFAULT_METRIC, PITCH_MODES, isMetricFor, parseStockLengths, type ConditionType } from "./takeoff";
+import {
+  CONDITION_COLORS,
+  CONDITION_TYPES,
+  DEFAULT_METRIC,
+  DEFAULT_OPENING_OPTIONS,
+  DEFAULT_WALL_OPTIONS,
+  isMemberType,
+  isMetricFor,
+  itemNameKey,
+  parseStockLengths,
+  withSheetSize,
+  type ConditionType,
+  type WallOptions,
+} from "./takeoff";
 
 /**
  * Form parsing shared by job takeoff conditions and takeoff template conditions,
@@ -15,20 +28,29 @@ export async function conditionFields(fd: FormData) {
   const type: ConditionType = (CONDITION_TYPES as readonly string[]).includes(typeRaw) ? (typeRaw as ConditionType) : "AREA";
   const metricRaw = str(fd, "metric");
   const color = str(fd, "color");
-  const pitchMode = str(fd, "pitchMode");
   const costCodeId = strOrNull(fd, "costCodeId");
   if (costCodeId && !(await db.costCode.findUnique({ where: { id: costCodeId }, select: { id: true } }))) throw new Error("Cost code not found");
   const stockLengths = strOrNull(fd, "stockLengths");
   if (stockLengths && !parseStockLengths(stockLengths)) throw new Error("Stock lengths should be feet, e.g. 8, 10, 12 or 8-24");
-  const memberSizeId = type === "FRAMING" ? strOrNull(fd, "memberSizeId") : null;
+  // Member size: joist/rafter/hip lumber, wall studs, or opening headers.
+  const usesSize = isMemberType(type) || type === "WALL" || type === "OPENING";
+  const memberSizeId = usesSize ? strOrNull(fd, "memberSizeId") : null;
+  if (type === "WALL" && !memberSizeId) throw new Error("Pick a stud size");
+  for (const k of ["opt_topPlateStock", "opt_bottomPlateStock"]) {
+    const v = str(fd, k);
+    if (v && !parseStockLengths(v)) throw new Error("Plate stock lengths should be feet, e.g. 16 or 12, 16");
+  }
   const size = memberSizeId ? await db.memberSize.findUnique({ where: { id: memberSizeId }, select: { id: true, name: true } }) : null;
   if (memberSizeId && !size) throw new Error("Member size not found");
+  const options = type === "WALL" ? wallOptions(fd) : type === "OPENING" ? optionsJson(fd, DEFAULT_OPENING_OPTIONS) : null;
+  if (type === "WALL" && options) await rememberItems(options, costCodeId);
   return {
     name,
     type,
     memberSizeId: size?.id ?? null,
+    options,
     memberSize: size?.name ?? null,
-    stockLengths: type === "FRAMING" ? (stockLengths?.slice(0, 120) ?? null) : null,
+    stockLengths: isMemberType(type) || type === "OPENING" ? (stockLengths?.slice(0, 120) ?? null) : null,
     metric: isMetricFor(type, metricRaw) ? metricRaw : DEFAULT_METRIC[type],
     color: /^#[0-9a-f]{6}$/i.test(color) ? color : CONDITION_COLORS[0],
     group: str(fd, "group") || "Takeoff",
@@ -37,12 +59,61 @@ export async function conditionFields(fd: FormData) {
     markupPct: numField(fd, "markupPct", 20),
     wastePct: Math.max(0, numField(fd, "wastePct", 0)),
     pitch: Math.max(0, numField(fd, "pitch", 0)),
-    pitchMode: (PITCH_MODES as readonly string[]).includes(pitchMode) ? pitchMode : "COMMON",
+    // Hips & valleys have their own condition type now; Linear pitch is always the common slope.
+    pitchMode: "COMMON",
+    // Hips & valleys: the other roof plane's pitch; blank = same as side 1.
+    pitch2: type === "HIP_VALLEY" && str(fd, "pitch2") !== "" ? Math.max(0, numField(fd, "pitch2", 0)) : null,
     height: Math.max(0, numField(fd, "height", 0)),
     depth: Math.max(0, numField(fd, "depth", 0)),
     spacing: Math.max(1, numField(fd, "spacing", 16)),
     overhang: Math.max(0, numField(fd, "overhang", 0)),
   };
+}
+
+/**
+ * Walls / openings settings from "opt_<key>" fields, typed by the defaults:
+ * numbers (≥ 0), checkboxes, and text. Missing fields keep the default.
+ */
+function optionsJson<T extends Record<string, unknown>>(fd: FormData, defaults: T) {
+  const out: Record<string, unknown> = {};
+  for (const [k, d] of Object.entries(defaults)) {
+    const name = `opt_${k}`;
+    if (typeof d === "boolean") out[k] = boolField(fd, name);
+    else if (!fd.has(name)) out[k] = d;
+    else if (typeof d === "number") out[k] = Math.max(0, numField(fd, name, d));
+    else out[k] = str(fd, name).replace(/\s+/g, " ").slice(0, 120);
+  }
+  return JSON.stringify(out);
+}
+
+/** Walls: the sheet goods' names carry the sheet size picked ('1/2" Drywall 4x8' on 4x12 sheets → '… 4x12'). */
+function wallOptions(fd: FormData) {
+  const o = JSON.parse(optionsJson(fd, DEFAULT_WALL_OPTIONS)) as WallOptions;
+  o.sheathingItem = withSheetSize(o.sheathingItem, o.sheathingSheet);
+  o.drywallItem = withSheetSize(o.drywallItem, o.drywallSheet);
+  return JSON.stringify(o);
+}
+
+/**
+ * Adds the sheathing, drywall or baseboard a wall names to the Item List (under
+ * that category) as soon as it's saved, so it's in the picker next time — not only
+ * once walls are drawn with it.
+ */
+async function rememberItems(json: string, costCodeId: string | null) {
+  const wanted: { name: string; category: string; unit: string }[] = [];
+  const o = JSON.parse(json) as WallOptions;
+  if (o.sheathingSides > 0 && o.sheathingItem.trim()) wanted.push({ name: o.sheathingItem.trim(), category: "Sheathing", unit: "ea" });
+  if (o.drywallSides > 0 && o.drywallItem.trim()) wanted.push({ name: o.drywallItem.trim(), category: "Drywall", unit: "ea" });
+  if (o.baseSides > 0 && o.baseItem.trim()) wanted.push({ name: o.baseItem.trim(), category: "Trim", unit: "lf" });
+  if (!wanted.length) return;
+  const company = await db.company.findFirst({ select: { defaultMarkup: true } });
+  for (const w of wanted) {
+    const nameKey = itemNameKey(w.name);
+    if (await db.materialItem.findUnique({ where: { nameKey }, select: { id: true } })) continue;
+    await db.materialItem.create({
+      data: { name: w.name, nameKey, category: w.category, unit: w.unit, unitCost: 0, markupPct: company?.defaultMarkup ?? 20, roundUp: w.unit === "ea", costCodeId },
+    });
+  }
 }
 
 export async function assemblyFields(fd: FormData, conditionType: string) {

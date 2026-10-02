@@ -12,10 +12,22 @@ import { str, strOrNull } from "@/lib/utils";
 import { syncTakeoffToEstimate } from "@/lib/takeoff-data";
 import { resolveMaterialItem } from "@/lib/material-items";
 import { copyIntoEstimate, createProjectEstimate } from "@/lib/estimate-lines";
-import { syncLumberItems } from "@/lib/lumber";
+import { syncAutoItems } from "@/lib/walls";
 import { assemblyFields, conditionFields, type AssemblyFields } from "@/lib/takeoff-forms";
 import { applyTemplate, saveTemplateFromProject } from "@/lib/takeoff-templates";
-import { CONDITION_COLORS, CONDITION_TYPES, DEFAULT_METRIC, LUMBER_LF_METRIC, LUMBER_METRIC_PREFIX, isLumberMetric } from "@/lib/takeoff";
+import {
+  CONDITION_COLORS,
+  CONDITION_TYPES,
+  DEFAULT_METRIC,
+  DEFAULT_OPENING_OPTIONS,
+  DEFAULT_WALL_OPTIONS,
+  LUMBER_LF_METRIC,
+  LUMBER_METRIC_PREFIX,
+  hasAutoLines,
+  isLumberMetric,
+  isMemberType,
+  pointsJson,
+} from "@/lib/takeoff";
 
 function takeoffPath(projectId: string) {
   return `/projects/${projectId}/takeoff`;
@@ -26,9 +38,10 @@ function revalidate(projectId: string) {
   revalidatePath(`/projects/${projectId}/files`);
 }
 
-function returnTo(fd: FormData, projectId: string, hash = "") {
+/** Where to land after a form: the page it came from (Takeoff tab or plan viewer), else the given Takeoff tab. */
+function returnTo(fd: FormData, projectId: string, hash = "", tab: "plans" | "conditions" = "plans") {
   const r = str(fd, "returnTo");
-  return (r.startsWith(takeoffPath(projectId)) ? r : takeoffPath(projectId)) + hash;
+  return (r.startsWith(takeoffPath(projectId)) ? r : `${takeoffPath(projectId)}?tab=${tab}`) + hash;
 }
 
 // --- Plans --------------------------------------------------------------------
@@ -60,7 +73,7 @@ export async function deletePlan(fd: FormData) {
   await deleteUpload(plan.file.storagePath);
   await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.plan_deleted", description: `Deleted plan "${plan.name}" and its measurements` });
   revalidate(project.id);
-  redirect(takeoffPath(project.id));
+  redirect(`${takeoffPath(project.id)}?tab=plans`);
 }
 
 // --- Conditions -----------------------------------------------------------------
@@ -82,7 +95,7 @@ export async function createCondition(fd: FormData) {
   const data = await conditionFields(fd);
   const c = await db.takeoffCondition.create({ data: { ...data, projectId: project.id, sortOrder: await nextConditionSort(project.id) } });
   revalidate(project.id);
-  redirect(returnTo(fd, project.id, `#condition-${c.id}`));
+  redirect(returnTo(fd, project.id, `#condition-${c.id}`, "conditions"));
 }
 
 export async function updateCondition(fd: FormData) {
@@ -103,9 +116,9 @@ export async function updateCondition(fd: FormData) {
       : []),
   ]);
   // Size, spacing, pitch, overhang or stock lengths can change the lumber.
-  if (data.type === "FRAMING" || existing.type === "FRAMING") await syncLumberItems(project.id, id);
+  if (hasAutoLines(data.type) || hasAutoLines(existing.type)) await syncAutoItems(project.id, id);
   revalidate(project.id);
-  redirect(`${takeoffPath(project.id)}#condition-${id}`);
+  redirect(returnTo(fd, project.id, `#condition-${id}`, "conditions"));
 }
 
 export async function deleteCondition(fd: FormData) {
@@ -117,7 +130,7 @@ export async function deleteCondition(fd: FormData) {
   await db.takeoffCondition.delete({ where: { id } });
   await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.condition_deleted", description: `Deleted takeoff condition "${c.name}"` });
   revalidate(project.id);
-  redirect(takeoffPath(project.id));
+  redirect(returnTo(fd, project.id, "", "conditions"));
 }
 
 // --- Assembly items ------------------------------------------------------------
@@ -145,7 +158,7 @@ export async function createAssemblyItem(fd: FormData) {
   const last = await db.takeoffAssemblyItem.findFirst({ where: { conditionId }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
   await db.takeoffAssemblyItem.create({ data: { ...data, conditionId, sortOrder: (last?.sortOrder ?? -1) + 1 } });
   revalidate(project.id);
-  redirect(`${takeoffPath(project.id)}#condition-${conditionId}`);
+  redirect(returnTo(fd, project.id, `#condition-${conditionId}`, "conditions"));
 }
 
 async function loadAssemblyItem(projectId: string, id: string) {
@@ -162,7 +175,7 @@ export async function updateAssemblyItem(fd: FormData) {
   const data = await withMaterialItem(await assemblyFields(fd, item.condition.type), user.id, project.id);
   await db.takeoffAssemblyItem.update({ where: { id: item.id }, data });
   revalidate(project.id);
-  redirect(`${takeoffPath(project.id)}#condition-${item.conditionId}`);
+  redirect(returnTo(fd, project.id, `#condition-${item.conditionId}`, "conditions"));
 }
 
 export async function deleteAssemblyItem(fd: FormData) {
@@ -174,7 +187,7 @@ export async function deleteAssemblyItem(fd: FormData) {
   // turns that line into the condition's own line or removes it.
   await db.takeoffAssemblyItem.delete({ where: { id: item.id } });
   revalidate(project.id);
-  redirect(`${takeoffPath(project.id)}#condition-${item.conditionId}`);
+  redirect(returnTo(fd, project.id, `#condition-${item.conditionId}`, "conditions"));
 }
 
 // --- Send to estimate -------------------------------------------------------------
@@ -184,7 +197,7 @@ export async function sendToEstimate(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const estimateId = str(fd, "estimateId");
-  await syncLumberItems(project.id);
+  await syncAutoItems(project.id);
   const { estimate, created, updated } = await syncTakeoffToEstimate(project.id, estimateId);
   await logActivity({
     projectId: project.id,
@@ -214,7 +227,7 @@ export async function applyTakeoffTemplate(fd: FormData) {
     description: `Added ${added.length} condition${added.length === 1 ? "" : "s"} from template "${template.name}"${skipped.length ? ` (${skipped.length} already on the job)` : ""}`,
   });
   revalidate(project.id);
-  redirect(`${takeoffPath(project.id)}?applied=${added.length}&skipped=${skipped.length}#conditions`);
+  redirect(`${takeoffPath(project.id)}?tab=conditions&applied=${added.length}&skipped=${skipped.length}`);
 }
 
 /** Admins: save this job's conditions as a new template, or replace an existing one's. */
@@ -244,7 +257,7 @@ export async function saveTakeoffAsTemplate(fd: FormData) {
 export async function rebidAtCurrentPrices(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
-  await syncLumberItems(project.id);
+  await syncAutoItems(project.id);
 
   const linked = await db.takeoffAssemblyItem.findMany({
     where: { condition: { projectId: project.id }, materialItemId: { not: null } },
@@ -291,6 +304,7 @@ export async function rebidAtCurrentPrices(fd: FormData) {
 // --- Called from the plan viewer (return data instead of redirecting) -----------------
 
 const ptSchema = z.tuple([z.number().finite(), z.number().finite()]);
+const arcsSchema = z.array(z.number().int().min(0)).max(5000).optional();
 
 async function viewerSheet(projectId: string, sheetId: string) {
   const sheet = await db.takeoffSheet.findFirst({ where: { id: sheetId, plan: { projectId } } });
@@ -339,8 +353,13 @@ export async function setSheetScale(input: { projectId: string; sheetId: string;
   if (applyToPlan) await db.takeoffSheet.updateMany({ where: { planId: sheet.planId }, data });
   else await db.takeoffSheet.update({ where: { id: sheetId }, data });
   // A new scale changes member lengths.
-  await syncLumberItems(projectId);
+  await syncAutoItems(projectId);
   revalidate(projectId);
+}
+
+/** Fewest points a shape needs: a count is one click, lines (walls, openings, hips) two, outlines three. */
+function minPointsFor(type: string) {
+  return type === "COUNT" ? 1 : ["LINEAR", "HIP_VALLEY", "WALL", "OPENING"].includes(type) ? 2 : 3;
 }
 
 export async function createMeasurement(input: {
@@ -348,8 +367,11 @@ export async function createMeasurement(input: {
   sheetId: string;
   conditionId: string;
   points: [number, number][];
+  arcs?: number[]; // indexes of arc points
   isDeduction?: boolean;
   angle?: number;
+  pitch?: number | null;
+  pitch2?: number | null;
 }) {
   await requireStaff();
   const data = z
@@ -358,35 +380,63 @@ export async function createMeasurement(input: {
       sheetId: z.string(),
       conditionId: z.string(),
       points: z.array(ptSchema).min(1).max(5000),
+      arcs: arcsSchema,
       isDeduction: z.boolean().optional(),
       angle: z.number().finite().optional(),
+      pitch: z.number().finite().min(0).max(48).nullable().optional(),
+      pitch2: z.number().finite().min(0).max(48).nullable().optional(),
     })
     .parse(input);
   await viewerSheet(data.projectId, data.sheetId);
   const c = await loadCondition(data.projectId, data.conditionId);
-  const min = c.type === "COUNT" ? 1 : c.type === "LINEAR" ? 2 : 3;
+  const min = minPointsFor(c.type);
   if (data.points.length < min) throw new Error("Not enough points for this shape");
   const m = await db.takeoffMeasurement.create({
     data: {
       sheetId: data.sheetId,
       conditionId: c.id,
-      points: JSON.stringify(data.points.map(([x, y]) => [Math.round(x * 100) / 100, Math.round(y * 100) / 100])),
+      points: pointsJson(data.points, data.arcs),
       isDeduction: c.type === "AREA" || c.type === "LINEAR" ? !!data.isDeduction : false,
       angle: data.angle ?? 0,
+      // A shape's own pitch (null = the condition's); side 2 only means something on hips / valleys.
+      pitch: isMemberType(c.type) ? (data.pitch ?? null) : null,
+      pitch2: c.type === "HIP_VALLEY" ? (data.pitch2 ?? null) : null,
     },
   });
-  if (c.type === "FRAMING") await syncLumberItems(data.projectId, c.id);
+  if (hasAutoLines(c.type)) await syncAutoItems(data.projectId, c.id);
   revalidate(data.projectId);
   return { id: m.id, isDeduction: m.isDeduction };
 }
 
-export async function updateMeasurement(input: { projectId: string; id: string; angle?: number; isDeduction?: boolean; conditionId?: string }) {
+export async function updateMeasurement(input: {
+  projectId: string;
+  id: string;
+  angle?: number;
+  isDeduction?: boolean;
+  conditionId?: string;
+  pitch?: number | null; // null = back to the condition's pitch
+  pitch2?: number | null;
+  points?: [number, number][]; // moved / reshaped
+  arcs?: number[]; // with points: which are arc points
+}) {
   await requireStaff();
   const data = z
-    .object({ projectId: z.string(), id: z.string(), angle: z.number().finite().optional(), isDeduction: z.boolean().optional(), conditionId: z.string().optional() })
+    .object({
+      projectId: z.string(),
+      id: z.string(),
+      angle: z.number().finite().optional(),
+      isDeduction: z.boolean().optional(),
+      conditionId: z.string().optional(),
+      pitch: z.number().finite().min(0).max(48).nullable().optional(),
+      pitch2: z.number().finite().min(0).max(48).nullable().optional(),
+      points: z.array(ptSchema).min(1).max(5000).optional(),
+      arcs: arcsSchema,
+    })
     .parse(input);
   const m = await db.takeoffMeasurement.findFirst({ where: { id: data.id, sheet: { plan: { projectId: data.projectId } } }, include: { condition: true } });
   if (!m) throw new Error("Measurement not found");
+  const minPoints = minPointsFor(m.condition.type);
+  if (data.points && data.points.length < minPoints) throw new Error("Not enough points for this shape");
   let conditionId: string | undefined;
   if (data.conditionId && data.conditionId !== m.conditionId) {
     const target = await loadCondition(data.projectId, data.conditionId);
@@ -395,10 +445,18 @@ export async function updateMeasurement(input: { projectId: string; id: string; 
   }
   await db.takeoffMeasurement.update({
     where: { id: m.id },
-    data: { angle: data.angle, isDeduction: m.condition.type === "AREA" || m.condition.type === "LINEAR" ? data.isDeduction : undefined, conditionId },
+    data: {
+      angle: data.angle,
+      isDeduction: m.condition.type === "AREA" || m.condition.type === "LINEAR" ? data.isDeduction : undefined,
+      conditionId,
+      pitch: isMemberType(m.condition.type) ? data.pitch : undefined,
+      pitch2: m.condition.type === "HIP_VALLEY" ? data.pitch2 : undefined,
+      points: data.points ? pointsJson(data.points, data.arcs) : undefined,
+    },
   });
-  if (m.condition.type === "FRAMING") await syncLumberItems(data.projectId);
+  if (hasAutoLines(m.condition.type)) await syncAutoItems(data.projectId);
   revalidate(data.projectId);
+  return { ok: true };
 }
 
 export async function deleteMeasurement(input: { projectId: string; id: string }) {
@@ -407,18 +465,28 @@ export async function deleteMeasurement(input: { projectId: string; id: string }
   const m = await db.takeoffMeasurement.findFirst({ where: { id, sheet: { plan: { projectId } } }, include: { condition: { select: { type: true } } } });
   if (!m) throw new Error("Measurement not found");
   await db.takeoffMeasurement.delete({ where: { id } });
-  if (m.condition.type === "FRAMING") await syncLumberItems(projectId, m.conditionId);
+  if (hasAutoLines(m.condition.type)) await syncAutoItems(projectId, m.conditionId);
   revalidate(projectId);
 }
 
 /** Minimal condition created from the viewer; details can be filled in on the Takeoff page. */
 export async function quickCreateCondition(input: { projectId: string; name: string; type: string }) {
   await requireStaff();
-  const { projectId, name, type } = z
-    .object({ projectId: z.string(), name: z.string().trim().min(1).max(120), type: z.enum(CONDITION_TYPES) })
-    .parse(input);
+  const { projectId, name, type } = z.object({ projectId: z.string(), name: z.string().trim().min(1).max(120), type: z.enum(CONDITION_TYPES) }).parse(input);
   await getProject(projectId);
   const [count, company] = await Promise.all([db.takeoffCondition.count({ where: { projectId } }), db.company.findFirst({ select: { defaultMarkup: true } })]);
+  // Walls and openings start from sensible defaults; a size in the name ("Ext 2x6 Wall", "2x10 Headers") is used.
+  let extra = {};
+  if (type === "WALL" || type === "OPENING") {
+    const sizes = await db.memberSize.findMany({ select: { id: true, name: true, stockLengths: true } });
+    const lower = name.toLowerCase();
+    const named = sizes.filter((m) => lower.includes(m.name.toLowerCase())).sort((a, b) => b.name.length - a.name.length)[0];
+    const size = named ?? (type === "WALL" ? sizes.find((m) => m.name.toLowerCase() === "2x4") : undefined);
+    extra =
+      type === "WALL"
+        ? { memberSizeId: size?.id ?? null, memberSize: size?.name ?? null, height: 8, spacing: 16, wastePct: 10, options: JSON.stringify(DEFAULT_WALL_OPTIONS) }
+        : { memberSizeId: size?.id ?? null, memberSize: size?.name ?? null, stockLengths: size?.stockLengths ?? null, options: JSON.stringify(DEFAULT_OPENING_OPTIONS) };
+  }
   const c = await db.takeoffCondition.create({
     data: {
       projectId,
@@ -427,6 +495,7 @@ export async function quickCreateCondition(input: { projectId: string; name: str
       metric: DEFAULT_METRIC[type],
       color: CONDITION_COLORS[count % CONDITION_COLORS.length],
       markupPct: company?.defaultMarkup ?? 20,
+      ...extra,
       sortOrder: await nextConditionSort(projectId),
     },
   });

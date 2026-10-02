@@ -1,14 +1,14 @@
 import "server-only";
 import { db } from "./db";
 import { conditionTotals, loadConditions } from "./takeoff-data";
-import { LUMBER_LF_METRIC, isLumberMetric, itemNameKey, lumberItemName, lumberMetric } from "./takeoff";
+import { LUMBER_LF_METRIC, isLumberMetric, isMemberType, itemNameKey, lumberItemName, lumberMetric } from "./takeoff";
 
 export const LUMBER_CATEGORY = "Framing Lumber";
 
 type LumberLine = { metric: string; description: string; listName: string; listUnit: "ea" | "lf"; qty: number; unit: "ea" | "lf"; roundUp: boolean };
 
 /**
- * Keeps each joist/rafter condition's lumber in step with its layout, as assembly
+ * Keeps each joist/rafter and hip/valley condition's lumber in step with its layout, as assembly
  * items linked to the Item List. How depends on the member size's "sold as":
  * - STOCK (default): one line per stock length, "2x6 × 20'" × 18 ea, priced each;
  * - EXACT_LF: one line per exact length, "14" Open-Web × 21'-4"" as lf, priced per lf;
@@ -21,7 +21,7 @@ type LumberLine = { metric: string; description: string; listName: string; listU
  * needs are removed.
  */
 export async function syncLumberItems(projectId: string, conditionId?: string) {
-  const conditions = (await loadConditions(projectId)).filter((c) => c.type === "FRAMING" && (!conditionId || c.id === conditionId));
+  const conditions = (await loadConditions(projectId)).filter((c) => isMemberType(c.type) && (!conditionId || c.id === conditionId));
   if (conditions.length === 0) return;
   const company = await db.company.findFirst({ select: { defaultMarkup: true } });
 

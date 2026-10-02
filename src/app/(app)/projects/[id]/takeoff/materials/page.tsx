@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { buildMaterialList } from "@/lib/takeoff-materials";
-import { feetInches } from "@/lib/takeoff";
+import { boardPatternText, feetInches } from "@/lib/takeoff";
 import { groupBy } from "@/lib/finance";
 import { cn, fmtDate, money, num } from "@/lib/utils";
 import { EmptyState, TBody, TFoot, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
@@ -140,16 +140,31 @@ export default async function MaterialListPage({
 
       {cutLists.length > 0 ? (
         <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-          <p className="label">Framing cut lists</p>
-          <p className="mb-2 text-xs text-slate-500">Members laid out on the plans, by stock length (priced through their assembly items above).</p>
-          <ul className="space-y-1 text-sm text-slate-700">
+          <p className="label">Framing cut sheet</p>
+          <p className="mb-3 text-xs text-slate-500">
+            What each stock board is cut into. Short pieces within a condition share boards; identical boards are grouped. 1/8&quot; saw kerf allowed per cut.
+          </p>
+          <div className="space-y-3">
             {cutLists.map((c) => (
-              <li key={c.condition}>
-                <span className="font-medium text-slate-900">{c.condition}</span>
-                {c.size ? ` (${c.size})` : ""}: {c.pieces.map(([len, n]) => `${n} @ ${c.exact ? feetInches(len) : `${num(len)}'`}`).join(" · ")}
-              </li>
+              <div key={c.condition} className="break-inside-avoid">
+                <p className="text-sm font-medium text-slate-900">
+                  {c.condition}
+                  {c.size ? <span className="font-normal text-slate-500"> · {c.size}</span> : null}
+                </p>
+                {c.boards.length ? (
+                  <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
+                    {c.boards.map((b, i) => (
+                      <li key={i} className="tabular-nums">
+                        <span className="inline-block w-10 text-right font-medium text-slate-900">{b.count} ×</span> {boardPatternText(b)}
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="mt-1 text-sm text-slate-700">{c.pieces.map(([len, n]) => `${n} @ ${c.exact ? feetInches(len) : `${num(len)}'`}`).join(" · ")}</p>
+                )}
+              </div>
             ))}
-          </ul>
+          </div>
         </div>
       ) : null}
     </div>
