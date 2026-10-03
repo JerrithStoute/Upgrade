@@ -14,6 +14,11 @@ import {
   withMemberSize,
   withWaste,
   DEFAULT_OPENING_OPTIONS,
+  DEFAULT_DOOR_OPTIONS,
+  DEFAULT_WINDOW_OPTIONS,
+  doorTakeoff,
+  windowTakeoff,
+  isCountType,
   arcPath,
   DEFAULT_WALL_OPTIONS,
   autoMetricPrefix,
@@ -45,6 +50,7 @@ export function loadConditions(projectId: string) {
       measurements: {
         include: {
           sheet: { select: { id: true, name: true, pageNumber: true, unitsPerFoot: true, plan: { select: { id: true, name: true } } } },
+          materialItem: { select: { id: true, name: true, widthIn: true, heightIn: true } },
         },
       },
     },
@@ -62,9 +68,15 @@ export type ConditionTotals = {
   cutList: [number, number][]; // boards to order: [stock length, count]
   wall: Record<string, number>; // walls & openings: material quantities by "wall:<key>" / "opening:<key>"
   wallLines: AutoLine[];
+  unassignedDoors: number; // Doors / windows: markers with nothing picked yet
   boards: BoardPattern[]; // what each stock board is cut into (stock-length sizes)
   unscaledShapes: number;
 };
+
+/** A door's size, when the item picked on its marker has one. */
+function doorSize(item: { widthIn: number | null; heightIn: number | null } | null, cased: boolean | null = null) {
+  return item?.widthIn && item.heightIn ? { widthIn: item.widthIn, heightIn: item.heightIn, cased } : null;
+}
 
 /** Totals for one condition across every sheet. */
 export function conditionTotals(c: LoadedCondition): ConditionTotals {
@@ -73,12 +85,21 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
   const bySheet = new Map<string, ConditionTotals["bySheet"][number]>();
   let unscaledShapes = 0;
   const shapes = c.measurements.map((m) => ({
-    m: { points: parsePoints(m.points), arcs: parseArcs(m.points), isDeduction: m.isDeduction, angle: m.angle, pitch: m.pitch, pitch2: m.pitch2 },
+    m: {
+      points: parsePoints(m.points),
+      arcs: parseArcs(m.points),
+      isDeduction: m.isDeduction,
+      angle: m.angle,
+      pitch: m.pitch,
+      pitch2: m.pitch2,
+      height: m.height,
+      door: doorSize(m.materialItem, m.cased),
+    },
     unitsPerFoot: m.sheet.unitsPerFoot,
     sheet: m.sheet,
   }));
   for (const s of shapes) {
-    if (!s.unitsPerFoot && c.type !== "COUNT") unscaledShapes++;
+    if (!s.unitsPerFoot && !isCountType(c.type)) unscaledShapes++;
     const mm = measurementMetrics(calc, s.m, s.unitsPerFoot);
     metrics = addMetrics(metrics, mm);
     const row = bySheet.get(s.sheet.id) ?? {
@@ -87,7 +108,7 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
       planId: s.sheet.plan.id,
       pageNumber: s.sheet.pageNumber,
       metrics: emptyMetrics(),
-      unscaled: !s.unitsPerFoot && c.type !== "COUNT",
+      unscaled: !s.unitsPerFoot && !isCountType(c.type),
     };
     row.metrics = addMetrics(row.metrics, mm);
     bySheet.set(s.sheet.id, row);
@@ -102,10 +123,28 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
   }
   // Walls and openings: materials from the traced lines and the condition's options.
   const wallLines: AutoLine[] = [];
+  let unassignedDoors = 0;
   const scaled = c.measurements.filter((m) => m.sheet.unitsPerFoot && !m.isDeduction);
   if (c.type === "WALL") {
     const runs = scaled.map((m) => wallRun(parsePoints(m.points), m.sheet.unitsPerFoot!, parseArcs(m.points)));
     wallLines.push(...wallTakeoff({ studSize: c.memberSize ?? "", spacing: c.spacing, heightFt: c.height }, parseOptions(c.options, DEFAULT_WALL_OPTIONS), runs).lines);
+  } else if (c.type === "WINDOW") {
+    const windows = c.measurements.map((m) => {
+      const size = doorSize(m.materialItem);
+      return { name: size ? m.materialItem!.name : null, widthIn: size?.widthIn ?? 0, heightIn: size?.heightIn ?? 0, cased: m.cased !== false };
+    });
+    const t = windowTakeoff(windows, parseOptions(c.options, DEFAULT_WINDOW_OPTIONS));
+    wallLines.push(...t.lines);
+    unassignedDoors = t.unassigned;
+  } else if (c.type === "DOOR") {
+    // Doors don't need a scale: each marker is a door, sized by the door picked on it.
+    const doors = c.measurements.map((m) => {
+      const size = doorSize(m.materialItem);
+      return { name: size ? m.materialItem!.name : null, widthIn: size?.widthIn ?? 0, heightIn: size?.heightIn ?? 0 };
+    });
+    const t = doorTakeoff(doors, parseOptions(c.options, DEFAULT_DOOR_OPTIONS));
+    wallLines.push(...t.lines);
+    unassignedDoors = t.unassigned;
   } else if (c.type === "OPENING") {
     const widths = scaled.map((m) => polylineLength(arcPath(parsePoints(m.points), parseArcs(m.points), false)) / m.sheet.unitsPerFoot!);
     wallLines.push(...openingTakeoff({ size: c.memberSize, stockLengths: c.stockLengths }, parseOptions(c.options, DEFAULT_OPENING_OPTIONS), widths).lines);
@@ -120,6 +159,7 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
     cutList: lumber?.cutList ?? [],
     wall: Object.fromEntries(wallLines.map((l) => [`${autoMetricPrefix(c.type)}${l.key}`, l.qty])),
     wallLines,
+    unassignedDoors,
     boards: lumber?.boards ?? [],
     unscaledShapes,
   };

@@ -6,7 +6,7 @@
 
 export type Pt = [number, number];
 
-export const CONDITION_TYPES = ["AREA", "LINEAR", "WALL", "OPENING", "COUNT", "FRAMING", "HIP_VALLEY"] as const;
+export const CONDITION_TYPES = ["AREA", "LINEAR", "WALL", "OPENING", "DOOR", "WINDOW", "COUNT", "FRAMING", "HIP_VALLEY"] as const;
 export type ConditionType = (typeof CONDITION_TYPES)[number];
 
 export const CONDITION_TYPE_LABELS: Record<ConditionType, string> = {
@@ -17,6 +17,8 @@ export const CONDITION_TYPE_LABELS: Record<ConditionType, string> = {
   HIP_VALLEY: "Hip / Valley",
   WALL: "Walls",
   OPENING: "Openings / Headers",
+  DOOR: "Doors",
+  WINDOW: "Windows",
 };
 
 export const PITCH_MODES = ["COMMON", "HIP"] as const;
@@ -39,6 +41,9 @@ export const METRICS = {
   member_lf: { label: "Member length", unit: "lf" },
   stock_lf: { label: "Stock length (ordered)", unit: "lf" },
   board_feet: { label: "Board feet (ordered)", unit: "bf" },
+  casing_lf: { label: "Casing, one side (2 legs + head)", unit: "lf" },
+  door_width_lf: { label: "Door widths", unit: "lf" },
+  window_width_lf: { label: "Window widths", unit: "lf" },
 } as const;
 export type MetricKey = keyof typeof METRICS;
 
@@ -50,6 +55,8 @@ export const METRICS_BY_TYPE: Record<ConditionType, MetricKey[]> = {
   HIP_VALLEY: ["members", "member_lf", "stock_lf", "board_feet", "plan_length"],
   WALL: ["length", "wall_area"],
   OPENING: ["count", "length"],
+  DOOR: ["count", "casing_lf", "door_width_lf"],
+  WINDOW: ["count", "casing_lf", "window_width_lf"],
 };
 
 export const DEFAULT_METRIC: Record<ConditionType, MetricKey> = {
@@ -60,11 +67,15 @@ export const DEFAULT_METRIC: Record<ConditionType, MetricKey> = {
   HIP_VALLEY: "members",
   WALL: "length",
   OPENING: "count",
+  DOOR: "count",
+  WINDOW: "count",
 };
 
 export function metricLabel(key: string) {
   if (key.startsWith(WALL_METRIC_PREFIX)) return "From the walls";
   if (key.startsWith(OPENING_METRIC_PREFIX)) return "From the openings";
+  if (key.startsWith(DOOR_METRIC_PREFIX)) return "From the doors";
+  if (key.startsWith(WINDOW_METRIC_PREFIX)) return "From the windows";
   if (key === LUMBER_LF_METRIC) return "Member length (lf)";
   if (isLumberMetric(key)) return `${key.slice(LUMBER_METRIC_PREFIX.length)}' pieces (ea)`;
   const m = METRICS[key as MetricKey];
@@ -440,7 +451,9 @@ export type MeasurementShape = {
   // This shape's own pitch (joists/rafters, hips/valleys); null/undefined = the condition's.
   pitch?: number | null;
   pitch2?: number | null;
+  height?: number | null; // Linear: this line's own wall height (ft); null/undefined = the condition's
   arcs?: number[] | null; // indexes of arc points (see arcPath)
+  door?: { widthIn: number; heightIn: number; cased?: boolean | null } | null; // Doors / windows: the unit picked for this marker
 };
 
 /** Conditions whose shapes become pieces of lumber. */
@@ -448,9 +461,19 @@ export function isMemberType(type: string) {
   return type === "FRAMING" || type === "HIP_VALLEY";
 }
 
-/** Conditions whose material lines the takeoff writes itself (lumber, wall and opening materials). */
+/** Conditions whose material lines the takeoff writes itself (lumber, wall, opening and door materials). */
 export function hasAutoLines(type: string) {
-  return isMemberType(type) || type === "WALL" || type === "OPENING";
+  return isMemberType(type) || type === "WALL" || type === "OPENING" || type === "DOOR" || type === "WINDOW";
+}
+
+/** Takeoffs measured by clicking once per item (counts, doors). */
+export function isCountType(type: string) {
+  return type === "COUNT" || type === "DOOR" || type === "WINDOW";
+}
+
+/** Doors and windows: each marker is one unit, picked from the Item List. */
+export function isUnitType(type: string) {
+  return type === "DOOR" || type === "WINDOW";
 }
 
 /** The pitches a shape uses: its own when set, otherwise the condition's (side 2 defaults to side 1). */
@@ -516,6 +539,17 @@ export function measurementMetrics(c: ConditionCalc, m: MeasurementShape, unitsP
     out.count = sign * Math.max(1, m.points.length);
     return out;
   }
+  if (c.type === "DOOR" || c.type === "WINDOW") {
+    // One marker per unit; its size (when one is picked) gives the casing (2 legs + head) and width.
+    out.count = 1;
+    if (m.door) {
+      if (c.type === "DOOR") out.door_width_lf = m.door.widthIn / 12;
+      else out.window_width_lf = m.door.widthIn / 12;
+      // An uncased window has no casing.
+      if (!(c.type === "WINDOW" && m.door.cased === false)) out.casing_lf = (2 * m.door.heightIn + m.door.widthIn) / 12;
+    }
+    return out;
+  }
   if (c.type === "OPENING") {
     // One line per opening, drawn across it: its length is the opening width.
     out.count = sign;
@@ -541,7 +575,7 @@ export function measurementMetrics(c: ConditionCalc, m: MeasurementShape, unitsP
     const factor = c.pitchMode === "HIP" ? hipFactor(c.pitch, c.pitch2 ?? c.pitch) : slopeFactor(c.pitch);
     out.plan_length = sign * plan;
     out.length = sign * plan * factor;
-    out.wall_area = sign * plan * c.height;
+    out.wall_area = sign * plan * (m.height ?? c.height);
     return out;
   }
 
@@ -729,15 +763,26 @@ export const WALL_METRIC_PREFIX = "wall:";
 /** Openings conditions: headers and king & jack studs, "opening:<key>" (openingTakeoff). */
 export const OPENING_METRIC_PREFIX = "opening:";
 
-/** The metric prefix for a condition type's auto material lines (walls, openings). */
+/** Doors conditions: each door and the casing, "door:<key>" (doorTakeoff). */
+export const DOOR_METRIC_PREFIX = "door:";
+
+/** Windows conditions: each window, casing, stool and apron, "window:<key>" (windowTakeoff). */
+export const WINDOW_METRIC_PREFIX = "window:";
+
+/** The metric prefix for a condition type's auto material lines (walls, openings, doors, windows). */
 export function autoMetricPrefix(type: string) {
-  return type === "OPENING" ? OPENING_METRIC_PREFIX : WALL_METRIC_PREFIX;
+  return type === "OPENING" ? OPENING_METRIC_PREFIX : type === "DOOR" ? DOOR_METRIC_PREFIX : type === "WINDOW" ? WINDOW_METRIC_PREFIX : WALL_METRIC_PREFIX;
 }
 
 /** Lines the takeoff writes itself (lumber from layouts, wall & opening materials) — not edited by hand. */
 export function isLumberMetric(metric: string) {
   return (
-    metric.startsWith(LUMBER_METRIC_PREFIX) || metric === LUMBER_LF_METRIC || metric.startsWith(WALL_METRIC_PREFIX) || metric.startsWith(OPENING_METRIC_PREFIX)
+    metric.startsWith(LUMBER_METRIC_PREFIX) ||
+    metric === LUMBER_LF_METRIC ||
+    metric.startsWith(WALL_METRIC_PREFIX) ||
+    metric.startsWith(OPENING_METRIC_PREFIX) ||
+    metric.startsWith(DOOR_METRIC_PREFIX) ||
+    metric.startsWith(WINDOW_METRIC_PREFIX)
   );
 }
 
@@ -755,7 +800,8 @@ export function lumberItemName(memberSize: string | null | undefined, conditionN
 
 /** The quantity an assembly item multiplies: a condition metric, a count of lumber pieces, or a wall / opening material. */
 export function assemblyBase(item: { metric: string }, metrics: Metrics, cutList: [number, number][] = [], auto: Record<string, number> = {}) {
-  if (item.metric.startsWith(WALL_METRIC_PREFIX) || item.metric.startsWith(OPENING_METRIC_PREFIX)) return auto[item.metric] ?? 0;
+  if (item.metric.startsWith(WALL_METRIC_PREFIX) || item.metric.startsWith(OPENING_METRIC_PREFIX) || item.metric.startsWith(DOOR_METRIC_PREFIX) || item.metric.startsWith(WINDOW_METRIC_PREFIX))
+    return auto[item.metric] ?? 0;
   if (item.metric === LUMBER_LF_METRIC) return metrics.member_lf;
   if (isLumberMetric(item.metric)) {
     const len = Number(item.metric.slice(LUMBER_METRIC_PREFIX.length));
@@ -1116,6 +1162,198 @@ export function wallSummary(wall: { studSize: string | null; spacing: number; he
   if (o.drywallSides > 0 && o.drywallItem) parts.push(`${o.drywallItem} ${side(o.drywallSides)}`);
   if (o.baseSides > 0 && o.baseItem) parts.push(`${o.baseItem} ${side(o.baseSides)}`);
   return parts.join(" · ");
+}
+
+// --- Doors ------------------------------------------------------------------------
+
+/** Doors: the casing ordered for them. Each door's size comes from the door picked on its marker. */
+export type DoorOptions = {
+  casingItem: string; // legs (blank = no casing)
+  casingSides: number; // 1 or 2
+  casingStickFt: number; // length one stick comes in (0 = order by the lineal foot)
+  headItem: string; // head trim when it's different (e.g. 1x6 over 1x4 legs); blank = same as the legs
+  headStickFt: number;
+};
+
+export const DEFAULT_DOOR_OPTIONS: DoorOptions = { casingItem: "", casingSides: 2, casingStickFt: 0, headItem: "", headStickFt: 0 };
+
+export function feetInchesIn(inches: number) {
+  const ft = Math.floor(inches / 12);
+  const rest = Math.round((inches - ft * 12) * 8) / 8;
+  return rest ? `${ft}'${num0(rest)}"` : `${ft}'`;
+}
+
+/** Door size code: 32 × 80 → "2868", 36 × 96 → "3080". */
+export function doorSizeCode(widthIn: number, heightIn: number) {
+  const part = (i: number) => `${Math.floor(i / 12)}${num0(i - Math.floor(i / 12) * 12)}`;
+  return `${part(widthIn)}${part(heightIn)}`;
+}
+
+/** One trim item and the pieces cut from it. */
+type TrimCuts = { key: string; item: string; stickFt: number; cutsFt: number[] };
+
+/**
+ * Trim lines: pieces of the same item are pooled (so 1x4 legs and a 1x4 head share
+ * sticks), then cut from whole sticks (packed, 1/8" kerf) when the stick length is
+ * known, otherwise ordered by the lineal foot.
+ */
+function trimLines(parts: TrimCuts[]): AutoLine[] {
+  const pooled = new Map<string, TrimCuts>();
+  for (const part of parts) {
+    const name = part.item.trim();
+    if (!name || !part.cutsFt.length) continue;
+    const k = itemNameKey(name);
+    const cur = pooled.get(k);
+    if (cur) {
+      cur.cutsFt.push(...part.cutsFt);
+      if (!cur.stickFt && part.stickFt) cur.stickFt = part.stickFt;
+    } else pooled.set(k, { ...part, item: name, cutsFt: [...part.cutsFt] });
+  }
+  return Array.from(pooled.values()).map((t) =>
+    t.stickFt > 0
+      ? { key: t.key, name: t.item, unit: "ea" as const, qty: packBoards(t.cutsFt, [t.stickFt]).cutList.reduce((sum, [, n]) => sum + n, 0), category: "Trim", waste: true }
+      : { key: t.key, name: t.item, unit: "lf" as const, qty: t.cutsFt.reduce((a, b) => a + b, 0), category: "Trim", waste: true },
+  );
+}
+
+/**
+ * Everything a Doors takeoff orders:
+ * - each door picked, counted by its Item List name;
+ * - casing per side: 2 legs (the height) from the leg trim and a head (the width)
+ *   from the head trim (the leg trim when none is set).
+ * Doors not picked yet are still counted but add no door or casing.
+ */
+export function doorTakeoff(doors: { name: string | null; widthIn: number; heightIn: number }[], o: DoorOptions) {
+  const lines: AutoLine[] = [];
+  const counts = new Map<string, number>();
+  const legs: number[] = [];
+  const heads: number[] = [];
+  let unassigned = 0;
+  let casingLf = 0;
+  for (const d of doors) {
+    if (!d.name) {
+      unassigned++;
+      continue;
+    }
+    counts.set(d.name, (counts.get(d.name) ?? 0) + 1);
+    for (let side = 0; side < Math.max(0, o.casingSides); side++) {
+      legs.push(d.heightIn / 12, d.heightIn / 12);
+      heads.push(d.widthIn / 12);
+      casingLf += (2 * d.heightIn + d.widthIn) / 12;
+    }
+  }
+  for (const [name, n] of counts) lines.push({ key: `door:${itemNameKey(name)}`, name, unit: "ea", qty: n, category: "Doors", waste: false });
+  if (o.casingItem.trim())
+    lines.push(
+      ...trimLines([
+        { key: "casing", item: o.casingItem, stickFt: o.casingStickFt, cutsFt: legs },
+        { key: "head", item: o.headItem.trim() || o.casingItem, stickFt: o.headItem.trim() ? o.headStickFt : o.casingStickFt, cutsFt: heads },
+      ]),
+    );
+  return { lines, doors: doors.length, unassigned, casingLf };
+}
+
+// --- Windows ------------------------------------------------------------------------
+
+/** The stool is always this Item List item; only how much longer than the window it runs is asked. */
+export const WINDOW_STOOL_ITEM = "Window stool";
+
+/**
+ * Windows: every window gets a stool and an apron. Cased windows (set per window)
+ * also get casing legs, a head, and a lining inside the opening (2 × height + width).
+ */
+export type WindowOptions = {
+  casingItem: string; // legs
+  casingStickFt: number;
+  headItem: string; // blank = same as the legs
+  headStickFt: number;
+  liningItem: string; // inside the opening of cased windows
+  liningStickFt: number;
+  stoolStickFt: number; // the Window stool item's stick length (0 = by the foot)
+  stoolExtraIn: number; // longer than the window by
+  apronItem: string;
+  apronStickFt: number;
+  apronExtraIn: number;
+};
+
+export const DEFAULT_WINDOW_OPTIONS: WindowOptions = {
+  casingItem: "",
+  casingStickFt: 0,
+  headItem: "",
+  headStickFt: 0,
+  liningItem: "1x6 primed",
+  liningStickFt: 0,
+  stoolStickFt: 0,
+  stoolExtraIn: 6,
+  apronItem: "",
+  apronStickFt: 0,
+  apronExtraIn: 4,
+};
+
+/**
+ * Everything a Windows takeoff orders: each window picked, counted by name; a
+ * stool and an apron for every window; and for cased windows the casing legs, the
+ * head and the lining (2 legs + head inside the opening). Windows not picked yet
+ * are still counted but add nothing else.
+ */
+export function windowTakeoff(windows: { name: string | null; widthIn: number; heightIn: number; cased?: boolean }[], o: WindowOptions) {
+  const lines: AutoLine[] = [];
+  const counts = new Map<string, number>();
+  const legs: number[] = [];
+  const heads: number[] = [];
+  const lining: number[] = [];
+  const stool: number[] = [];
+  const apron: number[] = [];
+  let unassigned = 0;
+  let cased = 0;
+  for (const w of windows) {
+    if (!w.name) {
+      unassigned++;
+      continue;
+    }
+    counts.set(w.name, (counts.get(w.name) ?? 0) + 1);
+    stool.push((w.widthIn + o.stoolExtraIn) / 12);
+    apron.push((w.widthIn + o.apronExtraIn) / 12);
+    if (w.cased !== false) {
+      cased++;
+      legs.push(w.heightIn / 12, w.heightIn / 12);
+      heads.push(w.widthIn / 12);
+      lining.push(w.heightIn / 12, w.heightIn / 12, w.widthIn / 12);
+    }
+  }
+  for (const [name, n] of counts) lines.push({ key: `unit:${itemNameKey(name)}`, name, unit: "ea", qty: n, category: "Windows", waste: false });
+  lines.push(
+    ...trimLines([
+      ...(o.casingItem.trim()
+        ? [
+            { key: "casing", item: o.casingItem, stickFt: o.casingStickFt, cutsFt: legs },
+            { key: "head", item: o.headItem.trim() || o.casingItem, stickFt: o.headItem.trim() ? o.headStickFt : o.casingStickFt, cutsFt: heads },
+          ]
+        : []),
+      { key: "lining", item: o.liningItem, stickFt: o.liningStickFt, cutsFt: lining },
+      { key: "stool", item: WINDOW_STOOL_ITEM, stickFt: o.stoolStickFt, cutsFt: stool },
+      { key: "apron", item: o.apronItem, stickFt: o.apronStickFt, cutsFt: apron },
+    ]),
+  );
+  return { lines, windows: windows.length, unassigned, cased };
+}
+
+/** "Trim — casing: 1x4 · head: 1x6 · lining: 1x6 primed · stool +6" · apron: 1x4" */
+export function windowSummary(o: WindowOptions) {
+  const parts = [
+    o.casingItem && `casing: ${o.casingItem}`,
+    o.casingItem && o.headItem && `head: ${o.headItem}`,
+    o.liningItem && `lining (cased): ${o.liningItem}`,
+    `stool +${num0(o.stoolExtraIn)}"`,
+    o.apronItem && `apron: ${o.apronItem}`,
+  ].filter(Boolean);
+  return `Trim — ${parts.join(" · ")}`;
+}
+
+/** "Casing: 1x4, 1x6 head, both sides, 7' sticks" */
+export function doorSummary(o: DoorOptions) {
+  if (!o.casingItem || o.casingSides <= 0) return "No casing";
+  return `Casing: ${o.casingItem}${o.headItem ? `, ${o.headItem} head` : ""}, ${o.casingSides === 2 ? "both sides" : "1 side"}${o.casingStickFt > 0 ? `, ${num0(o.casingStickFt)}' sticks` : ", by the foot"}`;
 }
 
 /** "2-ply 2x10 headers (+3") · 2 king + 2 jack 2x4 studs (92-5/8" precut)" */

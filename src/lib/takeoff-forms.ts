@@ -1,20 +1,27 @@
 import "server-only";
 import { db } from "./db";
+import { newItemPlacement, saveCodeRulesFromForm } from "./item-codes";
+import type { ItemKind } from "./code-groups";
 import { UNITS } from "./constants";
 import { boolField, numField, str, strOrNull } from "./utils";
 import {
   CONDITION_COLORS,
   CONDITION_TYPES,
   DEFAULT_METRIC,
+  DEFAULT_DOOR_OPTIONS,
   DEFAULT_OPENING_OPTIONS,
+  DEFAULT_WINDOW_OPTIONS,
   DEFAULT_WALL_OPTIONS,
   isMemberType,
   isMetricFor,
   itemNameKey,
   parseStockLengths,
   withSheetSize,
+  WINDOW_STOOL_ITEM,
   type ConditionType,
+  type DoorOptions,
   type WallOptions,
+  type WindowOptions,
 } from "./takeoff";
 
 /**
@@ -23,7 +30,7 @@ import {
  */
 export async function conditionFields(fd: FormData) {
   const name = str(fd, "name");
-  if (!name) throw new Error("Condition name is required");
+  if (!name) throw new Error("Takeoff name is required");
   const typeRaw = str(fd, "type");
   const type: ConditionType = (CONDITION_TYPES as readonly string[]).includes(typeRaw) ? (typeRaw as ConditionType) : "AREA";
   const metricRaw = str(fd, "metric");
@@ -42,8 +49,30 @@ export async function conditionFields(fd: FormData) {
   }
   const size = memberSizeId ? await db.memberSize.findUnique({ where: { id: memberSizeId }, select: { id: true, name: true } }) : null;
   if (memberSizeId && !size) throw new Error("Member size not found");
-  const options = type === "WALL" ? wallOptions(fd) : type === "OPENING" ? optionsJson(fd, DEFAULT_OPENING_OPTIONS) : null;
-  if (type === "WALL" && options) await rememberItems(options, costCodeId);
+  const options =
+    type === "WALL"
+      ? wallOptions(fd)
+      : type === "OPENING"
+        ? optionsJson(fd, DEFAULT_OPENING_OPTIONS)
+        : type === "DOOR"
+          ? optionsJson(fd, DEFAULT_DOOR_OPTIONS)
+          : type === "WINDOW"
+            ? optionsJson(fd, DEFAULT_WINDOW_OPTIONS)
+            : null;
+  // "Do all windows use the same cost code?" — answered on the form, remembered for next time.
+  await saveCodeRulesFromForm(fd);
+  if (type === "WALL" && options) await rememberItems(options);
+  // Door / window trim goes on the Item List (Trim) when saved, with its stick length.
+  const trim: [string, number][] = [];
+  if (type === "DOOR" && options) {
+    const o = JSON.parse(options) as DoorOptions;
+    if (o.casingSides > 0) trim.push([o.casingItem, o.casingStickFt], [o.headItem, o.headStickFt]);
+  }
+  if (type === "WINDOW" && options) {
+    const o = JSON.parse(options) as WindowOptions;
+    trim.push([o.casingItem, o.casingStickFt], [o.headItem, o.headStickFt], [o.liningItem, o.liningStickFt], [WINDOW_STOOL_ITEM, o.stoolStickFt], [o.apronItem, o.apronStickFt]);
+  }
+  for (const [item, stick] of trim) await rememberCasing(JSON.stringify({ casingItem: item, casingSides: 1, casingStickFt: stick }));
   return {
     name,
     type,
@@ -99,28 +128,69 @@ function wallOptions(fd: FormData) {
  * that category) as soon as it's saved, so it's in the picker next time — not only
  * once walls are drawn with it.
  */
-async function rememberItems(json: string, costCodeId: string | null) {
-  const wanted: { name: string; category: string; unit: string }[] = [];
+async function rememberItems(json: string) {
+  const wanted: { name: string; kind: ItemKind; unit: string }[] = [];
   const o = JSON.parse(json) as WallOptions;
-  if (o.sheathingSides > 0 && o.sheathingItem.trim()) wanted.push({ name: o.sheathingItem.trim(), category: "Sheathing", unit: "ea" });
-  if (o.drywallSides > 0 && o.drywallItem.trim()) wanted.push({ name: o.drywallItem.trim(), category: "Drywall", unit: "ea" });
-  if (o.baseSides > 0 && o.baseItem.trim()) wanted.push({ name: o.baseItem.trim(), category: "Trim", unit: "lf" });
+  if (o.sheathingSides > 0 && o.sheathingItem.trim()) wanted.push({ name: o.sheathingItem.trim(), kind: "sheathing", unit: "ea" });
+  if (o.drywallSides > 0 && o.drywallItem.trim()) wanted.push({ name: o.drywallItem.trim(), kind: "drywall", unit: "ea" });
+  if (o.baseSides > 0 && o.baseItem.trim()) wanted.push({ name: o.baseItem.trim(), kind: "trim", unit: "lf" });
   if (!wanted.length) return;
   const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   for (const w of wanted) {
     const nameKey = itemNameKey(w.name);
     if (await db.materialItem.findUnique({ where: { nameKey }, select: { id: true } })) continue;
+    const place = await newItemPlacement(w.kind);
     await db.materialItem.create({
-      data: { name: w.name, nameKey, category: w.category, unit: w.unit, unitCost: 0, markupPct: company?.defaultMarkup ?? 20, roundUp: w.unit === "ea", costCodeId },
+      data: {
+        name: w.name,
+        nameKey,
+        category: place.category,
+        kind: place.kind,
+        unit: w.unit,
+        unitCost: 0,
+        markupPct: company?.defaultMarkup ?? 20,
+        roundUp: w.unit === "ea",
+        costCodeId: place.costCodeId,
+      },
     });
   }
+}
+
+/** A Doors / Windows takeoff's trim goes on the Item List (as trim) when saved, with its stick length. */
+async function rememberCasing(json: string) {
+  const o = JSON.parse(json) as { casingItem: string; casingSides: number; casingStickFt: number };
+  const name = o.casingItem.trim();
+  if (!name || o.casingSides <= 0) return;
+  const nameKey = itemNameKey(name);
+  const existing = await db.materialItem.findUnique({ where: { nameKey }, select: { id: true, lengthFt: true } });
+  if (existing) {
+    if (!existing.lengthFt && o.casingStickFt > 0) await db.materialItem.update({ where: { id: existing.id }, data: { lengthFt: o.casingStickFt } });
+    return;
+  }
+  const company = await db.company.findFirst({ select: { defaultMarkup: true } });
+  const sticks = o.casingStickFt > 0;
+  const place = await newItemPlacement("trim");
+  await db.materialItem.create({
+    data: {
+      name,
+      nameKey,
+      category: place.category,
+      kind: place.kind,
+      unit: sticks ? "ea" : "lf",
+      roundUp: sticks,
+      unitCost: 0,
+      markupPct: company?.defaultMarkup ?? 20,
+      costCodeId: place.costCodeId,
+      lengthFt: sticks ? o.casingStickFt : null,
+    },
+  });
 }
 
 export async function assemblyFields(fd: FormData, conditionType: string) {
   const description = str(fd, "description");
   if (!description) throw new Error("Description is required");
   const metric = str(fd, "metric");
-  if (!isMetricFor(conditionType, metric)) throw new Error("Pick a quantity this condition measures");
+  if (!isMetricFor(conditionType, metric)) throw new Error("Pick a quantity this takeoff measures");
   const unit = str(fd, "unit");
   const costCodeId = strOrNull(fd, "costCodeId");
   if (costCodeId && !(await db.costCode.findUnique({ where: { id: costCodeId }, select: { id: true } }))) throw new Error("Cost code not found");

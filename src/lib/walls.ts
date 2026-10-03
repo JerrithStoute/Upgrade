@@ -1,5 +1,7 @@
 import "server-only";
 import { db } from "./db";
+import { newItemPlacement } from "./item-codes";
+import { kindOfLegacyCategory } from "./code-groups";
 import { conditionTotals, loadConditions } from "./takeoff-data";
 import { autoMetricPrefix, itemNameKey } from "./takeoff";
 
@@ -15,7 +17,9 @@ import { autoMetricPrefix, itemNameKey } from "./takeoff";
  * only on Rebid. Materials the walls no longer need are removed.
  */
 export async function syncWallItems(projectId: string, conditionId?: string) {
-  const conditions = (await loadConditions(projectId)).filter((c) => (c.type === "WALL" || c.type === "OPENING") && (!conditionId || c.id === conditionId));
+  const conditions = (await loadConditions(projectId)).filter(
+    (c) => (c.type === "WALL" || c.type === "OPENING" || c.type === "DOOR" || c.type === "WINDOW") && (!conditionId || c.id === conditionId),
+  );
   if (conditions.length === 0) return;
   const company = await db.company.findFirst({ select: { defaultMarkup: true } });
 
@@ -29,18 +33,22 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
     let sortOrder = Math.min(0, ...c.items.map((i) => i.sortOrder)) - wanted.size - 1;
     for (const [metric, line] of wanted) {
       const nameKey = itemNameKey(line.name);
+      // A line's built-in category ("Sheathing", "Trim"…) says what kind of item it is.
+      const kind = kindOfLegacyCategory(line.category);
+      const place = kind ? await newItemPlacement(kind) : { kind: null, category: line.category, costCodeId: null };
       const listItem =
         (await db.materialItem.findUnique({ where: { nameKey } })) ??
         (await db.materialItem.create({
           data: {
             name: line.name,
             nameKey,
-            category: line.category,
+            category: place.category,
+            kind: place.kind,
             unit: line.unit,
             unitCost: 0,
             markupPct: company?.defaultMarkup ?? 20,
             roundUp: line.unit === "ea",
-            costCodeId: c.costCodeId,
+            costCodeId: place.costCodeId,
           },
         }));
       const shape = {
@@ -68,6 +76,8 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
         continue;
       }
       const relinked = current.materialItemId !== listItem.id;
+      // A line with no cost code takes the item's once it has one.
+      const codeNow = !current.costCodeId && !!listItem.costCodeId;
       const unpriced = current.unitCost === 0 && listItem.unitCost > 0;
       const changed =
         relinked ||
@@ -77,7 +87,8 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
         current.roundUp !== shape.roundUp ||
         current.wastePct !== shape.wastePct ||
         current.qty !== 1 ||
-        current.per !== 1;
+        current.per !== 1 ||
+        codeNow;
       if (changed) {
         await db.takeoffAssemblyItem.update({
           where: { id: current.id },
@@ -85,6 +96,7 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
             materialItemId: listItem.id,
             ...shape,
             ...(relinked || unpriced ? { unitCost: listItem.unitCost, markupPct: listItem.markupPct, costCodeId: listItem.costCodeId ?? c.costCodeId } : {}),
+            ...(codeNow ? { costCodeId: listItem.costCodeId } : {}),
           },
         });
       }

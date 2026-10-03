@@ -152,6 +152,7 @@ model CostCode {
   materialItems             MaterialItem[]
   takeoffTemplateConditions TakeoffTemplateCondition[]
   takeoffTemplateItems      TakeoffTemplateItem[]
+  itemCodeRules             ItemCodeRule[]
 }
 
 // ---------------------------------------------------------------------------
@@ -538,6 +539,14 @@ model TakeoffPlan {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
+  // Revisions: the plan set this one replaces (Rev 2 → Rev 1), its number, and when a
+  // newer revision took its takeoffs (then it's kept only to compare against).
+  revisionOfId String?
+  revisionOf   TakeoffPlan?  @relation("PlanRevisions", fields: [revisionOfId], references: [id], onDelete: SetNull)
+  revisions    TakeoffPlan[] @relation("PlanRevisions")
+  revision     Int           @default(1)
+  supersededAt DateTime?
+
   sheets TakeoffSheet[]
 }
 
@@ -552,13 +561,20 @@ model TakeoffSheet {
   unitsPerFoot Float? // null until the scale is set
   scaleLabel   String? // e.g. 1/4" = 1'-0" or "Calibrated"
 
+  // Revisions: the matching sheet in the previous revision, and how it lines up with this
+  // one — JSON {a,b,tx,ty}: this = [a −b; b a]·previous + [tx, ty] (page units). Null = as is.
+  prevSheetId String?
+  prevSheet   TakeoffSheet?  @relation("SheetRevisions", fields: [prevSheetId], references: [id], onDelete: SetNull)
+  nextSheets  TakeoffSheet[] @relation("SheetRevisions")
+  align       String?
+
   measurements TakeoffMeasurement[]
 
   @@unique([planId, pageNumber])
 }
 
 /// What gets measured (e.g. "LVP Flooring", "2x10 Floor Joists").
-/// type: AREA | LINEAR | COUNT | FRAMING | HIP_VALLEY | WALL | OPENING
+/// type: AREA | LINEAR | COUNT | FRAMING | HIP_VALLEY | WALL | OPENING | DOOR | WINDOW
 /// metric: which computed quantity is the condition's quantity (see src/lib/takeoff.ts)
 /// pitchMode (LINEAR): COMMON (rakes, rafters) | HIP (hips & valleys)
 model TakeoffCondition {
@@ -599,18 +615,24 @@ model TakeoffCondition {
 /// A shape drawn on a sheet. `points` is a JSON array of [x, y] page-unit pairs.
 /// `angle` (radians) is the member direction for FRAMING areas.
 model TakeoffMeasurement {
-  id          String           @id @default(cuid())
-  sheetId     String
-  sheet       TakeoffSheet     @relation(fields: [sheetId], references: [id], onDelete: Cascade)
-  conditionId String
-  condition   TakeoffCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
-  points      String
-  isDeduction Boolean          @default(false)
-  angle       Float            @default(0)
+  id             String           @id @default(cuid())
+  sheetId        String
+  sheet          TakeoffSheet     @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  conditionId    String
+  condition      TakeoffCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
+  points         String
+  isDeduction    Boolean          @default(false)
+  angle          Float            @default(0)
   // Joists/rafters and hips/valleys: this shape's own pitch (null = the condition's).
-  pitch       Float?
-  pitch2      Float?
-  createdAt   DateTime         @default(now())
+  pitch          Float?
+  pitch2         Float?
+  // Linear: this line's own wall height in feet (null = the condition's).
+  height         Float?
+  // Doors takeoff: which door this marker is (an Item List item with a size).
+  materialItemId String?
+  materialItem   MaterialItem?    @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
+  cased          Boolean? // Windows: trimmed (cased) or not; null = cased
+  createdAt      DateTime         @default(now())
 }
 
 /// Assembly: an estimate line derived from a condition's quantities,
@@ -656,11 +678,35 @@ model MaterialItem {
   vendor     String?
   sku        String?
   notes      String?
+  // Doors (and other sized items): rough size, interior / exterior, and the length one piece comes in (casing sticks).
+  widthIn    Float?
+  heightIn   Float?
+  exterior   Boolean?
+  style      String? // windows (and doors): type, e.g. Single hung, Slider
+  lengthFt   Float?
+  // What the program uses it as, whatever category you file it under:
+  // windows | doors | framing lumber | sheathing | drywall | trim (null = your own item).
+  kind       String?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
   assemblyItems TakeoffAssemblyItem[]
   templateItems TakeoffTemplateItem[]
+  measurements  TakeoffMeasurement[]
+}
+
+/// The cost code for items the program creates by itself (windows, doors, lumber,
+/// sheathing, drywall, trim), remembered from "do all windows use the same cost code?".
+/// group: "windows", "doors:interior", "doors:exterior", "framing lumber", "sheathing", "drywall", "trim".
+/// sameForAll false = ask for a code on each new item.
+model ItemCodeRule {
+  id         String    @id @default(cuid())
+  group      String    @unique
+  sameForAll Boolean   @default(true)
+  category   String? // the Item List category new items of this kind go in (null = the built-in name)
+  costCodeId String?
+  costCode   CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  updatedAt  DateTime  @updatedAt
 }
 
 /// Framing member library (Settings → Member sizes).

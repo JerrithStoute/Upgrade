@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Layers, Pencil, Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { activeCostCodes } from "@/lib/projects";
+import { loadCodeRules } from "@/lib/item-codes";
 import { materialItemOptions } from "@/lib/material-items";
 import { CONDITION_COLORS, CONDITION_TYPE_LABELS, isMemberType, metricLabel, metricUnit, type ConditionType } from "@/lib/takeoff";
 import { costCodeLabel, money, num } from "@/lib/utils";
@@ -29,7 +30,7 @@ export default async function TakeoffTemplatePage({
 }) {
   const { templateId } = await params;
   const { edit, editItem } = await searchParams;
-  const [template, costCodes, items, memberSizes, company] = await Promise.all([
+  const [template, costCodes, items, memberSizes, company, codeRules] = await Promise.all([
     db.takeoffTemplate.findUnique({
       where: { id: templateId },
       include: {
@@ -45,6 +46,7 @@ export default async function TakeoffTemplatePage({
     materialItemOptions(),
     db.memberSize.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, kind: true, soldAs: true, stockLengths: true } }),
     db.company.findFirst({ select: { defaultMarkup: true } }),
+    loadCodeRules(),
   ]);
   if (!template) notFound();
   const base = `/settings/takeoff-templates/${template.id}`;
@@ -60,9 +62,9 @@ export default async function TakeoffTemplatePage({
       <Card>
         <CardHeader
           title={template.name}
-          description={`${template.conditions.length} condition${template.conditions.length === 1 ? "" : "s"}. Add it to a job from the job's Takeoff tab.`}
+          description={`${template.conditions.length} takeoff${template.conditions.length === 1 ? "" : "s"}. Add it to a job from the job's Takeoff tab.`}
           actions={
-            <ConfirmForm action={deleteTakeoffTemplate} hidden={hidden} message={`Delete the template "${template.name}"? Jobs that used it keep their conditions.`}>
+            <ConfirmForm action={deleteTakeoffTemplate} hidden={hidden} message={`Delete the template "${template.name}"? Jobs that used it keep their takeoffs.`}>
               Delete template
             </ConfirmForm>
           }
@@ -86,7 +88,7 @@ export default async function TakeoffTemplatePage({
       </Card>
 
       {template.conditions.length === 0 ? (
-        <EmptyState icon={Layers} title="No conditions in this template" description="Add the conditions you measure on this kind of job below." />
+        <EmptyState icon={Layers} title="No takeoffs in this template" description="Add the takeoffs you measure on this kind of job below." />
       ) : (
         <div className="space-y-3">
           {template.conditions.map((c) => {
@@ -115,6 +117,7 @@ export default async function TakeoffTemplatePage({
                       action={updateTemplateCondition}
                       hidden={hidden}
                       costCodes={costCodes}
+                      codeRules={codeRules}
                       memberSizes={memberSizes}
                       itemOptions={items}
                       defaultMarkup={defaultMarkup}
@@ -197,7 +200,7 @@ export default async function TakeoffTemplatePage({
         defaultOpen={template.conditions.length === 0}
         summary={
           <span className="flex items-center gap-2">
-            <Plus className="h-4 w-4" /> Add condition
+            <Plus className="h-4 w-4" /> Add takeoff
           </span>
         }
       >
@@ -205,6 +208,7 @@ export default async function TakeoffTemplatePage({
           action={createTemplateCondition}
           hidden={hidden}
           costCodes={costCodes}
+          codeRules={codeRules}
           memberSizes={memberSizes}
           itemOptions={items}
           defaultMarkup={defaultMarkup}

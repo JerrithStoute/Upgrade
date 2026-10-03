@@ -33,6 +33,7 @@ type PrintShape = {
   angle: number;
   pitch: number | null;
   pitch2: number | null;
+  height?: number | null;
 };
 
 export type PrintSheet = {
@@ -178,7 +179,7 @@ export function PrintSheets({
                             {t}
                           </text>
                         ) : null;
-                      if (c.type === "COUNT") {
+                      if (c.type === "COUNT" || c.type === "DOOR" || c.type === "WINDOW") {
                         return (
                           <g key={m.id}>
                             {m.points.map((p, i) => (
@@ -197,7 +198,7 @@ export function PrintSheets({
                         if (deg < -90) deg += 180;
                         return (
                           <g key={m.id}>
-                            <polyline points={d} fill="none" stroke={c.color} strokeWidth={sw * 6} strokeLinejoin="miter" strokeLinecap="square" />
+                            <polyline points={d} fill="none" stroke={c.color} strokeWidth={sw * 3} strokeLinejoin="miter" strokeLinecap="square" />
                             {upf ? text((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + fs * 1.4, `${c.name} · ${feetInches(polylineLength(path) / upf)}`, deg) : null}
                           </g>
                         );

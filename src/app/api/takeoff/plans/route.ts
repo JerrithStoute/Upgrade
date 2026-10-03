@@ -34,7 +34,15 @@ export async function POST(req: Request) {
   if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
 
   try {
-    const plan = await createPlanFromFile({ file, projectId, userId: user.id, clientVisible: fd.get("clientVisible") === "true" });
+    const revisionOf = fd.get("revisionOf");
+    const plan = await createPlanFromFile({
+      file,
+      projectId,
+      userId: user.id,
+      clientVisible: fd.get("clientVisible") === "true",
+      revisionOf: typeof revisionOf === "string" && revisionOf ? revisionOf : null,
+    });
+    revalidatePath(`/projects/${projectId}/plans`);
     revalidatePath(`/projects/${projectId}/takeoff`, "layout");
     revalidatePath(`/projects/${projectId}/files`);
     return NextResponse.json({ id: plan.id, name: plan.name });

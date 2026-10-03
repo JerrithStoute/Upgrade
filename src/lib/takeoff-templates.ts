@@ -143,7 +143,7 @@ export async function saveTemplateFromProject(projectId: string, opts: { name: s
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
     include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
   });
-  if (conditions.length === 0) throw new Error("This job has no conditions to save");
+  if (conditions.length === 0) throw new Error("This job has no takeoffs to save");
   return db.$transaction(async (tx) => {
     let templateId = opts.replaceId ?? null;
     if (templateId) {

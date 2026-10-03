@@ -16,7 +16,11 @@ import {
   slopeFactor,
   type ConditionType,
 } from "@/lib/takeoff";
-import { OpeningOptionsFields, WallOptionsFields, type ItemChoice } from "./wall-options";
+import { CodeRuleFields } from "./code-rules";
+import { PendingItems } from "./pending-items";
+import type { ItemOption } from "./assembly-form";
+import type { CodeRules } from "@/lib/code-groups";
+import { DoorOptionsFields, OpeningOptionsFields, WallOptionsFields, WindowOptionsFields, type ItemChoice } from "./wall-options";
 
 export type ConditionFormValues = {
   id: string;
@@ -50,7 +54,9 @@ const TYPE_HINTS: Record<ConditionType, string> = {
   COUNT: "Click once per item. Outlets, fixtures, doors, windows.",
   FRAMING: "Outline the framed area; joists or rafters are laid out at your spacing.",
   HIP_VALLEY: "Trace each hip, valley or ridge on the roof plan, wall corner to ridge. Every line is one piece of lumber.",
-  WALL: "Trace walls corner to corner; double-click to finish a run, or end on the first corner to close it. Name the condition for the wall (\"Ext 2x6 Wall\").",
+  WALL: "Trace walls corner to corner; double-click to finish a run, or end on the first corner to close it. Name the takeoff for the wall (\"Ext 2x6 Wall\").",
+  DOOR: "Click each door on the plan, then pick which door it is. Doors are counted by name, and casing is added for each one.",
+  WINDOW: "Click each window on the plan, then pick which window it is. Windows are counted by name, with casing, stool and apron for each one.",
   OPENING: "Draw a line across each door or window opening — one line per opening, its length is the width. Headers and king & jack studs come from here.",
 };
 
@@ -65,6 +71,8 @@ export function ConditionForm({
   hasMeasurements,
   cancelHref,
   nextColor,
+  codeRules = {},
+  assemblyItems,
 }: {
   action: (fd: FormData) => Promise<void>;
   /** Hidden fields identifying where the condition lives (projectId, or templateId). */
@@ -78,6 +86,10 @@ export function ConditionForm({
   hasMeasurements?: boolean;
   cancelHref?: string;
   nextColor?: string;
+  /** Remembered "same cost code for all windows / lumber / …" answers. */
+  codeRules?: CodeRules;
+  /** New takeoffs: Item List entries for adding assembly items before the first save. */
+  assemblyItems?: ItemOption[];
 }) {
   const [type, setType] = useState<ConditionType>((values?.type as ConditionType) ?? "AREA");
   const [metric, setMetric] = useState(values?.metric ?? DEFAULT_METRIC[type]);
@@ -92,7 +104,9 @@ export function ConditionForm({
   const p = (k: string) => `cond-${values?.id ?? "new"}-${k}`;
   const isWall = type === "WALL";
   const isOpening = type === "OPENING";
-  const isAuto = isWall || isOpening;
+  const isDoor = type === "DOOR";
+  const isWindow = type === "WINDOW";
+  const isAuto = isWall || isOpening || isDoor || isWindow;
   const showPitch = type !== "COUNT" && !isAuto;
   const isHip = type === "HIP_VALLEY";
   const isMember = type === "FRAMING" || isHip;
@@ -115,7 +129,7 @@ export function ConditionForm({
         <Field label="Name" htmlFor={p("name")} className="md:col-span-2">
           <input id={p("name")} name="name" required className="input" defaultValue={values?.name} placeholder={type === "FRAMING" ? "2x10 Floor Joists @ 16\" o.c." : isHip ? "2x10 Hips & Valleys" : isWall ? "Ext 2x6 Wall" : isOpening ? "Window Headers" : "LVP Flooring"} />
         </Field>
-        <Field label="Type" htmlFor={p("type")} hint={hasMeasurements ? "Locked — this condition has measurements" : undefined}>
+        <Field label="Type" htmlFor={p("type")} hint={hasMeasurements ? "Locked — this takeoff has measurements" : undefined}>
           <select
             id={p("type")}
             name="type"
@@ -167,9 +181,11 @@ export function ConditionForm({
 
       {isWall ? <WallOptionsFields idPrefix={p("wall")} values={values} memberSizes={memberSizes} items={itemOptions} /> : null}
       {isOpening ? <OpeningOptionsFields idPrefix={p("open")} values={values} memberSizes={memberSizes} /> : null}
+      {isDoor ? <DoorOptionsFields idPrefix={p("door")} values={values} items={itemOptions} /> : null}
+      {isWindow ? <WindowOptionsFields idPrefix={p("window")} values={values} items={itemOptions} /> : null}
 
       <FormGrid className="md:grid-cols-4">
-        <Field label="Quantity" htmlFor={p("metric")} hint="What this condition reports and sends to the estimate">
+        <Field label="Quantity" htmlFor={p("metric")} hint="What this takeoff reports and sends to the estimate">
           <select id={p("metric")} name="metric" className="input" value={metric} onChange={(e) => setMetric(e.target.value)}>
             {metrics.map((m) => (
               <option key={m} value={m}>
@@ -248,21 +264,28 @@ export function ConditionForm({
         </FormGrid>
       ) : null}
 
+      {isMember || isAuto ? <CodeRuleFields key={type} type={type} costCodes={costCodes} rules={codeRules} categories={Array.from(new Set(itemOptions.map((i) => i.category))).sort()} /> : null}
+
       <FormGrid className="md:grid-cols-5">
-        <Field label="Cost code" htmlFor={p("costCodeId")} className="md:col-span-2">
-          <select id={p("costCodeId")} name="costCodeId" className="input" defaultValue={values?.costCodeId ?? ""}>
-            <option value="">—</option>
-            {costCodes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {costCodeLabel(c)}
-              </option>
-            ))}
-          </select>
-        </Field>
+        {isMember || isAuto ? (
+          // Each material carries its own cost code (asked above); the takeoff keeps whatever it had.
+          <input type="hidden" name="costCodeId" value={values?.costCodeId ?? ""} />
+        ) : (
+          <Field label="Cost code" htmlFor={p("costCodeId")} className="md:col-span-2">
+            <select id={p("costCodeId")} name="costCodeId" className="input" defaultValue={values?.costCodeId ?? ""}>
+              <option value="">—</option>
+              {costCodes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {costCodeLabel(c)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         {isMember || isAuto ? (
           <p className="self-end pb-2 text-xs text-slate-500 md:col-span-2">
             {isAuto
-              ? `Materials are added automatically from the ${isWall ? "walls" : "openings"} and priced from Settings → Item List.`
+              ? `Materials are added automatically from the ${isWall ? "walls" : isDoor ? "doors" : isWindow ? "windows" : "openings"} and priced from Settings → Item List.`
               : <>Lumber is priced per piece from Settings → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.</>}
           </p>
         ) : (
@@ -275,8 +298,8 @@ export function ConditionForm({
             </Field>
           </>
         )}
-        <Field label="Waste %" htmlFor={p("wastePct")} hint={isMember ? "Extra pieces, rounded up" : isWall ? "Studs, sheets & baseboard" : isOpening ? "King & jack studs" : undefined}>
-          <input key={type} id={p("wastePct")} name="wastePct" type="number" step="0.5" min="0" className="input" defaultValue={values?.wastePct ?? (isWall ? 10 : 0)} />
+        <Field label="Waste %" htmlFor={p("wastePct")} hint={isMember ? "Extra pieces, rounded up" : isWall ? "Studs, sheets & baseboard" : isOpening ? "King & jack studs" : isDoor || isWindow ? "Trim" : undefined}>
+          <input key={type} id={p("wastePct")} name="wastePct" type="number" step="0.5" min="0" className="input" defaultValue={values?.wastePct ?? (isWall || isDoor || isWindow ? 10 : 0)} />
         </Field>
       </FormGrid>
       <FormGrid className="md:grid-cols-4">
@@ -284,8 +307,9 @@ export function ConditionForm({
           <input id={p("group")} name="group" className="input" defaultValue={values?.group ?? "Takeoff"} />
         </Field>
       </FormGrid>
+      {!values && assemblyItems ? <PendingItems type={type} metric={metric} costCodes={costCodes} items={assemblyItems} defaultMarkup={defaultMarkup} /> : null}
       <div className="flex items-center gap-2">
-        <SubmitButton>{values ? "Save condition" : "Add condition"}</SubmitButton>
+        <SubmitButton>{values ? "Save takeoff" : "Add takeoff"}</SubmitButton>
         {cancelHref ? (
           <Link href={cancelHref} className={buttonClasses("ghost")}>
             Cancel

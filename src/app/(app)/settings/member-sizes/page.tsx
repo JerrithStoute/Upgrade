@@ -17,7 +17,7 @@ function SizeForm({ action, values }: { action: (fd: FormData) => Promise<void>;
     <form action={action} className="space-y-4">
       {values ? <input type="hidden" name="id" value={values.id} /> : null}
       <FormGrid className="md:grid-cols-4">
-        <Field label="Name" htmlFor={p("name")} className="md:col-span-2" hint='Shown on conditions, labels and the Material List, e.g. TJI 210 11-7/8"'>
+        <Field label="Name" htmlFor={p("name")} className="md:col-span-2" hint='Shown on takeoffs, labels and the Material List, e.g. TJI 210 11-7/8"'>
           <input id={p("name")} name="name" required className="input" defaultValue={values?.name} placeholder='TJI 210 11-7/8"' />
         </Field>
         <Field label="Kind" htmlFor={p("kind")}>
@@ -144,7 +144,7 @@ export default async function MemberSizesPage({ searchParams }: { searchParams: 
                         <Link href={`/settings/member-sizes?edit=${s.id}#size-${s.id}`} className={buttonClasses("ghost", "sm")}>
                           <Pencil className="h-3.5 w-3.5" /> Edit
                         </Link>
-                        <ConfirmForm action={deleteMemberSize} hidden={{ id: s.id }} message={`Delete "${s.name}"? Conditions using it keep the name but lose its settings.`} variant="ghost">
+                        <ConfirmForm action={deleteMemberSize} hidden={{ id: s.id }} message={`Delete "${s.name}"? Takeoffs using it keep the name but lose its settings.`} variant="ghost">
                           <span className="text-xs text-rose-600">Delete</span>
                         </ConfirmForm>
                       </div>

@@ -3,8 +3,16 @@
 import { useState } from "react";
 import { Field } from "@/components/ui";
 import { cn } from "@/lib/utils";
+import { itemKind, type ItemKind } from "@/lib/code-groups";
 import {
+  DEFAULT_DOOR_OPTIONS,
+  DEFAULT_WINDOW_OPTIONS,
+  WINDOW_STOOL_ITEM,
+  windowSummary,
+  type WindowOptions,
   DEFAULT_OPENING_OPTIONS,
+  doorSummary,
+  type DoorOptions,
   DEFAULT_WALL_OPTIONS,
   SHEET_SIZES,
   STUD_PRECUTS_IN,
@@ -60,14 +68,14 @@ function Section({ title, children, hint }: { title: string; hint?: string; chil
   );
 }
 
-export type ItemChoice = { name: string; category: string };
+export type ItemChoice = { name: string; category: string; kind?: string | null; lengthFt?: number | null };
 
 const NEW_ITEM = "__new__";
 
 /**
- * Pick one of the Item List items in `category` (e.g. Sheathing), or type a new
- * one — saving the condition adds it to the Item List under that category, so
- * it's in this list from then on. Posts `name`.
+ * Pick one of the Item List items of a `kind` (e.g. sheathing — whatever category
+ * you file them under), or type a new one — saving the condition adds it to the
+ * Item List as that kind, so it's in this list from then on. Posts `name`.
  */
 function ItemPicker({
   id,
@@ -75,7 +83,7 @@ function ItemPicker({
   value,
   onChange,
   items,
-  category,
+  kind,
   placeholder,
   disabled,
 }: {
@@ -84,11 +92,11 @@ function ItemPicker({
   value: string;
   onChange: (v: string) => void;
   items: ItemChoice[];
-  category: string;
+  kind: ItemKind;
   placeholder: string;
   disabled?: boolean;
 }) {
-  const list = items.filter((i) => i.category.trim().toLowerCase() === category.toLowerCase()).sort((a, b) => compareMaterialNames(a.name, b.name));
+  const list = items.filter((i) => itemKind(i) === kind).sort((a, b) => compareMaterialNames(a.name, b.name));
   const inList = list.find((i) => itemNameKey(i.name) === itemNameKey(value));
   const [typing, setTyping] = useState(false);
   if (typing) {
@@ -116,7 +124,7 @@ function ItemPicker({
           } else onChange(e.target.value);
         }}
       >
-        {!inList ? <option value={value}>{value ? `${value} (new — saved to the list with this condition)` : "—"}</option> : null}
+        {!inList ? <option value={value}>{value ? `${value} (new — saved to the list with this takeoff)` : "—"}</option> : null}
         {list.map((i) => (
           <option key={i.name} value={i.name}>
             {i.name}
@@ -361,7 +369,7 @@ export function WallOptionsFields({
               onChange={(v) => setSheetItem("sheathingItem", "sheathingSheet", v)}
               placeholder='7/16" ZIP System sheathing 4x8'
               items={items}
-              category="Sheathing"
+              kind="sheathing"
               disabled={o.sheathingSides === 0}
             />
           </Field>
@@ -377,7 +385,7 @@ export function WallOptionsFields({
               onChange={(v) => setSheetItem("drywallItem", "drywallSheet", v)}
               placeholder='5/8" Type X Drywall 4x12'
               items={items}
-              category="Drywall"
+              kind="drywall"
               disabled={o.drywallSides === 0}
             />
           </Field>
@@ -395,10 +403,224 @@ export function WallOptionsFields({
             onChange={(v) => set("baseItem", v)}
             placeholder='3-1/4" MDF colonial base'
             items={items}
-            category="Trim"
+            kind="trim"
             disabled={o.baseSides === 0}
           />
         </Field>
+      </Section>
+    </div>
+  );
+}
+
+/** A trim item from the Item List (Trim) with its stick length, which fills in from the item. */
+function TrimPicker({
+  id,
+  label,
+  itemName,
+  stickName,
+  item,
+  stick,
+  onItem,
+  onStick,
+  items,
+  placeholder,
+  disabled,
+}: {
+  id: string;
+  label: string;
+  itemName: string;
+  stickName: string;
+  item: string;
+  stick: number;
+  onItem: (name: string, stickFt: number | null) => void;
+  onStick: (ft: number) => void;
+  items: ItemChoice[];
+  placeholder: string;
+  disabled?: boolean;
+}) {
+  return (
+    <>
+      <Field label={label} htmlFor={`${id}-item`} className="min-w-48 flex-1">
+        <ItemPicker
+          id={`${id}-item`}
+          name={itemName}
+          value={item}
+          onChange={(name) => {
+            const len = items.find((i) => itemNameKey(i.name) === itemNameKey(name))?.lengthFt;
+            onItem(name, len && len > 0 ? len : null);
+          }}
+          placeholder={placeholder}
+          items={items}
+          kind="trim"
+          disabled={disabled}
+        />
+      </Field>
+      <Field label="Stick (ft)" htmlFor={`${id}-stick`} hint="Blank = by the foot">
+        <input
+          id={`${id}-stick`}
+          name={stickName}
+          type="number"
+          step="0.5"
+          min="0"
+          className="input !w-20"
+          value={stick || ""}
+          onChange={(e) => onStick(Number(e.target.value) || 0)}
+          placeholder="8"
+        />
+      </Field>
+    </>
+  );
+}
+
+/** Doors: the casing — leg trim and head trim (when different), 1 or 2 sides, with their sticks. */
+export function DoorOptionsFields({ idPrefix, values, items }: { idPrefix: string; values?: { options?: string | null }; items: ItemChoice[] }) {
+  const [o, setO] = useState<DoorOptions>(parseOptions(values?.options, DEFAULT_DOOR_OPTIONS));
+  const p = (k: string) => `${idPrefix}-${k}`;
+  return (
+    <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/40 p-3">
+      <p className="text-sm text-sky-900">
+        Click each door on the plan, then pick which door it is (filter by height, width, interior / exterior). Doors are counted by name; {doorSummary(o).toLowerCase()}.
+      </p>
+      <Section title="Casing" hint="Per door per side: 2 legs (the height) and a head (the width). Each piece is cut from whole sticks and rounded up.">
+        <Sides name="opt_casingSides" label="Casing sides" value={o.casingSides} onChange={(n) => setO((cur) => ({ ...cur, casingSides: n }))} />
+      </Section>
+      <Section title="Legs">
+        <TrimPicker
+          id={p("casing")}
+          label="Leg trim"
+          itemName="opt_casingItem"
+          stickName="opt_casingStickFt"
+          item={o.casingItem}
+          stick={o.casingStickFt}
+          onItem={(name, len) => setO((cur) => ({ ...cur, casingItem: name, casingStickFt: len ?? cur.casingStickFt }))}
+          onStick={(ft) => setO((cur) => ({ ...cur, casingStickFt: ft }))}
+          items={items}
+          placeholder="1x4 casing"
+          disabled={o.casingSides === 0}
+        />
+      </Section>
+      <Section title="Head" hint="Leave blank to use the leg trim for the head too.">
+        <TrimPicker
+          id={p("head")}
+          label="Head trim"
+          itemName="opt_headItem"
+          stickName="opt_headStickFt"
+          item={o.headItem}
+          stick={o.headStickFt}
+          onItem={(name, len) => setO((cur) => ({ ...cur, headItem: name, headStickFt: len ?? cur.headStickFt }))}
+          onStick={(ft) => setO((cur) => ({ ...cur, headStickFt: ft }))}
+          items={items}
+          placeholder="1x6 head (blank = same as legs)"
+          disabled={o.casingSides === 0}
+        />
+      </Section>
+    </div>
+  );
+}
+
+/**
+ * Windows: every window gets a stool (always "Window stool") and an apron; cased
+ * windows (set on each window) also get leg trim, a head and a lining.
+ */
+export function WindowOptionsFields({ idPrefix, values, items }: { idPrefix: string; values?: { options?: string | null }; items: ItemChoice[] }) {
+  const [o, setO] = useState<WindowOptions>(parseOptions(values?.options, DEFAULT_WINDOW_OPTIONS));
+  const p = (k: string) => `${idPrefix}-${k}`;
+  const stoolLen = items.find((i) => itemNameKey(i.name) === itemNameKey(WINDOW_STOOL_ITEM))?.lengthFt ?? null;
+  const set = <K extends keyof WindowOptions>(k: K, v: WindowOptions[K]) => setO((cur) => ({ ...cur, [k]: v }));
+  return (
+    <div className="space-y-3 rounded-lg border border-cyan-200 bg-cyan-50/40 p-3">
+      <p className="text-sm text-cyan-900">
+        Click each window on the plan, then pick which window it is (filter by type, height and width) and whether it&apos;s cased. Windows are counted by name.{" "}
+        {windowSummary(o)}.
+      </p>
+      <Section title="Every window">
+        <Field label="Stool longer than the window by (in)" htmlFor={p("stoolExtraIn")} hint={`Ordered as "${WINDOW_STOOL_ITEM}"`}>
+          <input
+            id={p("stoolExtraIn")}
+            name="opt_stoolExtraIn"
+            type="number"
+            step="0.25"
+            min="0"
+            className="input !w-24"
+            value={o.stoolExtraIn}
+            onChange={(e) => set("stoolExtraIn", Number(e.target.value) || 0)}
+          />
+        </Field>
+        <Field label="Stool stick (ft)" htmlFor={p("stoolStickFt")} hint={stoolLen ? `${stoolLen}' on the Item List` : "Blank = by the foot"}>
+          <input
+            id={p("stoolStickFt")}
+            name="opt_stoolStickFt"
+            type="number"
+            step="0.5"
+            min="0"
+            className="input !w-20"
+            value={o.stoolStickFt || ""}
+            onChange={(e) => set("stoolStickFt", Number(e.target.value) || 0)}
+            placeholder={stoolLen ? String(stoolLen) : "8"}
+          />
+        </Field>
+        <TrimPicker
+          id={p("apron")}
+          label="Apron trim"
+          itemName="opt_apronItem"
+          stickName="opt_apronStickFt"
+          item={o.apronItem}
+          stick={o.apronStickFt}
+          onItem={(name, len) => setO((cur) => ({ ...cur, apronItem: name, apronStickFt: len ?? cur.apronStickFt }))}
+          onStick={(ft) => set("apronStickFt", ft)}
+          items={items}
+          placeholder="Apron trim"
+        />
+        <Field label="Apron longer than the window by (in)" htmlFor={p("apronExtraIn")}>
+          <input
+            id={p("apronExtraIn")}
+            name="opt_apronExtraIn"
+            type="number"
+            step="0.25"
+            min="0"
+            className="input !w-24"
+            value={o.apronExtraIn}
+            onChange={(e) => set("apronExtraIn", Number(e.target.value) || 0)}
+          />
+        </Field>
+      </Section>
+      <Section title="Cased windows" hint="Legs (the height ×2) and a head (the width), plus the lining inside the opening (2 × height + width).">
+        <TrimPicker
+          id={p("casing")}
+          label="Leg trim"
+          itemName="opt_casingItem"
+          stickName="opt_casingStickFt"
+          item={o.casingItem}
+          stick={o.casingStickFt}
+          onItem={(name, len) => setO((cur) => ({ ...cur, casingItem: name, casingStickFt: len ?? cur.casingStickFt }))}
+          onStick={(ft) => set("casingStickFt", ft)}
+          items={items}
+          placeholder="1x4 casing"
+        />
+        <TrimPicker
+          id={p("head")}
+          label="Head trim"
+          itemName="opt_headItem"
+          stickName="opt_headStickFt"
+          item={o.headItem}
+          stick={o.headStickFt}
+          onItem={(name, len) => setO((cur) => ({ ...cur, headItem: name, headStickFt: len ?? cur.headStickFt }))}
+          onStick={(ft) => set("headStickFt", ft)}
+          items={items}
+          placeholder="1x6 head (blank = same as legs)"
+        />
+        <TrimPicker
+          id={p("lining")}
+          label="Lining"
+          itemName="opt_liningItem"
+          stickName="opt_liningStickFt"
+          item={o.liningItem}
+          stick={o.liningStickFt}
+          onItem={(name, len) => setO((cur) => ({ ...cur, liningItem: name, liningStickFt: len ?? cur.liningStickFt }))}
+          onStick={(ft) => set("liningStickFt", ft)}
+          items={items}
+          placeholder="1x6 primed"
+        />
       </Section>
     </div>
   );

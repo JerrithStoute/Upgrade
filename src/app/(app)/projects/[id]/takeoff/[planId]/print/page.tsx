@@ -38,6 +38,7 @@ export default async function PrintPlanPage({
           angle: m.angle,
           pitch: m.pitch,
           pitch2: m.pitch2,
+          height: m.height,
         })),
     );
     const legend = conditions

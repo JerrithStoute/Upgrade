@@ -9,7 +9,24 @@ type Client = Prisma.TransactionClient | typeof db;
 export function materialItemOptions() {
   return db.materialItem.findMany({
     orderBy: [{ category: "asc" }, { name: "asc" }],
-    select: { id: true, name: true, category: true, unit: true, unitCost: true, markupPct: true, wastePct: true, roundUp: true, costCodeId: true, sku: true },
+    select: {
+      id: true,
+      name: true,
+      category: true,
+      kind: true,
+      unit: true,
+      unitCost: true,
+      markupPct: true,
+      wastePct: true,
+      roundUp: true,
+      costCodeId: true,
+      sku: true,
+      widthIn: true,
+      heightIn: true,
+      exterior: true,
+      style: true,
+      lengthFt: true,
+    },
   });
 }
 

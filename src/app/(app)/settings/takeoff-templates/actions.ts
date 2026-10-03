@@ -23,7 +23,7 @@ async function loadTemplate(id: string) {
 
 async function loadTemplateCondition(templateId: string, id: string) {
   const c = await db.takeoffTemplateCondition.findFirst({ where: { id, templateId } });
-  if (!c) throw new Error("Condition not found");
+  if (!c) throw new Error("Takeoff not found");
   return c;
 }
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { conditionTotals, loadConditions } from "./takeoff-data";
+import { conditionTotals, loadConditions, type LoadedCondition } from "./takeoff-data";
 import { LUMBER_METRIC_PREFIX, METRICS, assemblyBase, compareMaterialNames, isMemberType, itemNameKey, type BoardPattern, type MetricKey } from "./takeoff";
 import { syncAutoItems } from "./walls";
 
@@ -37,7 +37,11 @@ type Acc = Omit<MaterialLine, "quantity" | "unitCost" | "extended" | "usedIn" | 
  */
 export async function buildMaterialList(projectId: string, planId?: string | null) {
   await syncAutoItems(projectId);
-  const conditions = await loadConditions(projectId);
+  return materialListFrom(await loadConditions(projectId), planId);
+}
+
+/** The Material List from conditions already loaded (their auto lines in step). */
+export function materialListFrom(conditions: LoadedCondition[], planId?: string | null) {
   const acc = new Map<string, Acc>();
   const cutLists: CutList[] = [];
 
@@ -112,7 +116,7 @@ export async function buildMaterialList(projectId: string, planId?: string | nul
 
     add(
       `condition:${c.id}`,
-      { name: c.name, category: "Takeoff conditions", sku: null, vendor: null, unit: METRICS[c.metric as MetricKey]?.unit ?? totals.unit },
+      { name: c.name, category: "Takeoffs", sku: null, vendor: null, unit: METRICS[c.metric as MetricKey]?.unit ?? totals.unit },
       totals.quantityWithWaste,
       totals.quantityWithWaste * c.unitCost,
       false,

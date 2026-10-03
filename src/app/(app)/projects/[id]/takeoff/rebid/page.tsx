@@ -112,7 +112,7 @@ export default async function RebidPage({ params }: { params: Promise<{ id: stri
 
           <ul className="list-disc space-y-1 pl-5 text-xs text-slate-500">
             <li>Only assembly items picked from the Item List are re-priced{unlinked ? ` (${unlinked} item${unlinked === 1 ? " isn't" : "s aren't"} linked and keep their price)` : ""}.</li>
-            <li>Conditions without assembly items and lines typed straight into the estimate keep their prices.</li>
+            <li>Takeoffs without assembly items and lines typed straight into the estimate keep their prices.</li>
             <li>Markups stay as they are on this job.</li>
           </ul>
 

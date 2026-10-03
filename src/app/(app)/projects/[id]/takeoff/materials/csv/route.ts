@@ -40,7 +40,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // Framing cut sheet: what each stock board is cut into.
   const sheet = cutLists.filter((c) => c.boards.length);
   if (sheet.length) {
-    rows.push([], ["Framing cut sheet"], ["Condition", "Size", "Boards", "Cut into"]);
+    rows.push([], ["Framing cut sheet"], ["Takeoff", "Size", "Boards", "Cut into"]);
     for (const c of sheet) for (const b of c.boards) rows.push([c.condition, c.size ?? "", b.count, boardPatternText(b)]);
   }
   const csv = [header, ...rows].map((r) => r.map(cell).join(",")).join("\r\n");

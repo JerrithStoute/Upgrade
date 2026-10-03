@@ -39,13 +39,13 @@ export default async function TakeoffTemplatesPage() {
       </Collapsible>
 
       {templates.length === 0 ? (
-        <EmptyState icon={LayoutTemplate} title="No takeoff templates yet" description="Create one above, or save a job's conditions as a template from its Takeoff tab." />
+        <EmptyState icon={LayoutTemplate} title="No takeoff templates yet" description="Create one above, or save a job's takeoffs as a template from its Takeoff tab." />
       ) : (
         <Table>
           <THead>
             <tr>
               <Th>Template</Th>
-              <Th>Conditions</Th>
+              <Th>Takeoffs</Th>
               <Th>Updated</Th>
               <Th />
             </tr>

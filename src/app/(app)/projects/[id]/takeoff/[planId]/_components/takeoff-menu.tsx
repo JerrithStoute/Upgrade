@@ -1,0 +1,212 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { ClipboardList, FolderOpen, LayoutTemplate, MoreHorizontal, RefreshCw, Save, Send, X } from "lucide-react";
+import { SubmitButton } from "@/components/ui";
+import { cn, money } from "@/lib/utils";
+import { applyTakeoffTemplate, saveTakeoffAsTemplate, sendToEstimate } from "../../actions";
+import { RevisionUpload } from "../../_components/revision-upload";
+
+export type TakeoffMenuData = {
+  drafts: { id: string; name: string; version: number }[];
+  templates: { id: string; name: string; conditions: number }[];
+  isAdmin: boolean;
+  takeoffPrice: number;
+  takeoffCount: number;
+};
+
+type Panel = "estimate" | "template" | "save" | null;
+
+/**
+ * "⋯ Takeoff": everything that used to be on the Takeoff landing page and isn't on
+ * the drawing screen already — send to an estimate, templates, rebid, the full
+ * material list, and a new revision of this plan set.
+ */
+export function TakeoffMenu({
+  projectId,
+  plan,
+  here,
+  data,
+}: {
+  projectId: string;
+  plan: { id: string; name: string; revision: number; canRevise: boolean };
+  /** This page, to come back to after a form. */
+  here: string;
+  data: TakeoffMenuData;
+}) {
+  const [open, setOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel>(null);
+  const box = useRef<HTMLDivElement>(null);
+
+  // Click outside or Esc closes it.
+  useEffect(() => {
+    if (!open && !panel) return;
+    const away = (e: MouseEvent) => {
+      if (box.current && !box.current.contains(e.target as Node)) {
+        setOpen(false);
+        setPanel(null);
+      }
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpen(false);
+        setPanel(null);
+      }
+    };
+    window.addEventListener("mousedown", away);
+    window.addEventListener("keydown", esc);
+    return () => {
+      window.removeEventListener("mousedown", away);
+      window.removeEventListener("keydown", esc);
+    };
+  }, [open, panel]);
+
+  const item = "flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-xs text-slate-700 hover:bg-slate-100";
+  const show = (p: Panel) => {
+    setPanel(p);
+    setOpen(false);
+  };
+  const base = `/projects/${projectId}`;
+
+  return (
+    <div ref={box} className="relative">
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(!open);
+          setPanel(null);
+        }}
+        className={cn(
+          "inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium hover:bg-slate-100",
+          open || panel ? "bg-slate-100 text-slate-900" : "text-slate-700",
+        )}
+        title="Send to estimate, templates, rebid, material list, new revision"
+      >
+        <MoreHorizontal className="h-4 w-4" /> Takeoff
+      </button>
+
+      {open ? (
+        <div className="absolute right-0 top-9 z-40 w-64 rounded-lg border border-slate-200 bg-white p-1 shadow-xl">
+          <Link href={`${base}/materials`} className={item}>
+            <ClipboardList className="h-3.5 w-3.5 text-slate-400" /> Full material list (print, prices, CSV)
+          </Link>
+          <button type="button" className={item} onClick={() => show("estimate")}>
+            <Send className="h-3.5 w-3.5 text-slate-400" /> Send to estimate…
+          </button>
+          <button type="button" className={item} onClick={() => show("template")}>
+            <LayoutTemplate className="h-3.5 w-3.5 text-slate-400" /> Add takeoffs from a template…
+          </button>
+          {data.isAdmin && data.takeoffCount > 0 ? (
+            <button type="button" className={item} onClick={() => show("save")}>
+              <Save className="h-3.5 w-3.5 text-slate-400" /> Save takeoffs as a template…
+            </button>
+          ) : null}
+          <Link href={`${base}/takeoff/rebid`} className={item}>
+            <RefreshCw className="h-3.5 w-3.5 text-slate-400" /> Rebid at current prices
+          </Link>
+          <div className="my-1 border-t border-slate-100" />
+          <p className="px-2.5 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            {plan.name}
+            {plan.revision > 1 ? ` · Rev ${plan.revision}` : ""}
+          </p>
+          {plan.canRevise ? (
+            <div className="px-1">
+              <RevisionUpload projectId={projectId} planId={plan.id} nextRevision={plan.revision + 1} />
+            </div>
+          ) : null}
+          <Link href={`${base}/plans`} className={item}>
+            <FolderOpen className="h-3.5 w-3.5 text-slate-400" /> All plan sets (upload, rename, share)
+          </Link>
+        </div>
+      ) : null}
+
+      {panel ? (
+        <div className="absolute right-0 top-9 z-40 w-80 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-xl">
+          <div className="mb-2 flex items-center gap-2">
+            <p className="flex-1 font-semibold text-slate-900">
+              {panel === "estimate" ? "Send to estimate" : panel === "template" ? "Add takeoffs from a template" : "Save as a template"}
+            </p>
+            <button type="button" aria-label="Close" className="text-slate-400 hover:text-slate-700" onClick={() => setPanel(null)}>
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {panel === "estimate" ? (
+            data.drafts.length === 0 ? (
+              <p className="text-xs text-slate-600">
+                No draft estimate to send to.{" "}
+                <Link href={`${base}/estimate`} className="text-blue-700 underline">
+                  Create one on the Estimate tab
+                </Link>
+                .
+              </p>
+            ) : (
+              <form action={sendToEstimate} className="space-y-2">
+                <input type="hidden" name="projectId" value={projectId} />
+                <p className="text-xs text-slate-600">
+                  Adds the takeoff&apos;s lines ({money(data.takeoffPrice)} with markup) to a draft estimate. Sending again updates them and removes ones that no longer apply.
+                </p>
+                <select name="estimateId" aria-label="Draft estimate" className="input !h-8 !py-0 text-xs" defaultValue={data.drafts[0].id}>
+                  {data.drafts.map((e) => (
+                    <option key={e.id} value={e.id}>
+                      {e.name} v{e.version} (draft)
+                    </option>
+                  ))}
+                </select>
+                <SubmitButton size="sm" disabled={data.takeoffCount === 0} pendingText="Sending…">
+                  <Send className="h-3.5 w-3.5" /> Send
+                </SubmitButton>
+              </form>
+            )
+          ) : null}
+
+          {panel === "template" ? (
+            data.templates.length === 0 ? (
+              <p className="text-xs text-slate-600">
+                No takeoff templates yet.{" "}
+                {data.isAdmin ? "Save this job's takeoffs as one, or build one in Settings → Takeoff templates." : "An admin can create them in Settings."}
+              </p>
+            ) : (
+              <form action={applyTakeoffTemplate} className="space-y-2">
+                <input type="hidden" name="projectId" value={projectId} />
+                <input type="hidden" name="returnTo" value={here} />
+                <select name="templateId" aria-label="Takeoff template" className="input !h-8 !py-0 text-xs" defaultValue={data.templates[0].id}>
+                  {data.templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t.conditions})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-slate-500">Takeoffs already on this job are skipped.</p>
+                <SubmitButton size="sm" pendingText="Adding…">
+                  Add takeoffs
+                </SubmitButton>
+              </form>
+            )
+          ) : null}
+
+          {panel === "save" ? (
+            <form action={saveTakeoffAsTemplate} className="space-y-2">
+              <input type="hidden" name="projectId" value={projectId} />
+              <input name="name" placeholder="New template name" className="input !h-8 !py-0 text-xs" aria-label="New template name" />
+              {data.templates.length ? (
+                <select name="replaceId" aria-label="Or replace a template" className="input !h-8 !py-0 text-xs" defaultValue="">
+                  <option value="">…or replace an existing one</option>
+                  {data.templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      Replace “{t.name}”
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              <SubmitButton size="sm" variant="secondary" pendingText="Saving…">
+                Save {data.takeoffCount} takeoff{data.takeoffCount === 1 ? "" : "s"}
+              </SubmitButton>
+            </form>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}

@@ -17,7 +17,7 @@ function contentDisposition(kind: "inline" | "attachment", name: string) {
 }
 
 /** Serves an uploaded file to authenticated users (clients only see their own project's files). */
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return new NextResponse("Unauthorized", { status: 401 });
 
@@ -31,7 +31,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return new NextResponse("Forbidden", { status: 403 });
   }
 
-  const inline = INLINE_TYPES.has(file.mimeType);
+  // ?download=1 saves the file instead of opening it.
+  const inline = INLINE_TYPES.has(file.mimeType) && new URL(req.url).searchParams.get("download") !== "1";
 
   try {
     const data = await fs.readFile(path.join(uploadDir(), file.storagePath));

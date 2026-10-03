@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Plus, X } from "lucide-react";
 import { ConfirmForm, buttonClasses } from "@/components/ui";
 import { costCodeLabel, money, num } from "@/lib/utils";
+import type { CodeRules } from "@/lib/code-groups";
 import { isLumberMetric, metricLabel, metricUnit } from "@/lib/takeoff";
 import { ConditionForm, type ConditionFormValues, type MemberSizeOption } from "../../_components/condition-form";
 import { AssemblyForm, type AssemblyFormValues, type ItemOption } from "../../_components/assembly-form";
@@ -25,6 +26,7 @@ export function ConditionDrawer({
   projectId,
   condition,
   costCodes,
+  codeRules,
   memberSizes,
   items,
   defaultMarkup,
@@ -35,6 +37,7 @@ export function ConditionDrawer({
   projectId: string;
   condition: DrawerCondition | null; // null = new condition
   costCodes: { id: string; code: string | null; name: string }[];
+  codeRules: CodeRules;
   memberSizes: MemberSizeOption[];
   items: ItemOption[];
   defaultMarkup: number;
@@ -44,13 +47,19 @@ export function ConditionDrawer({
 }) {
   const [editItem, setEditItem] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const isMember = condition?.type === "FRAMING" || condition?.type === "HIP_VALLEY" || condition?.type === "WALL" || condition?.type === "OPENING";
+  const isMember =
+    condition?.type === "FRAMING" ||
+    condition?.type === "HIP_VALLEY" ||
+    condition?.type === "WALL" ||
+    condition?.type === "OPENING" ||
+    condition?.type === "DOOR" ||
+    condition?.type === "WINDOW";
 
   return (
     <div className="absolute inset-y-0 right-0 z-20 flex w-[min(100%,34rem)] flex-col border-l border-slate-200 bg-white shadow-2xl">
       <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
         {condition ? <span className="h-3.5 w-3.5 rounded-sm" style={{ background: condition.color }} /> : null}
-        <p className="flex-1 truncate font-semibold text-slate-900">{condition ? `Edit ${condition.name}` : "New condition"}</p>
+        <p className="flex-1 truncate font-semibold text-slate-900">{condition ? `Edit ${condition.name}` : "New takeoff"}</p>
         <Link href={closeHref} scroll={false} className={buttonClasses("ghost", "sm")} aria-label="Close">
           <X className="h-4 w-4" />
         </Link>
@@ -60,8 +69,10 @@ export function ConditionDrawer({
           action={condition ? updateCondition : createCondition}
           hidden={{ projectId, returnTo: closeHref }}
           costCodes={costCodes}
+          codeRules={codeRules}
           memberSizes={memberSizes}
           itemOptions={items}
+          assemblyItems={items}
           defaultMarkup={defaultMarkup}
           values={condition ?? undefined}
           hasMeasurements={condition?.hasMeasurements}
@@ -94,7 +105,9 @@ export function ConditionDrawer({
                       <span className="block text-xs text-slate-500">
                         {isLumberMetric(item.metric)
                           ? "From the layout · price in Settings → Item List"
-                          : `${num(item.qty, 4)} ${item.unit} per ${num(item.per, 4)} ${metricUnit(item.metric)} of ${metricLabel(item.metric).replace(/ \(.*\)$/, "").toLowerCase()}`}
+                          : `${num(item.qty, 4)} ${item.unit} per ${num(item.per, 4)} ${metricUnit(item.metric)} of ${metricLabel(item.metric)
+                              .replace(/ \(.*\)$/, "")
+                              .toLowerCase()}`}
                         {" · "}
                         {money(item.unitCost)}/{item.unit}
                         {item.costCode ? ` · ${costCodeLabel(item.costCode)}` : ""}
@@ -142,7 +155,7 @@ export function ConditionDrawer({
               hidden={{ projectId, id: condition.id, returnTo: closeHref }}
               message={`Delete "${condition.name}" and all of its measurements? Lines already on an estimate stay there.`}
             >
-              Delete condition
+              Delete takeoff
             </ConfirmForm>
           </div>
         ) : null}

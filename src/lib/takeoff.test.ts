@@ -35,6 +35,12 @@ import {
   withSheetSize,
   sheetSizeInName,
   defaultStudLength,
+  doorTakeoff,
+  doorSizeCode,
+  feetInchesIn,
+  DEFAULT_DOOR_OPTIONS,
+  DEFAULT_WINDOW_OPTIONS,
+  windowTakeoff,
   openingTakeoff,
   parseOptions,
   studItemName,
@@ -101,6 +107,13 @@ describe("areas, lines and counts", () => {
     const m = measurementMetrics(cond({ type: "LINEAR", height: 8 }), shape(ROOM.slice(0, 3)), UPF);
     assert.equal(m.length, 32);
     assert.equal(m.wall_area, 256);
+  });
+
+  it("a line's own wall height wins over the takeoff's", () => {
+    const m = measurementMetrics(cond({ type: "LINEAR", height: 8 }), shape(ROOM.slice(0, 3), { height: 10 }), UPF);
+    assert.equal(m.length, 32);
+    assert.equal(m.wall_area, 320);
+    assert.equal(measurementMetrics(cond({ type: "LINEAR", height: 8 }), shape(ROOM.slice(0, 3), { height: null }), UPF).wall_area, 256);
   });
 });
 
@@ -461,5 +474,105 @@ describe("studs: precut or cut from stock", () => {
     assert.equal(studItemName("2x4", 92.625, true), '2x4 × 92-5/8" precut stud');
     const opening = openingTakeoff({ size: null, stockLengths: null }, { ...DEFAULT_OPENING_OPTIONS, studSize: "2x6", studPrecut: false, studLengthIn: 120 }, [3]);
     assert.equal(opening.lines.find((l) => l.key === "studs")?.name, "2x6 × 10'");
+  });
+});
+
+describe("doors", () => {
+  const d2868 = { name: "2868 Int prehung", widthIn: 32, heightIn: 80 };
+  const d3080 = { name: "3080 Ext entry", widthIn: 36, heightIn: 96 };
+
+  it("names sizes the way framers do", () => {
+    assert.equal(doorSizeCode(32, 80), "2868");
+    assert.equal(doorSizeCode(36, 96), "3080");
+    assert.equal(feetInchesIn(80), `6'8"`);
+    assert.equal(feetInchesIn(96), "8'");
+  });
+
+  it("each marker is one door; casing is 2 legs + head per side", () => {
+    const m = measurementMetrics(cond({ type: "DOOR" }), { points: [[0, 0]], isDeduction: false, angle: 0, door: { widthIn: 32, heightIn: 80 } }, null);
+    assert.equal(m.count, 1);
+    near(m.casing_lf, (2 * 80 + 32) / 12, 1e-9, "casing one side");
+    near(m.door_width_lf, 32 / 12, 1e-9, "width");
+  });
+
+  it("counts doors by name and cuts casing from whole sticks", () => {
+    // 3 × 2868, both sides: per side two 6'8" legs + a 2'8" head; 7' sticks hold one leg each,
+    // and the 2'8" heads pair up (2'8" + 2'8" + kerf ≤ 7').
+    const { lines, casingLf, unassigned } = doorTakeoff([d2868, d2868, d2868, { name: null, widthIn: 0, heightIn: 0 }], { ...DEFAULT_DOOR_OPTIONS, casingItem: "Casing", casingSides: 2, casingStickFt: 7 });
+    const qty = (k: string) => lines.find((l) => l.key === k)?.qty ?? 0;
+    assert.equal(qty("door:2868 int prehung"), 3);
+    assert.equal(unassigned, 1);
+    near(casingLf, 3 * 2 * ((2 * 80 + 32) / 12), 1e-9, "casing lf");
+    // 12 legs → 12 sticks; 6 heads → 3 sticks
+    assert.equal(qty("casing"), 15);
+  });
+
+  it("8' doors need longer sticks; no stick length orders by the foot", () => {
+    const sticks = doorTakeoff([d3080], { ...DEFAULT_DOOR_OPTIONS, casingItem: "Casing", casingSides: 1, casingStickFt: 16 });
+    // one side: 8' + 8' legs on one 16' stick? 8 + 8 + kerf > 16 → 2 sticks; the 3' head shares one of them
+    assert.equal(sticks.lines.find((l) => l.key === "casing")?.qty, 2);
+    const lf = doorTakeoff([d3080], { ...DEFAULT_DOOR_OPTIONS, casingItem: "Casing", casingSides: 2, casingStickFt: 0 });
+    const line = lf.lines.find((l) => l.key === "casing")!;
+    assert.equal(line.unit, "lf");
+    near(line.qty, 2 * ((2 * 96 + 36) / 12), 1e-9, "lf both sides");
+  });
+});
+
+describe("windows", () => {
+  const w3050 = { name: "3050 SH", widthIn: 36, heightIn: 60 };
+  const w2030 = { name: "2030 SH", widthIn: 24, heightIn: 36 };
+  const o = { ...DEFAULT_WINDOW_OPTIONS, casingItem: "Casing", casingStickFt: 7, stoolStickFt: 8, apronItem: "Apron", apronStickFt: 8 };
+
+  it("each marker is one window; casing is 2 legs + head", () => {
+    const m = measurementMetrics(cond({ type: "WINDOW" }), { points: [[0, 0]], isDeduction: false, angle: 0, door: { widthIn: 36, heightIn: 60 } }, null);
+    assert.equal(m.count, 1);
+    near(m.casing_lf, (2 * 60 + 36) / 12, 1e-9, "casing");
+    near(m.window_width_lf, 3, 1e-9, "width");
+  });
+
+  it("counts windows by name; casing, stool and apron each from their own sticks", () => {
+    const { lines, unassigned } = windowTakeoff([w3050, w3050, w2030, { name: null, widthIn: 0, heightIn: 0 }], o);
+    const qty = (k: string) => lines.find((l) => l.key === k)?.qty ?? 0;
+    assert.equal(qty("unit:3050 sh"), 2);
+    assert.equal(qty("unit:2030 sh"), 1);
+    assert.equal(unassigned, 1);
+    // casing on 7' sticks: four 5' legs alone (4), 3' legs/heads pair up (2), the 2' head alone (1)
+    assert.equal(qty("casing"), 7);
+    // stools 3'-6" ×2 share an 8' stick; the 2'-6" needs another
+    assert.equal(qty("stool"), 2);
+    // aprons 3'-4" ×2 share one; the 2'-4" needs another
+    assert.equal(qty("apron"), 2);
+    // the stool is always "Window stool"; cased windows are lined with 1x6 primed (2 × height + width), by the foot
+    assert.equal(lines.find((l) => l.key === "stool")?.name, "Window stool");
+    const lining = lines.find((l) => l.key === "lining")!;
+    assert.equal(lining.name, "1x6 primed");
+    near(lining.qty, 2 * (2 * 5 + 3) + (2 * 3 + 2), 1e-9, "lining lf");
+  });
+
+  it("uncased windows get only a stool and apron; a head trim can differ from the legs", () => {
+    const { lines } = windowTakeoff([{ ...w3050, cased: false }, w3050], { ...o, headItem: "1x6", headStickFt: 8 });
+    const qty = (k: string) => lines.find((l) => l.key === k)?.qty ?? 0;
+    // one cased window: two 5' legs on 7' sticks; its 3' head on an 8' 1x6; lining 13 lf
+    assert.equal(qty("casing"), 2);
+    assert.equal(lines.find((l) => l.key === "head")?.name, "1x6");
+    assert.equal(qty("head"), 1);
+    near(qty("lining"), 13, 1e-9, "lining only for the cased one");
+    // both windows get a stool and an apron (3'-6" stools pair up on an 8' stick)
+    assert.equal(qty("stool"), 1);
+  });
+
+  it("trim with no stick length is ordered by the foot", () => {
+    const { lines } = windowTakeoff([w3050], { ...DEFAULT_WINDOW_OPTIONS, apronItem: "Apron" });
+    const apron = lines.find((l) => l.key === "apron")!;
+    assert.equal(apron.unit, "lf");
+    near(apron.qty, (36 + 4) / 12, 1e-9, "apron lf");
+    assert.equal(lines.some((l) => l.key === "casing"), false);
+  });
+
+  it("doors: 1x4 legs with a 1x6 head", () => {
+    const { lines } = doorTakeoff([{ name: "2868 Int prehung", widthIn: 32, heightIn: 80 }], { ...DEFAULT_DOOR_OPTIONS, casingItem: "1x4", casingSides: 2, casingStickFt: 7, headItem: "1x6", headStickFt: 8 });
+    const qty = (k: string) => lines.find((l) => l.key === k)?.qty ?? 0;
+    assert.equal(qty("casing"), 4); // four 6'-8" legs, one per 7' stick
+    assert.equal(qty("head"), 1); // two 2'-8" heads on one 8' 1x6
   });
 });

@@ -228,3 +228,54 @@ export function PlanCanvas({
     </>
   );
 }
+
+/** Biggest picture auto-count reads (pixels): enough detail for small symbols, kind to memory. */
+const SEARCH_PIXELS = 20_000_000;
+
+function loadImage(url: string) {
+  return new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Could not load the plan image"));
+    img.src = url;
+  });
+}
+
+/**
+ * A grayscale picture of one sheet for auto-count, at `scale` pixels per page unit
+ * (lowered if the sheet would be too big). Returns the scale actually used.
+ */
+export async function renderSheetGray(url: string, kind: string, pageNumber: number, scale: number) {
+  const canvas = document.createElement("canvas");
+  let used = scale;
+  if (kind === "PDF") {
+    const held = acquireDoc(url);
+    try {
+      const doc = await held.promise;
+      const page = await doc.getPage(Math.min(Math.max(1, pageNumber), doc.numPages));
+      const base = page.getViewport({ scale: 1 });
+      used = Math.min(scale, MAX_SIDE / base.width, MAX_SIDE / base.height, Math.sqrt(SEARCH_PIXELS / (base.width * base.height)));
+      const vp = page.getViewport({ scale: used });
+      canvas.width = Math.floor(vp.width);
+      canvas.height = Math.floor(vp.height);
+      await page.render({ canvas, viewport: vp, intent: "print" }).promise;
+    } finally {
+      held.release();
+    }
+  } else {
+    const img = await loadImage(url);
+    used = Math.min(scale, MAX_SIDE / img.naturalWidth, MAX_SIDE / img.naturalHeight, Math.sqrt(SEARCH_PIXELS / (img.naturalWidth * img.naturalHeight)));
+    canvas.width = Math.floor(img.naturalWidth * used);
+    canvas.height = Math.floor(img.naturalHeight * used);
+    canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+  }
+  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  const { data } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const gray = new Uint8Array(canvas.width * canvas.height);
+  for (let i = 0; i < gray.length; i++) {
+    const a = data[i * 4 + 3];
+    // Transparent = paper.
+    gray[i] = a < 128 ? 255 : Math.round(data[i * 4] * 0.3 + data[i * 4 + 1] * 0.59 + data[i * 4 + 2] * 0.11);
+  }
+  return { gray: { w: canvas.width, h: canvas.height, data: gray }, scale: used, canvas };
+}
