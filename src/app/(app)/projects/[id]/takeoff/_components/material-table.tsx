@@ -115,6 +115,7 @@ export function MaterialTable({
                 <p className="text-sm font-medium text-slate-900">
                   {c.condition}
                   {c.size ? <span className="font-normal text-slate-500"> · {c.size}</span> : null}
+                  {c.method ? <span className="font-normal text-slate-500"> · {c.method}</span> : null}
                 </p>
                 {c.boards.length ? (
                   <ul className="mt-1 space-y-0.5 text-sm text-slate-700">
@@ -123,6 +124,12 @@ export function MaterialTable({
                         <span className="inline-block w-10 text-right font-medium text-slate-900">{b.count} ×</span> {boardPatternText(b)}
                       </li>
                     ))}
+                    {c.waste ? (
+                      <li className="tabular-nums text-slate-500">
+                        <span className="inline-block w-10 text-right font-medium text-slate-700">+{c.waste.count} ×</span> {num(c.waste.length)}&apos; for {num(c.waste.pct, 1)}%
+                        waste
+                      </li>
+                    ) : null}
                   </ul>
                 ) : (
                   <p className="mt-1 text-sm text-slate-700">{c.pieces.map(([len, n]) => `${n} @ ${c.exact ? feetInches(len) : `${num(len)}'`}`).join(" · ")}</p>

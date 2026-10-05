@@ -15,6 +15,9 @@ import {
   itemNameKey,
   measurementMetrics,
   packBoards,
+  boardPrice,
+  wasteBoards,
+  emptyMetrics,
   parseMemberSize,
   parseStockLengths,
   polygonArea,
@@ -267,6 +270,54 @@ describe("stock lengths and cut packing", () => {
   });
 });
 
+describe("packing choices and waste boards", () => {
+  it("one length: every board that length, a longer piece gets the shortest that fits", () => {
+    assert.deepEqual(packBoards([12, 11, 7, 5], parseStockLengths("16-32"), { mode: "LENGTH", length: 26 }).cutList, [[26, 2]]);
+    assert.deepEqual(packBoards([29, 5], parseStockLengths("16-32"), { mode: "LENGTH", length: 26 }).cutList, [[26, 1], [30, 1]]);
+  });
+
+  it("cheapest picks the lower cost, not the fewest feet", () => {
+    const stock = parseStockLengths("16, 32");
+    const prices = { 16: 20, 32: 30 };
+    assert.deepEqual(packBoards([15, 15], stock).cutList, [[16, 2]]);
+    const r = packBoards([15, 15], stock, { mode: "CHEAPEST", prices });
+    assert.deepEqual(r.cutList, [[32, 1]]);
+    assert.equal(r.cost, 30);
+  });
+
+  it("cheapest gives long pieces their own boards when long boards cost more per foot", () => {
+    // 22' boards cost double: 15.7' + 5.2' on one 22' ($22) loses to two 16's ($20).
+    const r = packBoards([21.4, 15.7, 5.2], parseStockLengths("16-22"), { mode: "CHEAPEST", prices: { 16: 10, 18: 10.2, 20: 10.4, 22: 22 } });
+    assert.deepEqual(r.cutList, [[16, 2], [22, 1]]);
+    assert.equal(r.cost, 42);
+  });
+
+  it("cheapest with no prices packs for least waste and says so", () => {
+    const r = packBoards([15, 15], parseStockLengths("16, 32"), { mode: "CHEAPEST", prices: {} });
+    assert.equal(r.mode, "WASTE");
+    assert.equal(r.noPrices, true);
+    assert.deepEqual(r.cutList, [[16, 2]]);
+  });
+
+  it("an unpriced length is estimated from the nearest priced one's price per foot", () => {
+    assert.deepEqual(boardPrice(32, { 18: 14.4 }), { price: 25.6, estimated: true });
+    assert.deepEqual(boardPrice(18, { 18: 14.4 }), { price: 14.4, estimated: false });
+    assert.equal(boardPrice(18, {}), null);
+  });
+
+  it("waste is added once, as boards of the most-used length", () => {
+    assert.deepEqual(wasteBoards([[16, 1], [26, 5]], 10), { length: 26, count: 1 });
+    // 1,218 lf × 10% = 121.8 lf → six 22' boards (not one extra of every length).
+    assert.deepEqual(wasteBoards([[16, 8], [18, 2], [20, 23], [22, 27]], 10), { length: 22, count: 6 });
+    assert.equal(wasteBoards([[16, 1]], 0), null);
+  });
+
+  it("lumber piece lines don't add waste again", () => {
+    const line = { metric: "pieces:26", qty: 1, per: 1, wastePct: 10, roundUp: true };
+    assert.equal(assemblyQuantity(line, emptyMetrics(), [[26, 6]]), 6);
+  });
+});
+
 describe("member sizes and item names", () => {
   it("reads lumber sizes", () => {
     assert.deepEqual(parseMemberSize("2x8"), { t: 2, w: 8 });
@@ -286,9 +337,9 @@ describe("assemblies", () => {
     assert.equal(assemblyQuantity({ qty: 1, per: 32, wastePct: 10, roundUp: true, metric: "area" }, metrics), 9);
   });
 
-  it("lumber lines count pieces of their stock length", () => {
+  it("lumber lines count pieces of their stock length (waste is already in the count)", () => {
     const metrics = measurementMetrics(cond({ type: "AREA" }), shape(ROOM), UPF);
-    assert.equal(assemblyQuantity({ qty: 1, per: 1, wastePct: 10, roundUp: true, metric: "pieces:20" }, metrics, [[20, 18]]), 20);
+    assert.equal(assemblyQuantity({ qty: 1, per: 1, wastePct: 10, roundUp: true, metric: "pieces:20" }, metrics, [[20, 18]]), 18);
   });
 });
 

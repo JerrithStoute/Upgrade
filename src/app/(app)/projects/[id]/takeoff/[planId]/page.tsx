@@ -124,6 +124,9 @@ export default async function PlanViewerPage({
             memberSizeId: editing.memberSizeId,
             options: editing.options,
             stockLengths: editing.stockLengths,
+            packMode: editing.packMode,
+            packLength: editing.packLength,
+            packing: editing.type === "FRAMING" ? { cuts: conditionTotals(editing).memberCuts, prices: editing.lengthPrices } : undefined,
             hasMeasurements: editing.measurements.length > 0,
             items: editing.items.map((i) => ({
               id: i.id,

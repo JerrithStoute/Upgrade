@@ -412,6 +412,10 @@ export type ConditionCalc = {
   memberWidthIn?: number | null; // actual thickness
   boardFeetPerLf?: number | null; // 0 = no board feet (I-joists, trusses)
   soldAs?: string | null; // STOCK | EXACT_LF | LF
+  // Joists/rafters: how cuts are packed into boards (see PACK_MODES), and the prices it can use.
+  packMode?: string | null;
+  packLength?: number | null;
+  lengthPrices?: LengthPrices | null;
 };
 
 export const SOLD_AS = ["STOCK", "EXACT_LF", "LF"] as const;
@@ -629,23 +633,107 @@ export function framingCutList(c: ConditionCalc, shapes: { m: MeasurementShape; 
 export const SAW_KERF_FT = 1 / 96;
 
 /** Default stock lengths (when a condition has none): even lengths 8'–24'. */
-const DEFAULT_STOCK = [8, 10, 12, 14, 16, 18, 20, 22, 24];
+export const DEFAULT_STOCK_LENGTHS = [8, 10, 12, 14, 16, 18, 20, 22, 24];
+const DEFAULT_STOCK = DEFAULT_STOCK_LENGTHS;
 
 /** Boards cut the same way. One-piece boards are grouped by length, with `cutsMax` the longest cut. */
 export type BoardPattern = { length: number; cuts: number[]; count: number; cutsMax?: number };
 
 /**
- * Packs cut lengths into stock boards the way a framer would: longest cuts first,
- * each into the board it fits most snugly (with a saw kerf between cuts), then
- * each board is shrunk to the shortest stock length that holds its cuts. It tries
- * each stock length as the board size and keeps the layout that orders the fewest
- * lineal feet (shorter boards on a tie), so short pieces share boards without
- * jumping to the longest stock. A cut longer than the longest stock is spliced:
- * full-length boards plus a remainder cut that is packed with the rest.
+ * How joist/rafter cuts are packed into boards:
+ * - WASTE: the fewest lineal feet ordered (least waste) — the default;
+ * - CHEAPEST: the lowest cost, from your prices for each length;
+ * - LENGTH: every board one length you choose (`packLength`).
  */
-export function packBoards(cutLengths: number[], stockList: number[] | null): { boards: BoardPattern[]; cutList: [number, number][] } {
+export const PACK_MODES = ["WASTE", "CHEAPEST", "LENGTH"] as const;
+export type PackMode = (typeof PACK_MODES)[number];
+export const PACK_MODE_LABELS: Record<PackMode, string> = { WASTE: "Least waste", CHEAPEST: "Cheapest", LENGTH: "One length" };
+
+export function packMode(mode: string | null | undefined): PackMode {
+  return (PACK_MODES as readonly string[]).includes(mode ?? "") ? (mode as PackMode) : "WASTE";
+}
+
+/** Prices per board length, in dollars (job or Item List), for the lengths that have one. */
+export type LengthPrices = Record<number, number>;
+
+/**
+ * A board length's price: its own when it has one, else estimated from the
+ * per-foot price of the nearest priced length (longer on a tie). Null when
+ * nothing is priced.
+ */
+export function boardPrice(length: number, prices: LengthPrices | null | undefined): { price: number; estimated: boolean } | null {
+  const known = Object.entries(prices ?? {})
+    .map(([l, p]) => [Number(l), p] as const)
+    .filter(([l, p]) => l > 0 && p > 0);
+  if (!known.length) return null;
+  const own = known.find(([l]) => Math.abs(l - length) < 1e-6);
+  if (own) return { price: own[1], estimated: false };
+  const [nl, np] = known.reduce((best, k) => {
+    const d = Math.abs(k[0] - length) - Math.abs(best[0] - length);
+    return d < -1e-9 || (Math.abs(d) <= 1e-9 && k[0] > best[0]) ? k : best;
+  });
+  return { price: (np / nl) * length, estimated: true };
+}
+
+export type PackResult = {
+  boards: BoardPattern[];
+  cutList: [number, number][];
+  /** The method actually used (Cheapest with no prices falls back to Least waste). */
+  mode: PackMode;
+  /** Cheapest asked for, but nothing priced for this size yet. */
+  noPrices?: boolean;
+  /** What the boards cost, when any length is priced (null = no prices). */
+  cost: number | null;
+  /** Board lengths whose price was estimated from another length's. */
+  estimated: number[];
+};
+
+/**
+ * Packs cut lengths into stock boards the way a framer would: longest cuts first,
+ * each into the board it fits most snugly (with a saw kerf between cuts).
+ *
+ * Least waste (default) tries each stock length as the board size (a cut longer than
+ * it gets a board of its own), shrinks each
+ * board to the shortest stock length that holds its cuts, and keeps the layout
+ * that orders the fewest lineal feet (shorter boards on a tie). Cheapest tries the
+ * same layouts but sizes each board to the cheapest length that holds it and keeps
+ * the lowest cost. One length packs every board at `length` (no shrinking); a single
+ * cut longer than that gets the shortest stock length that fits.
+ *
+ * A cut longer than the longest stock is spliced: full-length boards plus a
+ * remainder cut that is packed with the rest.
+ */
+export function packBoards(
+  cutLengths: number[],
+  stockList: number[] | null,
+  opts: { mode?: string | null; length?: number | null; prices?: LengthPrices | null } = {},
+): PackResult {
   const stock = stockList?.length ? stockList : DEFAULT_STOCK;
   const max = stock[stock.length - 1];
+  let mode = packMode(opts.mode);
+  const fixed = mode === "LENGTH" && opts.length && opts.length > 0 ? opts.length : null;
+  if (mode === "LENGTH" && !fixed) mode = "WASTE";
+  const priceOf = (len: number) => boardPrice(len, opts.prices);
+  const noPrices = mode === "CHEAPEST" && !priceOf(max);
+  if (noPrices) mode = "WASTE";
+
+  /** Shortest stock length that holds `used` feet (longer cuts: their own even length). */
+  const shortest = (used: number) => stock.find((l) => l >= used - 1e-9) ?? (stockList?.length ? max : stockLength(used));
+  /** Cheapest stock length that holds `used` feet (shorter on a tie). */
+  const cheapest = (used: number) => {
+    let best = shortest(used);
+    let bestPrice = priceOf(best)?.price ?? Infinity;
+    for (const l of stock) {
+      if (l < used - 1e-9) continue;
+      const p = priceOf(l)?.price ?? Infinity;
+      if (p < bestPrice - 1e-9) {
+        best = l;
+        bestPrice = p;
+      }
+    }
+    return best;
+  };
+
   const fullBoards: number[] = [];
   const cuts: number[] = [];
   for (const raw of cutLengths) {
@@ -660,7 +748,9 @@ export function packBoards(cutLengths: number[], stockList: number[] | null): { 
       fullBoards.push(max);
       left -= max;
     }
-    cuts.push(left);
+    // One length: a piece longer than your length gets its own board, the shortest that fits.
+    if (fixed && left > fixed + 1e-9) fullBoards.push(shortest(left));
+    else cuts.push(left);
   }
   cuts.sort((a, b) => b - a);
 
@@ -683,18 +773,30 @@ export function packBoards(cutLengths: number[], stockList: number[] | null): { 
         bins.push({ cuts: [cut], used: cut });
       }
     }
-    const total = bins.reduce((sum, b) => sum + (stock.find((l) => l >= b.used - 1e-9) ?? max), 0);
-    return { bins, total };
+    return bins;
   };
-  const longest = cuts[0] ?? 0;
+
+  // Each board's length for a packed bin.
+  const sizeOf = fixed ? () => fixed : mode === "CHEAPEST" ? cheapest : shortest;
   let bins: { cuts: number[]; used: number }[] = [];
-  let bestTotal = Infinity;
-  for (const capacity of stock) {
-    if (capacity < longest - 1e-9) continue;
-    const tryIt = packInto(capacity);
-    if (tryIt.total < bestTotal - 1e-9) {
-      bins = tryIt.bins;
-      bestTotal = tryIt.total;
+  if (fixed) bins = packInto(fixed);
+  else {
+    // Every stock length is tried as the board size — even shorter than the longest cut:
+    // a cut that doesn't fit gets a board of its own (e.g. short pieces share 16s
+    // while the long ones go on 20s).
+    let bestScore = Infinity;
+    let bestLf = Infinity;
+    for (const capacity of stock) {
+      const tryBins = packInto(capacity);
+      const lengths = tryBins.map((b) => sizeOf(b.used));
+      const lf = lengths.reduce((s, l) => s + l, 0);
+      const score = mode === "CHEAPEST" ? lengths.reduce((s, l) => s + (priceOf(l)?.price ?? 0), 0) : lf;
+      // Cheapest: on a tie, the fewer feet.
+      if (score < bestScore - 1e-9 || (Math.abs(score - bestScore) <= 1e-9 && lf < bestLf - 1e-9)) {
+        bins = tryBins;
+        bestScore = score;
+        bestLf = lf;
+      }
     }
   }
 
@@ -712,12 +814,56 @@ export function packBoards(cutLengths: number[], stockList: number[] | null): { 
     patterns.set(key, p);
   };
   for (const len of fullBoards) addBoard(len, [len]);
-  for (const bin of bins) addBoard(stock.find((l) => l >= bin.used - 1e-9) ?? max, bin.cuts);
+  for (const bin of bins) addBoard(sizeOf(bin.used), bin.cuts);
 
   const boards = Array.from(patterns.values()).sort((a, b) => b.length - a.length || b.count - a.count);
   const counts = new Map<number, number>();
   for (const b of boards) counts.set(b.length, (counts.get(b.length) ?? 0) + b.count);
-  return { boards, cutList: Array.from(counts.entries()).sort((a, b) => a[0] - b[0]) };
+  const cutList = Array.from(counts.entries()).sort((a, b) => a[0] - b[0]);
+  return { boards, cutList, mode, ...(noPrices ? { noPrices } : {}), ...listCost(cutList, opts.prices) };
+}
+
+/** "Cheapest (2 prices estimated)", "One length: 26'", … — how a condition's boards were packed. */
+export function packLabel(pack: { mode: PackMode; noPrices?: boolean; estimated: number[] }, packLength?: number | null) {
+  if (pack.mode === "LENGTH") return `One length: ${num2(packLength ?? 0)}'`;
+  if (pack.mode === "CHEAPEST") return `Cheapest${pack.estimated.length ? ` (${pack.estimated.length} price${pack.estimated.length === 1 ? "" : "s"} estimated)` : ""}`;
+  return pack.noPrices ? "Least waste — no prices yet to find the cheapest" : "Least waste";
+}
+
+function num2(n: number) {
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "");
+}
+
+/** What a cut list costs at these prices (estimating unpriced lengths), and which lengths were estimated. */
+export function listCost(cutList: [number, number][], prices: LengthPrices | null | undefined): { cost: number | null; estimated: number[] } {
+  let cost = 0;
+  const estimated: number[] = [];
+  for (const [len, n] of cutList) {
+    const p = boardPrice(len, prices);
+    if (!p) return { cost: null, estimated: [] };
+    cost += p.price * n;
+    if (p.estimated) estimated.push(len);
+  }
+  return { cost, estimated };
+}
+
+/**
+ * Waste as whole extra boards: the waste % of the feet ordered, rounded up to
+ * boards of the length the order uses most (the longer on a tie). Added once
+ * to the whole order, not to each length.
+ */
+export function wasteBoards(cutList: [number, number][], wastePct: number): { length: number; count: number } | null {
+  if (!(wastePct > 0) || !cutList.length) return null;
+  const lf = cutList.reduce((s, [len, n]) => s + len * n, 0);
+  const [length] = cutList.reduce((best, row) => (row[1] > best[1] || (row[1] === best[1] && row[0] > best[0]) ? row : best));
+  const count = Math.ceil((lf * wastePct) / 100 / length - 1e-9);
+  return count > 0 ? { length, count } : null;
+}
+
+/** A cut list with waste boards added. */
+export function withWasteBoards(cutList: [number, number][], extra: { length: number; count: number } | null): [number, number][] {
+  if (!extra) return cutList;
+  return cutList.map(([len, n]) => [len, Math.abs(len - extra.length) < 1e-6 ? n + extra.count : n]);
 }
 
 /**
@@ -741,9 +887,10 @@ export function framingBoards(c: ConditionCalc, shapes: { m: MeasurementShape; u
         list.set(key, (list.get(key) ?? 0) + 1);
       }
     }
-    return { boards: [] as BoardPattern[], cutList: Array.from(list.entries()).sort((a, b) => a[0] - b[0]), lengths };
+    const cutList = Array.from(list.entries()).sort((a, b) => a[0] - b[0]) as [number, number][];
+    return { boards: [] as BoardPattern[], cutList, mode: "WASTE" as PackMode, cost: null, estimated: [] as number[], lengths };
   }
-  return { ...packBoards(lengths, parseStockLengths(c.stockLengths)), lengths };
+  return { ...packBoards(lengths, parseStockLengths(c.stockLengths), { mode: c.packMode, length: c.packLength, prices: c.lengthPrices }), lengths };
 }
 
 /** Condition quantity with waste. */
@@ -816,6 +963,14 @@ export function assemblyBase(item: { metric: string }, metrics: Metrics, cutList
   return metrics[item.metric as MetricKey] ?? 0;
 }
 
+/**
+ * The waste % a line adds itself. Lumber pieces ("2x6 × 20'") add none: the
+ * condition's waste is already in their counts, as whole extra boards (wasteBoards).
+ */
+export function lineWastePct(item: { metric: string; wastePct: number }) {
+  return item.metric.startsWith(LUMBER_METRIC_PREFIX) ? 0 : item.wastePct;
+}
+
 /** Assembly line quantity: metric × qty ÷ per, plus waste, optionally rounded up. */
 export function assemblyQuantity(
   item: { qty: number; per: number; wastePct: number; roundUp: boolean; metric: string },
@@ -825,7 +980,7 @@ export function assemblyQuantity(
 ) {
   const base = assemblyBase(item, metrics, cutList, auto);
   const per = item.per > 0 ? item.per : 1;
-  const q = withWaste((base * item.qty) / per, item.wastePct);
+  const q = withWaste((base * item.qty) / per, lineWastePct(item));
   return item.roundUp ? Math.ceil(q - 1e-9) : q;
 }
 

@@ -23,7 +23,15 @@ export type TotalsPanelData = {
   }[];
   materials: {
     lines: { key: string; name: string; category: string; quantity: number; unit: string }[];
-    cutLists: { condition: string; size: string | null; pieces: [number, number][]; exact: boolean; boards: BoardPattern[] }[];
+    cutLists: {
+      condition: string;
+      size: string | null;
+      pieces: [number, number][];
+      exact: boolean;
+      boards: BoardPattern[];
+      method: string | null;
+      waste: { length: number; count: number; pct: number } | null;
+    }[];
   };
 };
 
@@ -163,6 +171,7 @@ export function TotalsPanel({
                       <p className="text-xs font-medium text-slate-900">
                         {c.condition}
                         {c.size ? <span className="font-normal text-slate-500"> · {c.size}</span> : null}
+                        {c.method ? <span className="font-normal text-slate-500"> · {c.method}</span> : null}
                       </p>
                       {c.boards.length ? (
                         <ul className="text-xs text-slate-700">
@@ -171,6 +180,11 @@ export function TotalsPanel({
                               {b.count} × {boardPatternText(b)}
                             </li>
                           ))}
+                          {c.waste ? (
+                            <li className="tabular-nums text-slate-500">
+                              +{c.waste.count} × {num(c.waste.length)}&apos; for {num(c.waste.pct, 1)}% waste
+                            </li>
+                          ) : null}
                         </ul>
                       ) : (
                         <p className="text-xs text-slate-700">{c.pieces.map(([len, n]) => `${n} @ ${c.exact ? feetInches(len) : `${num(len)}'`}`).join(" · ")}</p>

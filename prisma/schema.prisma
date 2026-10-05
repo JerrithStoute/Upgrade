@@ -836,6 +836,8 @@ model TakeoffCondition {
   memberSizeRef MemberSize? @relation(fields: [memberSizeId], references: [id], onDelete: SetNull)
   options       String? // walls / openings: their settings as JSON (plates, sheathing, headers…)
   stockLengths  String? // framing: lengths you buy, in feet, e.g. "8,10,12,14,16" (blank = even lengths from 8')
+  packMode      String      @default("WASTE") // joists/rafters: WASTE (least waste) | CHEAPEST | LENGTH (one board length)
+  packLength    Float? // LENGTH: the board length in feet
   sortOrder     Int         @default(0)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -1007,6 +1009,8 @@ model TakeoffTemplateCondition {
   memberSizeRef MemberSize?     @relation(fields: [memberSizeId], references: [id], onDelete: SetNull)
   options       String?
   stockLengths  String?
+  packMode      String          @default("WASTE")
+  packLength    Float?
   sortOrder     Int             @default(0)
 
   items TakeoffTemplateItem[]

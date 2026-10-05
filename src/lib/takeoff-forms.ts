@@ -22,6 +22,7 @@ import {
   type DoorOptions,
   type WallOptions,
   type WindowOptions,
+  packMode,
 } from "./takeoff";
 
 /**
@@ -39,6 +40,9 @@ export async function conditionFields(fd: FormData) {
   if (costCodeId && !(await db.costCode.findUnique({ where: { id: costCodeId }, select: { id: true } }))) throw new Error("Cost code not found");
   const stockLengths = strOrNull(fd, "stockLengths");
   if (stockLengths && !parseStockLengths(stockLengths)) throw new Error("Stock lengths should be feet, e.g. 8, 10, 12 or 8-24");
+  const pack = packMode(str(fd, "packMode"));
+  const packLengthFt = numField(fd, "packLength", 0);
+  if (type === "FRAMING" && pack === "LENGTH" && !(packLengthFt > 0 && packLengthFt <= 100)) throw new Error("Enter the board length to pack into, in feet (e.g. 16)");
   // Member size: joist/rafter/hip lumber, wall studs, or opening headers.
   const usesSize = isMemberType(type) || type === "WALL" || type === "OPENING";
   const memberSizeId = usesSize ? strOrNull(fd, "memberSizeId") : null;
@@ -80,6 +84,9 @@ export async function conditionFields(fd: FormData) {
     options,
     memberSize: size?.name ?? null,
     stockLengths: isMemberType(type) || type === "OPENING" ? (stockLengths?.slice(0, 120) ?? null) : null,
+    // Joists/rafters: least waste, cheapest, or one board length.
+    packMode: type === "FRAMING" ? pack : "WASTE",
+    packLength: type === "FRAMING" && pack === "LENGTH" ? packLengthFt : null,
     metric: isMetricFor(type, metricRaw) ? metricRaw : DEFAULT_METRIC[type],
     color: /^#[0-9a-f]{6}$/i.test(color) ? color : CONDITION_COLORS[0],
     group: str(fd, "group") || "Takeoff",

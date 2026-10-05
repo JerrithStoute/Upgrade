@@ -77,7 +77,8 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
           },
         }));
       const current = existing.find((i) => i.metric === line.metric);
-      const shape = { description: line.description, qty: line.qty, per: 1, unit: line.unit, roundUp: line.roundUp, wastePct: c.wastePct };
+      // Pieces carry no waste of their own: it's in their counts, as whole extra boards.
+      const shape = { description: line.description, qty: line.qty, per: 1, unit: line.unit, roundUp: line.roundUp, wastePct: line.metric === LUMBER_LF_METRIC ? c.wastePct : 0 };
       if (!current) {
         await db.takeoffAssemblyItem.create({
           data: {

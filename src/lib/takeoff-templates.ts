@@ -25,6 +25,8 @@ function conditionData(c: {
   memberSizeId: string | null;
   options: string | null;
   stockLengths: string | null;
+  packMode: string;
+  packLength: number | null;
 }) {
   return {
     name: c.name,
@@ -48,6 +50,8 @@ function conditionData(c: {
     memberSizeId: c.memberSizeId,
     options: c.options,
     stockLengths: c.stockLengths,
+    packMode: c.packMode,
+    packLength: c.packLength,
   };
 }
 

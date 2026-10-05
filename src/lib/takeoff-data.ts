@@ -29,14 +29,56 @@ import {
   parseOptions,
   wallRun,
   wallTakeoff,
+  wasteBoards,
+  withWasteBoards,
+  itemNameKey,
+  lumberItemName,
+  lumberMetric,
+  parseStockLengths,
+  DEFAULT_STOCK_LENGTHS,
+  type LengthPrices,
+  type PackMode,
   type AutoLine,
   type BoardPattern,
   type MetricKey,
   type Metrics,
 } from "./takeoff";
 
-/** Conditions with their measurements (and each measurement's sheet scale) and assembly items. */
-export function loadConditions(projectId: string) {
+/**
+ * Conditions with their measurements (and each measurement's sheet scale) and assembly items,
+ * plus, for joists/rafters, the price of each board length (for packing by cost).
+ */
+export async function loadConditions(projectId: string) {
+  const conditions = await findConditions(projectId);
+  return withLengthPrices(conditions);
+}
+
+/**
+ * Each stock-length joist/rafter condition's board prices, by length: this job's price
+ * when its line has one, else the Item List's ("2x6 × 20'"). Unpriced lengths are left out.
+ */
+async function withLengthPrices<T extends Awaited<ReturnType<typeof findConditions>>[number]>(conditions: T[]) {
+  const lengthsOf = (c: T) => {
+    const stock = parseStockLengths(c.stockLengths) ?? DEFAULT_STOCK_LENGTHS;
+    return c.packLength && c.packLength > 0 && !stock.includes(c.packLength) ? [...stock, c.packLength] : stock;
+  };
+  const priced = conditions.filter((c) => c.type === "FRAMING" && (c.memberSizeRef?.soldAs ?? "STOCK") === "STOCK");
+  const keys = new Set(priced.flatMap((c) => lengthsOf(c).map((l) => itemNameKey(lumberItemName(c.memberSize, c.name, l)))));
+  const list = keys.size ? await db.materialItem.findMany({ where: { nameKey: { in: Array.from(keys) } }, select: { nameKey: true, unitCost: true } }) : [];
+  const listPrice = new Map(list.map((i) => [i.nameKey, i.unitCost]));
+  return conditions.map((c) => {
+    if (!priced.includes(c)) return { ...c, lengthPrices: null as LengthPrices | null };
+    const prices: LengthPrices = {};
+    for (const l of lengthsOf(c)) {
+      const job = c.items.find((i) => i.metric === lumberMetric(l))?.unitCost ?? 0;
+      const p = job > 0 ? job : (listPrice.get(itemNameKey(lumberItemName(c.memberSize, c.name, l))) ?? 0);
+      if (p > 0) prices[l] = p;
+    }
+    return { ...c, lengthPrices: prices as LengthPrices | null };
+  });
+}
+
+function findConditions(projectId: string) {
   return db.takeoffCondition.findMany({
     where: { projectId },
     orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
@@ -68,7 +110,11 @@ export type ConditionTotals = {
   quantityWithWaste: number;
   unit: string;
   bySheet: { sheetId: string; label: string; planId: string; pageNumber: number; metrics: Metrics; unscaled: boolean }[];
-  cutList: [number, number][]; // boards to order: [stock length, count]
+  cutList: [number, number][]; // boards to order, waste included: [stock length, count]
+  neededList: [number, number][]; // the packed boards before waste
+  waste: { length: number; count: number } | null; // joists/rafters: the waste boards in cutList
+  pack: { mode: PackMode; noPrices?: boolean; cost: number | null; estimated: number[] } | null; // joists/rafters: how it was packed
+  memberCuts: number[]; // joists/rafters: every member's length (ft), for comparing packings
   wall: Record<string, number>; // walls & openings: material quantities by "wall:<key>" / "opening:<key>"
   wallLines: AutoLine[];
   unassignedDoors: number; // Doors / windows: markers with nothing picked yet
@@ -123,6 +169,16 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
     const orderedLf = lumber.cutList.reduce((sum, [len, n]) => sum + len * n, 0);
     const bfPerLf = metrics.stock_lf > 0 ? metrics.board_feet / metrics.stock_lf : 0;
     metrics = { ...metrics, stock_lf: orderedLf, board_feet: orderedLf * bfPerLf };
+    // Each sheet the same way: its own shapes packed (not a board per member).
+    for (const row of bySheet.values()) {
+      const packed = framingBoards(
+        calc,
+        shapes.filter((s) => s.sheet.id === row.sheetId),
+      );
+      const sheetLf = packed.cutList.reduce((sum, [len, n]) => sum + len * n, 0);
+      const sheetBfPerLf = row.metrics.stock_lf > 0 ? row.metrics.board_feet / row.metrics.stock_lf : bfPerLf;
+      row.metrics = { ...row.metrics, stock_lf: sheetLf, board_feet: sheetLf * sheetBfPerLf };
+    }
   }
   // Walls and openings: materials from the traced lines and the condition's options.
   const wallLines: AutoLine[] = [];
@@ -152,14 +208,34 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
     const widths = scaled.map((m) => polylineLength(arcPath(parsePoints(m.points), parseArcs(m.points), false)) / m.sheet.unitsPerFoot!);
     wallLines.push(...openingTakeoff({ size: c.memberSize, stockLengths: c.stockLengths }, parseOptions(c.options, DEFAULT_OPENING_OPTIONS), widths).lines);
   }
+  // What to order: the packed boards plus waste. Joists/rafters: waste % of the feet,
+  // as whole boards of the most-used length. Hips & valleys (a board each): each length
+  // rounded up, as before. Lineal-foot sizes take waste on their one lf line.
+  const needed = lumber?.cutList ?? [];
+  const soldAs = c.memberSizeRef?.soldAs ?? "STOCK";
+  const waste = c.type === "FRAMING" && soldAs !== "LF" ? wasteBoards(needed, c.wastePct) : null;
+  const order: [number, number][] =
+    c.type === "HIP_VALLEY" && soldAs !== "LF" ? needed.map(([len, n]) => [len, Math.ceil(withWaste(n, c.wastePct) - 1e-9)]) : withWasteBoards(needed, waste);
   const quantity = metrics[c.metric as MetricKey] ?? 0;
+  const orderLf = order.reduce((sum, [len, n]) => sum + len * n, 0);
+  const neededLf = needed.reduce((sum, [len, n]) => sum + len * n, 0);
+  // Ordered lumber "with waste" is what you actually order.
+  const quantityWithWaste =
+    isMemberType(c.type) && soldAs !== "LF" && neededLf > 0 && (c.metric === "stock_lf" || c.metric === "board_feet")
+      ? quantity * (orderLf / neededLf)
+      : withWaste(quantity, c.wastePct);
   return {
     metrics,
     quantity,
-    quantityWithWaste: withWaste(quantity, c.wastePct),
+    quantityWithWaste,
     unit: metricUnit(c.metric),
     bySheet: Array.from(bySheet.values()),
-    cutList: lumber?.cutList ?? [],
+    cutList: order,
+    neededList: needed,
+    waste,
+    pack:
+      lumber && c.type === "FRAMING" ? { mode: lumber.mode, noPrices: "noPrices" in lumber ? lumber.noPrices : undefined, cost: lumber.cost, estimated: lumber.estimated } : null,
+    memberCuts: c.type === "FRAMING" ? (lumber?.lengths ?? []) : [],
     wall: Object.fromEntries(wallLines.map((l) => [`${autoMetricPrefix(c.type)}${l.key}`, l.qty])),
     wallLines,
     unassignedDoors,

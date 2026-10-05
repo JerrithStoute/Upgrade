@@ -1,6 +1,17 @@
 import "server-only";
 import { conditionTotals, loadConditions, type LoadedCondition } from "./takeoff-data";
-import { LUMBER_METRIC_PREFIX, METRICS, assemblyBase, compareMaterialNames, isMemberType, itemNameKey, type BoardPattern, type MetricKey } from "./takeoff";
+import {
+  LUMBER_METRIC_PREFIX,
+  METRICS,
+  assemblyBase,
+  compareMaterialNames,
+  lineWastePct,
+  packLabel,
+  isMemberType,
+  itemNameKey,
+  type BoardPattern,
+  type MetricKey,
+} from "./takeoff";
 import { syncAutoItems } from "./walls";
 
 export type MaterialLine = {
@@ -21,7 +32,17 @@ export type MaterialLine = {
   pinned: boolean;
 };
 
-export type CutList = { condition: string; size: string | null; pieces: [number, number][]; exact: boolean; boards: BoardPattern[] };
+export type CutList = {
+  condition: string;
+  size: string | null;
+  pieces: [number, number][];
+  exact: boolean;
+  boards: BoardPattern[];
+  /** How the boards were packed ("Least waste", "Cheapest", "One length: 26'"). */
+  method: string | null;
+  /** Joists/rafters: the waste, as extra boards on top of `boards`. */
+  waste: { length: number; count: number; pct: number } | null;
+};
 
 type Acc = Omit<MaterialLine, "quantity" | "unitCost" | "extended" | "usedIn" | "pieces" | "pinned"> & {
   pinned: boolean;
@@ -89,7 +110,7 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
     if (c.items.length > 0) {
       for (const i of c.items) {
         const base = assemblyBase(i, totals.metrics, totals.cutList, totals.wall);
-        const raw = ((base * i.qty) / (i.per > 0 ? i.per : 1)) * (1 + i.wastePct / 100);
+        const raw = ((base * i.qty) / (i.per > 0 ? i.per : 1)) * (1 + lineWastePct(i) / 100);
         // Made-to-order members share one Item List entry (priced per lf) but are listed per exact length.
         const exactLength = i.metric.startsWith(LUMBER_METRIC_PREFIX) && i.unit === "lf";
         const key = exactLength ? `${i.materialItemId}|${i.metric}` : (i.materialItemId ?? `name:${itemNameKey(i.description)}|${i.unit}`);
@@ -108,11 +129,19 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
           raw * i.unitCost,
           i.roundUp,
           c.name,
-          exactLength ? Math.ceil(base * (1 + i.wastePct / 100) - 1e-9) : null,
+          exactLength ? Math.ceil(base * (1 + lineWastePct(i) / 100) - 1e-9) : null,
         );
       }
       if (isMemberType(c.type) && totals.cutList.length)
-        cutLists.push({ condition: c.name, size: c.memberSize, pieces: totals.cutList, exact: c.memberSizeRef?.soldAs === "EXACT_LF", boards: totals.boards });
+        cutLists.push({
+          condition: c.name,
+          size: c.memberSize,
+          pieces: totals.cutList,
+          exact: c.memberSizeRef?.soldAs === "EXACT_LF",
+          boards: totals.boards,
+          method: totals.pack && totals.boards.length ? packLabel(totals.pack, c.packLength) : null,
+          waste: totals.waste ? { ...totals.waste, pct: c.wastePct } : null,
+        });
       continue;
     }
 

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
-import { costCodeLabel } from "@/lib/utils";
+import { cn, costCodeLabel, money, num } from "@/lib/utils";
 import {
   CONDITION_COLORS,
   CONDITION_TYPES,
@@ -14,7 +14,16 @@ import {
   hipFactor,
   metricLabel,
   slopeFactor,
+  packBoards,
+  parseStockLengths,
+  wasteBoards,
+  withWasteBoards,
+  listCost,
+  PACK_MODES,
+  PACK_MODE_LABELS,
   type ConditionType,
+  type LengthPrices,
+  type PackMode,
 } from "@/lib/takeoff";
 import { CodeRuleFields } from "./code-rules";
 import { PendingItems } from "./pending-items";
@@ -46,6 +55,11 @@ export type ConditionFormValues = {
   memberSizeId: string | null;
   stockLengths: string | null;
   options?: string | null;
+  /** Joists/rafters: how cuts are packed into boards (WASTE | CHEAPEST | LENGTH) and the length for LENGTH. */
+  packMode?: string;
+  packLength?: number | null;
+  /** Job takeoffs: every member's length and the board prices, to compare the packings. */
+  packing?: { cuts: number[]; prices: LengthPrices | null };
 };
 
 export type MemberSizeOption = { id: string; name: string; kind: string; soldAs: string; stockLengths: string | null };
@@ -101,6 +115,8 @@ export function ConditionForm({
   const pitch2 = pitch2Text.trim() === "" ? pitch : Math.max(0, Number(pitch2Text) || 0);
   const [sizeId, setSizeId] = useState(values?.memberSizeId ?? "");
   const [stockText, setStockText] = useState(values?.stockLengths ?? "");
+  const [pack, setPack] = useState<PackMode>((values?.packMode as PackMode) ?? "WASTE");
+  const [packLengthText, setPackLengthText] = useState(values?.packLength ? String(values.packLength) : "");
   const size = memberSizes.find((m) => m.id === sizeId) ?? null;
   const metrics = METRICS_BY_TYPE[type];
   const p = (k: string) => `cond-${values?.id ?? "new"}-${k}`;
@@ -302,6 +318,20 @@ export function ConditionForm({
           )}
         </FormGrid>
       ) : null}
+      {type === "FRAMING" && (size?.soldAs === "STOCK" || !size) ? (
+        <PackingFields
+          idPrefix={p("pack")}
+          mode={pack}
+          setMode={setPack}
+          lengthText={packLengthText}
+          setLengthText={setPackLengthText}
+          stockText={stockText}
+          wastePct={values?.wastePct ?? 0}
+          packing={values?.packing}
+        />
+      ) : (
+        <input type="hidden" name="packMode" value="WASTE" />
+      )}
 
       {isMember || isAuto ? (
         <CodeRuleFields key={type} type={type} costCodes={costCodes} rules={codeRules} categories={Array.from(new Set(itemOptions.map((i) => i.category))).sort()} />
@@ -385,3 +415,152 @@ export function ConditionForm({
     </form>
   );
 }
+
+/** "1 × 18', 4 × 32'" */
+function boardsText(list: [number, number][]) {
+  return list.map(([len, n]) => `${n} × ${num(len)}'`).join(", ");
+}
+
+/**
+ * Joists/rafters: how the cuts are packed into boards — least waste, cheapest, or one
+ * length — with the three side by side (for the drawing as it is, waste included).
+ */
+function PackingFields({
+  idPrefix,
+  mode,
+  setMode,
+  lengthText,
+  setLengthText,
+  stockText,
+  wastePct,
+  packing,
+}: {
+  idPrefix: string;
+  mode: PackMode;
+  setMode: (m: PackMode) => void;
+  lengthText: string;
+  setLengthText: (t: string) => void;
+  stockText: string;
+  wastePct: number;
+  packing?: { cuts: number[]; prices: LengthPrices | null };
+}) {
+  const length = Number(lengthText) > 0 ? Number(lengthText) : null;
+  const stock = parseStockLengths(stockText);
+  const rows: PackRow[] = packing?.cuts.length
+    ? PACK_MODES.map((m): PackRow => {
+        if (m === "LENGTH" && !length) return { mode: m, empty: "Enter a board length" };
+        const r = packBoards(packing.cuts, stock, { mode: m, length, prices: packing.prices });
+        if (m === "CHEAPEST" && r.noPrices) return { mode: m, empty: "No prices yet for this size — price a length in the Item List" };
+        const waste = wasteBoards(r.cutList, wastePct);
+        const order = withWasteBoards(r.cutList, waste);
+        const cost = listCost(order, packing.prices);
+        return {
+          mode: m,
+          boards: boardsText(r.cutList),
+          waste: waste ? `+ ${waste.count} × ${num(waste.length)}' waste` : null,
+          feet: order.reduce((sum, [len, n]) => sum + len * n, 0),
+          cost: cost.cost,
+          estimated: cost.estimated,
+        };
+      })
+    : [];
+  const cheapestCost = Math.min(...rows.map((r) => ("cost" in r && r.cost != null ? r.cost : Infinity)));
+  const leastFeet = Math.min(...rows.map((r) => ("feet" in r ? r.feet : Infinity)));
+
+  return (
+    <div className="space-y-2">
+      <FormGrid className="md:grid-cols-4">
+        <Field label="Packing" htmlFor={`${idPrefix}-mode`} hint="How cuts are combined into the boards you order">
+          <select id={`${idPrefix}-mode`} name="packMode" className="input" value={mode} onChange={(e) => setMode(e.target.value as PackMode)}>
+            {PACK_MODES.map((m) => (
+              <option key={m} value={m}>
+                {PACK_MODE_LABELS[m]}
+              </option>
+            ))}
+          </select>
+        </Field>
+        {mode === "LENGTH" ? (
+          <Field label="Board length (ft)" htmlFor={`${idPrefix}-length`} hint="Every board this length; a longer piece gets its own board">
+            <input
+              id={`${idPrefix}-length`}
+              name="packLength"
+              inputMode="decimal"
+              className="input"
+              value={lengthText}
+              onChange={(e) => setLengthText(e.target.value)}
+              placeholder="16"
+              required
+            />
+          </Field>
+        ) : null}
+        <p className="self-end pb-2 text-xs text-slate-500 md:col-span-2">
+          {mode === "WASTE"
+            ? "Orders the fewest feet of lumber."
+            : mode === "CHEAPEST"
+              ? "Orders what costs least, from your prices for each length. Unpriced lengths are estimated from the nearest priced one's price per foot."
+              : "Every board is the length you enter."}
+        </p>
+      </FormGrid>
+      {rows.length ? (
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
+          <table className="w-full text-xs">
+            <thead className="bg-slate-50 text-left text-slate-500">
+              <tr>
+                <th className="px-3 py-1.5 font-medium">Packing (this drawing{wastePct > 0 ? `, ${num(wastePct, 1)}% waste` : ""})</th>
+                <th className="px-3 py-1.5 font-medium">Boards</th>
+                <th className="px-3 py-1.5 text-right font-medium">Feet</th>
+                <th className="px-3 py-1.5 text-right font-medium">Cost</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => (
+                <tr
+                  key={r.mode}
+                  className={cn("cursor-pointer align-top hover:bg-slate-50", r.mode === mode && "bg-blue-50/60 hover:bg-blue-50")}
+                  onClick={() => setMode(r.mode)}
+                  title={`Use ${PACK_MODE_LABELS[r.mode]}`}
+                >
+                  <td className="whitespace-nowrap px-3 py-1.5 font-medium text-slate-900">
+                    <span className={cn("mr-1.5 inline-block h-2 w-2 rounded-full", r.mode === mode ? "bg-blue-700" : "bg-slate-300")} />
+                    {PACK_MODE_LABELS[r.mode]}
+                    {r.mode === "LENGTH" && length ? ` (${num(length)}')` : ""}
+                  </td>
+                  {"empty" in r ? (
+                    <td colSpan={3} className="px-3 py-1.5 text-slate-400">
+                      {r.empty}
+                    </td>
+                  ) : (
+                    <>
+                      <td className="px-3 py-1.5 text-slate-700">
+                        {r.boards}
+                        {r.waste ? <span className="block text-slate-500">{r.waste}</span> : null}
+                        {/* Estimated prices only pick the boards — the estimate uses real ones, so unpriced lengths show there at $0. */}
+                        {r.mode === "CHEAPEST" && r.estimated.length ? (
+                          <span className="mt-0.5 block text-amber-700">
+                            Uses {r.estimated.map((l) => `${num(l)}'`).join(", ")} boards you haven&apos;t priced — the estimate shows them at $0 until you do.
+                          </span>
+                        ) : null}
+                      </td>
+                      <td className={cn("px-3 py-1.5 text-right tabular-nums", r.feet <= leastFeet + 1e-9 && "font-semibold text-emerald-700")}>{num(r.feet)} lf</td>
+                      <td className={cn("px-3 py-1.5 text-right tabular-nums", r.cost != null && r.cost <= cheapestCost + 1e-9 && "font-semibold text-emerald-700")}>
+                        {r.cost == null ? "—" : money(r.cost)}
+                        {r.estimated.length ? (
+                          <span className="block text-[11px] font-normal text-amber-700">{r.estimated.map((l) => `${num(l)}'`).join(", ")} estimated</span>
+                        ) : null}
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="border-t border-slate-100 px-3 py-1.5 text-[11px] text-slate-500">
+            Click a row to use it. Stock length and board length changes show here right away; waste uses the saved Waste %. Save to apply.
+          </p>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+type PackRow = { mode: PackMode; empty: string } | { mode: PackMode; boards: string; waste: string | null; feet: number; cost: number | null; estimated: number[] };
