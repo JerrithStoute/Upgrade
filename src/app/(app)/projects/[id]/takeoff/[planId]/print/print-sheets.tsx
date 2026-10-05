@@ -11,6 +11,7 @@ import {
   framingLengths,
   framingMembers,
   hipLength,
+  beamLabel,
   measurementMetrics,
   memberThickness,
   metricUnit,
@@ -209,7 +210,7 @@ export function PrintSheets({
                           </g>
                         );
                       }
-                      if (c.type === "LINEAR" || c.type === "HIP_VALLEY" || c.type === "OPENING") {
+                      if (c.type === "LINEAR" || c.type === "HIP_VALLEY" || c.type === "BEAM" || c.type === "OPENING") {
                         const mid = m.points[Math.floor((m.points.length - 1) / 2)];
                         const next = m.points[Math.floor((m.points.length - 1) / 2) + 1] ?? mid;
                         const x = (mid[0] + next[0]) / 2;
@@ -220,9 +221,11 @@ export function PrintSheets({
                         const t = upf
                           ? c.type === "HIP_VALLEY"
                             ? `${c.memberSize ?? c.name} · ${feetInches(hipLength(c, m, upf).length)}`
-                            : c.type === "OPENING"
-                              ? inchesText((polylineLength(path) / upf) * 12)
-                              : `${num(measurementMetrics(c, m, upf)[c.metric as MetricKey] ?? polylineLength(path) / upf)} ${metricUnit(c.metric)}`
+                            : c.type === "BEAM"
+                              ? beamLabel(c, m, upf)
+                              : c.type === "OPENING"
+                                ? inchesText((polylineLength(path) / upf) * 12)
+                                : `${num(measurementMetrics(c, m, upf)[c.metric as MetricKey] ?? polylineLength(path) / upf)} ${metricUnit(c.metric)}`
                           : "";
                         return (
                           <g key={m.id}>
@@ -230,7 +233,7 @@ export function PrintSheets({
                               points={d}
                               fill="none"
                               stroke={c.color}
-                              strokeWidth={sw * (c.type === "HIP_VALLEY" ? 4 : 3)}
+                              strokeWidth={sw * (c.type === "HIP_VALLEY" || c.type === "BEAM" ? 4 : 3)}
                               strokeDasharray={m.isDeduction ? `${sw * 6} ${sw * 4}` : undefined}
                               strokeLinecap="round"
                               strokeLinejoin="round"

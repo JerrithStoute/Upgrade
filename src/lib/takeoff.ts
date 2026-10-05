@@ -6,7 +6,7 @@
 
 export type Pt = [number, number];
 
-export const CONDITION_TYPES = ["AREA", "LINEAR", "WALL", "OPENING", "DOOR", "WINDOW", "COUNT", "FRAMING", "HIP_VALLEY"] as const;
+export const CONDITION_TYPES = ["AREA", "LINEAR", "WALL", "OPENING", "DOOR", "WINDOW", "COUNT", "FRAMING", "HIP_VALLEY", "BEAM"] as const;
 export type ConditionType = (typeof CONDITION_TYPES)[number];
 
 export const CONDITION_TYPE_LABELS: Record<ConditionType, string> = {
@@ -15,6 +15,7 @@ export const CONDITION_TYPE_LABELS: Record<ConditionType, string> = {
   COUNT: "Count",
   FRAMING: "Joists / Rafters",
   HIP_VALLEY: "Hip / Valley",
+  BEAM: "Beams",
   WALL: "Walls",
   OPENING: "Openings / Headers",
   DOOR: "Doors",
@@ -53,6 +54,7 @@ export const METRICS_BY_TYPE: Record<ConditionType, MetricKey[]> = {
   COUNT: ["count"],
   FRAMING: ["members", "member_lf", "stock_lf", "board_feet", "area", "plan_area"],
   HIP_VALLEY: ["members", "member_lf", "stock_lf", "board_feet", "plan_length"],
+  BEAM: ["members", "member_lf", "stock_lf", "board_feet", "plan_length"],
   WALL: ["length", "wall_area"],
   OPENING: ["count", "length"],
   DOOR: ["count", "casing_lf", "door_width_lf"],
@@ -65,6 +67,7 @@ export const DEFAULT_METRIC: Record<ConditionType, MetricKey> = {
   COUNT: "count",
   FRAMING: "members",
   HIP_VALLEY: "members",
+  BEAM: "members",
   WALL: "length",
   OPENING: "count",
   DOOR: "count",
@@ -415,6 +418,8 @@ export type ConditionCalc = {
   // Joists/rafters: how cuts are packed into boards (see PACK_MODES), and the prices it can use.
   packMode?: string | null;
   packLength?: number | null;
+  /** Beams: their bearing and plies, as JSON (beamOptions). */
+  options?: string | null;
   lengthPrices?: LengthPrices | null;
 };
 
@@ -463,7 +468,7 @@ export type MeasurementShape = {
 
 /** Conditions whose shapes become pieces of lumber. */
 export function isMemberType(type: string) {
-  return type === "FRAMING" || type === "HIP_VALLEY";
+  return type === "FRAMING" || type === "HIP_VALLEY" || type === "BEAM";
 }
 
 /** Conditions whose material lines the takeoff writes itself (lumber, wall, opening and door materials). */
@@ -508,9 +513,44 @@ export function hipLength(c: ConditionCalc, m: MeasurementShape, unitsPerFoot: n
   return { plan, length: plan * hipFactor(p1, p2) };
 }
 
-/** Member lengths in feet for a joist/rafter outline (many) or a hip/valley line (one). */
+/** Beams: how long the bearing is at each end, and how many plies (built-up LVLs). */
+export type BeamOptions = { bearingIn: number; plies: number };
+export const DEFAULT_BEAM_OPTIONS: BeamOptions = { bearingIn: 3, plies: 1 };
+
+export function beamOptions(options: string | null | undefined): BeamOptions {
+  try {
+    const o = JSON.parse(options ?? "{}") as Partial<BeamOptions>;
+    const bearingIn = Number(o.bearingIn);
+    const plies = Math.round(Number(o.plies));
+    return {
+      bearingIn: Number.isFinite(bearingIn) && bearingIn >= 0 ? Math.min(bearingIn, 48) : DEFAULT_BEAM_OPTIONS.bearingIn,
+      plies: Number.isFinite(plies) && plies >= 1 ? Math.min(plies, 6) : DEFAULT_BEAM_OPTIONS.plies,
+    };
+  } catch {
+    return DEFAULT_BEAM_OPTIONS;
+  }
+}
+
+/** One beam: the traced span (level) plus the bearing at both ends, in feet — and its plies. */
+export function beamLength(c: ConditionCalc, m: MeasurementShape, unitsPerFoot: number) {
+  const { bearingIn, plies } = beamOptions(c.options);
+  const span = polylineLength(shapePath(c.type, m)) / unitsPerFoot;
+  return { span, length: span + (2 * bearingIn) / 12, plies };
+}
+
+/** A beam's label on the plan: "GLB 5-1/8x12 · 18'-7"", "LVL 1-3/4x11-7/8 ×3 · 14'-6"". */
+export function beamLabel(c: ConditionCalc & { name: string }, m: MeasurementShape, unitsPerFoot: number) {
+  const { length, plies } = beamLength(c, m, unitsPerFoot);
+  return `${c.memberSize?.trim() || c.name}${plies > 1 ? ` ×${plies}` : ""} · ${feetInches(length)}`;
+}
+
+/** Member lengths in feet for a joist/rafter outline (many), a hip/valley line (one) or a beam (one per ply). */
 export function memberLengths(c: ConditionCalc, m: MeasurementShape, unitsPerFoot: number) {
   if (c.type === "HIP_VALLEY") return [hipLength(c, m, unitsPerFoot).length];
+  if (c.type === "BEAM") {
+    const { length, plies } = beamLength(c, m, unitsPerFoot);
+    return Array<number>(plies).fill(length);
+  }
   return framingLengths(c, m, unitsPerFoot);
 }
 
@@ -581,6 +621,19 @@ export function measurementMetrics(c: ConditionCalc, m: MeasurementShape, unitsP
     out.plan_length = sign * plan;
     out.length = sign * plan * factor;
     out.wall_area = sign * plan * (m.height ?? c.height);
+    return out;
+  }
+
+  if (c.type === "BEAM") {
+    if (m.isDeduction) return out;
+    const { span, length, plies } = beamLength(c, m, unitsPerFoot);
+    const stock = parseStockLengths(c.stockLengths);
+    const size = parseMemberSize(c.memberSize);
+    out.plan_length = span;
+    out.members = plies;
+    out.member_lf = length * plies;
+    out.stock_lf = stockPieces(length, stock, c.soldAs).reduce((a, b) => a + b, 0) * plies;
+    out.board_feet = out.stock_lf * (c.boardFeetPerLf ?? (size ? (size.t * size.w) / 12 : 0));
     return out;
   }
 
@@ -878,8 +931,10 @@ export function framingBoards(c: ConditionCalc, shapes: { m: MeasurementShape; u
     if (!unitsPerFoot || m.isDeduction) continue;
     lengths.push(...memberLengths(c, m, unitsPerFoot));
   }
-  if (c.soldAs === "EXACT_LF" || c.soldAs === "LF" || c.type === "HIP_VALLEY") {
-    const stock = c.type === "HIP_VALLEY" ? parseStockLengths(c.stockLengths) : null;
+  // Hips, valleys and beams: a board each (no sharing); made-to-order and lf sizes: each at its length.
+  const onePiece = c.type === "HIP_VALLEY" || c.type === "BEAM";
+  if (c.soldAs === "EXACT_LF" || c.soldAs === "LF" || onePiece) {
+    const stock = onePiece ? parseStockLengths(c.stockLengths) : null;
     const list = new Map<number, number>();
     for (const l of lengths) {
       for (const s of stockPieces(l, stock, c.soldAs)) {
@@ -1546,4 +1601,30 @@ export function studText(lengthIn: number, precut: boolean) {
 
 function num0(n: number) {
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, "");
+}
+
+/**
+ * Items bought in whole units that several takeoffs use (plywood clips, a box of nails)
+ * round up once on the job's total — not once per takeoff. The whole units go to the
+ * takeoffs that need the most of them (largest remainder), so every line stays a whole
+ * number and they add up to the job's total. Lines nobody else shares are unchanged.
+ */
+export function roundOncePerItem<T extends { roundKey?: string; raw?: number; quantity: number }>(lines: T[]): T[] {
+  const groups = new Map<string, T[]>();
+  for (const l of lines) if (l.roundKey && l.raw != null) groups.set(l.roundKey, [...(groups.get(l.roundKey) ?? []), l]);
+  const fixed = new Map<T, number>();
+  for (const g of groups.values()) {
+    if (g.length < 2) continue;
+    const total = Math.ceil(g.reduce((s, l) => s + l.raw!, 0) - 1e-9);
+    const floors = g.map((l) => Math.floor(l.raw! + 1e-9));
+    let left = total - floors.reduce((a, b) => a + b, 0);
+    const byRemainder = g.map((l, i) => i).sort((a, b) => g[b].raw! - floors[b] - (g[a].raw! - floors[a]) || g[b].raw! - g[a].raw!);
+    for (const i of byRemainder) {
+      if (left <= 0) break;
+      floors[i]++;
+      left--;
+    }
+    g.forEach((l, i) => fixed.set(l, floors[i]));
+  }
+  return lines.map((l) => (fixed.has(l) ? { ...l, quantity: fixed.get(l)! } : l));
 }

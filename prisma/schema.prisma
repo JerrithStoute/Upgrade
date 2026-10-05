@@ -148,6 +148,8 @@ model Project {
   activities        Activity[]
   takeoffPlans      TakeoffPlan[]
   takeoffConditions TakeoffCondition[]
+  bids              Bid[]
+  bidAwards         BidAward[]
 }
 
 // ---------------------------------------------------------------------------
@@ -737,6 +739,8 @@ model FileAsset {
 
   takeoffPlan TakeoffPlan?
   views       FileView[]
+  bidsSent    Bid[]        @relation("BidSentFile")
+  bidsBack    Bid[]        @relation("BidReturnFile")
 }
 
 /// A client opened a file (from its link, not a thumbnail) — proof they saw it before choosing.
@@ -1077,4 +1081,80 @@ model Activity {
   type        String // e.g. "project.created", "change_order.approved"
   description String
   createdAt   DateTime @default(now())
+}
+
+/// A supplier you ask for prices (Settings → Vendors). `costCodeIds`: JSON array of the
+/// cost codes they usually bid — picked for them when you request bids.
+model Vendor {
+  id          String   @id @default(cuid())
+  name        String
+  contact     String?
+  email       String?
+  phone       String?
+  notes       String?
+  costCodeIds String? // JSON ["<costCodeId>", "none", …]
+  createdAt   DateTime @default(now())
+
+  bids Bid[]
+}
+
+/// A request for prices: one vendor, one job, the Material list items of the cost codes
+/// chosen. Sent as an Excel file (saved to the job's Files, folder Bids); the vendor fills
+/// in unit prices and the returned file is imported (also saved to Files).
+/// status: SENT | RECEIVED. `afterLock`: sent after the job's prices were locked (a re-bid).
+model Bid {
+  id           String     @id @default(cuid())
+  projectId    String
+  project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendorId     String?
+  vendor       Vendor?    @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  vendorName   String // kept if the vendor is deleted
+  number       Int // per job: Bid #1, #2…
+  status       String     @default("SENT")
+  afterLock    Boolean    @default(false)
+  sentAt       DateTime   @default(now())
+  receivedAt   DateTime?
+  sentFileId   String?
+  sentFile     FileAsset? @relation("BidSentFile", fields: [sentFileId], references: [id], onDelete: SetNull)
+  returnFileId String?
+  returnFile   FileAsset? @relation("BidReturnFile", fields: [returnFileId], references: [id], onDelete: SetNull)
+  notes        String?
+
+  lines  BidLine[]
+  awards BidAward[]
+}
+
+/// One item on a bid, as sent (name, quantity, unit), and the vendor's price once back.
+/// `key` is the Material list line key; `codeKey` the cost code id or "none".
+model BidLine {
+  id             String  @id @default(cuid())
+  bidId          String
+  bid            Bid     @relation(fields: [bidId], references: [id], onDelete: Cascade)
+  key            String
+  materialItemId String?
+  codeKey        String
+  codeLabel      String // "06-100 Framing" as sent
+  name           String
+  sku            String?
+  unit           String
+  quantity       Float
+  unitPrice      Float? // null = not priced (yet)
+  substitute     String?
+  note           String?
+  sortOrder      Int     @default(0)
+}
+
+/// The bid you took for a cost code on a job, and where its prices went:
+/// scope JOB (this job only) or COMPANY (the Item List, every job).
+model BidAward {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  codeKey   String
+  bidId     String
+  bid       Bid      @relation(fields: [bidId], references: [id], onDelete: Cascade)
+  scope     String   @default("JOB")
+  awardedAt DateTime @default(now())
+
+  @@unique([projectId, codeKey])
 }

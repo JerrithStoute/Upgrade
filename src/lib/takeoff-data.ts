@@ -30,6 +30,7 @@ import {
   wallRun,
   wallTakeoff,
   wasteBoards,
+  roundOncePerItem,
   withWasteBoards,
   itemNameKey,
   lumberItemName,
@@ -55,7 +56,8 @@ export async function loadConditions(projectId: string) {
 
 /**
  * Each stock-length joist/rafter condition's board prices, by length: this job's price
- * when its line has one, else the Item List's ("2x6 × 20'"). Unpriced lengths are left out.
+ * when its line has one, else the bid you took for it (its price list covers lengths the job
+ * doesn't use yet), else the Item List's ("2x6 × 20'"). Unpriced lengths are left out.
  */
 async function withLengthPrices<T extends Awaited<ReturnType<typeof findConditions>>[number]>(conditions: T[]) {
   const lengthsOf = (c: T) => {
@@ -66,12 +68,20 @@ async function withLengthPrices<T extends Awaited<ReturnType<typeof findConditio
   const keys = new Set(priced.flatMap((c) => lengthsOf(c).map((l) => itemNameKey(lumberItemName(c.memberSize, c.name, l)))));
   const list = keys.size ? await db.materialItem.findMany({ where: { nameKey: { in: Array.from(keys) } }, select: { nameKey: true, unitCost: true } }) : [];
   const listPrice = new Map(list.map((i) => [i.nameKey, i.unitCost]));
+  // Prices from the bids taken on this job, by item name.
+  const projectId = priced[0]?.projectId;
+  const awarded = projectId
+    ? await db.bidAward.findMany({ where: { projectId }, select: { bid: { select: { lines: { where: { unitPrice: { not: null } }, select: { name: true, unitPrice: true } } } } } })
+    : [];
+  const bidPrice = new Map<string, number>();
+  for (const a of awarded) for (const l of a.bid.lines) if (l.unitPrice! > 0 && keys.has(itemNameKey(l.name))) bidPrice.set(itemNameKey(l.name), l.unitPrice!);
   return conditions.map((c) => {
     if (!priced.includes(c)) return { ...c, lengthPrices: null as LengthPrices | null };
     const prices: LengthPrices = {};
     for (const l of lengthsOf(c)) {
       const job = c.items.find((i) => i.metric === lumberMetric(l))?.unitCost ?? 0;
-      const p = job > 0 ? job : (listPrice.get(itemNameKey(lumberItemName(c.memberSize, c.name, l))) ?? 0);
+      const k = itemNameKey(lumberItemName(c.memberSize, c.name, l));
+      const p = job > 0 ? job : (bidPrice.get(k) ?? listPrice.get(k) ?? 0);
       if (p > 0) prices[l] = p;
     }
     return { ...c, lengthPrices: prices as LengthPrices | null };
@@ -215,7 +225,7 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
   const soldAs = c.memberSizeRef?.soldAs ?? "STOCK";
   const waste = c.type === "FRAMING" && soldAs !== "LF" ? wasteBoards(needed, c.wastePct) : null;
   const order: [number, number][] =
-    c.type === "HIP_VALLEY" && soldAs !== "LF" ? needed.map(([len, n]) => [len, Math.ceil(withWaste(n, c.wastePct) - 1e-9)]) : withWasteBoards(needed, waste);
+    (c.type === "HIP_VALLEY" || c.type === "BEAM") && soldAs !== "LF" ? needed.map(([len, n]) => [len, Math.ceil(withWaste(n, c.wastePct) - 1e-9)]) : withWasteBoards(needed, waste);
   const quantity = metrics[c.metric as MetricKey] ?? 0;
   const orderLf = order.reduce((sum, [len, n]) => sum + len * n, 0);
   const neededLf = needed.reduce((sum, [len, n]) => sum + len * n, 0);
@@ -260,7 +270,15 @@ export type EstimateLine = {
   unit: string;
   unitCost: number;
   markupPct: number;
+  /** Items bought in whole units: which item it is (so takeoffs sharing it round up once) and the exact amount. */
+  roundKey?: string;
+  raw?: number;
 };
+
+/** Every takeoff's estimate lines for the job, items shared by several takeoffs rounded up once. */
+export function jobEstimateLines(conditions: LoadedCondition[]) {
+  return roundOncePerItem(conditions.flatMap((c) => conditionEstimateLines(c, conditionTotals(c))));
+}
 
 /**
  * The estimate lines a condition produces. With assembly items, each item is a
@@ -295,6 +313,12 @@ export function conditionEstimateLines(c: LoadedCondition, totals: ConditionTota
     unit: i.unit,
     unitCost: i.unitCost,
     markupPct: i.markupPct,
+    ...(i.roundUp
+      ? {
+          roundKey: `${i.materialItemId ?? `name:${itemNameKey(i.description)}`}|${i.unit}`,
+          raw: assemblyQuantity({ ...i, roundUp: false }, totals.metrics, totals.cutList, totals.wall),
+        }
+      : {}),
   }));
 }
 
@@ -303,12 +327,10 @@ export type TakeoffDetailRow = { description: string; quantity: number; unit: st
 /** The takeoff items behind each takeoff total on the estimate, by its key ("code:<id>"): only that cost code's items. */
 export async function takeoffDetail(projectId: string) {
   const out: Record<string, TakeoffDetailRow[]> = {};
-  for (const c of await loadConditions(projectId)) {
-    for (const l of conditionEstimateLines(c, conditionTotals(c))) {
-      if (!(l.quantity > 0)) continue;
-      const key = l.costCodeId ? `code:${l.costCodeId}` : `group:${l.group.trim().toLowerCase()}`;
-      (out[key] ??= []).push({ description: l.description, quantity: l.quantity, unit: l.unit, unitCost: l.unitCost });
-    }
+  for (const l of jobEstimateLines(await loadConditions(projectId))) {
+    if (!(l.quantity > 0)) continue;
+    const key = l.costCodeId ? `code:${l.costCodeId}` : `group:${l.group.trim().toLowerCase()}`;
+    (out[key] ??= []).push({ description: l.description, quantity: l.quantity, unit: l.unit, unitCost: l.unitCost });
   }
   return out;
 }
@@ -340,7 +362,8 @@ export async function syncTakeoffToEstimate(projectId: string, estimateId: strin
   ]);
   const codeById = new Map(codes.map((c) => [c.id, c]));
   // Nothing measured yet (a wall with no length drawn): nothing to send — no $0 placeholder line.
-  const lines = conditions.flatMap((c) => conditionEstimateLines(c, conditionTotals(c))).filter((l) => l.quantity > 0);
+  // Items shared by several takeoffs are rounded up once (jobEstimateLines).
+  const lines = jobEstimateLines(conditions).filter((l) => l.quantity > 0);
   // The items behind each takeoff line, for "what changed" next time.
   const snapByKey = new Map<string, SnapRow[]>();
   for (const l of lines) {

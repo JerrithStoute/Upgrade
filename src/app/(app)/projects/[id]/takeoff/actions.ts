@@ -31,7 +31,6 @@ import {
   hasAutoLines,
   isMetricFor,
   isLumberMetric,
-  isMemberType,
   itemNameKey,
   pointsJson,
   parseArcs,
@@ -181,6 +180,45 @@ export async function updateCondition(fd: FormData) {
   if (hasAutoLines(data.type) || hasAutoLines(existing.type)) await syncAutoItems(project.id, id);
   revalidate(project.id);
   redirect(returnTo(fd, project.id, `#condition-${id}`, "conditions"));
+}
+
+/** A copy of a row without the given fields (its id, links…). */
+function without<T extends object, K extends keyof T>(row: T, ...keys: K[]): Omit<T, K> {
+  const out = { ...row };
+  for (const k of keys) delete out[k];
+  return out;
+}
+
+/**
+ * A copy of a takeoff — every setting and every item under it, but none of the shapes —
+ * right below the original, opened so you can change what differs (a roof's other pitch).
+ * Lines the takeoff writes itself (lumber, wall and door materials) come back on their own.
+ */
+export async function copyCondition(fd: FormData) {
+  const user = await requireStaff();
+  const project = await getProject(str(fd, "projectId"));
+  const c = await db.takeoffCondition.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } });
+  if (!c) throw new Error("Takeoff not found");
+  const { items, name, sortOrder } = c;
+  const settings = without(c, "id", "createdAt", "updatedAt", "items", "name", "sortOrder");
+  // Make room right below the original.
+  await db.takeoffCondition.updateMany({ where: { projectId: project.id, sortOrder: { gt: sortOrder } }, data: { sortOrder: { increment: 1 } } });
+  const copy = await db.takeoffCondition.create({
+    data: {
+      ...settings,
+      name: `${name} (copy)`.slice(0, 200),
+      sortOrder: sortOrder + 1,
+      items: {
+        create: items.filter((i) => !isLumberMetric(i.metric)).map((i) => without(i, "id", "conditionId")),
+      },
+    },
+  });
+  if (hasAutoLines(copy.type)) await syncAutoItems(project.id, copy.id);
+  await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.condition_copied", description: `Copied takeoff "${name}"` });
+  revalidate(project.id);
+  // Back to the plan with the copy's edit panel open.
+  const back = returnTo(fd, project.id);
+  redirect(`${back}${back.includes("?") ? "&" : "?"}cond=${copy.id}`);
 }
 
 export async function deleteCondition(fd: FormData) {
@@ -591,6 +629,19 @@ export async function initPlanPages(input: { projectId: string; planId: string; 
   revalidate(projectId);
 }
 
+/** The takeoff list in a new order (dragged in the plan viewer): every id, top to bottom. */
+export async function reorderConditions(input: { projectId: string; ids: string[] }) {
+  await requireStaff();
+  const { projectId, ids } = z.object({ projectId: z.string(), ids: z.array(z.string()).max(2000) }).parse(input);
+  const project = await getProject(projectId);
+  const mine = await db.takeoffCondition.findMany({ where: { projectId: project.id }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true } });
+  const known = new Set(mine.map((c) => c.id));
+  // Ones not in the list (added in another window meanwhile) keep their place at the end.
+  const order = [...ids.filter((id) => known.has(id)), ...mine.map((c) => c.id).filter((id) => !ids.includes(id))];
+  await db.$transaction(order.map((id, i) => db.takeoffCondition.update({ where: { id }, data: { sortOrder: i } })));
+  revalidate(project.id);
+}
+
 export async function renameSheet(input: { projectId: string; sheetId: string; name: string }) {
   await requireStaff();
   const { projectId, sheetId, name } = z.object({ projectId: z.string(), sheetId: z.string(), name: z.string().trim().min(1).max(120) }).parse(input);
@@ -619,9 +670,12 @@ export async function setSheetScale(input: { projectId: string; sheetId: string;
   revalidate(projectId);
 }
 
+/** Joists/rafters and hips/valleys can have a pitch per shape; beams are level. */
+const hasShapePitch = (type: string) => type === "FRAMING" || type === "HIP_VALLEY";
+
 /** Fewest points a shape needs: a count is one click, lines (walls, openings, hips) two, outlines three. */
 function minPointsFor(type: string) {
-  return type === "COUNT" || type === "DOOR" || type === "WINDOW" ? 1 : ["LINEAR", "HIP_VALLEY", "WALL", "OPENING"].includes(type) ? 2 : 3;
+  return type === "COUNT" || type === "DOOR" || type === "WINDOW" ? 1 : ["LINEAR", "HIP_VALLEY", "BEAM", "WALL", "OPENING"].includes(type) ? 2 : 3;
 }
 
 export async function createMeasurement(input: {
@@ -670,7 +724,7 @@ export async function createMeasurement(input: {
       isDeduction: c.type === "AREA" || c.type === "LINEAR" ? !!data.isDeduction : false,
       angle: data.angle ?? 0,
       // A shape's own pitch (null = the condition's); side 2 only means something on hips / valleys.
-      pitch: isMemberType(c.type) ? (data.pitch ?? null) : null,
+      pitch: hasShapePitch(c.type) ? (data.pitch ?? null) : null,
       pitch2: c.type === "HIP_VALLEY" ? (data.pitch2 ?? null) : null,
       height: c.type === "LINEAR" ? (data.height ?? null) : null,
     },
@@ -727,7 +781,7 @@ export async function updateMeasurement(input: {
       angle: data.angle,
       isDeduction: m.condition.type === "AREA" || m.condition.type === "LINEAR" ? data.isDeduction : undefined,
       conditionId,
-      pitch: isMemberType(m.condition.type) ? data.pitch : undefined,
+      pitch: hasShapePitch(m.condition.type) ? data.pitch : undefined,
       pitch2: m.condition.type === "HIP_VALLEY" ? data.pitch2 : undefined,
       height: m.condition.type === "LINEAR" ? data.height : undefined,
       points: data.points ? pointsJson(data.points, data.arcs) : undefined,

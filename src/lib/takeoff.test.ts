@@ -15,6 +15,9 @@ import {
   itemNameKey,
   measurementMetrics,
   packBoards,
+  roundOncePerItem,
+  beamOptions,
+  memberLengths,
   boardPrice,
   wasteBoards,
   emptyMetrics,
@@ -270,10 +273,85 @@ describe("stock lengths and cut packing", () => {
   });
 });
 
+describe("beams", () => {
+  // An 18' span (UPF = 12 units per foot), 3" bearing each end.
+  const span: Pt[] = [
+    [0, 0],
+    [216, 0],
+  ];
+  const opts = (bearingIn: number, plies: number) => JSON.stringify({ bearingIn, plies });
+
+  it("a glulam is the span plus bearing at both ends: 18' + 6\" = 18'-6\"", () => {
+    const c = cond({ type: "BEAM", memberSize: "GLB 5-1/8x12", options: opts(3, 1), soldAs: "EXACT_LF" });
+    assert.deepEqual(memberLengths(c, shape(span), UPF), [18.5]);
+    const m = measurementMetrics(c, shape(span), UPF);
+    assert.equal(m.members, 1);
+    assert.equal(m.plan_length, 18);
+    assert.equal(m.member_lf, 18.5);
+  });
+
+  it("a 3-ply LVL orders three pieces", () => {
+    const c = cond({ type: "BEAM", memberSize: "LVL 1-3/4x11-7/8", options: opts(3, 3), soldAs: "EXACT_LF" });
+    const m = measurementMetrics(c, shape(span), UPF);
+    assert.equal(m.members, 3);
+    assert.equal(m.member_lf, 55.5);
+    assert.deepEqual(framingBoards(c, [{ m: shape(span), unitsPerFoot: UPF }]).cutList, [[18.5, 3]]);
+  });
+
+  it("sold in stock lengths, each beam gets the shortest one that fits (no sharing)", () => {
+    const c = cond({ type: "BEAM", memberSize: "GLB 5-1/8x12", options: opts(3, 1), stockLengths: "16-24" });
+    const shapes = [shape(span), shape(span)].map((m) => ({ m, unitsPerFoot: UPF }));
+    assert.deepEqual(framingBoards(c, shapes).cutList, [[20, 2]]);
+  });
+
+  it("reads its settings forgivingly", () => {
+    assert.deepEqual(beamOptions(null), { bearingIn: 3, plies: 1 });
+    assert.deepEqual(beamOptions('{"bearingIn": 4.5, "plies": 2}'), { bearingIn: 4.5, plies: 2 });
+    assert.deepEqual(beamOptions('{"bearingIn": -1, "plies": 0}'), { bearingIn: 3, plies: 1 });
+  });
+});
+
+describe("items shared by several takeoffs round up once", () => {
+  it("two rafter takeoffs needing 0.39 and 0.41 boxes of clips buy 1 box, not 2", () => {
+    const out = roundOncePerItem([
+      { roundKey: "clips", raw: 0.39, quantity: 1 },
+      { roundKey: "clips", raw: 0.41, quantity: 1 },
+    ]);
+    assert.deepEqual(
+      out.map((l) => l.quantity),
+      [0, 1],
+    );
+  });
+
+  it("the whole units go to whoever needs the most, and add up to the job's total", () => {
+    const out = roundOncePerItem([
+      { roundKey: "x", raw: 2.2, quantity: 3 },
+      { roundKey: "x", raw: 1.7, quantity: 2 },
+      { roundKey: "x", raw: 0.6, quantity: 1 },
+    ]);
+    // 4.5 → 5: floors 2 + 1 + 0, the two left go to the biggest remainders (0.7, 0.6).
+    assert.deepEqual(
+      out.map((l) => l.quantity),
+      [2, 2, 1],
+    );
+  });
+
+  it("an item only one takeoff uses, or one not bought whole, is left alone", () => {
+    const out = roundOncePerItem([{ roundKey: "solo", raw: 0.3, quantity: 1 }, { quantity: 12.5 }]);
+    assert.deepEqual(
+      out.map((l) => l.quantity),
+      [1, 12.5],
+    );
+  });
+});
+
 describe("packing choices and waste boards", () => {
   it("one length: every board that length, a longer piece gets the shortest that fits", () => {
     assert.deepEqual(packBoards([12, 11, 7, 5], parseStockLengths("16-32"), { mode: "LENGTH", length: 26 }).cutList, [[26, 2]]);
-    assert.deepEqual(packBoards([29, 5], parseStockLengths("16-32"), { mode: "LENGTH", length: 26 }).cutList, [[26, 1], [30, 1]]);
+    assert.deepEqual(packBoards([29, 5], parseStockLengths("16-32"), { mode: "LENGTH", length: 26 }).cutList, [
+      [26, 1],
+      [30, 1],
+    ]);
   });
 
   it("cheapest picks the lower cost, not the fewest feet", () => {
@@ -288,7 +366,10 @@ describe("packing choices and waste boards", () => {
   it("cheapest gives long pieces their own boards when long boards cost more per foot", () => {
     // 22' boards cost double: 15.7' + 5.2' on one 22' ($22) loses to two 16's ($20).
     const r = packBoards([21.4, 15.7, 5.2], parseStockLengths("16-22"), { mode: "CHEAPEST", prices: { 16: 10, 18: 10.2, 20: 10.4, 22: 22 } });
-    assert.deepEqual(r.cutList, [[16, 2], [22, 1]]);
+    assert.deepEqual(r.cutList, [
+      [16, 2],
+      [22, 1],
+    ]);
     assert.equal(r.cost, 42);
   });
 
@@ -306,9 +387,29 @@ describe("packing choices and waste boards", () => {
   });
 
   it("waste is added once, as boards of the most-used length", () => {
-    assert.deepEqual(wasteBoards([[16, 1], [26, 5]], 10), { length: 26, count: 1 });
+    assert.deepEqual(
+      wasteBoards(
+        [
+          [16, 1],
+          [26, 5],
+        ],
+        10,
+      ),
+      { length: 26, count: 1 },
+    );
     // 1,218 lf × 10% = 121.8 lf → six 22' boards (not one extra of every length).
-    assert.deepEqual(wasteBoards([[16, 8], [18, 2], [20, 23], [22, 27]], 10), { length: 22, count: 6 });
+    assert.deepEqual(
+      wasteBoards(
+        [
+          [16, 8],
+          [18, 2],
+          [20, 23],
+          [22, 27],
+        ],
+        10,
+      ),
+      { length: 22, count: 6 },
+    );
     assert.equal(wasteBoards([[16, 1]], 0), null);
   });
 

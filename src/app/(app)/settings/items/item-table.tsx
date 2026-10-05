@@ -248,7 +248,7 @@ export function ItemTable({
                       </td>
                       <td className="px-2 py-1.5 align-middle">
                         <div className="flex items-center gap-1">
-                          <TextCell label={`Vendor for ${i.name}`} value={i.vendor} onSave={(v) => save(i.id, "vendor", v)} />
+                          <TextCell label={`Vendor for ${i.name}`} value={i.vendor} list="vendor-names" onSave={(v) => save(i.id, "vendor", v)} />
                           {mark(i.id, "vendor")}
                         </div>
                       </td>
@@ -340,12 +340,14 @@ function NumberCell({ label, value, min, width = "!w-20", onSave }: { label: str
   );
 }
 
-function TextCell({ label, value, onSave }: { label: string; value: string | null; onSave: (v: string) => void }) {
+function TextCell({ label, value, onSave, list }: { label: string; value: string | null; onSave: (v: string) => void; list?: string }) {
   const original = value ?? "";
   return (
     <input
       key={original}
       aria-label={label}
+      list={list}
+      autoComplete={list ? "off" : undefined}
       className={cn("input !w-24", cell)}
       defaultValue={original}
       placeholder="—"

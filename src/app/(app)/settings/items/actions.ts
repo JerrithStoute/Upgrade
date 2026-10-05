@@ -10,6 +10,7 @@ import { itemNameKey } from "@/lib/takeoff";
 import { CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { kindForCategory, newItemPlacement, renameCategory, saveCategoryRule, saveCodeRule } from "@/lib/item-codes";
 import { boolField, numField, str, strOrNull } from "@/lib/utils";
+import { ensureVendor } from "@/lib/vendor-list";
 
 const PATH = "/settings/items";
 
@@ -43,7 +44,8 @@ async function itemFields(fd: FormData, id?: string) {
     wastePct: Math.max(0, numField(fd, "wastePct", 0)),
     roundUp: boolField(fd, "roundUp"),
     costCodeId,
-    vendor: strOrNull(fd, "vendor"),
+    // A new vendor joins the vendor list; a known one keeps its spelling.
+    vendor: await ensureVendor(strOrNull(fd, "vendor")),
     sku: strOrNull(fd, "sku"),
     notes: strOrNull(fd, "notes"),
     widthIn: optionalSize(fd, "widthIn"),
@@ -129,8 +131,9 @@ export async function saveItemCells(ids: string[], field: ItemCell, value: strin
     const items = await db.materialItem.findMany({ where: { id: { in: ids.slice(0, 2000) } } });
     if (!items.length) return { error: "Item not found" };
     const code = field === "costCodeId" ? await costCodeOrNull(value) : null;
-    const data = field === "costCodeId" ? { costCodeId: code } : cellData(field, value);
+    const data = field === "costCodeId" ? { costCodeId: code } : field === "vendor" ? { vendor: await ensureVendor(value) } : cellData(field, value);
     await db.materialItem.updateMany({ where: { id: { in: items.map((i) => i.id) } }, data });
+    if (field === "vendor") revalidatePath("/settings/vendors");
     if (code) await db.takeoffAssemblyItem.updateMany({ where: { materialItemId: { in: items.map((i) => i.id) }, costCodeId: null }, data: { costCodeId: code } });
     if (items.length > 1) await logActivity({ userId: admin.id, type: "item_list.bulk_edited", description: `Changed ${items.length} items on the Item List` });
     revalidatePath(PATH);

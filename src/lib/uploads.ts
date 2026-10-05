@@ -29,6 +29,20 @@ export async function saveUpload(file: File, projectId: string, maxBytes = MAX_B
   };
 }
 
+/** Persist a file the program made (a bid workbook…); returns storage metadata for a FileAsset row. */
+export async function saveBuffer(data: Buffer, name: string, mimeType: string, projectId: string) {
+  const ext = path.extname(name).toLowerCase().slice(0, 10);
+  const relPath = path.join(projectId, `${randomUUID()}${ext}`);
+  await fs.mkdir(path.join(uploadDir(), projectId), { recursive: true });
+  await fs.writeFile(path.join(uploadDir(), relPath), data);
+  return { name, storagePath: relPath, mimeType, size: data.length };
+}
+
+/** A stored file's bytes. */
+export function readUpload(storagePath: string) {
+  return fs.readFile(path.join(uploadDir(), storagePath));
+}
+
 export async function deleteUpload(storagePath: string) {
   try {
     await fs.unlink(path.join(uploadDir(), storagePath));

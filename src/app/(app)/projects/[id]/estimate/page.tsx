@@ -33,6 +33,7 @@ import { parseMarkupTable } from "@/lib/markup";
 import { takeoffDetail, takeoffPriceCheck } from "@/lib/takeoff-data";
 import { parseProposalOptions } from "@/lib/proposal-options";
 import { PriceWarnings, zeroLineNames } from "@/components/estimate/price-warnings";
+import { bidComparison, overWarnings } from "@/lib/bids";
 import { addDays } from "date-fns";
 
 export default async function EstimatePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ estimate?: string }> }) {
@@ -111,6 +112,8 @@ export default async function EstimatePage({ params, searchParams }: { params: P
   const reviewHref = `/projects/${project.id}/takeoff/rebid`;
   // Before it goes out: unpriced takeoff items, $0 lines, Item List prices that moved, pricing past its date.
   const check = estimate.status === "APPROVED" ? null : await takeoffPriceCheck(project.id);
+  // Re-bids 10%+ over the bid taken for a cost code (only once a bid has been taken).
+  const bidOver = (await db.bidAward.count({ where: { projectId: project.id } })) ? overWarnings(await bidComparison(project.id)) : [];
   const zeroLines = isDraft ? zeroLineNames(estimate.items) : [];
   const validDays = parseProposalOptions(estimate.proposalOptions ?? company?.proposalOptions).validDays;
   const expiresOn = estimate.status === "SENT" && estimate.sentAt && validDays > 0 ? addDays(estimate.sentAt, validDays) : null;
@@ -271,6 +274,13 @@ export default async function EstimatePage({ params, searchParams }: { params: P
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="estimateId" value={estimate.id} />
               <input name="name" aria-label="Template name" defaultValue={estimate.name} className="input !w-56 !py-1" required />
+              <label
+                className="flex items-center gap-1.5 text-xs text-slate-600"
+                title="Keeps your formulas and typed unit costs. Quantities, allowances and the takeoff's totals start at 0."
+              >
+                <input type="checkbox" name="clear" value="1" defaultChecked className="h-3.5 w-3.5 rounded border-slate-300" />
+                Clear this job&apos;s numbers
+              </label>
               <SubmitButton size="sm" variant="ghost">
                 <Copy className="h-3.5 w-3.5" /> Save as template
               </SubmitButton>
@@ -309,6 +319,8 @@ export default async function EstimatePage({ params, searchParams }: { params: P
         expired={expiresOn && expiresOn < new Date() ? { on: expiresOn, days: validDays } : undefined}
         materialsHref={`/projects/${project.id}/materials`}
         rebidHref={reviewHref}
+        bidOver={bidOver}
+        bidsHref={`/projects/${project.id}/bids`}
       />
 
       <EstimateSheet

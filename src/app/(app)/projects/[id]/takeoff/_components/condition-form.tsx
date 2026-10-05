@@ -12,6 +12,7 @@ import {
   SOLD_AS_LABELS,
   METRICS_BY_TYPE,
   hipFactor,
+  beamOptions,
   metricLabel,
   slopeFactor,
   packBoards,
@@ -70,6 +71,7 @@ const TYPE_HINTS: Record<ConditionType, string> = {
   COUNT: "Click once per item. Outlets, fixtures, doors, windows.",
   FRAMING: "Outline the framed area; joists or rafters are laid out at your spacing.",
   HIP_VALLEY: "Trace each hip, valley or ridge on the roof plan, wall corner to ridge. Every line is one piece of lumber.",
+  BEAM: "Trace each beam from bearing to bearing — one line per beam. The bearing is added at both ends, and plies order that many pieces per beam.",
   WALL: 'Trace walls corner to corner; double-click to finish a run, or end on the first corner to close it. Name the takeoff for the wall ("Ext 2x6 Wall").',
   DOOR: "Click each door on the plan, then pick which door it is. Doors are counted by name, and casing is added for each one.",
   WINDOW: "Click each window on the plan, then pick which window it is. Windows are counted by name, with casing, stool and apron for each one.",
@@ -125,9 +127,12 @@ export function ConditionForm({
   const isDoor = type === "DOOR";
   const isWindow = type === "WINDOW";
   const isAuto = isWall || isOpening || isDoor || isWindow;
-  const showPitch = type !== "COUNT" && !isAuto;
   const isHip = type === "HIP_VALLEY";
-  const isMember = type === "FRAMING" || isHip;
+  const isBeam = type === "BEAM";
+  const isMember = type === "FRAMING" || isHip || isBeam;
+  // Beams are level: no pitch, and their bearing stands in for overhang.
+  const showPitch = type !== "COUNT" && !isAuto && !isBeam;
+  const beam = beamOptions(values?.options);
   const factor = isHip ? hipFactor(pitch, pitch2) : slopeFactor(pitch);
   const pitchHint = isHip
     ? pitch > 0 && pitch2 > 0
@@ -152,7 +157,17 @@ export function ConditionForm({
             className="input"
             defaultValue={values?.name}
             placeholder={
-              type === "FRAMING" ? '2x10 Floor Joists @ 16" o.c.' : isHip ? "2x10 Hips & Valleys" : isWall ? "Ext 2x6 Wall" : isOpening ? "Window Headers" : "LVP Flooring"
+              type === "FRAMING"
+                ? '2x10 Floor Joists @ 16" o.c.'
+                : isHip
+                  ? "2x10 Hips & Valleys"
+                  : isBeam
+                    ? "GLB 5-1/8 × 12 Beams"
+                    : isWall
+                      ? "Ext 2x6 Wall"
+                      : isOpening
+                        ? "Window Headers"
+                        : "LVP Flooring"
             }
           />
         </Field>
@@ -256,7 +271,17 @@ export function ConditionForm({
             <input id={p("spacing")} name="spacing" inputMode="decimal" className="input" defaultValue={values?.spacing ?? 16} />
           </Field>
         ) : null}
-        {isMember ? (
+        {isBeam ? (
+          <>
+            <Field label="Bearing each end (in)" htmlFor={p("bearing")} hint="Added to both ends of every beam (3 = 6 in. longer)">
+              <input id={p("bearing")} name="opt_bearingIn" inputMode="decimal" className="input" defaultValue={beam.bearingIn} />
+            </Field>
+            <Field label="Plies" htmlFor={p("plies")} hint="1 for a glulam; 2 or 3 for built-up LVLs (pieces per beam)">
+              <input id={p("plies")} name="opt_plies" type="number" min={1} max={6} step={1} className="input" defaultValue={beam.plies} />
+            </Field>
+          </>
+        ) : null}
+        {isMember && !isBeam ? (
           <Field
             label="Overhang (in)"
             htmlFor={p("overhang")}

@@ -34,6 +34,7 @@ import {
   Copy,
   ScanSearch,
   ChevronDown,
+  GripVertical,
 } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
 import { cn, money, num } from "@/lib/utils";
@@ -49,7 +50,8 @@ import {
   framingLengths,
   framingMembers,
   hipLength,
-  isMemberType,
+  beamLabel,
+  beamOptions,
   inchesText,
   isCountType,
   isUnitType,
@@ -94,6 +96,7 @@ import {
   renameSheet,
   setSheetScale,
   updateMeasurement,
+  reorderConditions,
 } from "../../actions";
 
 type ViewerCondition = {
@@ -112,6 +115,8 @@ type ViewerCondition = {
   overhang: number;
   memberSize: string | null;
   stockLengths: string | null;
+  /** Beams: bearing and plies (JSON). */
+  options?: string | null;
   memberWidthIn: number | null;
   boardFeetPerLf: number | null;
   soldAs: string | null;
@@ -330,7 +335,12 @@ function canArc(type: string) {
 
 /** Shapes drawn as lines (not closed outlines). */
 function isLineType(type: string) {
-  return type === "LINEAR" || type === "HIP_VALLEY" || type === "WALL" || type === "OPENING";
+  return type === "LINEAR" || type === "HIP_VALLEY" || type === "BEAM" || type === "WALL" || type === "OPENING";
+}
+
+/** Joists/rafters and hips/valleys take a pitch per shape; beams are level. */
+function hasShapePitch(type: string) {
+  return type === "FRAMING" || type === "HIP_VALLEY";
 }
 
 /** "6" → 6, "" → null (use the condition's pitch). */
@@ -588,6 +598,26 @@ export function PlanViewer({
   }, [flash]);
 
   const condById = useMemo(() => new Map(conditions.map((c) => [c.id, c])), [conditions]);
+
+  // The takeoff list's order: a dragged takeoff shows in its new place right away; the
+  // order is saved in the background. Alt + ↑ / ↓ moves the one you're on.
+  const [order, setOrder] = useState<string[] | null>(null);
+  const [dragId, setDragId] = useState<string | null>(null);
+  const [dropAt, setDropAt] = useState<{ id: string; after: boolean } | null>(null);
+  const [, startReorder] = useTransition();
+  const listed = useMemo(() => {
+    if (!order) return conditions;
+    const out = order.flatMap((id) => condById.get(id) ?? []);
+    for (const c of conditions) if (!order.includes(c.id)) out.push(c);
+    return out;
+  }, [order, conditions, condById]);
+  const reorder = (ids: string[]) => {
+    setOrder(ids);
+    startReorder(async () => {
+      await reorderConditions({ projectId, ids });
+      router.refresh();
+    });
+  };
   const active = activeId ? (condById.get(activeId) ?? null) : null;
   const unitsPerFoot = sheet?.unitsPerFoot ?? null;
 
@@ -773,7 +803,7 @@ export function PlanViewer({
       if (!sheet) return;
       const isDeduction = deduct && (cond.type === "AREA" || cond.type === "LINEAR");
       const angle = cond.type === "FRAMING" ? (framingAngle ?? firstEdgeAngle(points)) : 0;
-      const pitch = isMemberType(cond.type) && nextPitch.forId === cond.id ? pitchOrNull(nextPitch.p1) : null;
+      const pitch = hasShapePitch(cond.type) && nextPitch.forId === cond.id ? pitchOrNull(nextPitch.p1) : null;
       const pitch2 = cond.type === "HIP_VALLEY" && nextPitch.forId === cond.id ? pitchOrNull(nextPitch.p2) : null;
       const height = cond.type === "LINEAR" ? heightOrNull(nextHeight[cond.id]) : null;
       createShape({
@@ -1515,7 +1545,7 @@ export function PlanViewer({
         arcs: draftArcs,
         isDeduction: false,
         angle: firstEdgeAngle(preview),
-        pitch: isMemberType(active.type) ? pitchOrNull(nextPitch.p1) : null,
+        pitch: hasShapePitch(active.type) ? pitchOrNull(nextPitch.p1) : null,
         pitch2: active.type === "HIP_VALLEY" ? pitchOrNull(nextPitch.p2) : null,
         height: active.type === "LINEAR" ? heightOrNull(nextHeight[active.id]) : null,
       };
@@ -1528,9 +1558,11 @@ export function PlanViewer({
             ? `${inchesText(m.length * 12)} opening`
             : active.type === "HIP_VALLEY"
               ? `${feetInches(m.member_lf)} true length`
-              : wallHeight > 0
-                ? `${feetInches(m.length)} · ${num(m.wall_area)} sf at ${num(wallHeight, 2)}' high`
-                : `${num(m[active.metric as MetricKey] ?? 0)} ${metricUnit(active.metric)}`;
+              : active.type === "BEAM"
+                ? `${feetInches(m.members ? m.member_lf / m.members : 0)} beam, bearing included${m.members > 1 ? ` · ×${m.members} plies` : ""}`
+                : wallHeight > 0
+                  ? `${feetInches(m.length)} · ${num(m.wall_area)} sf at ${num(wallHeight, 2)}' high`
+                  : `${num(m[active.metric as MetricKey] ?? 0)} ${metricUnit(active.metric)}`;
     } else {
       readout = feetInches(polylineLength(previewPath) / unitsPerFoot);
     }
@@ -1871,7 +1903,7 @@ export function PlanViewer({
         </g>
       );
     }
-    if (c.type === "HIP_VALLEY") {
+    if (c.type === "HIP_VALLEY" || c.type === "BEAM") {
       return (
         <g key={m.id} {...common}>
           <polyline points={d} fill="none" stroke="transparent" strokeWidth={14} {...stroke} />
@@ -1879,7 +1911,7 @@ export function PlanViewer({
           {m.points.map((p, i) =>
             i === 0 || i === m.points.length - 1 ? <circle key={i} cx={p[0]} cy={p[1]} r={px(3.5)} fill="white" stroke={color} strokeWidth={2} {...stroke} /> : null,
           )}
-          {showLabels && unitsPerFoot && m.points.length >= 2 ? hipLabel(c, m, unitsPerFoot) : null}
+          {showLabels && unitsPerFoot && m.points.length >= 2 ? (c.type === "BEAM" ? alongLabel(c, m, beamLabel(c, m, unitsPerFoot)) : hipLabel(c, m, unitsPerFoot)) : null}
         </g>
       );
     }
@@ -2413,46 +2445,14 @@ export function PlanViewer({
             {!unitsPerFoot ? <strong className="ml-1 text-amber-700">Set the scale first.</strong> : null}
           </span>
         ) : tool === "calibrate" ? (
-          calib.length < 2 ? (
-            <span>Calibrate: click both ends of a dimension you know (Shift keeps it straight).</span>
-          ) : (
-            <form
-              className="flex flex-wrap items-center gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (calibLength > 0) applyScale(dist(calib[0], calib[1]) / calibLength, "Calibrated");
-              }}
-            >
-              <span>That distance is</span>
-              <input
-                autoFocus
-                aria-label="Feet"
-                type="number"
-                min="0"
-                step="any"
-                value={calibFeet}
-                onChange={(e) => setCalibFeet(e.target.value)}
-                className="w-20 rounded border border-slate-300 px-2 py-0.5"
-              />
-              <span>ft</span>
-              <input
-                aria-label="Inches"
-                type="number"
-                min="0"
-                step="any"
-                value={calibInches}
-                onChange={(e) => setCalibInches(e.target.value)}
-                className="w-16 rounded border border-slate-300 px-2 py-0.5"
-              />
-              <span>in</span>
-              <Button type="submit" size="sm" disabled={calibLength <= 0}>
-                Set scale
-              </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setCalib([])}>
-                Redo
-              </Button>
-            </form>
-          )
+          <span>
+            <strong className="font-medium text-slate-800">Calibrate:</strong>{" "}
+            {calib.length === 0
+              ? "Step 1 of 3 — click one end of a dimension you know (the longer the better). Shift keeps it straight."
+              : calib.length === 1
+                ? "Step 2 of 3 — click the other end."
+                : "Step 3 of 3 — type how long that line is in the box on the plan, then Set scale."}
+          </span>
         ) : tool === "measure" && active ? (
           <span>
             <span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm align-middle" style={{ background: active.color }} />
@@ -2468,9 +2468,11 @@ export function PlanViewer({
                     ? "click one side of the opening, then the other. Each line is one opening; its length is the width."
                     : active.type === "HIP_VALLEY"
                       ? "click the wall corner, then the ridge end; right-click, double-click or Enter to finish. Each line is one piece."
-                      : active.type === "LINEAR"
-                        ? "click points along the line; right-click, double-click or Enter to finish."
-                        : "click the corners; click the first point, right-click, double-click or Enter to close."}{" "}
+                      : active.type === "BEAM"
+                        ? "click one bearing end, then the other; right-click, double-click or Enter to finish. Each line is one beam — the bearing is added at both ends."
+                        : active.type === "LINEAR"
+                          ? "click points along the line; right-click, double-click or Enter to finish."
+                          : "click the corners; click the first point, right-click, double-click or Enter to close."}{" "}
             {arcNext ? (
               <strong className="mr-1 text-amber-700">Arc: click a point on the curve, then where it ends.</strong>
             ) : draftArcs.includes(draft.length - 1) && draft.length > 0 ? (
@@ -2479,7 +2481,7 @@ export function PlanViewer({
             {!isCountType(active.type) ? `Shift = straight${canArc(active.type) ? " · A = arc" : ""} · Backspace = undo point · Esc = cancel.` : null}
             {active.type === "FRAMING" ? " After closing the outline you'll choose horizontal, vertical or parallel to a wall." : null}
             {!unitsPerFoot && !isCountType(active.type) ? <strong className="ml-1 text-amber-700">Set the scale first.</strong> : null}
-            {isMemberType(active.type) ? (
+            {hasShapePitch(active.type) ? (
               <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 ring-1 ring-slate-200">
                 Pitch for next {active.type === "HIP_VALLEY" ? "line" : "outline"}:
                 <input
@@ -2640,15 +2642,60 @@ export function PlanViewer({
           </div>
           <ul className="min-h-0 flex-1 overflow-y-auto">
             {conditions.length === 0 ? <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — add one above.</li> : null}
-            {conditions.map((c) => {
+            {listed.map((c) => {
               const isActive = c.id === activeId;
               const isHidden = hidden.has(c.id);
               const info = infoOpen.has(c.id) ? totalsPanel.conditions.find((t) => t.id === c.id) : undefined;
               return (
-                <li key={c.id}>
+                <li
+                  key={c.id}
+                  className={cn("relative", dragId === c.id && "opacity-40")}
+                  onDragOver={(e) => {
+                    if (!dragId || dragId === c.id) return;
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = "move";
+                    const r = e.currentTarget.getBoundingClientRect();
+                    const after = e.clientY > r.top + r.height / 2;
+                    if (dropAt?.id !== c.id || dropAt.after !== after) setDropAt({ id: c.id, after });
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    if (!dragId || !dropAt) return;
+                    const ids = listed.map((x) => x.id).filter((id) => id !== dragId);
+                    const at = ids.indexOf(dropAt.id) + (dropAt.after ? 1 : 0);
+                    ids.splice(at, 0, dragId);
+                    setDragId(null);
+                    setDropAt(null);
+                    reorder(ids);
+                  }}
+                >
+                  {dropAt?.id === c.id ? (
+                    <span className={cn("pointer-events-none absolute inset-x-1 z-10 h-0.5 rounded bg-blue-600", dropAt.after ? "-bottom-px" : "-top-px")} />
+                  ) : null}
+                  {/* Drag handle — in the row's left padding, so nothing shifts when it shows. */}
+                  <span
+                    draggable
+                    title="Drag to reorder (or Alt + ↑ / ↓)"
+                    aria-hidden
+                    onDragStart={(e) => {
+                      setDragId(c.id);
+                      e.dataTransfer.effectAllowed = "move";
+                      e.dataTransfer.setData("text/plain", c.id);
+                      const row = e.currentTarget.parentElement;
+                      if (row) e.dataTransfer.setDragImage(row, 24, 18);
+                    }}
+                    onDragEnd={() => {
+                      setDragId(null);
+                      setDropAt(null);
+                    }}
+                    className="absolute left-0.5 top-2 z-10 flex h-6 w-3 cursor-grab items-center justify-center text-slate-400 opacity-0 transition-opacity hover:text-slate-700 active:cursor-grabbing [li:hover>&]:opacity-100"
+                  >
+                    <GripVertical className="h-3.5 w-3.5" />
+                  </span>
                   <div
                     role="button"
                     tabIndex={0}
+                    data-cond-row={c.id}
                     onClick={() => {
                       setActiveId(c.id);
                       setTool("measure");
@@ -2658,6 +2705,17 @@ export function PlanViewer({
                       if (c.type !== "AREA" && c.type !== "LINEAR") setDeduct(false);
                     }}
                     onKeyDown={(e) => {
+                      if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+                        e.preventDefault();
+                        const ids = listed.map((x) => x.id);
+                        const i = ids.indexOf(c.id);
+                        const j = i + (e.key === "ArrowUp" ? -1 : 1);
+                        if (j < 0 || j >= ids.length) return;
+                        [ids[i], ids[j]] = [ids[j], ids[i]];
+                        reorder(ids);
+                        requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-cond-row="${c.id}"]`)?.focus());
+                        return;
+                      }
                       if (e.key === "Enter") {
                         setActiveId(c.id);
                         setTool("measure");
@@ -2689,6 +2747,12 @@ export function PlanViewer({
                       <span className="block text-xs text-slate-500">
                         {CONDITION_TYPE_LABELS[c.type as ConditionType] ?? c.type}
                         {c.pitch > 0 ? ` · ${num(c.pitch, 2)}/12` : ""}
+                        {c.type === "BEAM"
+                          ? (() => {
+                              const b = beamOptions(c.options);
+                              return `${c.memberSize ? ` · ${c.memberSize}` : ""}${b.plies > 1 ? ` ×${b.plies}` : ""} · ${num(b.bearingIn, 2)}" bearing`;
+                            })()
+                          : null}
                         {c.type === "HIP_VALLEY"
                           ? !(c.pitch > 0) || c.pitch2 === 0
                             ? " · level"
@@ -2793,6 +2857,61 @@ export function PlanViewer({
 
         {/* Plan ----------------------------------------------------------------------------- */}
         <div className="relative min-w-0 flex-1">
+          {/* Calibrating: the length goes in a card on the plan itself, right where you're looking. */}
+          {tool === "calibrate" && calib.length === 2 ? (
+            <form
+              className="absolute left-1/2 top-3 z-30 w-[min(92%,24rem)] -translate-x-1/2 rounded-xl border border-red-200 bg-white p-4 shadow-xl"
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (calibLength > 0) applyScale(dist(calib[0], calib[1]) / calibLength, "Calibrated");
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  setCalib([]);
+                }
+              }}
+            >
+              <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <span className="inline-block h-0.5 w-6 border-t-2 border-dashed border-red-600" /> How long is that red line?
+              </p>
+              <p className="mt-0.5 text-xs text-slate-500">The real distance, from the dimension on the plan.</p>
+              <div className="mt-3 flex items-end gap-2">
+                <label className="flex-1">
+                  <span className="label">Feet</span>
+                  <input
+                    autoFocus
+                    aria-label="Feet"
+                    inputMode="decimal"
+                    value={calibFeet}
+                    onChange={(e) => setCalibFeet(e.target.value)}
+                    className="input text-lg tabular-nums"
+                    placeholder="24"
+                  />
+                </label>
+                <label className="w-24">
+                  <span className="label">Inches</span>
+                  <input
+                    aria-label="Inches"
+                    inputMode="decimal"
+                    value={calibInches}
+                    onChange={(e) => setCalibInches(e.target.value)}
+                    className="input text-lg tabular-nums"
+                    placeholder="0"
+                  />
+                </label>
+              </div>
+              <div className="mt-3 flex items-center gap-2">
+                <Button type="submit" disabled={calibLength <= 0}>
+                  Set scale
+                </Button>
+                <Button type="button" variant="ghost" onClick={() => setCalib([])}>
+                  Redo the line
+                </Button>
+                <span className="ml-auto text-[11px] text-slate-400">Enter = set · Esc = redo</span>
+              </div>
+            </form>
+          ) : null}
           {/* Live readout floats over the plan so the canvas never shifts under the cursor */}
           {flash ? (
             <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2 text-xs">
@@ -3018,7 +3137,7 @@ export function PlanViewer({
                             points={previewPath.map((p) => p.join(",")).join(" ")}
                             fill="none"
                             stroke={active.color}
-                            strokeWidth={active.type === "HIP_VALLEY" ? 4 : 3}
+                            strokeWidth={active.type === "HIP_VALLEY" || active.type === "BEAM" ? 4 : 3}
                             strokeDasharray={deduct ? "6 4" : undefined}
                             {...stroke}
                           />
@@ -3388,9 +3507,12 @@ export function PlanViewer({
                   {num(Math.abs(sel.q.value))} {sel.q.unit}
                   {sel.c.type === "FRAMING" ? ` · ${num(sel.q.metrics.member_lf)} lf of members` : ""}
                   {sel.c.type === "HIP_VALLEY" ? ` · ${feetInches(sel.q.metrics.member_lf)} true length` : ""}
+                  {sel.c.type === "BEAM" && sel.q.metrics.members
+                    ? ` · ${feetInches(sel.q.metrics.member_lf / sel.q.metrics.members)} beam with bearing${sel.q.metrics.members > 1 ? ` · ×${sel.q.metrics.members} plies` : ""}`
+                    : ""}
                 </p>
               ) : null}
-              {isMemberType(sel.c.type) && !sel.m.pending ? renderPitchEditor(sel.m, sel.c) : null}
+              {hasShapePitch(sel.c.type) && !sel.m.pending ? renderPitchEditor(sel.m, sel.c) : null}
               {sel.c.type === "LINEAR" && !sel.m.pending ? renderHeightEditor(sel.m, sel.c) : null}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {sel.c.type === "FRAMING" ? (

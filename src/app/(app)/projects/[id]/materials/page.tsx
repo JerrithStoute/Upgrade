@@ -64,11 +64,11 @@ export default async function MaterialListPage({ params, searchParams }: { param
             </Link>
           </div>
           <Link
-            href={`/projects/${project.id}/materials/vendor${planId ? `?plan=${planId}` : ""}`}
-            className={buttonClasses("secondary", "sm")}
-            title="Send part of the list (e.g. framing lumber) to a vendor — no prices"
+            href={`/projects/${project.id}/bids`}
+            className={buttonClasses("primary", "sm")}
+            title="Send the list (or part of it) to vendors for prices — as Excel or a printout — bring their prices back, compare, and take one per cost code"
           >
-            <Truck className="h-3.5 w-3.5" /> For a vendor…
+            <Truck className="h-3.5 w-3.5" /> Send to vendors
           </Link>
           <a href={csvHref} className={buttonClasses("secondary", "sm")}>
             <Download className="h-3.5 w-3.5" /> CSV

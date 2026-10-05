@@ -97,6 +97,7 @@ export default async function PrintPlanPage({ params, searchParams }: { params: 
         overhang: c.overhang,
         memberSize: c.memberSize,
         stockLengths: c.stockLengths,
+        options: c.options,
         memberWidthIn: c.memberSizeRef?.widthIn ?? null,
         boardFeetPerLf: c.memberSizeRef ? boardFeetPerLf(c.memberSizeRef) : null,
         soldAs: c.memberSizeRef?.soldAs ?? null,

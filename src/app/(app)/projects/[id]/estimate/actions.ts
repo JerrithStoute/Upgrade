@@ -16,6 +16,7 @@ import { deleteUpload } from "@/lib/uploads";
 import { proposalOptionsSchema } from "@/lib/proposal-options";
 import { markupTableSchema } from "@/lib/markup";
 import { lockJobPrices } from "@/lib/job-prices";
+import { clearJobNumbers } from "@/lib/template-numbers";
 
 function estimatePath(projectId: string, estimateId?: string) {
   return `/projects/${projectId}/estimate${estimateId ? `?estimate=${estimateId}` : ""}`;
@@ -263,7 +264,11 @@ export async function addTemplateToEstimate(formData: FormData) {
   redirect(estimatePath(projectId, estimateId));
 }
 
-/** Admins: copy this estimate (spec items, lines, notes, terms, markup) into a new template. */
+/**
+ * Admins: copy this estimate (spec items, lines, notes, terms, markup) into a new template.
+ * "Clear this job's numbers" (on by default) keeps your formulas and typed unit costs and
+ * drops the rest (clearJobNumbers). The template is a copy: jobs made from it never change with it.
+ */
 export async function saveEstimateAsTemplate(formData: FormData) {
   const admin = await requireAdmin();
   const projectId = str(formData, "projectId");
@@ -274,10 +279,16 @@ export async function saveEstimateAsTemplate(formData: FormData) {
     const created = await tx.estimateTemplate.create({
       data: { name, notes: est.notes, terms: est.terms, defaultMarkup: est.defaultMarkup, markupTable: est.markupTable },
     });
-    await copyIntoTemplate(tx, created.id, est);
+    const clear = formData.get("clear") === "1";
+    const items = clear ? est.items.map((i) => ({ ...i, ...clearJobNumbers({ ...i, fromTakeoff: !!i.takeoffRollup || !!i.takeoffConditionId }) })) : est.items;
+    await copyIntoTemplate(tx, created.id, { ...est, items });
     return created;
   });
-  await logActivity({ userId: admin.id, type: "estimate_template.created", description: `Saved estimate v${est.version} as template "${name}"` });
+  await logActivity({
+    userId: admin.id,
+    type: "estimate_template.created",
+    description: `Saved estimate v${est.version} as template "${name}"${formData.get("clear") === "1" ? " (this job's numbers cleared)" : ""}`,
+  });
   revalidatePath("/settings/estimate-templates");
   redirect(`/settings/estimate-templates/${template.id}`);
 }

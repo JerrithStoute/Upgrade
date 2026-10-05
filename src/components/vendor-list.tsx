@@ -162,7 +162,7 @@ export function VendorList({
         </label>
         <label className="flex items-center gap-2 text-xs text-slate-700">
           <input type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={picks.priceColumn} onChange={(e) => set({ priceColumn: e.target.checked })} />
-          Blank price column for the vendor to fill in
+          Blank Unit price column for the vendor to fill in
         </label>
         <button
           type="button"
@@ -209,6 +209,11 @@ export function VendorList({
           </div>
         ) : null}
         {picks.note ? <p className="whitespace-pre-wrap border-b border-slate-200 py-2 text-sm text-slate-800">{picks.note}</p> : null}
+        {picks.priceColumn && count ? (
+          <p className="pt-2 text-sm text-slate-700">
+            Fill in your <strong>price per unit</strong>.
+          </p>
+        ) : null}
 
         {count === 0 ? (
           <p className="no-print py-10 text-center text-sm text-slate-500">Tick a category on the left to put it on the sheet.</p>
@@ -220,14 +225,14 @@ export function VendorList({
                 <th className="py-1.5 pr-2 font-medium">SKU</th>
                 {hasQty ? <th className="py-1.5 pr-2 text-right font-medium">Qty</th> : null}
                 <th className="py-1.5 pr-2 font-medium">Unit</th>
-                {picks.priceColumn ? <th className="w-28 py-1.5 font-medium">Price</th> : null}
+                {picks.priceColumn ? <th className="w-28 py-1.5 pr-2 font-medium">Unit price</th> : null}
               </tr>
             </thead>
             {chosen.map((g) => (
               // A long category flows onto the next page; only its heading stays with its first rows.
               <tbody key={g.category}>
                 <tr className="break-after-avoid">
-                  <td colSpan={5} className="pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  <td colSpan={6} className="pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
                     {g.category}
                   </td>
                 </tr>
@@ -238,8 +243,11 @@ export function VendorList({
                     {hasQty ? <td className="py-1.5 pr-2 text-right tabular-nums font-medium text-slate-900">{i.qty != null ? num(i.qty) : ""}</td> : null}
                     <td className="py-1.5 pr-2 text-slate-600">{i.unit}</td>
                     {picks.priceColumn ? (
-                      <td className="py-1.5">
-                        <span className="block border-b border-slate-300">&nbsp;</span>
+                      <td className="py-1.5 pr-2 align-bottom">
+                        <span className="flex border-b border-slate-300 text-[10px] text-slate-400">
+                          $<span className="flex-1" />
+                          {i.unit === "ea" ? "each" : `per ${i.unit}`}
+                        </span>
                       </td>
                     ) : null}
                   </tr>

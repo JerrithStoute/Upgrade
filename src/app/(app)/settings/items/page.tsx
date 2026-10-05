@@ -97,7 +97,7 @@ function ItemForm({
           <input id={p("sku")} name="sku" className="input" defaultValue={values?.sku ?? ""} />
         </Field>
         <Field label="Vendor" htmlFor={p("vendor")}>
-          <input id={p("vendor")} name="vendor" className="input" defaultValue={values?.vendor ?? ""} />
+          <input id={p("vendor")} name="vendor" list="vendor-names" className="input" defaultValue={values?.vendor ?? ""} autoComplete="off" />
         </Field>
       </FormGrid>
       <Field label="Notes" htmlFor={p("notes")}>
@@ -150,7 +150,7 @@ function ItemForm({
 export default async function ItemListPage({ searchParams }: { searchParams: Promise<{ q?: string; category?: string; edit?: string; nocode?: string }> }) {
   const { q = "", category, edit, nocode } = await searchParams;
   const noCode = nocode === "1";
-  const [all, costCodes, company, rules] = await Promise.all([
+  const [all, costCodes, company, rules, vendors] = await Promise.all([
     db.materialItem.findMany({
       orderBy: [{ category: "asc" }, { name: "asc" }],
       include: { costCode: { select: { code: true, name: true } }, _count: { select: { assemblyItems: true } } },
@@ -158,6 +158,7 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
     activeCostCodes(),
     db.company.findFirst({ select: { defaultMarkup: true } }),
     loadCodeRules(),
+    db.vendor.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
   ]);
   const categories = Array.from(new Set(all.map((i) => i.category))).sort();
   const needle = q.trim().toLowerCase();
@@ -194,6 +195,12 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-5">
+      {/* Vendor boxes suggest your vendors as you type; a new name joins the vendor list. */}
+      <datalist id="vendor-names">
+        {vendors.map((v) => (
+          <option key={v.name} value={v.name} />
+        ))}
+      </datalist>
       <p className="text-sm text-slate-600">
         Materials and labor you pick into takeoff assemblies. Items typed into an assembly that aren&apos;t here yet are added automatically. A price changed here goes to every job
         whose prices aren&apos;t locked (their draft estimates update when opened). Locked jobs — any job with an estimate marked sent — keep their prices; bring new ones in with{" "}

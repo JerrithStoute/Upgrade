@@ -32,6 +32,7 @@ export function codeGroupsFor(type: ConditionType | string): CodeGroup[] {
     case "OPENING":
     case "FRAMING":
     case "HIP_VALLEY":
+    case "BEAM":
       return ["framing lumber"];
     case "DOOR":
       return ["doors:interior", "doors:exterior", "trim"];

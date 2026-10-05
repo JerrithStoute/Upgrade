@@ -62,6 +62,8 @@ export function PriceWarnings({
   zeroLines = [],
   changed,
   expired,
+  bidOver = [],
+  bidsHref,
   materialsHref,
   rebidHref,
   className,
@@ -70,6 +72,9 @@ export function PriceWarnings({
   zeroLines?: string[];
   changed?: { count: number; change: number };
   expired?: { on: Date; days: number };
+  /** Re-bids 10%+ over the bid taken for a cost code. */
+  bidOver?: { codeLabel: string; vendorName: string; bidNumber: number; pct: number }[];
+  bidsHref?: string;
   materialsHref: string;
   rebidHref: string;
   className?: string;
@@ -137,6 +142,25 @@ export function PriceWarnings({
               Price review
             </Link>{" "}
             for today&apos;s prices.
+          </>
+        }
+      />,
+    );
+  for (const w of bidOver)
+    parts.push(
+      <Box
+        key={`bid-${w.bidNumber}-${w.codeLabel}`}
+        tone="rose"
+        icon={<AlertTriangle className="h-4 w-4" />}
+        title={`${w.codeLabel}: re-bid ${Math.round(w.pct * 100)}% over the bid you took`}
+        note={
+          <>
+            Bid #{w.bidNumber} from {w.vendorName}, same items at today&apos;s quantities.{" "}
+            {bidsHref ? (
+              <Link href={`${bidsHref}#compare`} className={link}>
+                Compare bids
+              </Link>
+            ) : null}
           </>
         }
       />,

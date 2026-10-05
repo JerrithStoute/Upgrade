@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
-import { conditionEstimateLines, conditionTotals, loadConditions } from "@/lib/takeoff-data";
+import { conditionEstimateLines, conditionTotals, jobEstimateLines, loadConditions } from "@/lib/takeoff-data";
 import { materialListFrom } from "@/lib/takeoff-materials";
 import { linePrice } from "@/lib/utils";
 import { materialItemOptions } from "@/lib/material-items";
@@ -205,7 +205,7 @@ export default async function PlanViewerPage({
         drafts,
         templates: templates.map((t) => ({ id: t.id, name: t.name, conditions: t._count.conditions })),
         isAdmin: user.role === "ADMIN",
-        takeoffCost: conditions.reduce((sum, c) => sum + conditionEstimateLines(c, conditionTotals(c)).reduce((s, l) => s + l.quantity * l.unitCost, 0), 0),
+        takeoffCost: jobEstimateLines(conditions).reduce((s, l) => s + l.quantity * l.unitCost, 0),
         takeoffCount: conditions.length,
         unpriced: conditions.flatMap((c) => conditionEstimateLines(c, conditionTotals(c)).flatMap((l) => (l.quantity > 0 && !(l.unitCost > 0) ? [l.description] : []))),
       }}
@@ -244,6 +244,7 @@ export default async function PlanViewerPage({
           overhang: c.overhang,
           memberSize: c.memberSize,
           stockLengths: c.stockLengths,
+          options: c.options,
           memberWidthIn: c.memberSizeRef?.widthIn ?? null,
           boardFeetPerLf: c.memberSizeRef ? boardFeetPerLf(c.memberSizeRef) : null,
           soldAs: c.memberSizeRef?.soldAs ?? null,

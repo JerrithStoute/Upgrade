@@ -23,6 +23,8 @@ import {
   type WallOptions,
   type WindowOptions,
   packMode,
+  beamOptions,
+  DEFAULT_BEAM_OPTIONS,
 } from "./takeoff";
 
 /**
@@ -62,7 +64,9 @@ export async function conditionFields(fd: FormData) {
           ? optionsJson(fd, DEFAULT_DOOR_OPTIONS)
           : type === "WINDOW"
             ? optionsJson(fd, DEFAULT_WINDOW_OPTIONS)
-            : null;
+            : type === "BEAM"
+              ? JSON.stringify(beamOptions(optionsJson(fd, DEFAULT_BEAM_OPTIONS)))
+              : null;
   // "Do all windows use the same cost code?" — answered on the form, remembered for next time.
   await saveCodeRulesFromForm(fd);
   if (type === "WALL" && options) await rememberItems(options);
@@ -95,7 +99,7 @@ export async function conditionFields(fd: FormData) {
     unitCost: Math.max(0, numField(fd, "unitCost", 0)),
     markupPct: numField(fd, "markupPct", 20),
     wastePct: Math.max(0, numField(fd, "wastePct", 0)),
-    pitch: Math.max(0, numField(fd, "pitch", 0)),
+    pitch: type === "BEAM" ? 0 : Math.max(0, numField(fd, "pitch", 0)),
     // Hips & valleys have their own condition type now; Linear pitch is always the common slope.
     pitchMode: "COMMON",
     // Hips & valleys: the other roof plane's pitch; blank = same as side 1.
@@ -103,7 +107,7 @@ export async function conditionFields(fd: FormData) {
     height: Math.max(0, numField(fd, "height", 0)),
     depth: Math.max(0, numField(fd, "depth", 0)),
     spacing: Math.max(1, numField(fd, "spacing", 16)),
-    overhang: Math.max(0, numField(fd, "overhang", 0)),
+    overhang: type === "BEAM" ? 0 : Math.max(0, numField(fd, "overhang", 0)),
   };
 }
 

@@ -2,14 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, X } from "lucide-react";
-import { ConfirmForm, buttonClasses } from "@/components/ui";
+import { Copy, Plus, X } from "lucide-react";
+import { ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";
 import { costCodeLabel, money, num } from "@/lib/utils";
 import type { CodeRules } from "@/lib/code-groups";
 import { isLumberMetric, metricLabel, metricUnit } from "@/lib/takeoff";
 import { ConditionForm, type ConditionFormValues, type MemberSizeOption } from "../../_components/condition-form";
 import { AssemblyForm, type AssemblyFormValues, type ItemOption } from "../../_components/assembly-form";
-import { createAssemblyItem, createCondition, deleteAssemblyItem, deleteCondition, updateAssemblyItem, updateCondition } from "../../actions";
+import { copyCondition, createAssemblyItem, createCondition, deleteAssemblyItem, deleteCondition, updateAssemblyItem, updateCondition } from "../../actions";
 
 export type DrawerCondition = ConditionFormValues & {
   markupPct: number;
@@ -53,6 +53,7 @@ export function ConditionDrawer({
   const isMember =
     condition?.type === "FRAMING" ||
     condition?.type === "HIP_VALLEY" ||
+    condition?.type === "BEAM" ||
     condition?.type === "WALL" ||
     condition?.type === "OPENING" ||
     condition?.type === "DOOR" ||
@@ -63,6 +64,17 @@ export function ConditionDrawer({
       <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
         {condition ? <span className="h-3.5 w-3.5 rounded-sm" style={{ background: condition.color }} /> : null}
         <p className="flex-1 truncate font-semibold text-slate-900">{condition ? `Edit ${condition.name}` : "New takeoff"}</p>
+        {condition ? (
+          // A roof with several pitches: copy it (items and all), change the pitch, measure.
+          <form action={copyCondition}>
+            <input type="hidden" name="projectId" value={projectId} />
+            <input type="hidden" name="id" value={condition.id} />
+            <input type="hidden" name="returnTo" value={closeHref} />
+            <SubmitButton variant="secondary" size="sm" pendingText="Copying…" title="A new takeoff with the same settings and items (none of the shapes) — e.g. for another pitch">
+              <Copy className="h-3.5 w-3.5" /> Make a copy
+            </SubmitButton>
+          </form>
+        ) : null}
         <Link href={closeHref} scroll={false} className={buttonClasses("ghost", "sm")} aria-label="Close">
           <X className="h-4 w-4" />
         </Link>

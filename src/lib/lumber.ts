@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { newItemPlacement } from "./item-codes";
 import { conditionTotals, loadConditions } from "./takeoff-data";
-import { LUMBER_LF_METRIC, isLumberMetric, isMemberType, itemNameKey, lumberItemName, lumberMetric } from "./takeoff";
+import { LUMBER_LF_METRIC, LUMBER_METRIC_PREFIX, isLumberMetric, isMemberType, itemNameKey, lumberItemName, lumberMetric } from "./takeoff";
 
 export const LUMBER_CATEGORY = "Framing Lumber";
 
@@ -77,6 +77,10 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
           },
         }));
       const current = existing.find((i) => i.metric === line.metric);
+      // No Item List price yet, but the bid you took priced this length (its price list):
+      // the line takes that price, kept for this job.
+      const len = Number(line.metric.slice(LUMBER_METRIC_PREFIX.length));
+      const fromBid = listItem.unitCost > 0 || soldAs !== "STOCK" ? 0 : (c.lengthPrices?.[len] ?? 0);
       // Pieces carry no waste of their own: it's in their counts, as whole extra boards.
       const shape = { description: line.description, qty: line.qty, per: 1, unit: line.unit, roundUp: line.roundUp, wastePct: line.metric === LUMBER_LF_METRIC ? c.wastePct : 0 };
       if (!current) {
@@ -86,7 +90,8 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
             materialItemId: listItem.id,
             metric: line.metric,
             ...shape,
-            unitCost: listItem.unitCost,
+            unitCost: fromBid || listItem.unitCost,
+            pricePinned: fromBid > 0,
             markupPct: listItem.markupPct,
             costCodeId: listItem.costCodeId ?? c.costCodeId,
             sortOrder: sortOrder++,
@@ -98,9 +103,11 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
       // A line with no cost code takes the item's once it has one.
       const codeNow = !current.costCodeId && !!listItem.costCodeId;
       const unpriced = current.unitCost === 0 && listItem.unitCost > 0;
+      const bidPriced = current.unitCost === 0 && fromBid > 0;
       const changed =
         relinked ||
         unpriced ||
+        bidPriced ||
         current.description !== shape.description ||
         Math.abs(current.qty - shape.qty) > 1e-9 ||
         current.unit !== shape.unit ||
@@ -114,6 +121,7 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
             materialItemId: listItem.id,
             ...shape,
             ...(relinked || unpriced ? { unitCost: listItem.unitCost, markupPct: listItem.markupPct, costCodeId: listItem.costCodeId ?? c.costCodeId } : {}),
+            ...(bidPriced && !unpriced ? { unitCost: fromBid, pricePinned: true } : {}),
             ...(codeNow ? { costCodeId: listItem.costCodeId } : {}),
           },
         });

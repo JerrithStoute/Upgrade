@@ -30,7 +30,15 @@ export type MaterialLine = {
   materialItemId: string | null;
   /** Kept at "this job only". */
   pinned: boolean;
+  /** Its cost code (bids are asked for by cost code): the id or "none", and "06-100 Framing". */
+  codeKey: string;
+  codeLabel: string;
 };
+
+/** "06-100 Framing" — or "No cost code". */
+export function codeLabelOf(code: { code: string | null; name: string } | null | undefined) {
+  return code ? [code.code, code.name].filter(Boolean).join(" ") : "No cost code";
+}
 
 export type CutList = {
   condition: string;
@@ -124,6 +132,8 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
             unit: i.unit,
             materialItemId: i.materialItemId,
             pinned: i.pricePinned,
+            codeKey: i.costCodeId ?? "none",
+            codeLabel: codeLabelOf(i.costCode),
           },
           raw,
           raw * i.unitCost,
@@ -153,7 +163,15 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
         const size = c.memberSize?.trim() || null;
         add(
           `lumber:${(size ?? c.name).toLowerCase()}:${len}`,
-          { name: `${size ?? c.name} × ${len}'`, category: "Framing lumber", sku: null, vendor: null, unit: "ea" },
+          {
+            name: `${size ?? c.name} × ${len}'`,
+            category: "Framing lumber",
+            sku: null,
+            vendor: null,
+            unit: "ea",
+            codeKey: c.costCodeId ?? "none",
+            codeLabel: codeLabelOf(c.costCode),
+          },
           n,
           lf > 0 ? (total * len * n) / lf : 0,
           false,
@@ -165,7 +183,15 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
 
     add(
       `condition:${c.id}`,
-      { name: c.name, category: "Takeoffs", sku: null, vendor: null, unit: METRICS[c.metric as MetricKey]?.unit ?? totals.unit },
+      {
+        name: c.name,
+        category: "Takeoffs",
+        sku: null,
+        vendor: null,
+        unit: METRICS[c.metric as MetricKey]?.unit ?? totals.unit,
+        codeKey: c.costCodeId ?? "none",
+        codeLabel: codeLabelOf(c.costCode),
+      },
       totals.quantityWithWaste,
       totals.quantityWithWaste * c.unitCost,
       false,
@@ -190,6 +216,8 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
       pieces: r.pieces,
       materialItemId: r.materialItemId,
       pinned: r.pinned,
+      codeKey: r.codeKey,
+      codeLabel: r.codeLabel,
     };
   });
   // One heading per category whatever its capitalization ("Framing lumber" / "Framing Lumber").
