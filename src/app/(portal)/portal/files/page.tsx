@@ -6,6 +6,7 @@ import { cn, fmtDate } from "@/lib/utils";
 import { Card, CardBody, CardHeader, EmptyState } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
 import Link from "next/link";
+import { FileTypesNote } from "@/components/selections/extras";
 
 export const metadata = { title: "Photos & Files" };
 
@@ -82,6 +83,7 @@ export default async function PortalFilesPage({ searchParams }: { searchParams: 
             }
           />
           <CardBody>
+            <FileTypesNote viewOnly className="mb-3" />
             {shown.length === 0 ? (
               <EmptyState icon={Images} title="No files yet" description="Photos and documents will show up here as your team uploads them." />
             ) : (

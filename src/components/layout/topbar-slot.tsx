@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname } from "next/navigation";
 import { isPlanViewer } from "./sidebar";
 
@@ -28,14 +28,31 @@ export function TopbarTitle({ title }: { title?: string }) {
 
 /**
  * The project header: shown as usual, except on the takeoff drawing screen, where
- * `compact` moves up into the top bar so the plan gets the room.
+ * `compact` moves up into the top bar so the plan gets the room. Elsewhere it moves
+ * up there too once you scroll it out of sight (the tabs stay anchored below the bar).
  */
 export function ProjectHeaderSwitch({ compact, children }: { compact: React.ReactNode; children: React.ReactNode }) {
   const viewer = isPlanViewer(usePathname());
+  const ref = useRef<HTMLDivElement>(null);
+  const [scrolledPast, setScrolledPast] = useState(false);
   useEffect(() => {
-    if (!viewer) return;
+    if (viewer) return;
+    // Gone under the top bar (3.5rem) — its title, at least.
+    const check = () => setScrolledPast(!!ref.current && ref.current.getBoundingClientRect().bottom <= 72);
+    window.addEventListener("scroll", check, { passive: true });
+    window.addEventListener("resize", check);
+    const first = setTimeout(check);
+    return () => {
+      clearTimeout(first);
+      window.removeEventListener("scroll", check);
+      window.removeEventListener("resize", check);
+    };
+  }, [viewer]);
+  const inBar = viewer || scrolledPast;
+  useEffect(() => {
+    if (!inBar) return;
     setSlot(compact);
     return () => setSlot(null);
-  }, [viewer, compact]);
-  return viewer ? null : <>{children}</>;
+  }, [inBar, compact]);
+  return viewer ? null : <div ref={ref}>{children}</div>;
 }

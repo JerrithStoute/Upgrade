@@ -7,6 +7,7 @@ import { UNITS } from "@/lib/constants";
 import { cn, costCodeLabel } from "@/lib/utils";
 import { ConfirmForm, buttonClasses } from "@/components/ui";
 import { deleteMaterialItem, restoreItemCells, saveItemCells, type ItemCell } from "./actions";
+import { moveByArrow } from "@/components/grid-keys";
 
 export type ItemRow = {
   id: string;
@@ -104,7 +105,7 @@ export function ItemTable({
   return (
     <>
       <div className="relative overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full min-w-[980px] text-left text-sm">
+        <table className="w-full min-w-[980px] text-left text-sm" onKeyDown={moveByArrow}>
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className={cn(pinBox, "bg-slate-50 py-2.5")}>
@@ -198,7 +199,7 @@ export function ItemTable({
                         <div className="flex items-center justify-end gap-1">
                           {mark(i.id, "unitCost")}
                           <span className="text-slate-400">$</span>
-                          <NumberCell label={`Unit cost for ${i.name}`} value={i.unitCost} step="0.01" min="0" width="!w-20" onSave={(v) => save(i.id, "unitCost", v)} />
+                          <NumberCell label={`Unit cost for ${i.name}`} value={i.unitCost} min="0" width="!w-20" onSave={(v) => save(i.id, "unitCost", v)} />
                           <span className="text-slate-400">/</span>
                           <select
                             key={i.unit}
@@ -219,13 +220,13 @@ export function ItemTable({
                       <td className="px-2 py-1.5 align-middle">
                         <div className="flex items-center justify-end gap-1">
                           {mark(i.id, "markupPct")}
-                          <NumberCell label={`Markup % for ${i.name}`} value={i.markupPct} step="0.1" width="!w-16" onSave={(v) => save(i.id, "markupPct", v)} />
+                          <NumberCell label={`Markup % for ${i.name}`} value={i.markupPct} width="!w-16" onSave={(v) => save(i.id, "markupPct", v)} />
                         </div>
                       </td>
                       <td className="px-2 py-1.5 align-middle">
                         <div className="flex items-center justify-end gap-1">
                           {mark(i.id, "wastePct")}
-                          <NumberCell label={`Waste % for ${i.name}`} value={i.wastePct} step="0.5" min="0" width="!w-16" onSave={(v) => save(i.id, "wastePct", v)} />
+                          <NumberCell label={`Waste % for ${i.name}`} value={i.wastePct} min="0" width="!w-16" onSave={(v) => save(i.id, "wastePct", v)} />
                         </div>
                       </td>
                       <td className="px-2 py-1.5 text-center align-middle">
@@ -314,36 +315,26 @@ function editKeys(e: React.KeyboardEvent<HTMLInputElement>, original: string) {
   }
 }
 
-function NumberCell({
-  label,
-  value,
-  step,
-  min,
-  width = "!w-20",
-  onSave,
-}: {
-  label: string;
-  value: number;
-  step: string;
-  min?: string;
-  width?: string;
-  onSave: (v: string) => void;
-}) {
+function NumberCell({ label, value, min, width = "!w-20", onSave }: { label: string; value: number; min?: string; width?: string; onSave: (v: string) => void }) {
   const original = String(value);
+  // A plain box (no up / down arrows): the arrow keys move between cells instead.
   return (
     <input
       key={original}
-      type="number"
+      inputMode="decimal"
       aria-label={label}
-      step={step}
-      min={min}
       className={cn("input text-right tabular-nums", width, cell)}
       defaultValue={original}
       onFocus={(e) => e.currentTarget.select()}
       onKeyDown={(e) => editKeys(e, original)}
       onBlur={(e) => {
-        const v = e.currentTarget.value.trim() || "0";
-        if (Number(v) !== value) onSave(v);
+        const v = e.currentTarget.value.replace(/[$,%\s]/g, "") || "0";
+        const n = Number(v);
+        if (!Number.isFinite(n) || (min !== undefined && n < Number(min))) {
+          e.currentTarget.value = original;
+          return;
+        }
+        if (n !== value) onSave(String(n));
       }}
     />
   );

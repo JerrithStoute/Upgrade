@@ -27,15 +27,10 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
   return (
     <>
       <PageHeader
-        breadcrumbs={[
-          { label: "Selections", href: portalHref("/portal/selections", project.id) },
-          { label: selection.category },
-        ]}
+        breadcrumbs={[{ label: "Selections", href: portalHref("/portal/selections", project.id) }, { label: selection.category }]}
         title={selection.title}
         meta={<Badge status={selection.status} />}
-        description={[selection.location, `Allowance ${money(selection.allowance)}`, selection.dueDate ? `Due ${fmtDate(selection.dueDate)}` : null]
-          .filter(Boolean)
-          .join(" · ")}
+        description={[selection.location, `Allowance ${money(selection.allowance)}`, selection.dueDate ? `Due ${fmtDate(selection.dueDate)}` : null].filter(Boolean).join(" · ")}
       />
 
       <div className="space-y-6">
@@ -66,8 +61,8 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
                     ? diff > 0
                       ? ` This is ${money(diff)} over your allowance and will be billed as a change.`
                       : ` This is ${money(Math.abs(diff))} under your allowance.`
-                    : " This is within your allowance."}
-                  {" "}You can still change your choice below before approving.
+                    : " This is within your allowance."}{" "}
+                  You can still change your choice below before approving.
                 </p>
               </div>
               <form action={approveSelection}>
@@ -83,8 +78,7 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
           <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm text-emerald-900">
             <Lock className="h-4 w-4" />
             This selection is {selection.status.toLowerCase()}
-            {selection.approvedAt ? ` (approved ${fmtDate(selection.approvedAt)})` : ""} and can no longer be changed. Contact your project
-            manager if you need to revisit it.
+            {selection.approvedAt ? ` (approved ${fmtDate(selection.approvedAt)})` : ""} and can no longer be changed. Contact your project manager if you need to revisit it.
           </div>
         ) : null}
 
@@ -128,37 +122,20 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
                           ) : null}
                         </div>
                         {o.vendor || o.modelNumber ? (
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            {[o.vendor, o.modelNumber ? `Model ${o.modelNumber}` : null].filter(Boolean).join(" · ")}
-                          </p>
+                          <p className="mt-0.5 text-xs text-slate-500">{[o.vendor, o.modelNumber ? `Model ${o.modelNumber}` : null].filter(Boolean).join(" · ")}</p>
                         ) : null}
                         {o.description ? <p className="mt-2 text-sm text-slate-600">{o.description}</p> : null}
                         <div className="mt-3 flex items-baseline justify-between">
                           <p className="text-lg font-semibold tabular-nums text-slate-900">{money(o.price)}</p>
-                          <p
-                            className={cn(
-                              "text-xs font-medium tabular-nums",
-                              Math.abs(delta) <= 0.005 ? "text-slate-500" : delta > 0 ? "text-rose-700" : "text-emerald-700",
-                            )}
-                          >
-                            {Math.abs(delta) <= 0.005
-                              ? "At allowance"
-                              : delta > 0
-                                ? `+${money(delta)} over allowance`
-                                : `${money(Math.abs(delta))} under allowance`}
+                          <p className={cn("text-xs font-medium tabular-nums", Math.abs(delta) <= 0.005 ? "text-slate-500" : delta > 0 ? "text-rose-700" : "text-emerald-700")}>
+                            {Math.abs(delta) <= 0.005 ? "At allowance" : delta > 0 ? `+${money(delta)} over allowance` : `${money(Math.abs(delta))} under allowance`}
                           </p>
                         </div>
                         {canChoose ? (
                           <form action={chooseOption} className="mt-4">
                             <input type="hidden" name="selectionId" value={selection.id} />
                             <input type="hidden" name="optionId" value={o.id} />
-                            <SubmitButton
-                              variant={isChosen ? "secondary" : "primary"}
-                              size="sm"
-                              className="w-full"
-                              disabled={isChosen}
-                              pendingText="Saving…"
-                            >
+                            <SubmitButton variant={isChosen ? "secondary" : "primary"} size="sm" className="w-full" disabled={isChosen} pendingText="Saving…">
                               {isChosen ? "Currently chosen" : "Select this option"}
                             </SubmitButton>
                           </form>

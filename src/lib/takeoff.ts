@@ -104,13 +104,13 @@ export const PRESET_SCALES: { label: string; paperInchesPerFoot: number }[] = [
   { label: '3/4" = 1\'-0"', paperInchesPerFoot: 3 / 4 },
   { label: '1" = 1\'-0"', paperInchesPerFoot: 1 },
   { label: '1-1/2" = 1\'-0"', paperInchesPerFoot: 1.5 },
-  { label: '1" = 10\'', paperInchesPerFoot: 1 / 10 },
-  { label: '1" = 20\'', paperInchesPerFoot: 1 / 20 },
-  { label: '1" = 30\'', paperInchesPerFoot: 1 / 30 },
-  { label: '1" = 40\'', paperInchesPerFoot: 1 / 40 },
-  { label: '1" = 50\'', paperInchesPerFoot: 1 / 50 },
-  { label: '1" = 60\'', paperInchesPerFoot: 1 / 60 },
-  { label: '1" = 100\'', paperInchesPerFoot: 1 / 100 },
+  { label: "1\" = 10'", paperInchesPerFoot: 1 / 10 },
+  { label: "1\" = 20'", paperInchesPerFoot: 1 / 20 },
+  { label: "1\" = 30'", paperInchesPerFoot: 1 / 30 },
+  { label: "1\" = 40'", paperInchesPerFoot: 1 / 40 },
+  { label: "1\" = 50'", paperInchesPerFoot: 1 / 50 },
+  { label: "1\" = 60'", paperInchesPerFoot: 1 / 60 },
+  { label: "1\" = 100'", paperInchesPerFoot: 1 / 100 },
 ];
 
 export const PDF_UNITS_PER_INCH = 72;
@@ -195,7 +195,8 @@ export function arcPath(points: Pt[], arcs: number[] | null | undefined, closed:
     if (isArc.has(i)) {
       const next = i + 1 < points.length ? points[i + 1] : points[0];
       out.push(...arcThrough(points[i - 1], points[i], next));
-      if (i + 1 < points.length) i++; // the arc ended on the next vertex
+      if (i + 1 < points.length)
+        i++; // the arc ended on the next vertex
       else out.pop(); // closing arc ends back on the first point (the polygon closes itself)
     } else out.push(points[i]);
   }
@@ -800,7 +801,12 @@ export function lumberItemName(memberSize: string | null | undefined, conditionN
 
 /** The quantity an assembly item multiplies: a condition metric, a count of lumber pieces, or a wall / opening material. */
 export function assemblyBase(item: { metric: string }, metrics: Metrics, cutList: [number, number][] = [], auto: Record<string, number> = {}) {
-  if (item.metric.startsWith(WALL_METRIC_PREFIX) || item.metric.startsWith(OPENING_METRIC_PREFIX) || item.metric.startsWith(DOOR_METRIC_PREFIX) || item.metric.startsWith(WINDOW_METRIC_PREFIX))
+  if (
+    item.metric.startsWith(WALL_METRIC_PREFIX) ||
+    item.metric.startsWith(OPENING_METRIC_PREFIX) ||
+    item.metric.startsWith(DOOR_METRIC_PREFIX) ||
+    item.metric.startsWith(WINDOW_METRIC_PREFIX)
+  )
     return auto[item.metric] ?? 0;
   if (item.metric === LUMBER_LF_METRIC) return metrics.member_lf;
   if (isLumberMetric(item.metric)) {
@@ -846,7 +852,9 @@ export function parseArcs(json: string): number[] {
 /** Points (and arc points) as stored, rounded to 1/100 page unit. */
 export function pointsJson(points: Pt[], arcs?: number[] | null) {
   const set = new Set(arcs ?? []);
-  return JSON.stringify(points.map(([x, y], i) => (set.has(i) ? [Math.round(x * 100) / 100, Math.round(y * 100) / 100, 1] : [Math.round(x * 100) / 100, Math.round(y * 100) / 100])));
+  return JSON.stringify(
+    points.map(([x, y], i) => (set.has(i) ? [Math.round(x * 100) / 100, Math.round(y * 100) / 100, 1] : [Math.round(x * 100) / 100, Math.round(y * 100) / 100])),
+  );
 }
 
 /** 12.5 → 12'-6" */
@@ -888,7 +896,6 @@ export function boardPatternText(b: { length: number; cuts: number[]; cutsMax?: 
   const offcut = b.length - used;
   return `${len} → ${b.cuts.map(feetInches).join(" + ")}${offcut >= 1 / 12 ? ` (offcut ${feetInches(offcut)})` : ""}`;
 }
-
 
 // --- Walls ------------------------------------------------------------------------
 
@@ -1122,9 +1129,23 @@ export function wallTakeoff(wall: { studSize: string; spacing: number; heightFt:
   // The sheet size picked is what's counted, and the item's name says the same size.
   const sheet = (k: string) => SHEET_SIZES[k] ?? 32;
   if (o.sheathingSides > 0 && o.sheathingItem.trim() && area > 0)
-    lines.push({ key: "sheathing", name: withSheetSize(o.sheathingItem.trim(), o.sheathingSheet), unit: "ea", qty: (o.sheathingSides * area) / sheet(o.sheathingSheet), category: "Sheathing", waste: true });
+    lines.push({
+      key: "sheathing",
+      name: withSheetSize(o.sheathingItem.trim(), o.sheathingSheet),
+      unit: "ea",
+      qty: (o.sheathingSides * area) / sheet(o.sheathingSheet),
+      category: "Sheathing",
+      waste: true,
+    });
   if (o.drywallSides > 0 && o.drywallItem.trim() && area > 0)
-    lines.push({ key: "drywall", name: withSheetSize(o.drywallItem.trim(), o.drywallSheet), unit: "ea", qty: (o.drywallSides * area) / sheet(o.drywallSheet), category: "Drywall", waste: true });
+    lines.push({
+      key: "drywall",
+      name: withSheetSize(o.drywallItem.trim(), o.drywallSheet),
+      unit: "ea",
+      qty: (o.drywallSides * area) / sheet(o.drywallSheet),
+      category: "Drywall",
+      waste: true,
+    });
   if (o.baseSides > 0 && o.baseItem.trim() && length > 0)
     lines.push({ key: "base", name: o.baseItem.trim(), unit: "lf", qty: o.baseSides * length, category: "Trim", waste: true });
   return { lines, length, area, studs };

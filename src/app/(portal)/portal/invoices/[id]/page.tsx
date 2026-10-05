@@ -1,5 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireClient } from "@/lib/auth";
+import { getBrand } from "@/lib/company-brand";
+import { PrintLogo } from "@/components/brand-mark";
 import { db } from "@/lib/db";
 import { getPortalProject, portalHref, invoiceTotals } from "@/lib/portal";
 import { fmtDate, money, num, titleCase } from "@/lib/utils";
@@ -11,9 +13,11 @@ export const metadata = { title: "Invoice" };
 export default async function PortalInvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireClient();
   const { id } = await params;
+  const brand = await getBrand();
   const [invoice, company] = await Promise.all([
     db.invoice.findFirst({
-      where: { id, status: { not: "DRAFT" }, project: { clientId: user.clientId } },
+      // Client view (you looking) can preview a draft; the client never sees one.
+      where: { id, ...(user.preview ? {} : { status: { not: "DRAFT" } }), project: { clientId: user.clientId } },
       include: { items: { orderBy: { sortOrder: "asc" } }, payments: { orderBy: { date: "asc" } }, project: { include: { client: true } } },
     }),
     db.company.findFirst(),
@@ -23,16 +27,16 @@ export default async function PortalInvoiceDetailPage({ params }: { params: Prom
   const { total, paid, balance } = invoiceTotals(invoice);
   const client = invoice.project.client;
   const billTo = client
-    ? [
-        `${client.firstName} ${client.lastName}`,
-        client.company,
-        client.address,
-        [client.city, client.state, client.zip].filter(Boolean).join(" "),
-      ].filter(Boolean)
+    ? [`${client.firstName} ${client.lastName}`, client.company, client.address, [client.city, client.state, client.zip].filter(Boolean).join(" ")].filter(Boolean)
     : [];
 
   return (
     <>
+      {invoice.status === "DRAFT" ? (
+        <p className="no-print mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+          <b>Draft</b> — your client can&apos;t see this yet. This is how it will look when you send it.
+        </p>
+      ) : null}
       <PageHeader
         breadcrumbs={[{ label: "Invoices", href: portalHref("/portal/invoices", project.id) }, { label: `#${invoice.number}` }]}
         title={`Invoice #${invoice.number}`}
@@ -46,13 +50,10 @@ export default async function PortalInvoiceDetailPage({ params }: { params: Prom
           <CardBody className="grid gap-6 sm:grid-cols-3">
             <div className="text-sm">
               <p className="label">From</p>
+              <PrintLogo logoUrl={brand.logoUrl} className="max-h-12" />
               <p className="font-semibold text-slate-900">{company?.name ?? "Your Builder"}</p>
               {company?.address ? <p className="text-slate-600">{company.address}</p> : null}
-              {company?.city ? (
-                <p className="text-slate-600">
-                  {[company.city, company.state, company.zip].filter(Boolean).join(" ")}
-                </p>
-              ) : null}
+              {company?.city ? <p className="text-slate-600">{[company.city, company.state, company.zip].filter(Boolean).join(" ")}</p> : null}
               {company?.phone ? <p className="text-slate-600">{company.phone}</p> : null}
               {company?.licenseNumber ? <p className="text-xs text-slate-500">License {company.licenseNumber}</p> : null}
             </div>
@@ -126,7 +127,10 @@ export default async function PortalInvoiceDetailPage({ params }: { params: Prom
         </Table>
 
         <Card>
-          <CardHeader title="Payments" description={invoice.payments.length ? `${invoice.payments.length} payment${invoice.payments.length === 1 ? "" : "s"} received` : "No payments recorded yet"} />
+          <CardHeader
+            title="Payments"
+            description={invoice.payments.length ? `${invoice.payments.length} payment${invoice.payments.length === 1 ? "" : "s"} received` : "No payments recorded yet"}
+          />
           {invoice.payments.length ? (
             <ul className="divide-y divide-slate-100 text-sm">
               {invoice.payments.map((p) => (

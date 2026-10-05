@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requireStaff } from "@/lib/auth";
+import { changeOrderTotals } from "@/lib/change-orders";
 import { db } from "@/lib/db";
 import { getProject, projectFinancials } from "@/lib/projects";
 import { avgTaskProgress } from "@/lib/project-progress";
-import { fmtDate, linePrice, money, num, timeAgo, titleCase } from "@/lib/utils";
+import { fmtDate, money, num, timeAgo, titleCase } from "@/lib/utils";
 import { Badge, Card, CardBody, CardHeader, Progress, Stat } from "@/components/ui";
 
 function TabLink({ href, children = "View all" }: { href: string; children?: React.ReactNode }) {
@@ -75,11 +76,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
         <Stat label="Invoiced" value={money(financials.invoiced, true)} hint={`${money(financials.remainingToInvoice, true)} left to bill`} />
         <Stat label="Paid" value={money(financials.paid, true)} tone="good" />
         <Stat label="Balance due" value={money(financials.outstanding, true)} tone={financials.outstanding > 0 ? "warn" : "default"} />
-        <Stat
-          label="Schedule"
-          value={`${progress}%`}
-          hint={`${tasks.length} task${tasks.length === 1 ? "" : "s"}`}
-        />
+        <Stat label="Schedule" value={`${progress}%`} hint={`${tasks.length} task${tasks.length === 1 ? "" : "s"}`} />
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -119,9 +116,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
                           {client.firstName} {client.lastName}
                         </Link>
                         {client.company ? <span className="text-slate-500"> · {client.company}</span> : null}
-                        <span className="block text-xs text-slate-500">
-                          {[client.phone, client.email].filter(Boolean).join(" · ") || "No contact info"}
-                        </span>
+                        <span className="block text-xs text-slate-500">{[client.phone, client.email].filter(Boolean).join(" · ") || "No contact info"}</span>
                       </>
                     ) : (
                       "No client"
@@ -139,11 +134,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
           </Card>
 
           <Card>
-            <CardHeader
-              title="Upcoming tasks"
-              description={`${tasks.length} tasks on the schedule`}
-              actions={<TabLink href={`${base}/schedule`}>Schedule</TabLink>}
-            />
+            <CardHeader title="Upcoming tasks" description={`${tasks.length} tasks on the schedule`} actions={<TabLink href={`${base}/schedule`}>Schedule</TabLink>} />
             {upcomingTasks.length === 0 ? (
               <Empty>{tasks.length === 0 ? "No schedule yet." : "All tasks complete."}</Empty>
             ) : (
@@ -180,9 +171,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
                   <li key={l.id} className="px-5 py-3">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-sm font-medium text-slate-900">{fmtDate(l.date, "EEE, MMM d")}</p>
-                      <p className="text-xs text-slate-500">
-                        {[l.weather, l.crewCount ? `${l.crewCount} crew` : null, l.author?.name].filter(Boolean).join(" · ")}
-                      </p>
+                      <p className="text-xs text-slate-500">{[l.weather, l.crewCount ? `${l.crewCount} crew` : null, l.author?.name].filter(Boolean).join(" · ")}</p>
                     </div>
                     <p className="mt-1 line-clamp-2 text-sm text-slate-600">{l.workCompleted || "No work notes."}</p>
                   </li>
@@ -194,10 +183,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
 
         <div className="space-y-6">
           <Card>
-            <CardHeader
-              title="Client approvals"
-              description={`${pendingSelections.length + pendingChangeOrders.length} waiting`}
-            />
+            <CardHeader title="Client approvals" description={`${pendingSelections.length + pendingChangeOrders.length} waiting`} />
             {pendingSelections.length === 0 && pendingChangeOrders.length === 0 ? (
               <Empty>Nothing waiting on the client.</Empty>
             ) : (
@@ -209,9 +195,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
                         <p className="truncate text-sm text-slate-900">{s.title}</p>
                         <p className="text-xs text-slate-500">
                           Selection · {s.category}
-                          {s.dueDate ? (
-                            <span className={s.dueDate < now && s.status === "PENDING" ? "text-rose-600" : ""}> · due {fmtDate(s.dueDate, "MMM d")}</span>
-                          ) : null}
+                          {s.dueDate ? <span className={s.dueDate < now && s.status === "PENDING" ? "text-rose-600" : ""}> · due {fmtDate(s.dueDate, "MMM d")}</span> : null}
                         </p>
                       </div>
                       <Badge status={s.status} />
@@ -225,9 +209,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
                         <p className="truncate text-sm text-slate-900">
                           CO #{co.number} · {co.title}
                         </p>
-                        <p className="text-xs text-slate-500">
-                          Change order · {money(co.items.reduce((s, i) => s + linePrice(i), 0))}
-                        </p>
+                        <p className="text-xs text-slate-500">Change order · {money(changeOrderTotals(co, co.items).total)}</p>
                       </div>
                       <Badge status={co.status} />
                     </Link>

@@ -59,13 +59,7 @@ export function groupBy<T>(items: T[], key: (item: T) => string): [string, T[]][
   return Array.from(map.entries());
 }
 
-export const CHANGE_ORDER_REASONS = [
-  "Client request",
-  "Unforeseen condition",
-  "Design change",
-  "Code requirement",
-  "Other",
-] as const;
+export const CHANGE_ORDER_REASONS = ["Client request", "Unforeseen condition", "Design change", "Code requirement", "Other"] as const;
 
 /** Invoice lines that bill a change order start with "Change Order #N". */
 export function changeOrderNumberFromDescription(description: string): number | null {

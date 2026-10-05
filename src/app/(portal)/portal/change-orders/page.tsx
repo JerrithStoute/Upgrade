@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { FileDiff } from "lucide-react";
 import { requireClient } from "@/lib/auth";
+import { changeOrderTotals } from "@/lib/change-orders";
 import { db } from "@/lib/db";
 import { portalContext } from "@/lib/portal";
-import { fmtDate, money, linePrice, sum } from "@/lib/utils";
+import { fmtDate, money, sum } from "@/lib/utils";
 import { Badge, EmptyState, Table, THead, TBody, Tr, Th, Td, Stat } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
 
@@ -28,7 +29,7 @@ export default async function PortalChangeOrdersPage({ searchParams }: { searchP
     orderBy: { number: "desc" },
     include: { items: true },
   });
-  const rows = changeOrders.map((co) => ({ ...co, total: sum(co.items.map(linePrice)) }));
+  const rows = changeOrders.map((co) => ({ ...co, total: changeOrderTotals(co, co.items).total }));
   const pending = rows.filter((r) => r.status === "PENDING_APPROVAL");
   const approved = rows.filter((r) => r.status === "APPROVED");
 

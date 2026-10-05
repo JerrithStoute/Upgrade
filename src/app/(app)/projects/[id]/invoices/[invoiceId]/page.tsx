@@ -7,7 +7,26 @@ import { getProject } from "@/lib/projects";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { dateInput, fmtDate, money, num } from "@/lib/utils";
 import { invoiceLineTotal, invoiceTotal, isOverdue, paymentsTotal } from "@/lib/finance";
-import { Badge, Card, CardBody, CardHeader, Collapsible, ConfirmForm, Field, FormGrid, Stat, SubmitButton, Table, THead, TBody, Tr, Th, Td, TFoot, buttonClasses } from "@/components/ui";
+import {
+  Badge,
+  Card,
+  CardBody,
+  CardHeader,
+  Collapsible,
+  ConfirmForm,
+  Field,
+  FormGrid,
+  Stat,
+  SubmitButton,
+  Table,
+  THead,
+  TBody,
+  Tr,
+  Th,
+  Td,
+  TFoot,
+  buttonClasses,
+} from "@/components/ui";
 import {
   updateInvoice,
   markInvoiceSent,
@@ -18,15 +37,11 @@ import {
   deleteInvoiceItem,
   recordPayment,
   deletePayment,
+  setInvoiceTax,
 } from "../actions";
+import { parseMarkupTable } from "@/lib/markup";
 
-export default async function InvoiceDetailPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string; invoiceId: string }>;
-  searchParams: Promise<{ edit?: string }>;
-}) {
+export default async function InvoiceDetailPage({ params, searchParams }: { params: Promise<{ id: string; invoiceId: string }>; searchParams: Promise<{ edit?: string }> }) {
   await requireStaff();
   const { id, invoiceId } = await params;
   const { edit } = await searchParams;
@@ -36,6 +51,16 @@ export default async function InvoiceDetailPage({
     include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }, payments: { orderBy: { date: "desc" } } },
   });
   if (!inv) notFound();
+  // "Add tax" starts at the estimate's tax rate (approved estimate, else the latest).
+  const est =
+    inv.status === "DRAFT" && inv.taxPct === null
+      ? await db.estimate.findFirst({
+          where: { projectId: project.id },
+          orderBy: [{ approvedAt: { sort: "desc", nulls: "last" } }, { version: "desc" }],
+          select: { markupTable: true, defaultMarkup: true },
+        })
+      : null;
+  const estTax = est ? parseMarkupTable(est.markupTable, est.defaultMarkup).find((r) => r.kind === "TAX" && r.pct > 0) : undefined;
 
   const isDraft = inv.status === "DRAFT";
   const isVoid = inv.status === "VOID";
@@ -155,13 +180,17 @@ export default async function InvoiceDetailPage({
                 </tr>
               ) : (
                 <Tr key={item.id}>
-                  <Td className="min-w-[240px] text-slate-900">{item.description}</Td>
+                  <Td className="min-w-[240px] text-slate-900">
+                    {item.description}
+                    {item.isTax ? <span className="ml-2 text-xs text-slate-400">follows the lines above</span> : null}
+                  </Td>
                   <Td right>{num(item.quantity)}</Td>
                   <Td right>{money(item.unitPrice)}</Td>
                   <Td right className="font-medium text-slate-900">
                     {money(invoiceLineTotal(item))}
                   </Td>
-                  {isDraft ? (
+                  {isDraft && item.isTax ? <Td /> : null}
+                  {isDraft && !item.isTax ? (
                     <Td>
                       <span className="flex items-center justify-end gap-1">
                         <Link href={`${base}?edit=${item.id}`} className={buttonClasses("ghost", "sm")}>
@@ -189,6 +218,32 @@ export default async function InvoiceDetailPage({
             </tr>
           </TFoot>
         </Table>
+        {isDraft ? (
+          <form action={setInvoiceTax} className="flex flex-wrap items-end gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3">
+            <input type="hidden" name="projectId" value={project.id} />
+            <input type="hidden" name="invoiceId" value={inv.id} />
+            <label className="flex h-9 items-center gap-2 text-sm font-medium text-slate-800">
+              <input type="checkbox" name="on" defaultChecked={inv.taxPct !== null} className="h-4 w-4 rounded border-slate-300" />
+              Add tax
+            </label>
+            <Field label="Label" htmlFor="tax-label">
+              <input id="tax-label" name="taxLabel" className="input !w-48" defaultValue={inv.taxPct !== null ? inv.taxLabel : estTax?.name || inv.taxLabel} />
+            </Field>
+            <Field label="Rate %" htmlFor="tax-pct">
+              <input id="tax-pct" name="taxPct" type="number" step="any" min="0" max="100" className="input !w-28" defaultValue={inv.taxPct ?? estTax?.pct ?? ""} />
+            </Field>
+            <SubmitButton size="sm" variant="secondary">
+              Apply
+            </SubmitButton>
+            <p className="basis-full text-xs text-slate-500">
+              {inv.taxPct !== null
+                ? "Tax is a line on this invoice and follows the other lines when they change."
+                : estTax
+                  ? "The rate starts at your estimate's tax row — change it for this invoice if you need to."
+                  : "Tick to add a tax line on the other lines."}
+            </p>
+          </form>
+        ) : null}
         {isDraft ? (
           <Collapsible summary="Add line item" defaultOpen={inv.items.length === 0}>
             <form action={createInvoiceItem} className="space-y-3">

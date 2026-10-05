@@ -3,17 +3,13 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { ButtonLink } from "@/components/ui/button";
+import { ClientViewButton } from "./_components/client-view-button";
 import Link from "next/link";
 import { ChevronRight, Pencil } from "lucide-react";
 import { ProjectHeaderSwitch } from "@/components/layout/topbar-slot";
+import { StickyJobHead } from "@/components/layout/sticky-job-head";
 
-export default async function ProjectLayout({
-  children,
-  params,
-}: {
-  children: React.ReactNode;
-  params: Promise<{ id: string }>;
-}) {
+export default async function ProjectLayout({ children, params }: { children: React.ReactNode; params: Promise<{ id: string }> }) {
   const { id } = await params;
   const project = await getProject(id);
   const base = `/projects/${project.id}`;
@@ -24,7 +20,7 @@ export default async function ProjectLayout({
     <div>
       <ProjectHeaderSwitch
         compact={
-          // On the drawing screen the project sits in the top bar instead.
+          // The project up in the top bar: on the drawing screen, and once you scroll the header away.
           <div className="flex min-w-0 items-center gap-2 text-sm">
             <Link href="/projects" className="shrink-0 text-xs text-slate-500 hover:text-slate-800">
               Projects
@@ -34,7 +30,12 @@ export default async function ProjectLayout({
               #{project.number} {project.name}
             </Link>
             <Badge status={project.status} className="shrink-0" />
-            <span className="hidden min-w-0 truncate text-xs text-slate-500 lg:inline">{[clientName, address].filter(Boolean).join(" · ")}</span>
+            <span className="hidden min-w-0 truncate text-xs text-slate-500 xl:inline">{[clientName, address].filter(Boolean).join(" · ")}</span>
+            {project.clientId ? (
+              <span className="ml-auto shrink-0">
+                <ClientViewButton projectId={project.id} />
+              </span>
+            ) : null}
             <Link href={`${base}/edit`} className="shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" title="Edit project">
               <Pencil className="h-3.5 w-3.5" />
             </Link>
@@ -47,31 +48,35 @@ export default async function ProjectLayout({
           meta={<Badge status={project.status} />}
           description={[clientName, address].filter(Boolean).join(" · ")}
           actions={
-            <ButtonLink href={`${base}/edit`} variant="secondary" size="sm">
-              <Pencil className="h-3.5 w-3.5" /> Edit
-            </ButtonLink>
+            <span className="flex flex-wrap items-center gap-2">
+              {project.clientId ? <ClientViewButton projectId={project.id} /> : null}
+              <ButtonLink href={`${base}/edit`} variant="secondary" size="sm">
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </ButtonLink>
+            </span>
           }
         />
       </ProjectHeaderSwitch>
-      <Tabs
-        className="mb-6"
-        items={[
-          { href: base, label: "Overview", exact: true },
-          { href: `${base}/plans`, label: "Plans" },
-          { href: `${base}/materials`, label: "Material list" },
-          { href: `${base}/takeoff`, label: "Takeoff" },
-          { href: `${base}/estimate`, label: "Estimate" },
-          { href: `${base}/selections`, label: "Selections" },
-          { href: `${base}/change-orders`, label: "Change Orders" },
-          { href: `${base}/schedule`, label: "Schedule" },
-          { href: `${base}/budget`, label: "Budget" },
-          { href: `${base}/invoices`, label: "Invoices" },
-          { href: `${base}/daily-logs`, label: "Daily Logs" },
-          { href: `${base}/todos`, label: "To-Dos" },
-          { href: `${base}/files`, label: "Files" },
-          { href: `${base}/messages`, label: "Messages" },
-        ]}
-      />
+      <StickyJobHead>
+        <Tabs
+          items={[
+            { href: base, label: "Overview", exact: true },
+            { href: `${base}/plans`, label: "Plans" },
+            { href: `${base}/materials`, label: "Material list" },
+            { href: `${base}/takeoff`, label: "Takeoff" },
+            { href: `${base}/estimate`, label: "Estimate" },
+            { href: `${base}/selections`, label: "Selections" },
+            { href: `${base}/change-orders`, label: "Change Orders" },
+            { href: `${base}/schedule`, label: "Schedule" },
+            { href: `${base}/budget`, label: "Budget" },
+            { href: `${base}/invoices`, label: "Invoices" },
+            { href: `${base}/daily-logs`, label: "Daily Logs" },
+            { href: `${base}/todos`, label: "To-Dos" },
+            { href: `${base}/files`, label: "Files" },
+            { href: `${base}/messages`, label: "Messages" },
+          ]}
+        />
+      </StickyJobHead>
       {children}
     </div>
   );

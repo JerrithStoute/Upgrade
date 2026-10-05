@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { fmtDate, money } from "@/lib/utils";
-import { lineTotals } from "@/lib/finance";
+import { changeOrderTotals } from "@/lib/change-orders";
 import { Badge, ButtonLink, EmptyState, Stat, Table, THead, TBody, Tr, Th, Td, TFoot } from "@/components/ui";
 
 export default async function ChangeOrdersPage({ params }: { params: Promise<{ id: string }> }) {
@@ -16,7 +16,7 @@ export default async function ChangeOrdersPage({ params }: { params: Promise<{ i
     orderBy: { number: "desc" },
     include: { items: true },
   });
-  const rows = cos.map((co) => ({ ...co, totals: lineTotals(co.items) }));
+  const rows = cos.map((co) => ({ ...co, totals: { price: changeOrderTotals(co, co.items).total } }));
   const approved = rows.filter((r) => r.status === "APPROVED");
   const pending = rows.filter((r) => r.status === "PENDING_APPROVAL");
   const approvedPrice = approved.reduce((s, r) => s + r.totals.price, 0);
@@ -31,9 +31,11 @@ export default async function ChangeOrdersPage({ params }: { params: Promise<{ i
           <h2 className="text-base font-semibold text-slate-900">Change orders</h2>
           <p className="text-sm text-slate-500">Scope changes priced and approved by the client.</p>
         </div>
-        <ButtonLink href={newHref} size="sm">
-          <Plus className="h-4 w-4" /> New change order
-        </ButtonLink>
+        <span className="flex flex-wrap items-center gap-2">
+          <ButtonLink href={newHref} size="sm">
+            <Plus className="h-4 w-4" /> New change order
+          </ButtonLink>
+        </span>
       </div>
 
       {rows.length === 0 ? (

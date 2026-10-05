@@ -4,9 +4,23 @@ import type { CutList, MaterialLine } from "@/lib/takeoff-materials";
 import { groupBy } from "@/lib/finance";
 import { money, num } from "@/lib/utils";
 import { EmptyState, TBody, TFoot, THead, Table, Td, Th, Tr } from "@/components/ui";
+import { PriceCell } from "./price-cell";
 
 /** The Material List table (by category) and the framing cut sheet — the Material List page and the takeoff tab. */
-export function MaterialTable({ lines, cutLists, total, showPrices }: { lines: MaterialLine[]; cutLists: CutList[]; total: number; showPrices: boolean }) {
+export function MaterialTable({
+  lines,
+  cutLists,
+  total,
+  showPrices,
+  edit,
+}: {
+  lines: MaterialLine[];
+  cutLists: CutList[];
+  total: number;
+  showPrices: boolean;
+  /** The job's Material list: prices of Item List items can be changed right here. */
+  edit?: { projectId: string; locked: boolean };
+}) {
   const groups = groupBy(lines, (l) => l.category);
   return (
     <>
@@ -52,7 +66,23 @@ export function MaterialTable({ lines, cutLists, total, showPrices }: { lines: M
                   <Td>{l.unit}</Td>
                   {showPrices ? (
                     <>
-                      <Td right>{money(l.unitCost)}</Td>
+                      <Td right className={l.extended > 0 ? undefined : "font-semibold text-amber-700"}>
+                        {edit && l.materialItemId ? (
+                          <PriceCell
+                            projectId={edit.projectId}
+                            materialItemId={l.materialItemId}
+                            name={l.name}
+                            unit={l.unit}
+                            price={l.unitCost}
+                            pinned={l.pinned}
+                            locked={edit.locked}
+                          />
+                        ) : l.extended > 0 ? (
+                          money(l.unitCost)
+                        ) : (
+                          <span title="No price — this goes to the estimate at $0. Price it in the takeoff.">No price</span>
+                        )}
+                      </Td>
                       <Td right>{money(l.extended)}</Td>
                     </>
                   ) : null}

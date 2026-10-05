@@ -14,7 +14,7 @@ import { autoMetricPrefix, itemNameKey } from "./takeoff";
  *
  * Prices are the job's (like other takeoff items): a new line copies the Item
  * List price, a line still at $0 picks it up once it's set; anything else changes
- * only on Rebid. Materials the walls no longer need are removed.
+ * only through the Item List (unlocked jobs) or Price review. Materials the walls no longer need are removed.
  */
 export async function syncWallItems(projectId: string, conditionId?: string) {
   const conditions = (await loadConditions(projectId)).filter(
@@ -109,4 +109,7 @@ export async function syncAutoItems(projectId: string, conditionId?: string) {
   const { syncLumberItems } = await import("./lumber");
   await syncLumberItems(projectId, conditionId);
   await syncWallItems(projectId, conditionId);
+  // An unlocked job follows the Item List's prices.
+  const { pullListPrices } = await import("./job-prices");
+  await pullListPrices(projectId);
 }

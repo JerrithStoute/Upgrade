@@ -7,13 +7,17 @@ import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
 import { boolField, intField, parseDateInput, str, strOrNull } from "@/lib/utils";
+import { refreshTiedDeadlines } from "@/lib/selections";
 import { cascadeSuccessors, shiftChain, wouldCycle, type DateUpdate } from "@/lib/schedule";
 
 function schedulePath(projectId: string) {
   return `/projects/${projectId}/schedule`;
 }
 
-function revalidate(projectId: string) {
+async function revalidate(projectId: string) {
+  // Selection deadlines tied to schedule items move with them.
+  await refreshTiedDeadlines(projectId);
+  revalidatePath(`/projects/${projectId}/selections`);
   revalidatePath(schedulePath(projectId));
   revalidatePath(`/projects/${projectId}`);
   revalidatePath("/schedule");
@@ -21,9 +25,7 @@ function revalidate(projectId: string) {
 
 async function applyUpdates(updates: DateUpdate[]) {
   if (updates.length === 0) return;
-  await db.$transaction(
-    updates.map((u) => db.scheduleTask.update({ where: { id: u.id }, data: { startDate: u.startDate, endDate: u.endDate } })),
-  );
+  await db.$transaction(updates.map((u) => db.scheduleTask.update({ where: { id: u.id }, data: { startDate: u.startDate, endDate: u.endDate } })));
 }
 
 function readTaskFields(fd: FormData) {
@@ -64,7 +66,7 @@ export async function createTask(fd: FormData) {
   const last = await db.scheduleTask.findFirst({ where: { projectId: project.id }, orderBy: { sortOrder: "desc" } });
   await db.scheduleTask.create({ data: { ...data, projectId: project.id, sortOrder: (last?.sortOrder ?? -1) + 1 } });
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.task_created", description: `Added task "${data.name}"` });
-  revalidate(project.id);
+  await revalidate(project.id);
   redirect(schedulePath(project.id));
 }
 
@@ -84,7 +86,7 @@ export async function updateTask(fd: FormData) {
   const updatedAll = all.map((t) => (t.id === id ? { ...t, ...data } : t));
   await applyUpdates(cascadeSuccessors(updatedAll, id, data.endDate));
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.task_updated", description: `Updated task "${data.name}"` });
-  revalidate(project.id);
+  await revalidate(project.id);
   redirect(schedulePath(project.id));
 }
 
@@ -96,7 +98,7 @@ export async function deleteTask(fd: FormData) {
   if (!task) throw new Error("Task not found");
   await db.scheduleTask.delete({ where: { id } });
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.task_deleted", description: `Deleted task "${task.name}"` });
-  revalidate(project.id);
+  await revalidate(project.id);
   redirect(schedulePath(project.id));
 }
 
@@ -118,7 +120,7 @@ export async function shiftTask(fd: FormData) {
     type: "schedule.shifted",
     description: `Shifted "${task.name}" and ${updates.length - 1} dependent task(s) by ${days > 0 ? "+" : ""}${days} day(s)`,
   });
-  revalidate(project.id);
+  await revalidate(project.id);
   redirect(`${schedulePath(project.id)}?task=${id}`);
 }
 
@@ -130,6 +132,6 @@ export async function completeTask(fd: FormData) {
   if (!task) throw new Error("Task not found");
   await db.scheduleTask.update({ where: { id }, data: { percentComplete: 100 } });
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.task_completed", description: `Completed task "${task.name}"` });
-  revalidate(project.id);
+  await revalidate(project.id);
   redirect(schedulePath(project.id));
 }

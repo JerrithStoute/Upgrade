@@ -3,8 +3,9 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { LayoutDashboard, FolderKanban, Users, CalendarDays, CheckSquare, Receipt, Settings, HardHat, ChevronLeft, ChevronRight, Pin, PinOff, type LucideIcon } from "lucide-react";
+import { LayoutDashboard, FolderKanban, Users, CalendarDays, CheckSquare, Receipt, Settings, ChevronLeft, ChevronRight, Pin, PinOff, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BrandMark } from "@/components/brand-mark";
 
 const NAV: { href: string; label: string; icon: LucideIcon; adminOnly?: boolean }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -49,18 +50,18 @@ function subscribePinned(cb: () => void) {
   };
 }
 
-function SidebarContent({ role, companyName, pathname, extra }: { role: string; companyName: string; pathname: string; extra?: React.ReactNode }) {
+function SidebarContent({ role, companyName, logoUrl, pathname, extra }: { role: string; companyName: string; logoUrl: string | null; pathname: string; extra?: React.ReactNode }) {
   return (
     <>
       <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-4">
-        <Link href="/dashboard" className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-blue-700 text-white">
-            <HardHat className="h-5 w-5" />
-          </span>
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-semibold text-slate-900">Upgrade</span>
-            <span className="block truncate text-xs text-slate-500">{companyName}</span>
-          </span>
+        <Link href="/dashboard" className="flex min-w-0 flex-1 items-center gap-2" title={companyName}>
+          <BrandMark logoUrl={logoUrl} />
+          {logoUrl ? null : (
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-semibold text-slate-900">Upgrade</span>
+              <span className="block truncate text-xs text-slate-500">{companyName}</span>
+            </span>
+          )}
         </Link>
         {extra}
       </div>
@@ -86,7 +87,7 @@ function SidebarContent({ role, companyName, pathname, extra }: { role: string; 
   );
 }
 
-export function Sidebar({ role, companyName }: { role: string; companyName: string }) {
+export function Sidebar({ role, companyName, logoUrl }: { role: string; companyName: string; logoUrl: string | null }) {
   const pathname = usePathname();
   const pinned = useSyncExternalStore(subscribePinned, readPinned, () => false);
   // Open over the plan for this page only; going anywhere else closes it.
@@ -121,6 +122,7 @@ export function Sidebar({ role, companyName }: { role: string; companyName: stri
               <SidebarContent
                 role={role}
                 companyName={companyName}
+                logoUrl={logoUrl}
                 pathname={pathname}
                 extra={
                   <span className="flex shrink-0 items-center">
@@ -146,10 +148,11 @@ export function Sidebar({ role, companyName }: { role: string; companyName: stri
     );
 
   return (
-    <aside className="no-print hidden w-60 shrink-0 flex-col border-r border-slate-200 bg-white md:flex">
+    <aside className="no-print sticky top-0 z-20 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white md:flex">
       <SidebarContent
         role={role}
         companyName={companyName}
+        logoUrl={logoUrl}
         pathname={pathname}
         extra={
           isPlanViewer(pathname) ? (

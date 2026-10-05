@@ -49,8 +49,7 @@ export function TotalsPanel({
 }) {
   const total = data.conditions.reduce((s, c) => s + c.price, 0);
   const categories = Array.from(new Set(data.materials.lines.map((l) => l.category)));
-  const tabClass = (on: boolean) =>
-    cn("border-b-2 px-3 py-2 text-sm font-medium", on ? "border-blue-700 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800");
+  const tabClass = (on: boolean) => cn("border-b-2 px-3 py-2 text-sm font-medium", on ? "border-blue-700 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800");
 
   return (
     <div className="absolute inset-y-0 right-0 z-20 flex w-[min(100%,26rem)] flex-col border-l border-slate-200 bg-white shadow-2xl">

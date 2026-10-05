@@ -7,6 +7,7 @@ import { cn, fmtDate } from "@/lib/utils";
 import { FILE_FOLDERS } from "@/lib/constants";
 import { Badge, Button, SubmitButton, ConfirmForm, Collapsible, Field, FormGrid, EmptyState } from "@/components/ui";
 import { uploadFiles, toggleFileVisibility, deleteFile } from "./actions";
+import { FileTypesNote } from "@/components/selections/extras";
 
 function fileSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -85,8 +86,9 @@ export default async function FilesPage({
                 ))}
               </select>
             </Field>
-            <Field label="Files" htmlFor="up-files" className="md:col-span-2" hint="Up to 25 MB each">
+            <Field label="Files" htmlFor="up-files" className="md:col-span-2">
               <input id="up-files" type="file" name="files" multiple required className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50" />
+              <FileTypesNote className="mt-1.5" />
             </Field>
           </FormGrid>
           <div className="flex items-center gap-4">

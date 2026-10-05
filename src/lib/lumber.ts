@@ -18,7 +18,7 @@ type LumberLine = { metric: string; description: string; listName: string; listU
  *
  * The condition's Waste % applies to its lumber. Prices are the job's: a new line
  * copies the Item List price, a line still at $0 picks up the Item List price once
- * one is set, anything else changes only on Rebid. Lines the layout no longer
+ * one is set, anything else follows the Item List (job-prices.ts). Lines the layout no longer
  * needs are removed.
  */
 export async function syncLumberItems(projectId: string, conditionId?: string) {

@@ -6,7 +6,9 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { numField, str, strOrNull } from "@/lib/utils";
-import { allowanceFields, allowanceNameFromLine, copyIntoTemplate, lineFields, loadTemplate, nextSortOrder, starterCostCodes } from "@/lib/estimate-lines";
+import { copyIntoTemplate, loadTemplate, saveTemplateSheet } from "@/lib/estimate-lines";
+import { saveSheetInput } from "@/lib/estimate-sheet";
+import { learnDivisions } from "@/lib/estimate-categories";
 
 const LIST = "/settings/estimate-templates";
 
@@ -62,6 +64,7 @@ export async function duplicateTemplate(formData: FormData) {
         notes: source.notes,
         terms: source.terms,
         defaultMarkup: source.defaultMarkup,
+        markupTable: source.markupTable,
       },
     });
     await copyIntoTemplate(tx, created.id, source);
@@ -81,116 +84,21 @@ export async function deleteTemplate(formData: FormData) {
   redirect(LIST);
 }
 
-// --- Template lines -----------------------------------------------------------
+// --- The sheet -------------------------------------------------------------------
 
-export async function createTemplateItem(formData: FormData) {
+export async function saveTemplate(templateId: string, raw: unknown): Promise<{ ok: true; learned: string[] } | { ok: false; error: string }> {
   await requireAdmin();
-  const templateId = str(formData, "templateId");
-  const template = await loadTemplate(templateId);
-  const data = lineFields(formData, template.allowances);
-  await db.estimateTemplateItem.create({ data: { templateId, sortOrder: nextSortOrder(template), ...data } });
-  revalidate(templateId);
-  redirect(`${templatePath(templateId)}${data.allowanceId ? `#allowance-${data.allowanceId}` : ""}`);
-}
-
-export async function updateTemplateItem(formData: FormData) {
-  await requireAdmin();
-  const templateId = str(formData, "templateId");
-  const id = str(formData, "id");
-  const template = await loadTemplate(templateId);
-  if (!template.items.some((i) => i.id === id)) throw new Error("Item not found");
-  await db.estimateTemplateItem.update({ where: { id }, data: lineFields(formData, template.allowances) });
-  revalidate(templateId);
-  redirect(templatePath(templateId));
-}
-
-export async function deleteTemplateItem(formData: FormData) {
-  await requireAdmin();
-  const templateId = str(formData, "templateId");
-  const id = str(formData, "id");
-  const template = await loadTemplate(templateId);
-  if (!template.items.some((i) => i.id === id)) throw new Error("Item not found");
-  await db.estimateTemplateItem.delete({ where: { id } });
-  revalidate(templateId);
-  redirect(templatePath(templateId));
-}
-
-// --- Template allowances ------------------------------------------------------
-
-export async function createTemplateAllowance(formData: FormData) {
-  await requireAdmin();
-  const templateId = str(formData, "templateId");
-  const template = await loadTemplate(templateId);
-  const fields = allowanceFields(formData);
-  const costCodes = await starterCostCodes(formData);
-  const sortOrder = nextSortOrder(template);
-  const allowance = await db.estimateTemplateAllowance.create({
-    data: {
-      templateId,
-      sortOrder,
-      ...fields,
-      items: {
-        create: costCodes.map((c, i) => ({
-          templateId,
-          costCodeId: c.id,
-          group: fields.group,
-          description: c.name,
-          quantity: 1,
-          unit: "ls",
-          unitCost: 0,
-          markupPct: template.defaultMarkup,
-          isAllowance: true,
-          sortOrder: sortOrder + 1 + i,
-        })),
-      },
+  const parsed = saveSheetInput.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Some numbers on the sheet aren't valid — check the highlighted cells." };
+  await loadTemplate(templateId);
+  await db.$transaction(
+    async (tx) => {
+      await saveTemplateSheet(tx, templateId, parsed.data);
+      if (parsed.data.markupTable) await tx.estimateTemplate.update({ where: { id: templateId }, data: { markupTable: JSON.stringify(parsed.data.markupTable) } });
+      await tx.estimateTemplate.update({ where: { id: templateId }, data: { updatedAt: new Date() } });
     },
-  });
+    { timeout: 60000 },
+  );
   revalidate(templateId);
-  redirect(`${templatePath(templateId)}${costCodes.length ? "" : `?addTo=${allowance.id}`}#allowance-${allowance.id}`);
-}
-
-export async function updateTemplateAllowance(formData: FormData) {
-  await requireAdmin();
-  const templateId = str(formData, "templateId");
-  const id = str(formData, "id");
-  const template = await loadTemplate(templateId);
-  if (!template.allowances.some((a) => a.id === id)) throw new Error("Allowance not found");
-  const fields = allowanceFields(formData);
-  await db.$transaction([
-    db.estimateTemplateAllowance.update({ where: { id }, data: fields }),
-    db.estimateTemplateItem.updateMany({ where: { allowanceId: id }, data: { group: fields.group } }),
-  ]);
-  revalidate(templateId);
-  redirect(`${templatePath(templateId)}#allowance-${id}`);
-}
-
-/** Removes the allowance wrapper; its lines stay on the template as regular lines. */
-export async function deleteTemplateAllowance(formData: FormData) {
-  await requireAdmin();
-  const templateId = str(formData, "templateId");
-  const id = str(formData, "id");
-  const template = await loadTemplate(templateId);
-  if (!template.allowances.some((a) => a.id === id)) throw new Error("Allowance not found");
-  await db.$transaction([
-    db.estimateTemplateItem.updateMany({ where: { allowanceId: id }, data: { allowanceId: null, isAllowance: false } }),
-    db.estimateTemplateAllowance.delete({ where: { id } }),
-  ]);
-  revalidate(templateId);
-  redirect(templatePath(templateId));
-}
-
-export async function convertTemplateItemToAllowance(formData: FormData) {
-  await requireAdmin();
-  const templateId = str(formData, "templateId");
-  const id = str(formData, "id");
-  const template = await loadTemplate(templateId);
-  const item = template.items.find((i) => i.id === id);
-  if (!item) throw new Error("Item not found");
-  if (item.allowanceId) throw new Error("Item is already part of an allowance");
-  const allowance = await db.estimateTemplateAllowance.create({
-    data: { templateId, name: allowanceNameFromLine(item.description), group: item.group, sortOrder: item.sortOrder },
-  });
-  await db.estimateTemplateItem.update({ where: { id }, data: { allowanceId: allowance.id, isAllowance: true } });
-  revalidate(templateId);
-  redirect(`${templatePath(templateId)}?addTo=${allowance.id}#allowance-${allowance.id}`);
+  return { ok: true, learned: await learnDivisions(parsed.data.specs) };
 }

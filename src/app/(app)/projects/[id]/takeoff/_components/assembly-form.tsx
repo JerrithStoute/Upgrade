@@ -20,6 +20,8 @@ export type AssemblyFormValues = {
   wastePct: number;
   unitCost: number;
   markupPct: number;
+  /** "This job only": keeps its own price when the Item List changes. */
+  pricePinned?: boolean;
 };
 
 export type ItemOption = {
@@ -49,7 +51,10 @@ export function AssemblyForm({
   values,
   cancelHref,
   onCancel,
+  pricesLocked,
 }: {
+  /** Job takeoffs: this job's prices are locked (a price typed here stays on this job). Leave out on templates. */
+  pricesLocked?: boolean;
   action: (fd: FormData) => Promise<void>;
   /** Hidden fields identifying where the item lives (projectId, or templateId). */
   hidden: Record<string, string>;
@@ -94,8 +99,9 @@ export function AssemblyForm({
       ))}
       <input type="hidden" name="conditionId" value={condition.id} />
       {values ? <input type="hidden" name="id" value={values.id} /> : null}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-6">
-        <Field label="Item" htmlFor={p("description")} className="col-span-2">
+      {/* Item on its own row; cost code, unit cost and markup under it — room to read the price. */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Field label="Item" htmlFor={p("description")} className="col-span-2 md:col-span-4">
           <input
             id={p("description")}
             name="description"
@@ -118,6 +124,11 @@ export function AssemblyForm({
             match ? (
               <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
                 <BookOpen className="h-3 w-3" /> From the Item List · {match.category} · list price {money(match.unitCost)}/{match.unit}
+                {match.unitCost > 0 && Math.abs(Number(unitCost.replace(/[$,\s]/g, "")) - match.unitCost) > 0.0001 ? (
+                  <button type="button" className="ml-1 font-medium text-blue-700 hover:underline" onClick={() => setUnitCost(String(match.unitCost))}>
+                    Use {money(match.unitCost)}
+                  </button>
+                ) : null}
               </p>
             ) : (
               <p className="mt-1 flex items-center gap-1 text-xs text-emerald-700">
@@ -126,7 +137,7 @@ export function AssemblyForm({
             )
           ) : null}
         </Field>
-        <Field label="Cost code" htmlFor={p("costCodeId")} className="col-span-2">
+        <Field label="Cost code" htmlFor={p("costCodeId")} className="col-span-2 md:col-span-4">
           <select id={p("costCodeId")} name="costCodeId" className="input" value={costCodeId} onChange={(e) => setCostCodeId(e.target.value)}>
             <option value="">—</option>
             {costCodes.map((c) => (
@@ -136,16 +147,31 @@ export function AssemblyForm({
             ))}
           </select>
         </Field>
-        <Field label="Unit cost" htmlFor={p("unitCost")}>
-          <input id={p("unitCost")} name="unitCost" type="number" step="0.01" min="0" className="input" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
+        <Field label="Unit cost" htmlFor={p("unitCost")} className="md:col-span-2">
+          <input id={p("unitCost")} name="unitCost" inputMode="decimal" className="input" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
         </Field>
         <Field label="Markup %" htmlFor={p("markupPct")}>
-          <input id={p("markupPct")} name="markupPct" type="number" step="0.1" className="input" value={markupPct} onChange={(e) => setMarkupPct(e.target.value)} />
+          <input id={p("markupPct")} name="markupPct" inputMode="decimal" className="input" value={markupPct} onChange={(e) => setMarkupPct(e.target.value)} />
         </Field>
+        {hidden.projectId ? (
+          <div className="col-span-2 space-y-1 text-xs text-slate-500 md:col-span-4">
+            {pricesLocked ? (
+              <p>This job&apos;s prices are locked — a price you save here goes on every takeoff in this job that uses this item, and nowhere else.</p>
+            ) : (
+              <>
+                <label className="flex items-center gap-2 text-slate-700">
+                  <input type="checkbox" name="pinPrice" defaultChecked={values?.pricePinned ?? false} className="h-4 w-4 rounded border-slate-300" />
+                  This job only — keep this price when the Item List changes
+                </label>
+                <p>Not ticked: the price is the Item List&apos;s, so saving it here changes it on every job that isn&apos;t locked.</p>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
       <div className="flex flex-wrap items-end gap-2 text-sm text-slate-600">
         <Field label="Qty" htmlFor={p("qty")} className="w-24">
-          <input id={p("qty")} name="qty" type="number" step="any" min="0" className="input" defaultValue={values?.qty ?? 1} />
+          <input id={p("qty")} name="qty" inputMode="decimal" className="input" defaultValue={values?.qty ?? 1} />
         </Field>
         <Field label="Unit" htmlFor={p("unit")} className="w-24">
           <select id={p("unit")} name="unit" className="input" value={unit} onChange={(e) => setUnit(e.target.value)}>
@@ -158,7 +184,7 @@ export function AssemblyForm({
         </Field>
         <span className="pb-2">per</span>
         <Field label="Per" htmlFor={p("per")} className="w-24">
-          <input id={p("per")} name="per" type="number" step="any" min="0" className="input" defaultValue={values?.per ?? 1} />
+          <input id={p("per")} name="per" inputMode="decimal" className="input" defaultValue={values?.per ?? 1} />
         </Field>
         <Field label="Of" htmlFor={p("metric")} className="w-56">
           <select id={p("metric")} name="metric" className="input" defaultValue={values?.metric ?? condition.metric}>
@@ -170,7 +196,7 @@ export function AssemblyForm({
           </select>
         </Field>
         <Field label="Waste %" htmlFor={p("wastePct")} className="w-24">
-          <input id={p("wastePct")} name="wastePct" type="number" step="0.5" min="0" className="input" value={wastePct} onChange={(e) => setWastePct(e.target.value)} />
+          <input id={p("wastePct")} name="wastePct" inputMode="decimal" className="input" value={wastePct} onChange={(e) => setWastePct(e.target.value)} />
         </Field>
         <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
           <input type="checkbox" name="roundUp" checked={roundUp} onChange={(e) => setRoundUp(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />

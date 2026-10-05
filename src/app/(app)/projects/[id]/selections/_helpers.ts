@@ -3,7 +3,7 @@ import type { Selection, SelectionOption } from "@prisma/client";
 export const PRICED_STATUSES = ["CHOSEN", "APPROVED", "ORDERED", "INSTALLED"];
 
 export function chosenOption(sel: Selection & { options: SelectionOption[] }) {
-  return sel.chosenOptionId ? sel.options.find((o) => o.id === sel.chosenOptionId) ?? null : null;
+  return sel.chosenOptionId ? (sel.options.find((o) => o.id === sel.chosenOptionId) ?? null) : null;
 }
 
 /** Positive = over allowance, negative = under. Null when nothing is chosen. */

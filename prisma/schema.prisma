@@ -17,19 +17,32 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Company {
-  id            String   @id @default(cuid())
-  name          String
-  address       String?
-  city          String?
-  state         String?
-  zip           String?
-  phone         String?
-  email         String?
-  website       String?
-  licenseNumber String?
-  defaultMarkup Float    @default(20) // percent
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                  String   @id @default(cuid())
+  name                String
+  address             String?
+  city                String?
+  state               String?
+  zip                 String?
+  phone               String?
+  email               String?
+  website             String?
+  licenseNumber       String?
+  defaultMarkup       Float    @default(20) // percent
+  // Branding: the main color ("#1d4ed8"; null = the built-in blue) and the logo file
+  // (under uploads/company; null = none).
+  brandColor          String?
+  logoPath            String?
+  logoType            String?
+  // What proposals show by default (JSON, see src/lib/proposal-options.ts); null = the built-in default.
+  proposalOptions     String?
+  // New allowances start with profit in (true) or out (false, at cost); each can be switched.
+  allowanceProfit     Boolean  @default(false)
+  // Change order defaults ("Use as default"): JSON { introText, closingText, terms, ifDeclined, profitMode, profitValue, profitShown }.
+  changeOrderDefaults String?
+  // Your default Markup, Margin & Tax table for new estimates (JSON).
+  markupTable         String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
 }
 
 /// ADMIN: full access. STAFF: internal team. CLIENT: portal only. SUB: subcontractor (limited).
@@ -52,6 +65,7 @@ model User {
   createdTodos    Todo[]         @relation("TodoCreator")
   dailyLogs       DailyLog[]
   uploadedFiles   FileAsset[]
+  fileViews       FileView[]
   messages        Message[]
   activities      Activity[]
   expenses        Expense[]
@@ -114,7 +128,14 @@ model Project {
   managerId String?
   manager   User?   @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
 
+  // The proposal's cover picture (under uploads/projects; PNG, JPG or WebP); null = none.
+  coverPath         String?
+  coverType         String?
+  // Prices locked on this job (set when an estimate is marked sent, or by hand): the Item
+  // List no longer changes it. null = the job follows the Item List (except pinned items).
+  pricesLockedAt    DateTime?
   estimates         Estimate[]
+  parameterValues   ProjectParameterValue[]
   selections        Selection[]
   changeOrders      ChangeOrder[]
   tasks             ScheduleTask[]
@@ -161,66 +182,147 @@ model CostCode {
 
 /// status: DRAFT | SENT | APPROVED | DECLINED
 model Estimate {
-  id            String    @id @default(cuid())
-  projectId     String
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  name          String    @default("Estimate")
-  version       Int       @default(1)
-  status        String    @default("DRAFT")
-  notes         String? // shown on proposal
-  terms         String?
-  defaultMarkup Float     @default(20)
-  sentAt        DateTime?
-  approvedAt    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  items      EstimateItem[]
-  allowances EstimateAllowance[]
-}
-
-/// A client-facing allowance (e.g. "Flooring") whose amount is built up from the
-/// estimate line items assigned to it — each with its own cost code (tile material,
-/// install labor, …). The client sees one allowance amount; job costing still
-/// tracks every underlying cost code.
-model EstimateAllowance {
-  id          String     @id @default(cuid())
-  estimateId  String
-  estimate    Estimate   @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  name        String // e.g. "Flooring"
-  group       String     @default("General") // section heading on proposal
-  description String? // shown on proposal
-  selectionId String? // selection whose allowance this amount feeds
-  selection   Selection? @relation(fields: [selectionId], references: [id], onDelete: SetNull)
-  sortOrder   Int        @default(0)
-  createdAt   DateTime   @default(now())
+  id              String    @id @default(cuid())
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name            String    @default("Estimate")
+  version         Int       @default(1)
+  status          String    @default("DRAFT")
+  notes           String? // shown on proposal
+  terms           String?
+  defaultMarkup   Float     @default(20)
+  // The number actually quoted to the client (goes on the proposal); the line total is what it adds up to.
+  basePrice       Float?
+  totalSqFt       Float?
+  // This estimate's proposal options (JSON); null = the company default.
+  proposalOptions String?
+  // Markup, Margin & Tax table (JSON rows, see src/lib/markup.ts); null = one profit row at defaultMarkup.
+  markupTable     String?
+  sentAt          DateTime?
+  approvedAt      DateTime?
+  // Locked by hand: no automatic updates from the takeoff, no edits, until unlocked.
+  lockedAt        DateTime?
+  // "What changed": automatic updates from the takeoff since the last save (JSON, see takeoff-changes.ts).
+  autoNote        String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   items EstimateItem[]
+  specs EstimateSpec[]
 }
 
-model EstimateItem {
-  id          String             @id @default(cuid())
-  estimateId  String
-  estimate    Estimate           @relation(fields: [estimateId], references: [id], onDelete: Cascade)
-  costCodeId  String?
-  costCode    CostCode?          @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
-  group       String             @default("General") // section heading on proposal
-  description String
-  quantity    Float              @default(1)
-  unit        String             @default("ea")
-  unitCost    Float              @default(0)
-  markupPct   Float              @default(20)
-  isAllowance Boolean            @default(false)
-  isOptional  Boolean            @default(false)
-  sortOrder   Int                @default(0)
-  allowanceId String?
-  allowance   EstimateAllowance? @relation(fields: [allowanceId], references: [id], onDelete: SetNull)
+/// A spec item: one thing the client is buying ("Hardwood flooring — main level"),
+/// filed under a category and priced by its cost lines (each with its own cost code).
+/// The client sees the spec text and one amount; job costing tracks every line.
+/// An allowance spec's amount is what the client's selection is measured against.
+/// kind: SPECIFICATION | SELECTION
+model EstimateSpec {
+  id              String     @id @default(cuid())
+  estimateId      String
+  estimate        Estimate   @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  name            String
+  category        String     @default("General") @map("group")
+  specText        String?    @map("description") // what is included — for clients and trades
+  kind            String     @default("SPECIFICATION")
+  isAllowance     Boolean    @default(false)
+  clientNotes     String?
+  tradeNotes      String?
+  urgent          Boolean    @default(false)
+  requestedBy     DateTime?
+  selectionId     String? // selection whose allowance this amount feeds
+  selection       Selection? @relation(fields: [selectionId], references: [id], onDelete: SetNull)
+  // This item on the proposal, overriding the estimate's options (JSON {show, prices, items}); null = follow them.
+  proposalView    String?
+  // Allowance amount with profit in (true) or at cost (false); null = the company default.
+  allowanceProfit Boolean?
+  sortOrder       Int        @default(0)
+  createdAt       DateTime   @default(now())
 
-  // Set when the line was sent from a takeoff, so re-sending updates it in place.
+  items EstimateItem[]
+
+  @@map("EstimateAllowance")
+}
+
+/// costType: MATERIAL | LABOR | SUBCONTRACTOR | EQUIPMENT | OTHER. markupPct is the line's profit %.
+model EstimateItem {
+  id             String        @id @default(cuid())
+  estimateId     String
+  estimate       Estimate      @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  costCodeId     String?
+  costCode       CostCode?     @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  group          String        @default("General") // section heading on proposal
+  description    String
+  quantity       Float         @default(1)
+  unit           String        @default("ea")
+  unitCost       Float         @default(0)
+  markupPct      Float         @default(20)
+  isAllowance    Boolean       @default(false) // copied from its spec item
+  isOptional     Boolean       @default(false)
+  costType       String        @default("MATERIAL")
+  notes          String?
+  // Quantity from the job's estimate parameters ("[#id] * 1.1"); null = typed in.
+  qtyFormula     String?
+  // Unit cost from the job's estimate parameters, the same way; null = typed in.
+  costFormula    String?
+  sortOrder      Int           @default(0)
+  specId         String?       @map("allowanceId")
+  spec           EstimateSpec? @relation(fields: [specId], references: [id], onDelete: SetNull)
+  // Item List item this line was added to / priced from ("Stop updating" clears it).
+  materialItemId String?
+  materialItem   MaterialItem? @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
+
+  // The takeoff's total for one cost code ("code:<id>", or "group:<name>" with no code):
+  // sending the takeoff again updates this one line; the material detail stays in the Material list.
+  takeoffRollup      String?
+  // The takeoff items behind it at the last update (JSON rows) — what "what changed" compares with.
+  takeoffSnapshot    String?
+  // Older estimates: one line per takeoff item (merged into the rolled-up line on the next send).
   takeoffConditionId String?
   takeoffCondition   TakeoffCondition?    @relation(fields: [takeoffConditionId], references: [id], onDelete: SetNull)
   takeoffItemId      String?
   takeoffItem        TakeoffAssemblyItem? @relation(fields: [takeoffItemId], references: [id], onDelete: SetNull)
+}
+
+/// Your estimate categories (Settings → Estimate categories): big groups such as
+/// "Excavation and Foundation" that hold cost code divisions. A division's spec item
+/// files itself into its category.
+model EstimateCategory {
+  id        String                     @id @default(cuid())
+  name      String                     @unique
+  sortOrder Int                        @default(0)
+  divisions EstimateCategoryDivision[]
+}
+
+model EstimateCategoryDivision {
+  id         String           @id @default(cuid())
+  categoryId String
+  category   EstimateCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  division   String           @unique // a CostCode.division, e.g. "2100 Footing and Foundation"
+  sortOrder  Int              @default(0)
+}
+
+/// Your estimate parameters (Settings → Estimate parameters): named job values such
+/// as "Heated sq. ft." that item quantities use in formulas. One can be the job's
+/// total sq. ft.
+model EstimateParameter {
+  id        String                  @id @default(cuid())
+  name      String                  @unique
+  unit      String                  @default("")
+  sortOrder Int                     @default(0)
+  isSqFt    Boolean                 @default(false)
+  values    ProjectParameterValue[]
+}
+
+/// A job's value for a parameter (shared by all its estimate versions).
+model ProjectParameterValue {
+  id          String            @id @default(cuid())
+  projectId   String
+  project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parameterId String
+  parameter   EstimateParameter @relation(fields: [parameterId], references: [id], onDelete: Cascade)
+  value       Float
+
+  @@unique([projectId, parameterId])
 }
 
 // ---------------------------------------------------------------------------
@@ -237,39 +339,54 @@ model EstimateTemplate {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  items      EstimateTemplateItem[]
-  allowances EstimateTemplateAllowance[]
+  // Markup, Margin & Tax table copied into estimates made from this template (JSON).
+  markupTable String?
+
+  items EstimateTemplateItem[]
+  specs EstimateTemplateSpec[]
 }
 
-model EstimateTemplateAllowance {
+model EstimateTemplateSpec {
   id          String           @id @default(cuid())
   templateId  String
   template    EstimateTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   name        String
-  group       String           @default("General")
-  description String?
+  category    String           @default("General") @map("group")
+  specText    String?          @map("description")
+  kind        String           @default("SPECIFICATION")
+  isAllowance Boolean          @default(false)
+  clientNotes String?
+  tradeNotes  String?
   sortOrder   Int              @default(0)
 
   items EstimateTemplateItem[]
+
+  @@map("EstimateTemplateAllowance")
 }
 
 model EstimateTemplateItem {
-  id          String                     @id @default(cuid())
+  id          String                @id @default(cuid())
   templateId  String
-  template    EstimateTemplate           @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  template    EstimateTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
   costCodeId  String?
-  costCode    CostCode?                  @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
-  group       String                     @default("General")
+  costCode    CostCode?             @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  group       String                @default("General")
   description String
-  quantity    Float                      @default(1)
-  unit        String                     @default("ea")
-  unitCost    Float                      @default(0)
-  markupPct   Float                      @default(20)
-  isAllowance Boolean                    @default(false)
-  isOptional  Boolean                    @default(false)
-  sortOrder   Int                        @default(0)
-  allowanceId String?
-  allowance   EstimateTemplateAllowance? @relation(fields: [allowanceId], references: [id], onDelete: SetNull)
+  quantity    Float                 @default(1)
+  unit        String                @default("ea")
+  unitCost    Float                 @default(0)
+  markupPct   Float                 @default(20)
+  isAllowance Boolean               @default(false)
+  isOptional  Boolean               @default(false)
+  costType    String                @default("MATERIAL")
+  notes       String?
+  // Quantity from your estimate parameters ("[#id] * 1.1"); null = typed in.
+  qtyFormula  String?
+  // Unit cost from your estimate parameters, the same way; null = typed in.
+  costFormula String?
+  sortOrder   Int                   @default(0)
+  specId      String?               @map("allowanceId")
+  spec        EstimateTemplateSpec? @relation(fields: [specId], references: [id], onDelete: SetNull)
 }
 
 // ---------------------------------------------------------------------------
@@ -278,41 +395,91 @@ model EstimateTemplateItem {
 
 /// status: PENDING | CHOSEN | APPROVED | ORDERED | INSTALLED
 model Selection {
-  id          String    @id @default(cuid())
-  projectId   String
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  costCodeId  String?
-  costCode    CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
-  title       String
-  category    String    @default("General") // Flooring, Plumbing Fixtures, etc.
-  location    String? // Kitchen, Master Bath
-  description String?
-  allowance   Float     @default(0)
-  dueDate     DateTime?
-  status      String    @default("PENDING")
-  chosenAt    DateTime?
-  approvedAt  DateTime?
-  notes       String?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id             String        @id @default(cuid())
+  projectId      String
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costCodeId     String?
+  costCode       CostCode?     @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  title          String
+  category       String        @default("General") // Flooring, Plumbing Fixtures, etc.
+  location       String? // Kitchen, Master Bath
+  description    String?
+  allowance      Float         @default(0)
+  // "Requested by": a date, or a schedule item (leadDays before it starts). dueDate is
+  // always the resolved date (kept in step with the schedule).
+  dueDate        DateTime?
+  scheduleTaskId String?
+  scheduleTask   ScheduleTask? @relation(fields: [scheduleTaskId], references: [id], onDelete: SetNull)
+  leadDays       Int           @default(0)
+  status         String        @default("PENDING")
+  chosenAt       DateTime?
+  approvedAt     DateTime?
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
 
-  chosenOptionId     String?
-  options            SelectionOption[]
-  estimateAllowances EstimateAllowance[]
+  chosenOptionId String?
+  options        SelectionOption[]
+  estimateSpecs  EstimateSpec[]
+
+  // Last change (for the UPDATED flag): when, and by whom (a user id).
+  changedAt        DateTime?
+  changedById      String?
+  comments         SelectionComment[]
+  log              SelectionLog[]
+  views            SelectionView[]
+  files            FileAsset[]
+  changeOrderItems ChangeOrderItem[]
+}
+
+/// A comment on a selection — the client and your team; "internal" = team only.
+model SelectionComment {
+  id          String    @id @default(cuid())
+  selectionId String
+  selection   Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+  userId      String?
+  authorName  String
+  body        String
+  internal    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
+
+/// The selection's change log: who did what, when.
+model SelectionLog {
+  id          String    @id @default(cuid())
+  selectionId String
+  selection   Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+  userId      String?
+  who         String
+  what        String
+  createdAt   DateTime  @default(now())
+}
+
+/// When someone last looked at a selection (so it can show UPDATED after others change it).
+model SelectionView {
+  id          String    @id @default(cuid())
+  selectionId String
+  selection   Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+  userId      String
+  viewedAt    DateTime  @default(now())
+
+  @@unique([selectionId, userId])
 }
 
 model SelectionOption {
-  id            String    @id @default(cuid())
+  id            String      @id @default(cuid())
   selectionId   String
-  selection     Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
+  selection     Selection   @relation(fields: [selectionId], references: [id], onDelete: Cascade)
   name          String
   description   String?
   vendor        String?
   modelNumber   String?
-  price         Float     @default(0)
+  price         Float       @default(0) // what the client pays for this choice
+  cost          Float? // what it costs you (staff only)
   imageUrl      String?
-  isRecommended Boolean   @default(false)
-  sortOrder     Int       @default(0)
+  isRecommended Boolean     @default(false)
+  sortOrder     Int         @default(0)
+  files         FileAsset[]
 }
 
 // ---------------------------------------------------------------------------
@@ -329,15 +496,40 @@ model ChangeOrder {
   description        String?
   reason             String?
   status             String    @default("DRAFT")
+  // What the client sees: every item (true), or just the total (false) — and with the
+  // items shown, their prices (true) or just the items and the total (false).
+  showItems          Boolean   @default(true)
+  showPrices         Boolean   @default(true)
   scheduleImpactDays Int       @default(0)
   sentAt             DateTime?
   decidedAt          DateTime?
   decidedBy          String? // name of approver
   decisionNote       String?
+  // The document (CoConstruct-style): intro / closing text and terms.
+  introText          String?
+  closingText        String?
+  terms              String?
+  // Profit, your choice each time: NONE | PCT | AMOUNT, shown as its own line (LINE) or folded into the line prices (FOLDED).
+  profitMode         String    @default("NONE")
+  profitValue        Float     @default(0)
+  profitLabel        String    @default("Builder's fee")
+  profitShown        String    @default("LINE")
+  taxPct             Float     @default(0)
+  taxLabel           String    @default("Sales tax")
+  priorCompletion    DateTime?
+  newCompletion      DateTime?
+  // Who must approve: team members (JSON array of user ids), and the client (true/false).
+  approverIds        String?
+  teamApprovals      String? // JSON { userId: ISO date }
+  clientApproval     Boolean   @default(true)
+  clientApprovedAt   DateTime?
+  // If declined: KEEP the client's choices, or CLEAR them.
+  ifDeclined         String    @default("KEEP")
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   items ChangeOrderItem[]
+  files FileAsset[]
 
   @@unique([projectId, number])
 }
@@ -353,7 +545,19 @@ model ChangeOrderItem {
   unit          String      @default("ea")
   unitCost      Float       @default(0)
   markupPct     Float       @default(20)
+  // This line's own profit: CO (follows the change order's — the default), NONE, PCT or AMOUNT.
+  profitMode    String      @default("CO")
+  profitValue   Float       @default(0)
   sortOrder     Int         @default(0)
+  // LINE (an item), CHARGE (an extra charge, e.g. a change order fee) or SELECTION
+  // (a client choice: clientPrice − allowance = the difference, kept in unitCost).
+  kind          String      @default("LINE")
+  selectionId   String?
+  selection     Selection?  @relation(fields: [selectionId], references: [id], onDelete: SetNull)
+  category      String?
+  choiceName    String?
+  clientPrice   Float?
+  allowance     Float?
 }
 
 // ---------------------------------------------------------------------------
@@ -378,6 +582,7 @@ model ScheduleTask {
   predecessorId   String?
   predecessor     ScheduleTask?  @relation("TaskPredecessor", fields: [predecessorId], references: [id], onDelete: SetNull)
   successors      ScheduleTask[] @relation("TaskPredecessor")
+  selections      Selection[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
 }
@@ -421,6 +626,9 @@ model Invoice {
   issueDate DateTime  @default(now())
   dueDate   DateTime?
   notes     String?
+  // Tax on this invoice, your call each time (null = none). Kept as a tax line among the items.
+  taxPct    Float?
+  taxLabel  String    @default("Sales tax")
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
 
@@ -436,6 +644,8 @@ model InvoiceItem {
   quantity    Float   @default(1)
   unitPrice   Float   @default(0)
   sortOrder   Int     @default(0)
+  // The invoice's tax line (its amount follows the other lines).
+  isTax       Boolean @default(false)
 }
 
 model Payment {
@@ -503,22 +713,42 @@ model Todo {
 // ---------------------------------------------------------------------------
 
 model FileAsset {
-  id            String    @id @default(cuid())
-  projectId     String
-  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  dailyLogId    String?
-  dailyLog      DailyLog? @relation(fields: [dailyLogId], references: [id], onDelete: SetNull)
-  uploadedById  String?
-  uploadedBy    User?     @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  name          String
-  storagePath   String // relative to uploads dir
-  mimeType      String
-  size          Int
-  folder        String    @default("Documents") // Photos | Plans | Documents | Contracts
-  clientVisible Boolean   @default(true)
-  createdAt     DateTime  @default(now())
+  id                String           @id @default(cuid())
+  projectId         String
+  project           Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dailyLogId        String?
+  dailyLog          DailyLog?        @relation(fields: [dailyLogId], references: [id], onDelete: SetNull)
+  uploadedById      String?
+  uploadedBy        User?            @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  name              String
+  storagePath       String // relative to uploads dir
+  mimeType          String
+  size              Int
+  folder            String           @default("Documents") // Photos | Plans | Documents | Contracts
+  clientVisible     Boolean          @default(true)
+  createdAt         DateTime         @default(now())
+  // A selection's file, or a choice's picture.
+  selectionId       String?
+  selection         Selection?       @relation(fields: [selectionId], references: [id], onDelete: SetNull)
+  selectionOptionId String?
+  selectionOption   SelectionOption? @relation(fields: [selectionOptionId], references: [id], onDelete: SetNull)
+  changeOrderId     String?
+  changeOrder       ChangeOrder?     @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
 
   takeoffPlan TakeoffPlan?
+  views       FileView[]
+}
+
+/// A client opened a file (from its link, not a thumbnail) — proof they saw it before choosing.
+model FileView {
+  id       String    @id @default(cuid())
+  fileId   String
+  file     FileAsset @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  viewedAt DateTime  @default(now())
+
+  @@unique([fileId, userId])
 }
 
 // ---------------------------------------------------------------------------
@@ -586,6 +816,9 @@ model TakeoffCondition {
   metric        String      @default("area")
   color         String      @default("#2563eb")
   group         String      @default("Takeoff") // estimate section heading
+  // Reference only: measured for your information (e.g. Heated & cooled, to check the plan) —
+  // never on the estimate, the Material list or the unpriced warnings.
+  referenceOnly Boolean     @default(false)
   costCodeId    String?
   costCode      CostCode?   @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
   unitCost      Float       @default(0)
@@ -654,8 +887,11 @@ model TakeoffAssemblyItem {
   unitCost       Float            @default(0)
   markupPct      Float            @default(20)
   sortOrder      Int              @default(0)
-  // The Item List entry this was picked from. Prices are copied, not live (see Rebid).
+  // The Item List entry this was picked from. An unlocked job follows its price; a locked
+  // job keeps its own until you update it (Price review).
   materialItemId String?
+  // "This job only": keeps its own price when the Item List changes.
+  pricePinned    Boolean          @default(false)
   materialItem   MaterialItem?    @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
 
   estimateItems EstimateItem[]
@@ -693,6 +929,7 @@ model MaterialItem {
   assemblyItems TakeoffAssemblyItem[]
   templateItems TakeoffTemplateItem[]
   measurements  TakeoffMeasurement[]
+  estimateItems EstimateItem[]
 }
 
 /// The cost code for items the program creates by itself (windows, doors, lumber,
@@ -752,6 +989,7 @@ model TakeoffTemplateCondition {
   metric        String          @default("area")
   color         String          @default("#2563eb")
   group         String          @default("Takeoff")
+  referenceOnly Boolean         @default(false)
   costCodeId    String?
   costCode      CostCode?       @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
   unitCost      Float           @default(0)

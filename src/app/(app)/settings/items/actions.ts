@@ -67,7 +67,7 @@ export async function createMaterialItem(fd: FormData) {
   redirect(back(fd, `#item-${item.id}`));
 }
 
-/** Changes the master entry only — jobs already using it keep their own prices until a rebid. */
+/** Changes the master entry: unlocked jobs follow its price (job-prices.ts); locked jobs and pinned items keep theirs. */
 export async function updateMaterialItem(fd: FormData) {
   await requireAdmin();
   const id = str(fd, "id");

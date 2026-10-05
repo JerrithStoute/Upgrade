@@ -8,6 +8,8 @@ import { cn, fmtDate } from "@/lib/utils";
 import { buttonClasses } from "@/components/ui";
 import { PrintButton } from "../_components/print-button";
 import { MaterialTable } from "../takeoff/_components/material-table";
+import { getBrand } from "@/lib/company-brand";
+import { PrintLogo } from "@/components/brand-mark";
 
 /** The job's material list: its own project tab, printable with or without prices. */
 export default async function MaterialListPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ plan?: string; prices?: string }> }) {
@@ -19,6 +21,7 @@ export default async function MaterialListPage({ params, searchParams }: { param
   const planId = plans.some((p) => p.id === planParam) ? planParam! : null;
   const showPrices = prices !== "0";
   const { lines, cutLists, total } = await buildMaterialList(project.id, planId);
+  const brand = await getBrand();
 
   const base = `/projects/${project.id}/materials`;
   const href = (o: { plan?: string | null; prices?: boolean }) => {
@@ -75,6 +78,8 @@ export default async function MaterialListPage({ params, searchParams }: { param
       </div>
 
       <div>
+        {/* The logo heads the printout */}
+        <PrintLogo logoUrl={brand.logoUrl} className="hidden print:block" />
         <h2 className="text-lg font-semibold text-slate-900">Material list</h2>
         <p className="text-sm text-slate-500">
           #{project.number} {project.name}
@@ -84,9 +89,19 @@ export default async function MaterialListPage({ params, searchParams }: { param
           Everything your takeoffs order, from every plan set (or pick one above). Quantities include waste. Items used by several conditions are combined and rounded up once on
           the total. Prices are this job&apos;s costs, before markup.
         </p>
+        <p className="no-print mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+          {project.pricesLockedAt ? (
+            <span className="font-medium text-amber-800">Prices locked {fmtDate(project.pricesLockedAt)} — a price you change here stays on this job.</span>
+          ) : (
+            <span>Click a price to change it: it changes in the Item List and on every job that isn&apos;t locked. The pin keeps a price for this job only.</span>
+          )}
+          <Link href={`/projects/${project.id}/takeoff/rebid`} className="font-medium text-blue-700 hover:underline">
+            {project.pricesLockedAt ? "Price review / unlock" : "Price review / lock"}
+          </Link>
+        </p>
       </div>
 
-      <MaterialTable lines={lines} cutLists={cutLists} total={total} showPrices={showPrices} />
+      <MaterialTable lines={lines} cutLists={cutLists} total={total} showPrices={showPrices} edit={{ projectId: project.id, locked: !!project.pricesLockedAt }} />
     </div>
   );
 }

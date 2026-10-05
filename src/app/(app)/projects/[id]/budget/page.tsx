@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { Pencil } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
+import { changeOrderTotals } from "@/lib/change-orders";
+import { parseMarkupTable, tableExtras } from "@/lib/markup";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
@@ -22,13 +24,7 @@ type BudgetRow = {
 
 const UNASSIGNED = "Unassigned";
 
-export default async function BudgetPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ edit?: string }>;
-}) {
+export default async function BudgetPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   await requireStaff();
   const { id } = await params;
   const { edit } = await searchParams;
@@ -64,6 +60,12 @@ export default async function BudgetPage({
     r.budgetCost += lineCost(item);
     r.budgetPrice += linePrice(item);
   }
+  // The Markup, Margin & Tax table's overhead and tax: budget price, in each row's cost code.
+  const tableAmounts = estimate ? tableExtras(parseMarkupTable(estimate.markupTable, estimate.defaultMarkup), estimate.items) : null;
+  for (const x of tableAmounts?.rows ?? []) {
+    const cc = x.row.costCodeId ? costCodes.find((c) => c.id === x.row.costCodeId) : null;
+    rowFor(cc ?? null).budgetPrice += x.amount;
+  }
   for (const co of cos) {
     for (const item of co.items) {
       const r = rowFor(item.costCode);
@@ -77,8 +79,9 @@ export default async function BudgetPage({
   const sorted = Array.from(rows.values()).sort((a, b) => a.sortOrder - b.sortOrder || a.code.localeCompare(b.code));
   const divisions = groupBy(sorted, (r) => r.division);
 
-  const approvedEstimatePrice = estimateItems.reduce((s, i) => s + linePrice(i), 0);
-  const approvedCoPrice = cos.reduce((s, co) => s + co.items.reduce((t, i) => t + linePrice(i), 0), 0);
+  // The quoted base price when there is one; otherwise what the lines add up to.
+  const approvedEstimatePrice = (estimate?.basePrice ?? estimateItems.reduce((s, i) => s + linePrice(i), 0) + (tableAmounts?.overheadTotal ?? 0)) + (tableAmounts?.taxTotal ?? 0);
+  const approvedCoPrice = cos.reduce((s, co) => s + changeOrderTotals(co, co.items).total, 0);
   const budget = (estimate ? approvedEstimatePrice : project.contractAmount) + approvedCoPrice;
   const budgetCost = sorted.reduce((s, r) => s + r.budgetCost, 0);
   const actual = expenses.reduce((s, e) => s + e.amount, 0);
@@ -93,9 +96,15 @@ export default async function BudgetPage({
         <Stat
           label="Budget"
           value={money(budget)}
-          hint={estimate ? `Approved estimate ${money(approvedEstimatePrice, true)} + COs ${money(approvedCoPrice, true)}` : `Contract amount + COs ${money(approvedCoPrice, true)}`}
+          hint={
+            estimate ? `Approved estimate ${money(approvedEstimatePrice, true)} + COs ${money(approvedCoPrice, true)}` : `Contract amount + COs ${money(approvedCoPrice, true)}`
+          }
         />
-        <Stat label="Actual costs" value={money(actual)} hint={budget > 0 ? `${pct((actual / budget) * 100)} of budget · ${expenses.length} expenses` : `${expenses.length} expenses`} />
+        <Stat
+          label="Actual costs"
+          value={money(actual)}
+          hint={budget > 0 ? `${pct((actual / budget) * 100)} of budget · ${expenses.length} expenses` : `${expenses.length} expenses`}
+        />
         <Stat label="Projected margin" value={money(margin)} tone={margin >= 0 ? "good" : "bad"} hint={budget > 0 ? `${pct(marginPct, 1)} of budget` : undefined} />
         <Stat label="Unpaid bills" value={money(unpaid)} tone={unpaid > 0 ? "warn" : "default"} hint={`${expenses.filter((e) => e.status === "UNPAID").length} open`} />
       </div>
@@ -357,19 +366,7 @@ function BudgetLine({ row }: { row: BudgetRow }) {
   );
 }
 
-function DivisionRows({
-  division,
-  cost,
-  price,
-  actual,
-  children,
-}: {
-  division: string;
-  cost: number;
-  price: number;
-  actual: number;
-  children: React.ReactNode;
-}) {
+function DivisionRows({ division, cost, price, actual, children }: { division: string; cost: number; price: number; actual: number; children: React.ReactNode }) {
   const variance = cost - actual;
   return (
     <>

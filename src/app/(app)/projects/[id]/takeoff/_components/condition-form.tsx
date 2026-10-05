@@ -29,6 +29,8 @@ export type ConditionFormValues = {
   metric: string;
   color: string;
   group: string;
+  /** Measured for information only — not on the estimate or the Material list. */
+  referenceOnly?: boolean;
   costCodeId: string | null;
   unitCost: number;
   markupPct: number;
@@ -54,7 +56,7 @@ const TYPE_HINTS: Record<ConditionType, string> = {
   COUNT: "Click once per item. Outlets, fixtures, doors, windows.",
   FRAMING: "Outline the framed area; joists or rafters are laid out at your spacing.",
   HIP_VALLEY: "Trace each hip, valley or ridge on the roof plan, wall corner to ridge. Every line is one piece of lumber.",
-  WALL: "Trace walls corner to corner; double-click to finish a run, or end on the first corner to close it. Name the takeoff for the wall (\"Ext 2x6 Wall\").",
+  WALL: 'Trace walls corner to corner; double-click to finish a run, or end on the first corner to close it. Name the takeoff for the wall ("Ext 2x6 Wall").',
   DOOR: "Click each door on the plan, then pick which door it is. Doors are counted by name, and casing is added for each one.",
   WINDOW: "Click each window on the plan, then pick which window it is. Windows are counted by name, with casing, stool and apron for each one.",
   OPENING: "Draw a line across each door or window opening — one line per opening, its length is the width. Headers and king & jack studs come from here.",
@@ -127,7 +129,16 @@ export function ConditionForm({
       {values ? <input type="hidden" name="id" value={values.id} /> : null}
       <FormGrid className="md:grid-cols-4">
         <Field label="Name" htmlFor={p("name")} className="md:col-span-2">
-          <input id={p("name")} name="name" required className="input" defaultValue={values?.name} placeholder={type === "FRAMING" ? "2x10 Floor Joists @ 16\" o.c." : isHip ? "2x10 Hips & Valleys" : isWall ? "Ext 2x6 Wall" : isOpening ? "Window Headers" : "LVP Flooring"} />
+          <input
+            id={p("name")}
+            name="name"
+            required
+            className="input"
+            defaultValue={values?.name}
+            placeholder={
+              type === "FRAMING" ? '2x10 Floor Joists @ 16" o.c.' : isHip ? "2x10 Hips & Valleys" : isWall ? "Ext 2x6 Wall" : isOpening ? "Window Headers" : "LVP Flooring"
+            }
+          />
         </Field>
         <Field label="Type" htmlFor={p("type")} hint={hasMeasurements ? "Locked — this takeoff has measurements" : undefined}>
           <select
@@ -196,27 +207,37 @@ export function ConditionForm({
         </Field>
         {showPitch ? (
           <Field label={isHip ? "Pitch, side 1 (rise / 12)" : "Pitch (rise / 12)"} htmlFor={p("pitch")} hint={pitchHint}>
-            <input id={p("pitch")} name="pitch" type="number" step="0.25" min="0" className="input" value={pitchText} onChange={(e) => setPitchText(e.target.value)} />
+            <input id={p("pitch")} name="pitch" inputMode="decimal" className="input" value={pitchText} onChange={(e) => setPitchText(e.target.value)} />
           </Field>
         ) : null}
         {isHip ? (
           <Field label="Pitch, side 2 (rise / 12)" htmlFor={p("pitch2")} hint="The other roof plane. Blank = same as side 1 · 0 & 0 = ridge">
-            <input id={p("pitch2")} name="pitch2" type="number" step="0.25" min="0" className="input" value={pitch2Text} onChange={(e) => setPitch2Text(e.target.value)} placeholder={String(pitch)} />
+            <input
+              id={p("pitch2")}
+              name="pitch2"
+              inputMode="decimal"
+              step="0.25"
+              min="0"
+              className="input"
+              value={pitch2Text}
+              onChange={(e) => setPitch2Text(e.target.value)}
+              placeholder={String(pitch)}
+            />
           </Field>
         ) : null}
         {type === "LINEAR" ? (
           <Field label="Height (ft)" htmlFor={p("height")} hint="Length × height = wall area">
-            <input id={p("height")} name="height" type="number" step="0.01" min="0" className="input" defaultValue={values?.height || ""} placeholder="8" />
+            <input id={p("height")} name="height" inputMode="decimal" className="input" defaultValue={values?.height || ""} placeholder="8" />
           </Field>
         ) : null}
         {type === "AREA" ? (
           <Field label="Depth (in)" htmlFor={p("depth")} hint="Area × depth = volume (cy)">
-            <input id={p("depth")} name="depth" type="number" step="0.25" min="0" className="input" defaultValue={values?.depth || ""} placeholder="4" />
+            <input id={p("depth")} name="depth" inputMode="decimal" className="input" defaultValue={values?.depth || ""} placeholder="4" />
           </Field>
         ) : null}
         {type === "FRAMING" ? (
           <Field label="Spacing (in o.c.)" htmlFor={p("spacing")}>
-            <input id={p("spacing")} name="spacing" type="number" step="0.5" min="1" className="input" defaultValue={values?.spacing ?? 16} />
+            <input id={p("spacing")} name="spacing" inputMode="decimal" className="input" defaultValue={values?.spacing ?? 16} />
           </Field>
         ) : null}
         {isMember ? (
@@ -225,13 +246,17 @@ export function ConditionForm({
             htmlFor={p("overhang")}
             hint={isHip ? "Horizontal, out from the wall. Added once per piece at the eave" : "Horizontal, added to each member"}
           >
-            <input id={p("overhang")} name="overhang" type="number" step="0.5" min="0" className="input" defaultValue={values?.overhang || ""} placeholder="0" />
+            <input id={p("overhang")} name="overhang" inputMode="decimal" className="input" defaultValue={values?.overhang || ""} placeholder="0" />
           </Field>
         ) : null}
       </FormGrid>
       {isMember ? (
         <FormGrid className="md:grid-cols-4">
-          <Field label="Member size" htmlFor={p("memberSizeId")} hint={size ? SOLD_AS_LABELS[size.soldAs as keyof typeof SOLD_AS_LABELS] : "Sizes are managed in Settings → Member sizes"}>
+          <Field
+            label="Member size"
+            htmlFor={p("memberSizeId")}
+            hint={size ? SOLD_AS_LABELS[size.soldAs as keyof typeof SOLD_AS_LABELS] : "Sizes are managed in Settings → Member sizes"}
+          >
             <select
               id={p("memberSizeId")}
               name="memberSizeId"
@@ -253,25 +278,42 @@ export function ConditionForm({
             </select>
           </Field>
           {size?.soldAs === "STOCK" || !size ? (
-            <Field label="Stock lengths (ft)" htmlFor={p("stockLengths")} className="md:col-span-2" hint="What you buy. Each member rounds up to the next length; longer members use several pieces. Blank = even lengths from 8'.">
-              <input id={p("stockLengths")} name="stockLengths" className="input" value={stockText} onChange={(e) => setStockText(e.target.value)} placeholder="8-24  or  12, 14, 16, 20" />
+            <Field
+              label="Stock lengths (ft)"
+              htmlFor={p("stockLengths")}
+              className="md:col-span-2"
+              hint="What you buy. Each member rounds up to the next length; longer members use several pieces. Blank = even lengths from 8'."
+            >
+              <input
+                id={p("stockLengths")}
+                name="stockLengths"
+                className="input"
+                value={stockText}
+                onChange={(e) => setStockText(e.target.value)}
+                placeholder="8-24  or  12, 14, 16, 20"
+              />
             </Field>
           ) : (
             <p className="self-end pb-2 text-xs text-slate-500 md:col-span-2">
-              {size.soldAs === "EXACT_LF" ? "Made to order: each member is listed at its exact length (to the inch) and priced per lf." : "Listed as one lineal-foot total, priced per lf."}
+              {size.soldAs === "EXACT_LF"
+                ? "Made to order: each member is listed at its exact length (to the inch) and priced per lf."
+                : "Listed as one lineal-foot total, priced per lf."}
             </p>
           )}
         </FormGrid>
       ) : null}
 
-      {isMember || isAuto ? <CodeRuleFields key={type} type={type} costCodes={costCodes} rules={codeRules} categories={Array.from(new Set(itemOptions.map((i) => i.category))).sort()} /> : null}
+      {isMember || isAuto ? (
+        <CodeRuleFields key={type} type={type} costCodes={costCodes} rules={codeRules} categories={Array.from(new Set(itemOptions.map((i) => i.category))).sort()} />
+      ) : null}
 
-      <FormGrid className="md:grid-cols-5">
+      {/* Cost code on its own row, then a wide unit cost (room for the price), markup and waste. */}
+      <FormGrid className="md:grid-cols-4">
         {isMember || isAuto ? (
           // Each material carries its own cost code (asked above); the takeoff keeps whatever it had.
           <input type="hidden" name="costCodeId" value={values?.costCodeId ?? ""} />
         ) : (
-          <Field label="Cost code" htmlFor={p("costCodeId")} className="md:col-span-2">
+          <Field label="Cost code" htmlFor={p("costCodeId")} className="md:col-span-4">
             <select id={p("costCodeId")} name="costCodeId" className="input" defaultValue={values?.costCodeId ?? ""}>
               <option value="">—</option>
               {costCodes.map((c) => (
@@ -283,29 +325,53 @@ export function ConditionForm({
           </Field>
         )}
         {isMember || isAuto ? (
-          <p className="self-end pb-2 text-xs text-slate-500 md:col-span-2">
-            {isAuto
-              ? `Materials are added automatically from the ${isWall ? "walls" : isDoor ? "doors" : isWindow ? "windows" : "openings"} and priced from Settings → Item List.`
-              : <>Lumber is priced per piece from Settings → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.</>}
+          <p className="self-end pb-2 text-xs text-slate-500 md:col-span-3">
+            {isAuto ? (
+              `Materials are added automatically from the ${isWall ? "walls" : isDoor ? "doors" : isWindow ? "windows" : "openings"} and priced from Settings → Item List.`
+            ) : (
+              <>Lumber is priced per piece from Settings → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.</>
+            )}
           </p>
         ) : (
           <>
-            <Field label="Unit cost" htmlFor={p("unitCost")}>
-              <input id={p("unitCost")} name="unitCost" type="number" step="0.01" min="0" className="input" defaultValue={values?.unitCost ?? 0} />
+            <Field label="Unit cost" htmlFor={p("unitCost")} className="md:col-span-2">
+              <input id={p("unitCost")} name="unitCost" inputMode="decimal" className="input" defaultValue={values?.unitCost ?? 0} />
             </Field>
             <Field label="Markup %" htmlFor={p("markupPct")}>
-              <input id={p("markupPct")} name="markupPct" type="number" step="0.1" className="input" defaultValue={values?.markupPct ?? defaultMarkup} />
+              <input id={p("markupPct")} name="markupPct" inputMode="decimal" className="input" defaultValue={values?.markupPct ?? defaultMarkup} />
             </Field>
           </>
         )}
-        <Field label="Waste %" htmlFor={p("wastePct")} hint={isMember ? "Extra pieces, rounded up" : isWall ? "Studs, sheets & baseboard" : isOpening ? "King & jack studs" : isDoor || isWindow ? "Trim" : undefined}>
-          <input key={type} id={p("wastePct")} name="wastePct" type="number" step="0.5" min="0" className="input" defaultValue={values?.wastePct ?? (isWall || isDoor || isWindow ? 10 : 0)} />
+        <Field
+          label="Waste %"
+          htmlFor={p("wastePct")}
+          hint={isMember ? "Extra pieces, rounded up" : isWall ? "Studs, sheets & baseboard" : isOpening ? "King & jack studs" : isDoor || isWindow ? "Trim" : undefined}
+        >
+          <input
+            key={type}
+            id={p("wastePct")}
+            name="wastePct"
+            inputMode="decimal"
+            step="0.5"
+            min="0"
+            className="input"
+            defaultValue={values?.wastePct ?? (isWall || isDoor || isWindow ? 10 : 0)}
+          />
         </Field>
       </FormGrid>
       <FormGrid className="md:grid-cols-4">
         <Field label="Estimate group" htmlFor={p("group")} hint="Section heading on the estimate">
           <input id={p("group")} name="group" className="input" defaultValue={values?.group ?? "Takeoff"} />
         </Field>
+        <label className="flex items-start gap-2 self-end pb-2 text-sm text-slate-700 md:col-span-3">
+          <input type="checkbox" name="referenceOnly" defaultChecked={values?.referenceOnly ?? false} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+          <span>
+            <span className="font-medium">Reference only</span>
+            <span className="block text-xs text-slate-500">
+              Measure it for your information (e.g. Heated &amp; cooled, to check the plan) — it stays off the estimate and the Material list.
+            </span>
+          </span>
+        </label>
       </FormGrid>
       {!values && assemblyItems ? <PendingItems type={type} metric={metric} costCodes={costCodes} items={assemblyItems} defaultMarkup={defaultMarkup} /> : null}
       <div className="flex items-center gap-2">

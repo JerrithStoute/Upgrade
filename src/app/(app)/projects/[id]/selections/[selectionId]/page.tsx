@@ -10,7 +10,13 @@ import { SelectionFields } from "../_components/selection-fields";
 import { chosenOption, isSelectionOverdue } from "../_helpers";
 import { updateSelection, deleteSelection, addOption, updateOption, deleteOption, chooseOption, setSelectionStatus } from "../actions";
 
-function OptionFields({ values, prefix }: { values: { name?: string; vendor?: string | null; modelNumber?: string | null; price?: number; description?: string | null; imageUrl?: string | null; isRecommended?: boolean }; prefix: string }) {
+function OptionFields({
+  values,
+  prefix,
+}: {
+  values: { name?: string; vendor?: string | null; modelNumber?: string | null; price?: number; description?: string | null; imageUrl?: string | null; isRecommended?: boolean };
+  prefix: string;
+}) {
   return (
     <FormGrid className="md:grid-cols-3">
       <Field label="Name" htmlFor={`${prefix}-name`}>
@@ -39,13 +45,7 @@ function OptionFields({ values, prefix }: { values: { name?: string; vendor?: st
   );
 }
 
-export default async function SelectionDetailPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string; selectionId: string }>;
-  searchParams: Promise<{ edit?: string }>;
-}) {
+export default async function SelectionDetailPage({ params, searchParams }: { params: Promise<{ id: string; selectionId: string }>; searchParams: Promise<{ edit?: string }> }) {
   await requireStaff();
   const { id, selectionId } = await params;
   const { edit } = await searchParams;
@@ -143,7 +143,9 @@ export default async function SelectionDetailPage({
           Options <span className="ml-1 text-sm font-normal text-slate-500">{sel.options.length}</span>
         </h2>
         {sel.options.length === 0 ? (
-          <p className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center text-sm text-slate-500">No options yet — add the products the client can choose from below.</p>
+          <p className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center text-sm text-slate-500">
+            No options yet — add the products the client can choose from below.
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
             {sel.options.map((o) => {
@@ -193,9 +195,7 @@ export default async function SelectionDetailPage({
                     ) : null}
                     <div className="min-w-0">
                       <h3 className="font-semibold leading-snug text-slate-900">{o.name}</h3>
-                      <p className="text-xs text-slate-500">
-                        {[o.vendor, o.modelNumber ? `#${o.modelNumber}` : null].filter(Boolean).join(" · ") || "\u00a0"}
-                      </p>
+                      <p className="text-xs text-slate-500">{[o.vendor, o.modelNumber ? `#${o.modelNumber}` : null].filter(Boolean).join(" · ") || "\u00a0"}</p>
                     </div>
                     {o.description ? <p className="text-sm text-slate-600">{o.description}</p> : null}
                     <div className="mt-auto flex items-baseline justify-between pt-2">

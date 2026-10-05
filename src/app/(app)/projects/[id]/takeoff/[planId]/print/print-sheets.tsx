@@ -152,10 +152,7 @@ export function PrintSheets({
 
             <div className="flex flex-col gap-3 lg:flex-row print:flex-row">
               {/* Plan with takeoff */}
-              <div
-                className="relative min-h-40 min-w-0 flex-1 self-start border border-slate-300 bg-white"
-                style={size ? { aspectRatio: `${size.w} / ${size.h}` } : undefined}
-              >
+              <div className="relative min-h-40 min-w-0 flex-1 self-start border border-slate-300 bg-white" style={size ? { aspectRatio: `${size.w} / ${size.h}` } : undefined}>
                 <PlanCanvas
                   url={plan.fileUrl}
                   kind={plan.kind}
@@ -175,7 +172,16 @@ export function PrintSheets({
                       const halo = { stroke: "white", strokeWidth: fs * 0.3, paintOrder: "stroke" as const, strokeLinejoin: "round" as const };
                       const text = (x: number, y: number, t: string, rotate = 0) =>
                         labels ? (
-                          <text x={x} y={y} fontSize={fs} fontWeight={700} fill={c.color} textAnchor="middle" transform={rotate ? `rotate(${rotate} ${x} ${y})` : undefined} {...halo}>
+                          <text
+                            x={x}
+                            y={y}
+                            fontSize={fs}
+                            fontWeight={700}
+                            fill={c.color}
+                            textAnchor="middle"
+                            transform={rotate ? `rotate(${rotate} ${x} ${y})` : undefined}
+                            {...halo}
+                          >
                             {t}
                           </text>
                         ) : null;
@@ -220,7 +226,15 @@ export function PrintSheets({
                           : "";
                         return (
                           <g key={m.id}>
-                            <polyline points={d} fill="none" stroke={c.color} strokeWidth={sw * (c.type === "HIP_VALLEY" ? 4 : 3)} strokeDasharray={m.isDeduction ? `${sw * 6} ${sw * 4}` : undefined} strokeLinecap="round" strokeLinejoin="round" />
+                            <polyline
+                              points={d}
+                              fill="none"
+                              stroke={c.color}
+                              strokeWidth={sw * (c.type === "HIP_VALLEY" ? 4 : 3)}
+                              strokeDasharray={m.isDeduction ? `${sw * 6} ${sw * 4}` : undefined}
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
                             {t ? text(x, y - fs * 0.5, t, deg) : null}
                           </g>
                         );

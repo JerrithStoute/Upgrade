@@ -3,7 +3,8 @@ import { jwtVerify } from "jose";
 import { getSessionKey } from "@/lib/session-secret";
 
 const SESSION_COOKIE = "upgrade_session";
-const PUBLIC_PATHS = ["/login", "/logout"];
+// The company logo shows on the sign-in page too.
+const PUBLIC_PATHS = ["/login", "/logout", "/api/company/logo"];
 
 async function hasValidSession(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;

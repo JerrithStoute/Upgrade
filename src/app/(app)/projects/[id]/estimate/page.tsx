@@ -1,13 +1,15 @@
 import Link from "next/link";
-import { FileText, Plus, ExternalLink, Copy, RefreshCw, FileStack } from "lucide-react";
+import { FileText, Plus, ExternalLink, Copy, FileStack, Lock, LockOpen } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
-import { templateOptions } from "@/lib/estimate-lines";
-import { money, pct, fmtDate, cn, lineCost, linePrice } from "@/lib/utils";
-import { lineTotals } from "@/lib/finance";
-import { Badge, Card, CardBody, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, Stat, SubmitButton, Table, TBody, THead, Td, Th, Tr, buttonClasses } from "@/components/ui";
-import { LineItemsEditor } from "../_components/line-items";
+import { loadEstimateSheet, templateOptions } from "@/lib/estimate-lines";
+import { divisionCategories, loadEstimateCategories } from "@/lib/estimate-categories";
+import { codeDivisions } from "@/lib/cost-code-divisions";
+import { loadParameters, projectValues, refreshFormulaQuantities } from "@/lib/estimate-parameters";
+import { pct, fmtDate, cn } from "@/lib/utils";
+import { Badge, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
+import { EstimateSheet } from "@/components/estimate/estimate-sheet";
 import {
   createEstimate,
   updateEstimateDetails,
@@ -16,29 +18,28 @@ import {
   markEstimateDeclined,
   createEstimateVersion,
   deleteEstimate,
-  createEstimateItem,
-  updateEstimateItem,
-  deleteEstimateItem,
-  createAllowance,
-  updateAllowance,
-  deleteAllowance,
-  convertItemToAllowance,
-  syncAllowanceToSelection,
+  saveEstimate,
   addTemplateToEstimate,
   saveEstimateAsTemplate,
+  saveMarkupDefault,
+  saveParameterValues,
+  lockEstimate,
+  dismissAutoNote,
 } from "./actions";
+import { refreshDraftFromTakeoff } from "@/lib/takeoff-data";
+import { parseAutoNote } from "@/lib/takeoff-changes";
+import { AutoChanges } from "@/components/estimate/auto-changes";
+import { parseMarkupTable } from "@/lib/markup";
+import { takeoffDetail, takeoffPriceCheck } from "@/lib/takeoff-data";
+import { parseProposalOptions } from "@/lib/proposal-options";
+import { PriceWarnings, zeroLineNames } from "@/components/estimate/price-warnings";
+import { addDays } from "date-fns";
 
-export default async function EstimatePage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ estimate?: string; edit?: string; editAllowance?: string; addTo?: string }>;
-}) {
+export default async function EstimatePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ estimate?: string }> }) {
   const user = await requireStaff();
   const isAdmin = user.role === "ADMIN";
   const { id } = await params;
-  const { estimate: estimateParam, edit, editAllowance, addTo } = await searchParams;
+  const { estimate: estimateParam } = await searchParams;
   const project = await getProject(id);
 
   const [estimates, templates] = await Promise.all([
@@ -79,33 +80,45 @@ export default async function EstimatePage({
   }
 
   const selectedId = estimates.some((e) => e.id === estimateParam) ? estimateParam! : estimates[0].id;
-  const [estimate, costCodes] = await Promise.all([
+  // The sheet first: it files any loose lines (older estimates) into spec items.
+  // A draft with the takeoff on it updates itself: new prices and quantities ("what changed" shows how).
+  await refreshDraftFromTakeoff(project.id, selectedId).catch(() => null);
+  // Formula quantities follow the job's parameter values and its sales price (drafts only) — after the takeoff, so they see its totals.
+  await refreshFormulaQuantities(selectedId);
+  const sheet = await loadEstimateSheet(selectedId);
+  const [estimate, costCodes, filing, divisionList, parameters, values, company] = await Promise.all([
     db.estimate.findUnique({
       where: { id: selectedId },
       include: {
-        items: { include: { costCode: true }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
-        allowances: {
-          include: { selection: { select: { id: true, title: true, allowance: true, status: true } } },
-          orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-        },
+        items: { include: { costCode: true, materialItem: { select: { id: true, unitCost: true } } }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
       },
     }),
     activeCostCodes(),
+    divisionCategories(),
+    isAdmin ? loadEstimateCategories() : null,
+    loadParameters(),
+    projectValues(project.id),
+    db.company.findFirst({ select: { allowanceProfit: true, proposalOptions: true } }),
   ]);
+  // Approved, with change orders against it: the Markup, Margin & Tax table stays as the contract was priced.
+  const changeOrders = estimate?.status === "APPROVED" ? await db.changeOrder.count({ where: { projectId: project.id } }) : 0;
   if (!estimate) return null;
 
   const isDraft = estimate.status === "DRAFT";
-  const totals = lineTotals(estimate.items);
-  const allowanceTotal = lineTotals(estimate.items.filter((i) => i.isAllowance)).price;
-  const base = `/projects/${project.id}/estimate?estimate=${estimate.id}`;
-  const hidden = { projectId: project.id, estimateId: estimate.id };
-  const selectionHref = (selectionId: string) => `/projects/${project.id}/selections/${selectionId}`;
-  // Allowance summary: built-up allowances (with their cost-code lines) + single-line allowance items.
-  const builtAllowances = estimate.allowances.map((a) => {
-    const lines = estimate.items.filter((i) => i.allowanceId === a.id);
-    return { ...a, lines, totals: lineTotals(lines) };
-  });
-  const singleLineAllowances = estimate.items.filter((i) => i.isAllowance && !i.allowanceId);
+  const locked = !!estimate.lockedAt;
+  const autoNote = isDraft ? parseAutoNote(estimate.autoNote) : null;
+  const jobLocked = !!project.pricesLockedAt;
+  const reviewHref = `/projects/${project.id}/takeoff/rebid`;
+  // Before it goes out: unpriced takeoff items, $0 lines, Item List prices that moved, pricing past its date.
+  const check = estimate.status === "APPROVED" ? null : await takeoffPriceCheck(project.id);
+  const zeroLines = isDraft ? zeroLineNames(estimate.items) : [];
+  const validDays = parseProposalOptions(estimate.proposalOptions ?? company?.proposalOptions).validDays;
+  const expiresOn = estimate.status === "SENT" && estimate.sentAt && validDays > 0 ? addDays(estimate.sentAt, validDays) : null;
+  const blanks = (isDraft ? (check?.unpriced.length ?? 0) : 0) + zeroLines.length;
+  // The takeoff items behind each takeoff line (its dropdown).
+  const detail = sheet.some((sp) => sp.lines.some((l) => l.takeoffKey)) ? await takeoffDetail(project.id) : undefined;
+  const nextVersion = Math.max(...estimates.map((e) => e.version)) + 1;
+  const itemPrices = Object.fromEntries(estimate.items.flatMap((i) => (i.materialItem ? [[i.materialItem.id, i.materialItem.unitCost]] : [])));
 
   return (
     <div className="space-y-6">
@@ -135,12 +148,7 @@ export default async function EstimatePage({
               <form action={updateEstimateDetails} className="flex items-center gap-1.5">
                 <input type="hidden" name="projectId" value={project.id} />
                 <input type="hidden" name="id" value={estimate.id} />
-                <input
-                  name="name"
-                  defaultValue={estimate.name}
-                  aria-label="Estimate name"
-                  className="input !w-64 !py-1 text-base font-semibold"
-                />
+                <input name="name" defaultValue={estimate.name} aria-label="Estimate name" className="input !w-64 !py-1 text-base font-semibold" />
                 <SubmitButton variant="ghost" size="sm">
                   Rename
                 </SubmitButton>
@@ -154,17 +162,34 @@ export default async function EstimatePage({
               Created {fmtDate(estimate.createdAt)}
               {estimate.sentAt ? ` · Sent ${fmtDate(estimate.sentAt)}` : ""}
               {estimate.approvedAt ? ` · Approved ${fmtDate(estimate.approvedAt)}` : ""}
-              {` · Default markup ${pct(estimate.defaultMarkup, 1)}`}
+              {` · New lines start at ${pct(estimate.defaultMarkup, 1)} profit`}
+              {isDraft ? "" : " · Changes save as a new version"}
             </>
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
               {estimate.status === "DRAFT" ? (
-                <form action={markEstimateSent}>
-                  <input type="hidden" name="projectId" value={project.id} />
-                  <input type="hidden" name="id" value={estimate.id} />
-                  <SubmitButton size="sm">Mark sent</SubmitButton>
-                </form>
+                blanks ? (
+                  <ConfirmForm
+                    action={markEstimateSent}
+                    hidden={{ projectId: project.id, id: estimate.id }}
+                    variant="primary"
+                    message={`Before you send: ${[
+                      check?.unpriced.length ? `${check.unpriced.length} takeoff item${check.unpriced.length === 1 ? " has" : "s have"} no price` : "",
+                      zeroLines.length ? `${zeroLines.length} estimate item${zeroLines.length === 1 ? " is" : "s are"} $0` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" and ")} — they'd show at $0 on the proposal.\n\nMark sent anyway?`}
+                  >
+                    Mark sent
+                  </ConfirmForm>
+                ) : (
+                  <form action={markEstimateSent}>
+                    <input type="hidden" name="projectId" value={project.id} />
+                    <input type="hidden" name="id" value={estimate.id} />
+                    <SubmitButton size="sm">Mark sent</SubmitButton>
+                  </form>
+                )
               ) : null}
               {estimate.status === "SENT" ? (
                 <>
@@ -187,6 +212,16 @@ export default async function EstimatePage({
               <Link href={`/projects/${project.id}/estimate/${estimate.id}/proposal`} className={buttonClasses("secondary", "sm")}>
                 <ExternalLink className="h-3.5 w-3.5" /> View proposal
               </Link>
+              {isDraft ? (
+                <form action={lockEstimate}>
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <input type="hidden" name="id" value={estimate.id} />
+                  <input type="hidden" name="lock" value={locked ? "0" : "1"} />
+                  <SubmitButton size="sm" variant="secondary">
+                    {locked ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />} {locked ? "Unlock" : "Lock"}
+                  </SubmitButton>
+                </form>
+              ) : null}
               <form action={createEstimateVersion}>
                 <input type="hidden" name="projectId" value={project.id} />
                 <input type="hidden" name="id" value={estimate.id} />
@@ -202,14 +237,6 @@ export default async function EstimatePage({
             </div>
           }
         />
-        <CardBody>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat label="Cost" value={money(totals.cost)} />
-            <Stat label="Markup" value={money(totals.markup)} hint={totals.cost > 0 ? pct((totals.markup / totals.cost) * 100, 1) + " of cost" : undefined} />
-            <Stat label="Price" value={money(totals.price)} tone="good" hint="Excludes optional items" />
-            <Stat label="Allowances" value={money(allowanceTotal)} hint="Included in price" />
-          </div>
-        </CardBody>
       </Card>
 
       {(isDraft && templates.length > 0) || isAdmin ? (
@@ -252,137 +279,82 @@ export default async function EstimatePage({
         </div>
       ) : null}
 
-      <LineItemsEditor
-        items={estimate.items}
-        costCodes={costCodes}
-        editable={isDraft}
-        readOnlyHint={`This estimate is ${estimate.status.toLowerCase()} and read-only. Create a new version to make changes.`}
-        editingId={edit ?? null}
-        baseHref={base}
-        hidden={hidden}
-        actions={{ create: createEstimateItem, update: updateEstimateItem, remove: deleteEstimateItem }}
-        withGroups
-        withFlags
-        defaultMarkup={estimate.defaultMarkup}
-        allowances={estimate.allowances}
-        allowanceActions={{ create: createAllowance, update: updateAllowance, remove: deleteAllowance, convert: convertItemToAllowance }}
-        editingAllowanceId={editAllowance ?? null}
-        addToAllowanceId={addTo ?? null}
-        selectionHref={selectionHref}
+      {/* The job's prices: following the Item List, or locked. */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        {jobLocked ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
+            <Lock className="h-3.5 w-3.5" /> Job prices locked {fmtDate(project.pricesLockedAt)}
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900 ring-1 ring-inset ring-emerald-200">
+            <LockOpen className="h-3.5 w-3.5" /> Job prices follow the Item List
+          </span>
+        )}
+        <Link href={reviewHref} className="text-xs font-medium text-blue-700 hover:underline">
+          {jobLocked ? "Price review / unlock" : "Price review / lock"}
+        </Link>
+        {locked ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
+            <Lock className="h-3.5 w-3.5" /> This estimate is locked — no automatic updates or edits until you unlock it
+          </span>
+        ) : null}
+      </div>
+
+      {autoNote ? <AutoChanges note={autoNote} onDismiss={dismissAutoNote.bind(null, project.id, estimate.id)} /> : null}
+
+      <PriceWarnings
+        unpriced={isDraft ? check?.unpriced : undefined}
+        zeroLines={zeroLines}
+        changed={check?.changed}
+        expired={expiresOn && expiresOn < new Date() ? { on: expiresOn, days: validDays } : undefined}
+        materialsHref={`/projects/${project.id}/materials`}
+        rebidHref={reviewHref}
       />
 
-      {builtAllowances.length > 0 || singleLineAllowances.length > 0 ? (
-        <div id="allowance-summary" className="scroll-mt-24">
-          <Card>
-            <CardHeader
-              title="Allowance summary"
-              description="What the client sees as each allowance and the cost codes it is built from. Push an allowance to Selections so the client's choices are tracked against it."
-            />
-            <Table className="rounded-none border-0 border-t shadow-none">
-              <THead>
-                <tr>
-                  <Th>Allowance</Th>
-                  <Th>Built from</Th>
-                  <Th right>Cost</Th>
-                  <Th right>Markup</Th>
-                  <Th right>Client allowance</Th>
-                  <Th>Selection</Th>
-                  <Th className="text-right">Actions</Th>
-                </tr>
-              </THead>
-              <TBody>
-                {builtAllowances.map((a) => {
-                  const outOfSync = a.selection ? Math.abs(a.selection.allowance - a.totals.price) >= 0.01 : false;
-                  return (
-                    <Tr key={a.id}>
-                      <Td className="align-top">
-                        <a href={`#allowance-${a.id}`} className="font-medium text-slate-900 hover:underline">
-                          {a.name}
-                        </a>
-                        <span className="block text-xs text-slate-500">{a.group}</span>
-                      </Td>
-                      <Td className="min-w-[240px] align-top text-xs text-slate-600">
-                        {a.lines.length === 0 ? (
-                          <span className="italic text-slate-400">No lines yet</span>
-                        ) : (
-                          <ul className="space-y-0.5">
-                            {a.lines.map((l) => (
-                              <li key={l.id} className={cn("flex justify-between gap-3", l.isOptional && "text-slate-400 line-through")}>
-                                <span>
-                                  {l.costCode ? <span className="font-mono text-slate-700">{l.costCode.code}</span> : null} {l.description}
-                                </span>
-                                <span className="tabular-nums">{money(linePrice(l))}</span>
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </Td>
-                      <Td right className="align-top">
-                        {money(a.totals.cost)}
-                      </Td>
-                      <Td right className="align-top">
-                        {money(a.totals.markup)}
-                      </Td>
-                      <Td right className="align-top font-semibold text-slate-900">
-                        {money(a.totals.price)}
-                      </Td>
-                      <Td className="align-top text-xs">
-                        {a.selection ? (
-                          <span className="flex flex-col gap-1">
-                            <Link href={selectionHref(a.selection.id)} className="font-medium text-blue-700 hover:underline">
-                              {a.selection.title}
-                            </Link>
-                            <span className="text-slate-500">Allowance {money(a.selection.allowance)}</span>
-                            {outOfSync ? (
-                              <Badge className="w-fit bg-rose-50 text-rose-800 ring-rose-200">Out of sync</Badge>
-                            ) : (
-                              <Badge status={a.selection.status} className="w-fit" />
-                            )}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">Not linked</span>
-                        )}
-                      </Td>
-                      <Td className="align-top">
-                        {a.lines.length > 0 ? (
-                          <form action={syncAllowanceToSelection} className="flex justify-end">
-                            <input type="hidden" name="projectId" value={project.id} />
-                            <input type="hidden" name="estimateId" value={estimate.id} />
-                            <input type="hidden" name="id" value={a.id} />
-                            <SubmitButton size="sm" variant={a.selection && !outOfSync ? "ghost" : "secondary"}>
-                              <RefreshCw className="h-3.5 w-3.5" /> {a.selection ? "Update selection" : "Push to selections"}
-                            </SubmitButton>
-                          </form>
-                        ) : null}
-                      </Td>
-                    </Tr>
-                  );
-                })}
-                {singleLineAllowances.map((i) => (
-                  <Tr key={i.id}>
-                    <Td>
-                      <span className="font-medium text-slate-900">{i.description}</span>
-                      <span className="block text-xs text-slate-500">{i.group} · single line</span>
-                    </Td>
-                    <Td className="text-xs text-slate-600">
-                      {i.costCode ? <span className="font-mono text-slate-700">{i.costCode.code}</span> : null} {i.costCode?.name ?? "—"}
-                    </Td>
-                    <Td right>{money(lineCost(i))}</Td>
-                    <Td right>{money(linePrice(i) - lineCost(i))}</Td>
-                    <Td right className="font-semibold text-slate-900">
-                      {money(linePrice(i))}
-                    </Td>
-                    <Td className="text-xs text-slate-400">{isDraft ? "Use “Build up” to add cost codes" : "—"}</Td>
-                    <Td />
-                  </Tr>
-                ))}
-              </TBody>
-            </Table>
-          </Card>
-        </div>
-      ) : null}
+      <EstimateSheet
+        locked={locked}
+        key={`${estimate.id}-${estimate.updatedAt.getTime()}`}
+        viewKey={estimate.id}
+        initial={sheet}
+        costCodes={costCodes}
+        defaultMarkup={estimate.defaultMarkup}
+        estimate={{
+          version: estimate.version,
+          nextVersion,
+          isDraft,
+          status: estimate.status,
+          basePrice: estimate.basePrice,
+          totalSqFt: estimate.totalSqFt,
+          itemPrices,
+          materialListHref: `/projects/${project.id}/materials`,
+          takeoffDetail: detail,
+        }}
+        save={saveEstimate.bind(null, project.id, estimate.id)}
+        newVersionHref={`/projects/${project.id}/estimate?estimate=`}
+        filing={filing}
+        parameters={parameters}
+        values={values}
+        canEditParameters={isAdmin}
+        saveValues={saveParameterValues.bind(null, project.id)}
+        allowanceProfitDefault={company?.allowanceProfit ?? false}
+        markupTable={parseMarkupTable(estimate.markupTable, estimate.defaultMarkup)}
+        markupLocked={
+          changeOrders > 0
+            ? `This estimate is approved and the job has change order${changeOrders === 1 ? "" : "s"}, so its markup, margin & tax stay as the contract was priced.`
+            : null
+        }
+        saveMarkupDefault={isAdmin ? saveMarkupDefault : undefined}
+        divisionsSetup={
+          divisionList
+            ? {
+                initial: divisionList.map((d) => ({ name: d.name, divisions: d.divisions.map((x) => x.division) })),
+                categories: codeDivisions(costCodes).map(([name, list]) => ({ name, codes: list.length })),
+              }
+            : undefined
+        }
+      />
 
-      <Collapsible summary="Proposal notes, terms & default markup">
+      <Collapsible summary="Proposal notes, terms & starting profit %">
         <form action={updateEstimateDetails} className="space-y-4">
           <input type="hidden" name="projectId" value={project.id} />
           <input type="hidden" name="id" value={estimate.id} />
@@ -393,7 +365,7 @@ export default async function EstimatePage({
             <Field label="Terms (shown on proposal)" htmlFor="est-terms" className="md:col-span-2">
               <textarea id="est-terms" name="terms" rows={3} className="input" defaultValue={estimate.terms ?? ""} />
             </Field>
-            <Field label="Default markup %" htmlFor="est-markup" hint="Pre-filled on new line items.">
+            <Field label="Starting profit %" htmlFor="est-markup" hint="What new lines start with.">
               <input id="est-markup" name="defaultMarkup" type="number" step="0.1" min="0" className="input" defaultValue={estimate.defaultMarkup} />
             </Field>
           </FormGrid>

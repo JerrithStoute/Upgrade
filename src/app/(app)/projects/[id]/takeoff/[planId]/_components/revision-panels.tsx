@@ -89,7 +89,16 @@ export function ComparePanel({
         <>
           <label className="block text-xs text-slate-600">
             Fade
-            <input type="range" min={0.2} max={1} step={0.05} value={fade} onChange={(e) => onFade(Number(e.target.value))} className="w-full accent-blue-700" aria-label="Overlay fade" />
+            <input
+              type="range"
+              min={0.2}
+              max={1}
+              step={0.05}
+              value={fade}
+              onChange={(e) => onFade(Number(e.target.value))}
+              className="w-full accent-blue-700"
+              aria-label="Overlay fade"
+            />
           </label>
           {aligning ? (
             <div className="mt-2 rounded-md bg-amber-50 p-2 text-xs text-amber-900">
@@ -135,7 +144,11 @@ export function ComparePanel({
               <ul className="mt-1 max-h-40 space-y-0.5 overflow-y-auto">
                 {changed.map((c) => (
                   <li key={c.id}>
-                    <button type="button" onClick={() => onJump(c.id)} className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs text-slate-700 hover:bg-amber-50">
+                    <button
+                      type="button"
+                      onClick={() => onJump(c.id)}
+                      className="flex w-full items-center gap-1.5 rounded px-1 py-0.5 text-left text-xs text-slate-700 hover:bg-amber-50"
+                    >
                       <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: c.color }} />
                       <span className="truncate">{c.label}</span>
                     </button>
@@ -221,7 +234,11 @@ export function BringForwardPanel({
             <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300" checked={copyScale} onChange={(e) => setCopyScale(e.target.checked)} />
             Copy each sheet&apos;s scale (where the new sheet has none)
           </label>
-          {skipped ? <p className="mt-1 text-xs text-amber-700">{skipped} measurement(s) on sheets left behind stay with Rev {prevRevision} and still count.</p> : null}
+          {skipped ? (
+            <p className="mt-1 text-xs text-amber-700">
+              {skipped} measurement(s) on sheets left behind stay with Rev {prevRevision} and still count.
+            </p>
+          ) : null}
           <p className="mt-2 text-xs text-slate-500">Afterward Rev {prevRevision} is kept only for comparing.</p>
           <div className="mt-3 flex items-center gap-2">
             <button

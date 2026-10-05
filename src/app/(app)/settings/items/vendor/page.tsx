@@ -5,6 +5,7 @@ import { db } from "@/lib/db";
 import { buttonClasses } from "@/components/ui";
 import { VendorList, type VendorGroup } from "@/components/vendor-list";
 import { companyLines } from "@/lib/company";
+import { getBrand } from "@/lib/company-brand";
 import { compareMaterialNames } from "@/lib/takeoff";
 
 /** Part of the Item List for a vendor — e.g. your framing items, to get current prices. No prices of yours print. */
@@ -14,6 +15,7 @@ export default async function VendorItemListPage() {
     db.materialItem.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }], select: { id: true, name: true, category: true, sku: true, unit: true } }),
     db.company.findFirst(),
   ]);
+  const brand = await getBrand();
   const groups: VendorGroup[] = [];
   for (const i of items) {
     let g = groups.find((x) => x.category === i.category);
@@ -31,7 +33,7 @@ export default async function VendorItemListPage() {
         <span className="text-sm font-semibold text-slate-900">For a vendor</span>
         <span className="text-xs text-slate-500">— pick items to get prices on; your prices never print.</span>
       </div>
-      <VendorList storageKey="vendorlist:items" title="Price request" from={companyLines(company)} groups={groups} emptyText="The Item List is empty." />
+      <VendorList storageKey="vendorlist:items" title="Price request" from={companyLines(company)} groups={groups} emptyText="The Item List is empty." logoUrl={brand.logoUrl} />
     </div>
   );
 }

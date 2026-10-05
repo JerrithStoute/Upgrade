@@ -85,13 +85,13 @@ function ItemForm({
           </select>
         </Field>
         <Field label="Unit cost" htmlFor={p("unitCost")}>
-          <input id={p("unitCost")} name="unitCost" type="number" step="0.01" min="0" className="input" defaultValue={values?.unitCost ?? 0} />
+          <input id={p("unitCost")} name="unitCost" inputMode="decimal" className="input" defaultValue={values?.unitCost ?? 0} />
         </Field>
         <Field label="Markup %" htmlFor={p("markupPct")}>
-          <input id={p("markupPct")} name="markupPct" type="number" step="0.1" className="input" defaultValue={values?.markupPct ?? defaultMarkup} />
+          <input id={p("markupPct")} name="markupPct" inputMode="decimal" className="input" defaultValue={values?.markupPct ?? defaultMarkup} />
         </Field>
         <Field label="Waste %" htmlFor={p("wastePct")}>
-          <input id={p("wastePct")} name="wastePct" type="number" step="0.5" min="0" className="input" defaultValue={values?.wastePct ?? 0} />
+          <input id={p("wastePct")} name="wastePct" inputMode="decimal" className="input" defaultValue={values?.wastePct ?? 0} />
         </Field>
         <Field label="SKU / part #" htmlFor={p("sku")}>
           <input id={p("sku")} name="sku" className="input" defaultValue={values?.sku ?? ""} />
@@ -111,10 +111,10 @@ function ItemForm({
         </p>
         <FormGrid className="mt-2 md:grid-cols-5">
           <Field label="Width (in)" htmlFor={p("widthIn")} hint="e.g. 32 for a 2'8&quot; door">
-            <input id={p("widthIn")} name="widthIn" type="number" step="0.125" min="0" className="input" defaultValue={values?.widthIn ?? ""} />
+            <input id={p("widthIn")} name="widthIn" inputMode="decimal" className="input" defaultValue={values?.widthIn ?? ""} />
           </Field>
           <Field label="Height (in)" htmlFor={p("heightIn")} hint="e.g. 80 for 6'8&quot;">
-            <input id={p("heightIn")} name="heightIn" type="number" step="0.125" min="0" className="input" defaultValue={values?.heightIn ?? ""} />
+            <input id={p("heightIn")} name="heightIn" inputMode="decimal" className="input" defaultValue={values?.heightIn ?? ""} />
           </Field>
           <Field label="Interior / exterior" htmlFor={p("exterior")}>
             <select id={p("exterior")} name="exterior" className="input" defaultValue={values?.exterior == null ? "" : values.exterior ? "1" : "0"}>
@@ -127,7 +127,7 @@ function ItemForm({
             <input id={p("style")} name="style" className="input" defaultValue={values?.style ?? ""} placeholder="Single hung" />
           </Field>
           <Field label="Piece length (ft)" htmlFor={p("lengthFt")} hint="Trim sticks, e.g. 7 or 16">
-            <input id={p("lengthFt")} name="lengthFt" type="number" step="0.5" min="0" className="input" defaultValue={values?.lengthFt ?? ""} />
+            <input id={p("lengthFt")} name="lengthFt" inputMode="decimal" className="input" defaultValue={values?.lengthFt ?? ""} />
           </Field>
         </FormGrid>
       </details>
@@ -195,8 +195,9 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
   return (
     <div className="space-y-5">
       <p className="text-sm text-slate-600">
-        Materials and labor you pick into takeoff assemblies. Items typed into an assembly that aren&apos;t here yet are added automatically. Changing a price here doesn&apos;t
-        change jobs already priced — use <strong>Rebid at current prices</strong> on a job&apos;s Takeoff tab for that.
+        Materials and labor you pick into takeoff assemblies. Items typed into an assembly that aren&apos;t here yet are added automatically. A price changed here goes to every job
+        whose prices aren&apos;t locked (their draft estimates update when opened). Locked jobs — any job with an estimate marked sent — keep their prices; bring new ones in with{" "}
+        <strong>Price review</strong> on the job.
       </p>
 
       <Collapsible

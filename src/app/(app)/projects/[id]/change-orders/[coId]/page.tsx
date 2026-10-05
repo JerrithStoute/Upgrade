@@ -1,50 +1,45 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getProject, activeCostCodes } from "@/lib/projects";
-import { fmtDate, money, pct } from "@/lib/utils";
-import { CHANGE_ORDER_REASONS, lineTotals } from "@/lib/finance";
-import { Badge, Card, CardBody, CardHeader, Collapsible, ConfirmForm, Field, FormGrid, Stat, SubmitButton, buttonClasses } from "@/components/ui";
-import { LineItemsEditor } from "../../_components/line-items";
-import {
-  updateChangeOrder,
-  sendChangeOrder,
-  approveChangeOrder,
-  declineChangeOrder,
-  voidChangeOrder,
-  deleteChangeOrder,
-  createChangeOrderItem,
-  updateChangeOrderItem,
-  deleteChangeOrderItem,
-} from "../actions";
+import { approvedEstimateTotal, getProject, activeCostCodes } from "@/lib/projects";
+import { fmtDate } from "@/lib/utils";
+import { changeOrderTotals, effectOnContract, parseApprovals, parseCoDefaults, parseIds } from "@/lib/change-orders";
+import { unaddedChoices } from "@/lib/change-orders-server";
+import { Badge, Card, CardBody, CardHeader, ConfirmForm, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
+import { approveChangeOrder, declineChangeOrder, deleteChangeOrder, sendChangeOrder, voidChangeOrder } from "../actions";
+import { ChangeOrderEditor } from "./change-order-editor";
 
-export default async function ChangeOrderDetailPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string; coId: string }>;
-  searchParams: Promise<{ edit?: string }>;
-}) {
+/**
+ * A change order, laid out like your CoConstruct change orders: intro text, line
+ * items (client choices with Client Price / Allowance / Difference, items, extra
+ * charges), profit your way, tax, Effect on Contract, terms and completion dates,
+ * files, closing text and approvals.
+ */
+export default async function ChangeOrderDetailPage({ params }: { params: Promise<{ id: string; coId: string }> }) {
   const user = await requireStaff();
   const { id, coId } = await params;
-  const { edit } = await searchParams;
   const project = await getProject(id);
-  const [co, costCodes] = await Promise.all([
-    db.changeOrder.findFirst({
-      where: { id: coId, projectId: project.id },
-      include: { items: { include: { costCode: true }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
-    }),
+  const [co, open, team, files, company, others, base, costCodes] = await Promise.all([
+    db.changeOrder.findFirst({ where: { id: coId, projectId: project.id }, include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } }),
+    unaddedChoices(project.id),
+    db.user.findMany({ where: { role: { in: ["ADMIN", "STAFF"] }, active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    db.fileAsset.findMany({ where: { changeOrderId: coId }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, mimeType: true, uploadedById: true } }),
+    db.company.findFirst({ select: { changeOrderDefaults: true } }),
+    db.changeOrder.findMany({ where: { projectId: project.id, status: "APPROVED", id: { not: coId } }, include: { items: true } }),
+    approvedEstimateTotal(project.id),
     activeCostCodes(),
   ]);
   if (!co) notFound();
 
-  const isDraft = co.status === "DRAFT";
-  const totals = lineTotals(co.items);
-  const base = `/projects/${project.id}/change-orders/${co.id}`;
-  const hidden = { projectId: project.id, changeOrderId: co.id };
+  const totals = changeOrderTotals(co, co.items);
+  const previous = others.reduce((n, o) => n + changeOrderTotals(o, o.items).total, 0);
+  const effect = effectOnContract(base || project.contractAmount, previous, totals.total);
+  const approvals = parseApprovals(co.teamApprovals);
+  const approvers = parseIds(co.approverIds);
   const ids = { projectId: project.id, id: co.id };
+  const clientName = project.client ? `${project.client.firstName} ${project.client.lastName}`.trim() : null;
 
   return (
     <div className="space-y-6">
@@ -63,13 +58,17 @@ export default async function ChangeOrderDetailPage({
           }
           description={
             <>
-              {co.reason ?? "No reason given"} · Schedule impact {co.scheduleImpactDays} day{co.scheduleImpactDays === 1 ? "" : "s"} · Created {fmtDate(co.createdAt)}
+              Created {fmtDate(co.createdAt)}
               {co.sentAt ? ` · Sent ${fmtDate(co.sentAt)}` : ""}
-              {co.decidedAt ? ` · ${co.status === "DECLINED" ? "Declined" : "Approved"} ${fmtDate(co.decidedAt)}${co.decidedBy ? ` by ${co.decidedBy}` : ""}` : ""}
+              {co.clientApprovedAt ? ` · Client approved ${fmtDate(co.clientApprovedAt)}${co.decidedBy ? ` (${co.decidedBy})` : ""}` : ""}
+              {co.decidedAt ? ` · ${co.status === "DECLINED" ? "Declined" : "Approved"} ${fmtDate(co.decidedAt)}` : ""}
             </>
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
+              <Link href={`/projects/${project.id}/change-orders/${co.id}/print`} className={buttonClasses("secondary", "sm")}>
+                <Printer className="h-3.5 w-3.5" /> Print / PDF
+              </Link>
               {co.status === "DRAFT" ? (
                 <>
                   <form action={sendChangeOrder}>
@@ -90,32 +89,25 @@ export default async function ChangeOrderDetailPage({
             </div>
           }
         />
-        <CardBody className="space-y-4">
-          {co.description ? <p className="whitespace-pre-line text-sm text-slate-700">{co.description}</p> : null}
-          {co.decisionNote ? (
+        {co.decisionNote ? (
+          <CardBody>
             <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">
               <span className="font-medium">Decision note:</span> {co.decisionNote}
             </p>
-          ) : null}
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat label="Cost" value={money(totals.cost)} />
-            <Stat label="Markup" value={money(totals.markup)} hint={totals.cost > 0 ? pct((totals.markup / totals.cost) * 100, 1) + " of cost" : undefined} />
-            <Stat label="Price" value={money(totals.price)} tone="good" />
-            <Stat label="Schedule impact" value={`${co.scheduleImpactDays} d`} />
-          </div>
-        </CardBody>
+          </CardBody>
+        ) : null}
       </Card>
 
-      {co.status === "PENDING_APPROVAL" ? (
+      {co.status === "PENDING_APPROVAL" && co.clientApproval && !co.clientApprovedAt ? (
         <Card>
-          <CardHeader title="Record client decision" description="Capture who approved or declined this change order." />
+          <CardHeader title="Record the client's decision" description="If the client approved or declined outside the portal (signed on paper, by email…)." />
           <CardBody>
             <form className="space-y-4">
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="id" value={co.id} />
               <FormGrid>
                 <Field label="Decided by" htmlFor="co-decidedBy">
-                  <input id="co-decidedBy" name="decidedBy" className="input" defaultValue={project.client ? `${project.client.firstName} ${project.client.lastName}` : user.name} />
+                  <input id="co-decidedBy" name="decidedBy" className="input" defaultValue={clientName ?? user.name} />
                 </Field>
                 <Field label="Note" htmlFor="co-note">
                   <input id="co-note" name="decisionNote" className="input" placeholder="Optional" />
@@ -134,51 +126,58 @@ export default async function ChangeOrderDetailPage({
         </Card>
       ) : null}
 
-      <LineItemsEditor
-        items={co.items}
-        costCodes={costCodes}
-        editable={isDraft}
-        readOnlyHint={`This change order is ${co.status.toLowerCase().replace("_", " ")} and its items are locked.`}
-        editingId={edit ?? null}
-        baseHref={base}
-        hidden={hidden}
-        actions={{ create: createChangeOrderItem, update: updateChangeOrderItem, remove: deleteChangeOrderItem }}
-        defaultMarkup={co.items[0]?.markupPct ?? 20}
+      <ChangeOrderEditor
+        projectId={project.id}
+        me={user.id}
+        co={{
+          id: co.id,
+          number: co.number,
+          status: co.status,
+          title: co.title,
+          description: co.description ?? "",
+          introText: co.introText ?? "",
+          closingText: co.closingText ?? "",
+          terms: co.terms ?? "",
+          profitMode: co.profitMode,
+          profitValue: co.profitValue,
+          profitLabel: co.profitLabel,
+          profitShown: co.profitShown,
+          taxPct: co.taxPct,
+          taxLabel: co.taxLabel,
+          scheduleImpactDays: co.scheduleImpactDays,
+          priorCompletion: co.priorCompletion ? co.priorCompletion.toISOString().slice(0, 10) : "",
+          newCompletion: co.newCompletion ? co.newCompletion.toISOString().slice(0, 10) : "",
+          approverIds: approvers,
+          approvals,
+          clientApproval: co.clientApproval,
+          clientApprovedAt: co.clientApprovedAt,
+          ifDeclined: co.ifDeclined,
+          showItems: co.showItems,
+          showPrices: co.showPrices,
+        }}
+        items={co.items.map((i) => ({
+          id: i.id,
+          kind: i.kind,
+          category: i.category,
+          description: i.description,
+          choiceName: i.choiceName,
+          clientPrice: i.clientPrice,
+          allowance: i.allowance,
+          quantity: i.quantity,
+          unitCost: i.unitCost,
+          markupPct: i.markupPct,
+          costCodeId: i.costCodeId,
+          profitMode: i.profitMode,
+          profitValue: i.profitValue,
+        }))}
+        costCodes={costCodes.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
+        open={open}
+        team={team}
+        clientName={clientName}
+        effect={effect}
+        files={files.map((f) => ({ id: f.id, name: f.name, isImage: f.mimeType.startsWith("image/"), mine: f.uploadedById === user.id }))}
+        defaults={parseCoDefaults(company?.changeOrderDefaults)}
       />
-
-      <Collapsible summary="Edit details">
-        <form action={updateChangeOrder} className="space-y-4">
-          <input type="hidden" name="projectId" value={project.id} />
-          <input type="hidden" name="id" value={co.id} />
-          <FormGrid>
-            <Field label="Title" htmlFor="co-title" className="md:col-span-2">
-              <input id="co-title" name="title" className="input" defaultValue={co.title} required />
-            </Field>
-            <Field label="Description" htmlFor="co-description" className="md:col-span-2">
-              <textarea id="co-description" name="description" rows={3} className="input" defaultValue={co.description ?? ""} />
-            </Field>
-            <Field label="Reason" htmlFor="co-reason">
-              <select id="co-reason" name="reason" className="input" defaultValue={co.reason ?? ""}>
-                <option value="">—</option>
-                {CHANGE_ORDER_REASONS.map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Schedule impact (days)" htmlFor="co-days">
-              <input id="co-days" name="scheduleImpactDays" type="number" step="1" className="input" defaultValue={co.scheduleImpactDays} />
-            </Field>
-          </FormGrid>
-          <div className="flex items-center gap-2">
-            <SubmitButton size="sm">Save</SubmitButton>
-            <Link href={base} className={buttonClasses("secondary", "sm")}>
-              Cancel
-            </Link>
-          </div>
-        </form>
-      </Collapsible>
     </div>
   );
 }

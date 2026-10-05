@@ -8,7 +8,8 @@ import { logActivity } from "@/lib/activity";
 import { contractValue, nextInvoiceNumber } from "@/lib/projects";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { money, numField, parseDateInput, str, strOrNull } from "@/lib/utils";
-import { deriveInvoiceStatus, invoiceTotal, linePriceOfChangeOrder, paymentsTotal } from "@/lib/finance";
+import { deriveInvoiceStatus, invoiceTotal, paymentsTotal } from "@/lib/finance";
+import { changeOrderTotals } from "@/lib/change-orders";
 
 function invoicePath(projectId: string, invoiceId?: string) {
   return `/projects/${projectId}/invoices${invoiceId ? `/${invoiceId}` : ""}`;
@@ -38,6 +39,32 @@ async function syncStatus(invoiceId: string) {
   if (next !== inv.status) await db.invoice.update({ where: { id: invoiceId }, data: { status: next } });
 }
 
+/**
+ * The invoice's tax line: rate x the other lines, kept last. Off (taxPct null) removes it.
+ * Runs after anything changes the lines.
+ */
+async function syncTax(invoiceId: string) {
+  const inv = await db.invoice.findUnique({ where: { id: invoiceId }, include: { items: true } });
+  if (!inv) return;
+  const taxLines = inv.items.filter((i) => i.isTax);
+  const others = inv.items.filter((i) => !i.isTax);
+  if (inv.taxPct === null) {
+    if (taxLines.length) await db.invoiceItem.deleteMany({ where: { invoiceId, isTax: true } });
+    return;
+  }
+  const amount = Math.round(((invoiceTotal(others) * inv.taxPct) / 100) * 100) / 100;
+  const data = {
+    description: `${inv.taxLabel || "Sales tax"} (${Math.round(inv.taxPct * 1000) / 1000}%)`,
+    quantity: 1,
+    unitPrice: amount,
+    sortOrder: others.reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1,
+  };
+  const [first, ...extra] = taxLines;
+  if (first) await db.invoiceItem.update({ where: { id: first.id }, data });
+  else await db.invoiceItem.create({ data: { invoiceId, isTax: true, ...data } });
+  if (extra.length) await db.invoiceItem.deleteMany({ where: { id: { in: extra.map((i) => i.id) } } });
+}
+
 function itemData(fd: FormData) {
   const description = str(fd, "description");
   if (!description) throw new Error("Description is required");
@@ -62,7 +89,7 @@ export async function createInvoice(formData: FormData) {
   if (coIds.length) {
     const cos = await db.changeOrder.findMany({ where: { id: { in: coIds }, projectId, status: "APPROVED" }, include: { items: true }, orderBy: { number: "asc" } });
     for (const co of cos) {
-      items.push({ description: `Change Order #${co.number} — ${co.title}`, quantity: 1, unitPrice: linePriceOfChangeOrder(co.items), sortOrder: items.length });
+      items.push({ description: `Change Order #${co.number} — ${co.title}`, quantity: 1, unitPrice: changeOrderTotals(co, co.items).total, sortOrder: items.length });
     }
   }
 
@@ -160,6 +187,7 @@ export async function createInvoiceItem(formData: FormData) {
   if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
   const sortOrder = inv.items.reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1;
   await db.invoiceItem.create({ data: { invoiceId, sortOrder, ...itemData(formData) } });
+  await syncTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
 }
@@ -171,8 +199,9 @@ export async function updateInvoiceItem(formData: FormData) {
   const id = str(formData, "id");
   const inv = await loadInvoice(projectId, invoiceId);
   if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
-  if (!inv.items.some((i) => i.id === id)) throw new Error("Item not found");
+  if (!inv.items.some((i) => i.id === id && !i.isTax)) throw new Error("Item not found");
   await db.invoiceItem.update({ where: { id }, data: itemData(formData) });
+  await syncTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
 }
@@ -184,8 +213,25 @@ export async function deleteInvoiceItem(formData: FormData) {
   const id = str(formData, "id");
   const inv = await loadInvoice(projectId, invoiceId);
   if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
-  if (!inv.items.some((i) => i.id === id)) throw new Error("Item not found");
+  if (!inv.items.some((i) => i.id === id && !i.isTax)) throw new Error("Item not found");
   await db.invoiceItem.delete({ where: { id } });
+  await syncTax(invoiceId);
+  revalidate(projectId, invoiceId);
+  redirect(invoicePath(projectId, invoiceId));
+}
+
+/** "Add tax": on or off for this invoice, at the rate you pick. */
+export async function setInvoiceTax(formData: FormData) {
+  await requireStaff();
+  const projectId = str(formData, "projectId");
+  const invoiceId = str(formData, "invoiceId");
+  const inv = await loadInvoice(projectId, invoiceId);
+  if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
+  const on = formData.get("on") === "on";
+  const pct = numField(formData, "taxPct", 0);
+  if (on && !(pct > 0 && pct <= 100)) throw new Error("Enter a tax rate between 0 and 100");
+  await db.invoice.update({ where: { id: invoiceId }, data: { taxPct: on ? pct : null, taxLabel: str(formData, "taxLabel").slice(0, 60) || "Sales tax" } });
+  await syncTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
 }

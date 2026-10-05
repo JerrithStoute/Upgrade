@@ -295,9 +295,7 @@ export function WallOptionsFields({
 
   return (
     <div className="space-y-3 rounded-lg border border-teal-200 bg-teal-50/40 p-3">
-      <p className="text-sm text-teal-900">
-        {wallSummary({ studSize, spacing: Number(spacing) || 16, heightFt: height }, { ...o, studPrecut, studLengthIn: studLen })}
-      </p>
+      <p className="text-sm text-teal-900">{wallSummary({ studSize, spacing: Number(spacing) || 16, heightFt: height }, { ...o, studPrecut, studLengthIn: studLen })}</p>
 
       <Section title="Studs" hint="One per spacing along each wall, one to close an open run, and the extras at each corner.">
         <Field label="Stud size" htmlFor={p("memberSizeId")}>
@@ -334,7 +332,16 @@ export function WallOptionsFields({
           auto={{ precut: defaultStudLength(height, true), stock: defaultStudLength(height, false), touched: studTouched, reset: () => setStudTouched(false) }}
         />
         <Field label="Extra studs per corner" htmlFor={p("cornerStuds")}>
-          <input id={p("cornerStuds")} name="opt_cornerStuds" type="number" step="1" min="0" className="input !w-24" value={o.cornerStuds} onChange={(e) => set("cornerStuds", Number(e.target.value) || 0)} />
+          <input
+            id={p("cornerStuds")}
+            name="opt_cornerStuds"
+            type="number"
+            step="1"
+            min="0"
+            className="input !w-24"
+            value={o.cornerStuds}
+            onChange={(e) => set("cornerStuds", Number(e.target.value) || 0)}
+          />
         </Field>
       </Section>
 
@@ -343,14 +350,28 @@ export function WallOptionsFields({
           {countSelect("topPlates", "How many", 10)}
           {sizeSelect("topPlateSize", "Size")}
           <Field label="Stock lengths (ft)" htmlFor={p("topStock")}>
-            <input id={p("topStock")} name="opt_topPlateStock" className="input !w-28" value={o.topPlateStock} onChange={(e) => set("topPlateStock", e.target.value)} placeholder="16" />
+            <input
+              id={p("topStock")}
+              name="opt_topPlateStock"
+              className="input !w-28"
+              value={o.topPlateStock}
+              onChange={(e) => set("topPlateStock", e.target.value)}
+              placeholder="16"
+            />
           </Field>
         </Section>
         <Section title="Bottom plate">
           {countSelect("bottomPlates", "How many", 3)}
           {sizeSelect("bottomPlateSize", "Size")}
           <Field label="Stock lengths (ft)" htmlFor={p("bottomStock")}>
-            <input id={p("bottomStock")} name="opt_bottomPlateStock" className="input !w-28" value={o.bottomPlateStock} onChange={(e) => set("bottomPlateStock", e.target.value)} placeholder="16" />
+            <input
+              id={p("bottomStock")}
+              name="opt_bottomPlateStock"
+              className="input !w-28"
+              value={o.bottomPlateStock}
+              onChange={(e) => set("bottomPlateStock", e.target.value)}
+              placeholder="16"
+            />
           </Field>
           <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
             <input type="checkbox" name="opt_treatedBottom" checked={o.treatedBottom} onChange={(e) => set("treatedBottom", e.target.checked)} /> Treated
@@ -530,8 +551,7 @@ export function WindowOptionsFields({ idPrefix, values, items }: { idPrefix: str
   return (
     <div className="space-y-3 rounded-lg border border-cyan-200 bg-cyan-50/40 p-3">
       <p className="text-sm text-cyan-900">
-        Click each window on the plan, then pick which window it is (filter by type, height and width) and whether it&apos;s cased. Windows are counted by name.{" "}
-        {windowSummary(o)}.
+        Click each window on the plan, then pick which window it is (filter by type, height and width) and whether it&apos;s cased. Windows are counted by name. {windowSummary(o)}.
       </p>
       <Section title="Every window">
         <Field label="Stool longer than the window by (in)" htmlFor={p("stoolExtraIn")} hint={`Ordered as "${WINDOW_STOOL_ITEM}"`}>
@@ -651,9 +671,7 @@ export function OpeningOptionsFields({
 
   return (
     <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
-      <p className="text-sm text-amber-900">
-        Draw a line across each opening — one line is one opening, and its length is the width. {openingSummary(header?.name ?? null, o)}
-      </p>
+      <p className="text-sm text-amber-900">Draw a line across each opening — one line is one opening, and its length is the width. {openingSummary(header?.name ?? null, o)}</p>
       <Section title="Header" hint="Each opening gets plies × (width + extra), cut from your stock lengths.">
         <Field label="Size" htmlFor={p("memberSizeId")}>
           <select
@@ -703,12 +721,7 @@ export function OpeningOptionsFields({
             {lumber(memberSizes).some((m) => m.name === o.studSize) ? null : <option value={o.studSize}>{o.studSize}</option>}
           </select>
         </Field>
-        <StudPicker
-          id={p("studLen")}
-          precut={o.studPrecut}
-          lengthIn={o.studLengthIn}
-          onChange={(pc, len) => setO((cur) => ({ ...cur, studPrecut: pc, studLengthIn: len }))}
-        />
+        <StudPicker id={p("studLen")} precut={o.studPrecut} lengthIn={o.studLengthIn} onChange={(pc, len) => setO((cur) => ({ ...cur, studPrecut: pc, studLengthIn: len }))} />
       </Section>
     </div>
   );

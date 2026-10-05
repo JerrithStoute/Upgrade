@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { ArrowRight, CalendarDays, FolderKanban, MapPin, Phone, Mail, ClipboardCheck } from "lucide-react";
 import { requireClient } from "@/lib/auth";
+import { changeOrderTotals } from "@/lib/change-orders";
 import { db } from "@/lib/db";
 import { portalContext, portalHref, scheduleProgress, invoiceTotals } from "@/lib/portal";
-import { fmtDate, money, timeAgo, linePrice, sum } from "@/lib/utils";
+import { fmtDate, money, timeAgo } from "@/lib/utils";
 import { Badge, Card, CardHeader, CardBody, EmptyState, Progress } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
 
@@ -19,11 +20,7 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
     return (
       <>
         <PortalPageHeader title={`Welcome, ${firstName}`} projects={projects} project={null} />
-        <EmptyState
-          icon={FolderKanban}
-          title="No projects yet"
-          description="Once your builder links a project to your account it will appear here."
-        />
+        <EmptyState icon={FolderKanban} title="No projects yet" description="Once your builder links a project to your account it will appear here." />
       </>
     );
   }
@@ -60,9 +57,7 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
   ]);
 
   const progress = scheduleProgress(tasks);
-  const address = [project.address, [project.city, project.state].filter(Boolean).join(", "), project.zip]
-    .filter(Boolean)
-    .join(" · ");
+  const address = [project.address, [project.city, project.state].filter(Boolean).join(", "), project.zip].filter(Boolean).join(" · ");
   const openInvoices = invoices.map((inv) => ({ ...inv, totals: invoiceTotals(inv) })).filter((i) => i.totals.balance > 0.005);
 
   type ActionItem = { href: string; label: string; detail: string; status: string };
@@ -70,16 +65,13 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
     ...selections.map((s) => ({
       href: `/portal/selections/${s.id}`,
       label: s.title,
-      detail:
-        s.status === "PENDING"
-          ? `Selection needed${s.dueDate ? ` · due ${fmtDate(s.dueDate)}` : ""}`
-          : "Your choice is waiting for your approval",
+      detail: s.status === "PENDING" ? `Selection needed${s.dueDate ? ` · due ${fmtDate(s.dueDate)}` : ""}` : "Your choice is waiting for your approval",
       status: s.status,
     })),
     ...changeOrders.map((co) => ({
       href: `/portal/change-orders/${co.id}`,
       label: `Change order #${co.number}: ${co.title}`,
-      detail: `${money(sum(co.items.map(linePrice)))} · awaiting your approval`,
+      detail: `${money(changeOrderTotals(co, co.items).total)} · awaiting your approval`,
       status: co.status,
     })),
     ...openInvoices.map((inv) => ({
@@ -92,12 +84,7 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
 
   return (
     <>
-      <PortalPageHeader
-        title={`Welcome, ${firstName}`}
-        description="Here's where your project stands and what we need from you."
-        projects={projects}
-        project={project}
-      />
+      <PortalPageHeader title={`Welcome, ${firstName}`} description="Here's where your project stands and what we need from you." projects={projects} project={project} />
 
       <div className="space-y-6">
         <Card>
@@ -160,7 +147,10 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Card>
-            <CardHeader title="Action needed" description={actions.length ? `${actions.length} item${actions.length === 1 ? "" : "s"} waiting on you` : "Nothing waiting on you right now"} />
+            <CardHeader
+              title="Action needed"
+              description={actions.length ? `${actions.length} item${actions.length === 1 ? "" : "s"} waiting on you` : "Nothing waiting on you right now"}
+            />
             {actions.length ? (
               <ul className="divide-y divide-slate-100">
                 {actions.map((a) => (
@@ -203,9 +193,7 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
                     {logs.map((log) => (
                       <li key={log.id} className="px-5 py-3">
                         <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-                            Daily log · {fmtDate(log.date, "EEE, MMM d")}
-                          </p>
+                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Daily log · {fmtDate(log.date, "EEE, MMM d")}</p>
                           {log.weather ? <span className="text-xs text-slate-400">{log.weather}</span> : null}
                         </div>
                         <p className="mt-0.5 line-clamp-2 text-sm text-slate-800">{log.workCompleted ?? "—"}</p>
@@ -217,14 +205,9 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
                   <ul className="divide-y divide-slate-100">
                     {messages.map((m) => (
                       <li key={m.id}>
-                        <Link
-                          href={`/portal/messages?project=${project.id}&thread=${m.thread.id}`}
-                          className="block px-5 py-3 hover:bg-slate-50"
-                        >
+                        <Link href={`/portal/messages?project=${project.id}&thread=${m.thread.id}`} className="block px-5 py-3 hover:bg-slate-50">
                           <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">
-                              Message · {m.thread.subject}
-                            </p>
+                            <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">Message · {m.thread.subject}</p>
                             <span className="shrink-0 text-xs text-slate-400">{timeAgo(m.createdAt)}</span>
                           </div>
                           <p className="mt-0.5 line-clamp-2 text-sm text-slate-800">

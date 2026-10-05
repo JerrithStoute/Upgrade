@@ -53,6 +53,7 @@ export function VendorList({
   about,
   groups,
   emptyText,
+  logoUrl = null,
 }: {
   /** Where the picks are remembered (per job, or one for the Item List). */
   storageKey: string;
@@ -64,6 +65,8 @@ export function VendorList({
   about?: string[];
   groups: VendorGroup[];
   emptyText: string;
+  /** Your logo, top right of the sheet. */
+  logoUrl?: string | null;
 }) {
   const picks = useSyncExternalStore(
     subscribe,
@@ -185,6 +188,10 @@ export function VendorList({
             ) : null}
           </div>
           <div className="text-right text-sm text-slate-700">
+            {logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={logoUrl} alt="Company logo" className="mb-1 ml-auto max-h-14 max-w-[14rem] object-contain" />
+            ) : null}
             {from.map((l, i) => (
               <p key={i} className={i === 0 ? "font-semibold text-slate-900" : ""}>
                 {l}
@@ -217,14 +224,15 @@ export function VendorList({
               </tr>
             </thead>
             {chosen.map((g) => (
-              <tbody key={g.category} className="break-inside-avoid">
-                <tr>
+              // A long category flows onto the next page; only its heading stays with its first rows.
+              <tbody key={g.category}>
+                <tr className="break-after-avoid">
                   <td colSpan={5} className="pb-1 pt-3 text-xs font-semibold uppercase tracking-wide text-slate-600">
                     {g.category}
                   </td>
                 </tr>
                 {g.items.map((i) => (
-                  <tr key={i.key} className="border-b border-slate-100">
+                  <tr key={i.key} className="break-inside-avoid border-b border-slate-100">
                     <td className="py-1.5 pr-2 text-slate-900">{i.name}</td>
                     <td className="py-1.5 pr-2 text-xs text-slate-500">{i.sku ?? ""}</td>
                     {hasQty ? <td className="py-1.5 pr-2 text-right tabular-nums font-medium text-slate-900">{i.qty != null ? num(i.qty) : ""}</td> : null}

@@ -7,13 +7,7 @@ import { CONDITION_TYPE_LABELS, boardFeetPerLf, metricUnit, parseArcs, parsePoin
 import { PrintSheets, type PrintSheet } from "./print-sheets";
 
 /** Marked-up plans: chosen sheets with the takeoff drawn on them, a title block and a legend. */
-export default async function PrintPlanPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string; planId: string }>;
-  searchParams: Promise<{ pages?: string }>;
-}) {
+export default async function PrintPlanPage({ params, searchParams }: { params: Promise<{ id: string; planId: string }>; searchParams: Promise<{ pages?: string }> }) {
   await requireStaff();
   const { id, planId } = await params;
   const { pages } = await searchParams;

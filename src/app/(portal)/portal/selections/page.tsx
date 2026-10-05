@@ -1,14 +1,22 @@
 import Link from "next/link";
-import { ArrowRight, ListChecks } from "lucide-react";
+import { ListChecks } from "lucide-react";
 import { requireClient } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { portalContext } from "@/lib/portal";
-import { fmtDate, money } from "@/lib/utils";
-import { Badge, Card, CardHeader, EmptyState, Stat } from "@/components/ui";
+import { boardForViewer } from "@/lib/selections";
+import { deadlineState } from "@/lib/deadlines";
+import { money } from "@/lib/utils";
+import { Badge, EmptyState, Stat } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
+import { PortalSelectionCards, type PortalCard } from "@/components/portal/selection-cards";
 
 export const metadata = { title: "Selections" };
 
+/**
+ * The client's selections, like the CoConstruct client view: spec text and notes,
+ * the allowance, the choices (with pictures) and "I do not want this selection",
+ * Make Choice, files and comments. Never the budget, your costs or team-only notes.
+ */
 export default async function PortalSelectionsPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const user = await requireClient();
   const { project: projectParam } = await searchParams;
@@ -23,86 +31,77 @@ export default async function PortalSelectionsPage({ searchParams }: { searchPar
     );
   }
 
-  const selections = await db.selection.findMany({
-    where: { projectId: project.id },
-    orderBy: [{ category: "asc" }, { dueDate: "asc" }, { title: "asc" }],
-    include: { options: { select: { id: true, name: true, price: true } } },
-  });
-
-  const groups = new Map<string, typeof selections>();
-  for (const s of selections) {
-    const list = groups.get(s.category) ?? [];
-    list.push(s);
-    groups.set(s.category, list);
-  }
-  const pending = selections.filter((s) => s.status === "PENDING").length;
-  const awaiting = selections.filter((s) => s.status === "CHOSEN").length;
-  const decided = selections.length - pending - awaiting;
+  const { cards, others } = await boardForViewer(project.id, user.id, true, { markSeen: !user.preview });
+  // Only what the client may see.
+  const safe: PortalCard[] = cards.map((c) => ({
+    selectionId: c.selectionId,
+    name: c.name,
+    division: c.division,
+    specText: c.specText,
+    clientNotes: c.clientNotes,
+    allowance: c.allowance,
+    choices: c.choices.map((x) => ({
+      id: x.id,
+      name: x.name,
+      description: x.description,
+      price: x.price,
+      vendor: x.vendor,
+      modelNumber: x.modelNumber,
+      pictureId: x.pictureId,
+      pictureSeen: x.pictureSeen,
+      files: x.files,
+    })),
+    chosenId: c.chosenId,
+    status: c.status,
+    deadline: c.deadline.date,
+    deadlineTask: c.deadline.task?.name ?? null,
+    updated: c.updated,
+    comments: c.comments.filter((m) => !m.internal),
+    files: c.files,
+  }));
+  const waiting = safe.filter((c) => c.status === "PENDING").length;
+  const overdue = safe.filter((c) => deadlineState(c.deadline, c.status) === "overdue").length;
+  const otherList = others.length ? await db.selection.findMany({ where: { id: { in: others.map((o) => o.id) } }, orderBy: [{ category: "asc" }, { title: "asc" }] }) : [];
 
   return (
     <>
       <PortalPageHeader
         title="Selections"
-        description="Choose finishes and fixtures for your project. Each item has an allowance included in your contract."
+        description="Choose the finishes and fixtures for your home. Allowances are included in your contract; a choice over or under its allowance is adjusted on a change order."
         projects={projects}
         project={project}
       />
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Stat label="Needs your choice" value={pending} tone={pending ? "warn" : "default"} />
-          <Stat label="Awaiting your approval" value={awaiting} tone={awaiting ? "warn" : "default"} />
-          <Stat label="Finalized" value={decided} tone="good" />
+          <Stat label="Needs your choice" value={waiting} tone={waiting ? "warn" : "default"} />
+          <Stat label="Past the deadline" value={overdue} tone={overdue ? "bad" : "default"} />
+          <Stat label="Chosen" value={safe.length - waiting} tone="good" />
         </div>
 
-        {selections.length === 0 ? (
-          <EmptyState icon={ListChecks} title="No selections yet" description="Your team hasn't added any selections for this project." />
+        {safe.length === 0 && otherList.length === 0 ? (
+          <EmptyState icon={ListChecks} title="No selections yet" description="Your builder hasn't added any selections for this project yet." />
         ) : (
-          [...groups.entries()].map(([category, items]) => (
-            <Card key={category}>
-              <CardHeader title={category} description={`${items.length} item${items.length === 1 ? "" : "s"}`} />
-              <ul className="divide-y divide-slate-100">
-                {items.map((s) => {
-                  const chosen = s.options.find((o) => o.id === s.chosenOptionId);
-                  const diff = chosen ? chosen.price - s.allowance : null;
-                  return (
-                    <li key={s.id}>
-                      <Link href={`/portal/selections/${s.id}`} className="flex items-center justify-between gap-4 px-5 py-3 hover:bg-slate-50">
-                        <div className="min-w-0 flex-1">
-                          <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">
-                            {s.title}
-                            <Badge status={s.status} />
-                          </p>
-                          <p className="mt-0.5 text-xs text-slate-500">
-                            {s.location ? `${s.location} · ` : ""}
-                            Allowance {money(s.allowance)}
-                            {s.dueDate ? ` · Due ${fmtDate(s.dueDate)}` : ""}
-                            {" · "}
-                            {s.options.length} option{s.options.length === 1 ? "" : "s"}
-                          </p>
-                          {chosen ? (
-                            <p className="mt-0.5 text-xs text-slate-700">
-                              Chosen: <span className="font-medium">{chosen.name}</span> · {money(chosen.price)}
-                              {diff !== null && Math.abs(diff) > 0.005 ? (
-                                <span className={diff > 0 ? "text-rose-700" : "text-emerald-700"}>
-                                  {" "}
-                                  ({diff > 0 ? "+" : "−"}
-                                  {money(Math.abs(diff))} {diff > 0 ? "over" : "under"} allowance)
-                                </span>
-                              ) : null}
-                            </p>
-                          ) : (
-                            <p className="mt-0.5 text-xs text-amber-700">No option chosen yet</p>
-                          )}
-                        </div>
-                        <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" />
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </Card>
-          ))
+          <PortalSelectionCards cards={safe} />
         )}
+
+        {otherList.length ? (
+          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-semibold text-slate-900">Other selections</h3>
+            <ul className="mt-2 divide-y divide-slate-100 text-sm">
+              {otherList.map((s) => (
+                <li key={s.id} className="flex items-center justify-between gap-3 py-2">
+                  <Link href={`/portal/selections/${s.id}`} className="font-medium text-slate-800 hover:text-blue-700 hover:underline">
+                    {s.title}
+                  </Link>
+                  <span className="flex items-center gap-2 text-xs text-slate-500">
+                    {s.allowance ? `Allowance ${money(s.allowance)}` : null}
+                    <Badge status={s.status} />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
       </div>
     </>
   );

@@ -58,7 +58,7 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy): Promise
         const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
         if (len >= MIN_SEGMENT || len === 0) out.push(a[0], a[1], b[0], b[1]);
       };
-      for (let j = 0; j < data.length; ) {
+      for (let j = 0; j < data.length;) {
         const op = data[j++];
         if (op === DrawOPS.moveTo) {
           cur = start = tx(data[j++], data[j++]);

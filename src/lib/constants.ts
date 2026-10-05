@@ -1,19 +1,10 @@
-export const PROJECT_STATUSES = [
-  "LEAD",
-  "ESTIMATING",
-  "PROPOSAL_SENT",
-  "CONTRACTED",
-  "IN_PROGRESS",
-  "ON_HOLD",
-  "COMPLETED",
-  "CANCELLED",
-] as const;
+export const PROJECT_STATUSES = ["LEAD", "ESTIMATING", "PROPOSAL_SENT", "CONTRACTED", "IN_PROGRESS", "ON_HOLD", "COMPLETED", "CANCELLED"] as const;
 export type ProjectStatus = (typeof PROJECT_STATUSES)[number];
 
 export const PROJECT_TYPES = ["NEW_HOME", "REMODEL", "ADDITION", "COMMERCIAL", "OTHER"] as const;
 
 export const ESTIMATE_STATUSES = ["DRAFT", "SENT", "APPROVED", "DECLINED"] as const;
-export const SELECTION_STATUSES = ["PENDING", "CHOSEN", "APPROVED", "ORDERED", "INSTALLED"] as const;
+export const SELECTION_STATUSES = ["PENDING", "CHOSEN", "DECLINED", "APPROVED", "ORDERED", "INSTALLED"] as const;
 export const CHANGE_ORDER_STATUSES = ["DRAFT", "PENDING_APPROVAL", "APPROVED", "DECLINED", "VOID"] as const;
 export const INVOICE_STATUSES = ["DRAFT", "SENT", "PARTIAL", "PAID", "VOID"] as const;
 export const EXPENSE_CATEGORIES = ["MATERIAL", "LABOR", "SUBCONTRACTOR", "EQUIPMENT", "PERMIT", "OTHER"] as const;
@@ -24,17 +15,7 @@ export const UNITS = ["ea", "sf", "lf", "sy", "cy", "sq", "bf", "hr", "day", "ls
 export const WEATHER = ["Sunny", "Partly Cloudy", "Cloudy", "Rain", "Snow", "Windy", "Storm"] as const;
 export const USER_ROLES = ["ADMIN", "STAFF", "CLIENT", "SUB"] as const;
 
-export const SCHEDULE_PHASES = [
-  "Pre-Construction",
-  "Site Work",
-  "Foundation",
-  "Framing",
-  "Exterior",
-  "Rough-Ins",
-  "Insulation & Drywall",
-  "Interior Finishes",
-  "Final",
-] as const;
+export const SCHEDULE_PHASES = ["Pre-Construction", "Site Work", "Foundation", "Framing", "Exterior", "Rough-Ins", "Insulation & Drywall", "Interior Finishes", "Final"] as const;
 
 /** Tailwind badge classes by status. */
 export const STATUS_STYLES: Record<string, string> = {

@@ -33,11 +33,7 @@ export async function verifyPassword(password: string, hash: string) {
 }
 
 export async function createSession(userId: string) {
-  const token = await new SignJWT({ sub: userId })
-    .setProtectedHeader({ alg: "HS256" })
-    .setIssuedAt()
-    .setExpirationTime(`${SESSION_DAYS}d`)
-    .sign(secretKey());
+  const token = await new SignJWT({ sub: userId }).setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(`${SESSION_DAYS}d`).sign(secretKey());
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -110,12 +106,43 @@ export async function requireAdmin(): Promise<SessionUser> {
   return user;
 }
 
-/** Require a client portal user. Staff are sent to the dashboard. */
-export async function requireClient(): Promise<SessionUser & { clientId: string }> {
+/** "Client view": a team member looking at a client's portal ("<clientId>:<projectId>"). */
+export const CLIENT_VIEW_COOKIE = "upgrade_client_view";
+export const CLIENT_VIEW_HOURS = 2;
+
+export type ClientUser = SessionUser & {
+  clientId: string;
+  /** A team member in Client view: look only — nothing they do is saved, nothing is marked seen. */
+  preview: boolean;
+  /** Client view: the job it was opened from (the way back). */
+  previewProjectId: string | null;
+};
+
+/**
+ * Require a client portal user. A team member in Client view gets the client — their
+ * own portal user, so everything shows exactly as they see it — flagged as a preview.
+ * Anyone else (staff not in Client view) is sent to the dashboard.
+ */
+export const requireClient = cache(async (): Promise<ClientUser> => {
   const user = await requireUser();
-  if (user.role !== "CLIENT" || !user.clientId) redirect("/dashboard");
-  return { ...user, clientId: user.clientId };
-}
+  if (user.role === "CLIENT" && user.clientId) return { ...user, clientId: user.clientId, preview: false, previewProjectId: null };
+  if (isStaff(user)) {
+    const view = (await cookies()).get(CLIENT_VIEW_COOKIE)?.value;
+    const [clientId, projectId] = (view ?? "").split(":");
+    const client = clientId ? await db.client.findUnique({ where: { id: clientId }, include: { user: { select: { id: true, name: true, email: true } } } }) : null;
+    if (client)
+      return {
+        id: client.user?.id ?? user.id,
+        email: client.user?.email ?? client.email ?? user.email,
+        name: client.user?.name ?? `${client.firstName} ${client.lastName}`.trim(),
+        role: "CLIENT",
+        clientId: client.id,
+        preview: true,
+        previewProjectId: projectId || null,
+      };
+  }
+  redirect("/dashboard");
+});
 
 export function isStaff(user: SessionUser) {
   return user.role === "ADMIN" || user.role === "STAFF";

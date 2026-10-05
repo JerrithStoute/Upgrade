@@ -50,15 +50,13 @@ export default async function PlanViewerPage({
     loadCodeRules(),
     itemsNeedingCodes(project.id),
     // For the "⋯ Takeoff" menu: draft estimates to send to, and takeoff templates.
-    db.estimate.findMany({ where: { projectId: project.id, status: "DRAFT" }, orderBy: { version: "desc" }, select: { id: true, name: true, version: true } }),
+    db.estimate.findMany({ where: { projectId: project.id, status: "DRAFT", lockedAt: null }, orderBy: { version: "desc" }, select: { id: true, name: true, version: true } }),
     templateOptions(),
   ]);
   const codeChoices = costCodes.map((c) => ({ id: c.id, code: c.code, name: c.name }));
   // Doors and windows to pick from: Item List items of that kind (whatever category they're filed in) with a size.
   const unitsIn = (kind: "doors" | "windows") =>
-    doorItems
-      .filter((d) => itemKind(d) === kind)
-      .map((d) => ({ id: d.id, name: d.name, widthIn: d.widthIn!, heightIn: d.heightIn!, exterior: d.exterior, style: d.style }));
+    doorItems.filter((d) => itemKind(d) === kind).map((d) => ({ id: d.id, name: d.name, widthIn: d.widthIn!, heightIn: d.heightIn!, exterior: d.exterior, style: d.style }));
   const doors = unitsIn("doors");
   const windows = unitsIn("windows");
   if (!plan) notFound();
@@ -110,6 +108,7 @@ export default async function PlanViewerPage({
             metric: editing.metric,
             color: editing.color,
             group: editing.group,
+            referenceOnly: editing.referenceOnly,
             costCodeId: editing.costCodeId,
             unitCost: editing.unitCost,
             markupPct: editing.markupPct,
@@ -139,6 +138,7 @@ export default async function PlanViewerPage({
               wastePct: i.wastePct,
               unitCost: i.unitCost,
               markupPct: i.markupPct,
+              pricePinned: i.pricePinned,
             })),
           }
         : null,
@@ -147,6 +147,7 @@ export default async function PlanViewerPage({
       memberSizes,
       items,
       defaultMarkup: company?.defaultMarkup ?? 20,
+      pricesLocked: !!project.pricesLockedAt,
       nextColor: CONDITION_COLORS[conditions.length % CONDITION_COLORS.length],
     };
   }
@@ -201,8 +202,9 @@ export default async function PlanViewerPage({
         drafts,
         templates: templates.map((t) => ({ id: t.id, name: t.name, conditions: t._count.conditions })),
         isAdmin: user.role === "ADMIN",
-        takeoffPrice: totalsPanel.conditions.reduce((sum, c) => sum + c.price, 0),
+        takeoffCost: conditions.reduce((sum, c) => sum + conditionEstimateLines(c, conditionTotals(c)).reduce((s, l) => s + l.quantity * l.unitCost, 0), 0),
         takeoffCount: conditions.length,
+        unpriced: conditions.flatMap((c) => conditionEstimateLines(c, conditionTotals(c)).flatMap((l) => (l.quantity > 0 && !(l.unitCost > 0) ? [l.description] : []))),
       }}
       notice={
         applied != null ? `Added ${applied} takeoff${applied === "1" ? "" : "s"} from the template${skipped && skipped !== "0" ? ` · ${skipped} already on this job` : ""}` : null
@@ -244,6 +246,7 @@ export default async function PlanViewerPage({
           soldAs: c.memberSizeRef?.soldAs ?? null,
           total: totals.quantity,
           sheetTotal: onSheet ? onSheet.metrics[c.metric as MetricKey] : 0,
+          referenceOnly: c.referenceOnly,
           unassignedDoors: totals.unassignedDoors,
         };
       })}

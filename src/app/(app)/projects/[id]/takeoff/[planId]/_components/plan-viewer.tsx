@@ -81,7 +81,20 @@ import { DoorPicker, type DoorChoice, type NewUnit, type UnitCodes } from "./doo
 import type { CodeRules } from "@/lib/code-groups";
 import type { MemberSizeOption } from "../../_components/condition-form";
 import type { ItemOption } from "../../_components/assembly-form";
-import { bringTakeoffsForward, saveSheetAlign, createCountMarkers, deleteMeasurements, createMeasurement, deleteMeasurement, initPlanPages, quickCreateCondition, createDoorItem, renameSheet, setSheetScale, updateMeasurement } from "../../actions";
+import {
+  bringTakeoffsForward,
+  saveSheetAlign,
+  createCountMarkers,
+  deleteMeasurements,
+  createMeasurement,
+  deleteMeasurement,
+  initPlanPages,
+  quickCreateCondition,
+  createDoorItem,
+  renameSheet,
+  setSheetScale,
+  updateMeasurement,
+} from "../../actions";
 
 type ViewerCondition = {
   id: string;
@@ -104,6 +117,8 @@ type ViewerCondition = {
   soldAs: string | null;
   total: number;
   sheetTotal: number;
+  /** Measured for information only (not on the estimate). */
+  referenceOnly: boolean;
   unassignedDoors: number; // Doors: markers with no door picked yet
 };
 
@@ -407,6 +422,7 @@ export function PlanViewer({
     memberSizes: MemberSizeOption[];
     items: ItemOption[];
     defaultMarkup: number;
+    pricesLocked: boolean;
     nextColor: string;
   } | null;
 }) {
@@ -1019,7 +1035,13 @@ export function PlanViewer({
         if (entry.kind === "createMany") {
           if (direction === "undo") await deleteMeasurements({ projectId, ids: entry.ids.map(resolveId) });
           else {
-            const { ids } = await createCountMarkers({ projectId, conditionId: entry.conditionId, markers: entry.markers, materialItemId: entry.materialItemId, cased: entry.cased });
+            const { ids } = await createCountMarkers({
+              projectId,
+              conditionId: entry.conditionId,
+              markers: entry.markers,
+              materialItemId: entry.materialItemId,
+              cased: entry.cased,
+            });
             entry.ids.forEach((old, i) => idMap.current.set(resolveId(old), ids[i]));
           }
           (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
@@ -2080,7 +2102,10 @@ export function PlanViewer({
                       setAligning(null);
                       setForward(false);
                     }}
-                    className={cn("rounded-md px-2 py-1 font-semibold ring-1 ring-inset", compare ? "bg-blue-700 text-white ring-blue-700" : "bg-white text-blue-800 ring-blue-200 hover:bg-blue-50")}
+                    className={cn(
+                      "rounded-md px-2 py-1 font-semibold ring-1 ring-inset",
+                      compare ? "bg-blue-700 text-white ring-blue-700" : "bg-white text-blue-800 ring-blue-200 hover:bg-blue-50",
+                    )}
                   >
                     {compare ? "Stop comparing" : `Compare with Rev ${prevRev.revision}`}
                   </button>
@@ -2436,16 +2461,16 @@ export function PlanViewer({
             {isUnitType(active.type)
               ? `click each ${unitKind(active.type)} — it goes in as the one in the panel. Select a marker to change which ${unitKind(active.type)} it is.`
               : active.type === "COUNT"
-              ? "click each item."
-              : active.type === "WALL"
-                ? "click each corner along the wall; right-click, double-click or Enter to finish the run (end on the first corner to close the building)."
-                : active.type === "OPENING"
-                  ? "click one side of the opening, then the other. Each line is one opening; its length is the width."
-                  : active.type === "HIP_VALLEY"
-                    ? "click the wall corner, then the ridge end; right-click, double-click or Enter to finish. Each line is one piece."
-                    : active.type === "LINEAR"
-                      ? "click points along the line; right-click, double-click or Enter to finish."
-                      : "click the corners; click the first point, right-click, double-click or Enter to close."}{" "}
+                ? "click each item."
+                : active.type === "WALL"
+                  ? "click each corner along the wall; right-click, double-click or Enter to finish the run (end on the first corner to close the building)."
+                  : active.type === "OPENING"
+                    ? "click one side of the opening, then the other. Each line is one opening; its length is the width."
+                    : active.type === "HIP_VALLEY"
+                      ? "click the wall corner, then the ridge end; right-click, double-click or Enter to finish. Each line is one piece."
+                      : active.type === "LINEAR"
+                        ? "click points along the line; right-click, double-click or Enter to finish."
+                        : "click the corners; click the first point, right-click, double-click or Enter to close."}{" "}
             {arcNext ? (
               <strong className="mr-1 text-amber-700">Arc: click a point on the curve, then where it ends.</strong>
             ) : draftArcs.includes(draft.length - 1) && draft.length > 0 ? (
@@ -2650,7 +2675,17 @@ export function PlanViewer({
                       }}
                     />
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-slate-900">{c.name}</span>
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <span className="truncate text-sm font-medium text-slate-900">{c.name}</span>
+                        {c.referenceOnly ? (
+                          <span
+                            className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200"
+                            title="Reference only — not on the estimate"
+                          >
+                            Reference
+                          </span>
+                        ) : null}
+                      </span>
                       <span className="block text-xs text-slate-500">
                         {CONDITION_TYPE_LABELS[c.type as ConditionType] ?? c.type}
                         {c.pitch > 0 ? ` · ${num(c.pitch, 2)}/12` : ""}
@@ -3141,6 +3176,7 @@ export function PlanViewer({
               memberSizes={editor.memberSizes}
               items={editor.items}
               defaultMarkup={editor.defaultMarkup}
+              pricesLocked={editor.pricesLocked}
               nextColor={editor.nextColor}
               closeHref={viewerHref}
               stayHref={editor.condition ? editHref(editor.condition.id) : editHref("new")}
@@ -3252,9 +3288,7 @@ export function PlanViewer({
                   onCreate={addUnit(unitKind(active.type))}
                   codes={codes}
                 />
-                {active.type === "WINDOW" ? (
-                  <CasedSwitch value={casedPick[active.id] ?? true} onChange={(v) => setCasedPick((cur) => ({ ...cur, [active.id]: v }))} />
-                ) : null}
+                {active.type === "WINDOW" ? <CasedSwitch value={casedPick[active.id] ?? true} onChange={(v) => setCasedPick((cur) => ({ ...cur, [active.id]: v }))} /> : null}
                 <p className="mt-2 text-[11px] text-slate-500">Each click places this {unitKind(active.type)} — change it any time between clicks.</p>
                 {active.unassignedDoors ? (
                   <p className="mt-1 text-[11px] text-rose-700">

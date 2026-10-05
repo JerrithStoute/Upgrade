@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
+import { getBrand } from "@/lib/company-brand";
+import { PrintLogo } from "@/components/brand-mark";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { fmtDate, money, num } from "@/lib/utils";
@@ -11,6 +13,7 @@ import { PrintButton } from "../../../_components/print-button";
 
 export default async function InvoicePrintPage({ params }: { params: Promise<{ id: string; invoiceId: string }> }) {
   await requireStaff();
+  const brand = await getBrand();
   const { id, invoiceId } = await params;
   const project = await getProject(id);
   const [inv, company] = await Promise.all([
@@ -42,6 +45,7 @@ export default async function InvoicePrintPage({ params }: { params: Promise<{ i
       <article className="mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white p-8 text-slate-900 shadow-sm print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
         <header className="flex flex-wrap items-start justify-between gap-6 border-b border-slate-200 pb-6">
           <div>
+            <PrintLogo logoUrl={brand.logoUrl} />
             <h1 className="text-2xl font-bold tracking-tight">{company?.name ?? "Your Company"}</h1>
             {companyAddress ? <p className="mt-1 text-sm text-slate-600">{companyAddress}</p> : null}
             <p className="text-sm text-slate-600">{[company?.phone, company?.email].filter(Boolean).join(" · ")}</p>

@@ -12,15 +12,17 @@ export type TakeoffMenuData = {
   drafts: { id: string; name: string; version: number }[];
   templates: { id: string; name: string; conditions: number }[];
   isAdmin: boolean;
-  takeoffPrice: number;
+  takeoffCost: number;
   takeoffCount: number;
+  /** Takeoff items with no price (they'd go to the estimate at $0). */
+  unpriced: string[];
 };
 
 type Panel = "estimate" | "template" | "save" | null;
 
 /**
  * "⋯ Takeoff": everything that used to be on the Takeoff landing page and isn't on
- * the drawing screen already — send to an estimate, templates, rebid, the full
+ * the drawing screen already — send to an estimate, templates, price review, the full
  * material list, and a new revision of this plan set.
  */
 export function TakeoffMenu({
@@ -81,7 +83,7 @@ export function TakeoffMenu({
           "inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium hover:bg-slate-100",
           open || panel ? "bg-slate-100 text-slate-900" : "text-slate-700",
         )}
-        title="Send to estimate, templates, rebid, material list, new revision"
+        title="Send to estimate, templates, price review, material list, new revision"
       >
         <MoreHorizontal className="h-4 w-4" /> Takeoff
       </button>
@@ -103,7 +105,7 @@ export function TakeoffMenu({
             </button>
           ) : null}
           <Link href={`${base}/takeoff/rebid`} className={item}>
-            <RefreshCw className="h-3.5 w-3.5 text-slate-400" /> Rebid at current prices
+            <RefreshCw className="h-3.5 w-3.5 text-slate-400" /> Price review / lock prices
           </Link>
           <div className="my-1 border-t border-slate-100" />
           <p className="px-2.5 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
@@ -145,7 +147,8 @@ export function TakeoffMenu({
               <form action={sendToEstimate} className="space-y-2">
                 <input type="hidden" name="projectId" value={projectId} />
                 <p className="text-xs text-slate-600">
-                  Adds the takeoff&apos;s lines ({money(data.takeoffPrice)} with markup) to a draft estimate. Sending again updates them and removes ones that no longer apply.
+                  Sends the takeoff&apos;s cost ({money(data.takeoffCost)}) to a draft estimate as one line per cost code, filed in your categories. Sending again updates those
+                  lines; profit is set on the estimate, and the item-by-item detail stays in the Material list.
                 </p>
                 <select name="estimateId" aria-label="Draft estimate" className="input !h-8 !py-0 text-xs" defaultValue={data.drafts[0].id}>
                   {data.drafts.map((e) => (
@@ -154,6 +157,17 @@ export function TakeoffMenu({
                     </option>
                   ))}
                 </select>
+                {data.unpriced.length ? (
+                  <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+                    <p className="font-semibold">
+                      {data.unpriced.length} item{data.unpriced.length === 1 ? " has" : "s have"} no price — {data.unpriced.length === 1 ? "it goes" : "they go"} in at $0:
+                    </p>
+                    <p className="mt-0.5">
+                      {data.unpriced.slice(0, 4).join(" · ")}
+                      {data.unpriced.length > 4 ? ` · and ${data.unpriced.length - 4} more` : ""}
+                    </p>
+                  </div>
+                ) : null}
                 <SubmitButton size="sm" disabled={data.takeoffCount === 0} pendingText="Sending…">
                   <Send className="h-3.5 w-3.5" /> Send
                 </SubmitButton>

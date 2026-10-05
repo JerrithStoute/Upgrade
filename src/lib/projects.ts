@@ -2,6 +2,8 @@ import "server-only";
 import { notFound } from "next/navigation";
 import { db } from "./db";
 import { linePrice } from "./utils";
+import { changeOrderTotals } from "./change-orders";
+import { parseMarkupTable, tableExtras } from "./markup";
 
 /** Load a project or 404. */
 export async function getProject(id: string) {
@@ -13,7 +15,10 @@ export async function getProject(id: string) {
   return project;
 }
 
-/** Approved-estimate total (price incl. markup). */
+/**
+ * Approved-estimate total: its base price (what was quoted), or the price of its
+ * lines incl. profit plus the table's overhead — and the table's tax on top.
+ */
 export async function approvedEstimateTotal(projectId: string) {
   const est = await db.estimate.findFirst({
     where: { projectId, status: "APPROVED" },
@@ -21,16 +26,18 @@ export async function approvedEstimateTotal(projectId: string) {
     include: { items: true },
   });
   if (!est) return 0;
-  return est.items.filter((i) => !i.isOptional).reduce((s, i) => s + linePrice(i), 0);
+  const extras = tableExtras(parseMarkupTable(est.markupTable, est.defaultMarkup), est.items);
+  const lines = est.items.filter((i) => !i.isOptional).reduce((s, i) => s + linePrice(i), 0);
+  return (est.basePrice ?? lines + extras.overheadTotal) + extras.taxTotal;
 }
 
-/** Approved change-order total (price incl. markup). */
+/** Approved change-order total (lines, profit and tax). */
 export async function approvedChangeOrderTotal(projectId: string) {
   const cos = await db.changeOrder.findMany({
     where: { projectId, status: "APPROVED" },
     include: { items: true },
   });
-  return cos.reduce((s, co) => s + co.items.reduce((t, i) => t + linePrice(i), 0), 0);
+  return cos.reduce((s, co) => s + changeOrderTotals(co, co.items).total, 0);
 }
 
 /** Contract value = approved estimate + approved change orders (falls back to project.contractAmount). */

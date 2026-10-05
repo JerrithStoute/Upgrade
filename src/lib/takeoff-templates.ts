@@ -9,6 +9,7 @@ function conditionData(c: {
   metric: string;
   color: string;
   group: string;
+  referenceOnly: boolean;
   costCodeId: string | null;
   unitCost: number;
   markupPct: number;
@@ -31,6 +32,7 @@ function conditionData(c: {
     metric: c.metric,
     color: c.color,
     group: c.group,
+    referenceOnly: c.referenceOnly,
     costCodeId: c.costCodeId,
     unitCost: c.unitCost,
     markupPct: c.markupPct,

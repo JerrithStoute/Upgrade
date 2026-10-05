@@ -19,10 +19,7 @@ export function getSessionSecret(): string {
   if (secret && secret.length >= MIN_LENGTH) return secret;
 
   if (process.env.NODE_ENV === "production") {
-    throw new Error(
-      `SESSION_SECRET must be set to a random string of at least ${MIN_LENGTH} characters in production. ` +
-        "Generate one with: openssl rand -base64 48",
-    );
+    throw new Error(`SESSION_SECRET must be set to a random string of at least ${MIN_LENGTH} characters in production. ` + "Generate one with: openssl rand -base64 48");
   }
 
   if (!warned) {

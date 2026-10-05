@@ -8,11 +8,11 @@ import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
 import { deleteUpload } from "@/lib/uploads";
-import { str, strOrNull } from "@/lib/utils";
+import { boolField, money, str, strOrNull } from "@/lib/utils";
 import { syncTakeoffToEstimate } from "@/lib/takeoff-data";
 import { resolveMaterialItem } from "@/lib/material-items";
-import { copyIntoEstimate, createProjectEstimate } from "@/lib/estimate-lines";
 import { syncAutoItems } from "@/lib/walls";
+import { applyListPrices, lockJobPrices, setItemPin, setItemPrice, unlockJobPrices } from "@/lib/job-prices";
 import { NO_ALIGN, alignAngle, alignScale, applyAlign, isNoAlign, parseAlign, type Align } from "@/lib/revisions";
 import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { assignItemCodes, newItemPlacement, saveCodeRule } from "@/lib/item-codes";
@@ -169,7 +169,12 @@ export async function updateCondition(fd: FormData) {
     db.takeoffCondition.update({ where: { id }, data }),
     // Assembly items must use a quantity this condition type produces.
     ...(data.type !== existing.type
-      ? [db.takeoffAssemblyItem.updateMany({ where: { conditionId: id, NOT: [{ metric: { startsWith: LUMBER_METRIC_PREFIX } }, { metric: LUMBER_LF_METRIC }] }, data: { metric: data.metric } })]
+      ? [
+          db.takeoffAssemblyItem.updateMany({
+            where: { conditionId: id, NOT: [{ metric: { startsWith: LUMBER_METRIC_PREFIX } }, { metric: LUMBER_LF_METRIC }] },
+            data: { metric: data.metric },
+          }),
+        ]
       : []),
   ]);
   // Size, spacing, pitch, overhang or stock lengths can change the lumber.
@@ -241,6 +246,25 @@ async function withMaterialItem(data: AssemblyFields, userId: string, projectId:
   return { ...data, description: name, materialItemId: id };
 }
 
+/**
+ * One item, one price: the price typed here goes on every takeoff in this job using the
+ * item — and, on an unlocked job (unless "This job only"), into the Item List, so every
+ * unlocked job gets it. See job-prices.ts.
+ */
+async function priceEverywhere(fd: FormData, data: AssemblyFields & { materialItemId: string }, userId: string, projectId: string) {
+  const before = await db.materialItem.findUnique({ where: { id: data.materialItemId }, select: { unitCost: true } });
+  const where = await setItemPrice({ projectId, materialItemId: data.materialItemId, unitCost: data.unitCost, pin: boolField(fd, "pinPrice"), costCodeId: data.costCodeId });
+  if (where === "list" && before && Math.abs(before.unitCost - data.unitCost) > 0.0001) {
+    await logActivity({
+      projectId,
+      userId,
+      type: "item_list.price",
+      description: `"${data.description}" is now ${money(data.unitCost)} in the Item List (was ${money(before.unitCost)})`,
+    });
+    revalidatePath("/settings/items");
+  }
+}
+
 export async function createAssemblyItem(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
@@ -249,6 +273,7 @@ export async function createAssemblyItem(fd: FormData) {
   const data = await withMaterialItem(await assemblyFields(fd, c.type), user.id, project.id);
   const last = await db.takeoffAssemblyItem.findFirst({ where: { conditionId }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
   await db.takeoffAssemblyItem.create({ data: { ...data, conditionId, sortOrder: (last?.sortOrder ?? -1) + 1 } });
+  await priceEverywhere(fd, data, user.id, project.id);
   revalidate(project.id);
   redirect(returnTo(fd, project.id, `#condition-${conditionId}`, "conditions"));
 }
@@ -266,6 +291,7 @@ export async function updateAssemblyItem(fd: FormData) {
   if (isLumberMetric(item.metric)) throw new Error("Lumber lines follow the joist / rafter layout — price them in Settings → Item List");
   const data = await withMaterialItem(await assemblyFields(fd, item.condition.type), user.id, project.id);
   await db.takeoffAssemblyItem.update({ where: { id: item.id }, data });
+  await priceEverywhere(fd, data, user.id, project.id);
   revalidate(project.id);
   redirect(returnTo(fd, project.id, `#condition-${item.conditionId}`, "conditions"));
 }
@@ -342,57 +368,102 @@ export async function saveTakeoffAsTemplate(fd: FormData) {
   redirect(`/settings/takeoff-templates/${id}`);
 }
 
-// --- Rebid ---------------------------------------------------------------------------
+// --- Prices ----------------------------------------------------------------------------
 
 /**
  * Re-prices the takeoff at today's Item List prices and puts it in a new estimate
  * version copied from the latest one. Older versions (and their proposals) stay as they were.
  */
-export async function rebidAtCurrentPrices(fd: FormData) {
+// --- Prices: lock, pin, review ----------------------------------------------------------
+
+function revalidatePrices(projectId: string) {
+  revalidate(projectId);
+  revalidatePath(`/projects/${projectId}/estimate`, "layout");
+  revalidatePath(`/projects/${projectId}/materials`);
+  revalidatePath(`/projects/${projectId}`);
+}
+/** Back to the page the button was on (this job's pages only). */
+function backTo(fd: FormData, projectId: string, fallback: string) {
+  const b = str(fd, "back");
+  return b.startsWith(`/projects/${projectId}/`) ? b : fallback;
+}
+const reviewPath = (projectId: string) => `/projects/${projectId}/takeoff/rebid`;
+
+/** Locks this job's prices: the Item List no longer changes it. */
+export async function lockPrices(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   await syncAutoItems(project.id);
+  await lockJobPrices(project.id);
+  await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.prices_locked", description: "Prices locked" });
+  revalidatePrices(project.id);
+  redirect(backTo(fd, project.id, reviewPath(project.id)));
+}
 
-  const linked = await db.takeoffAssemblyItem.findMany({
-    where: { condition: { projectId: project.id }, materialItemId: { not: null } },
-    include: { materialItem: { select: { unitCost: true } } },
-  });
-  const changed = linked.filter((i) => i.materialItem && Math.abs(i.materialItem.unitCost - i.unitCost) > 0.0001);
-  if (changed.length) {
-    await db.$transaction(changed.map((i) => db.takeoffAssemblyItem.update({ where: { id: i.id }, data: { unitCost: i.materialItem!.unitCost } })));
-  }
-
-  const source = await db.estimate.findFirst({ where: { projectId: project.id }, orderBy: { version: "desc" }, include: { items: true, allowances: true } });
-  let estimateId: string;
-  let version: number;
-  if (source) {
-    version = source.version + 1;
-    const created = await db.$transaction(async (tx) => {
-      const est = await tx.estimate.create({
-        data: { projectId: project.id, name: source.name, version, status: "DRAFT", notes: source.notes, terms: source.terms, defaultMarkup: source.defaultMarkup },
-      });
-      await copyIntoEstimate(tx, est.id, source, { keepSelectionLinks: true });
-      return est;
-    });
-    estimateId = created.id;
-  } else {
-    const { estimate } = await createProjectEstimate(project.id, null);
-    estimateId = estimate.id;
-    version = estimate.version;
-  }
-  await syncTakeoffToEstimate(project.id, estimateId);
-
+/** Unlocks: the job follows the Item List again and takes today's prices (pinned items keep theirs). */
+export async function unlockPrices(fd: FormData) {
+  const user = await requireStaff();
+  const project = await getProject(str(fd, "projectId"));
+  const n = await unlockJobPrices(project.id);
   await logActivity({
     projectId: project.id,
     userId: user.id,
-    type: "takeoff.rebid",
-    description: `Rebid at current Item List prices: ${changed.length} price${changed.length === 1 ? "" : "s"} updated, estimate v${version} created${source ? ` from v${source.version}` : ""}`,
+    type: "takeoff.prices_unlocked",
+    description: `Prices unlocked — ${n} takeoff line${n === 1 ? "" : "s"} took today's Item List price`,
   });
-  revalidate(project.id);
-  revalidatePath(`/projects/${project.id}/estimate`);
-  revalidatePath(`/projects/${project.id}/budget`);
-  revalidatePath(`/projects/${project.id}`);
-  redirect(`/projects/${project.id}/estimate?estimate=${estimateId}`);
+  revalidatePrices(project.id);
+  redirect(backTo(fd, project.id, reviewPath(project.id)));
+}
+
+/** Price review: the ticked items (or groups) take today's Item List price on this job. */
+export async function updateSelectedPrices(fd: FormData) {
+  const user = await requireStaff();
+  const project = await getProject(str(fd, "projectId"));
+  const ids = fd.getAll("item").filter((v): v is string => typeof v === "string" && v.length > 0);
+  const n = await applyListPrices(project.id, ids);
+  if (n)
+    await logActivity({
+      projectId: project.id,
+      userId: user.id,
+      type: "takeoff.prices_updated",
+      description: `${ids.length} item${ids.length === 1 ? "" : "s"} updated to today's Item List price (${n} takeoff line${n === 1 ? "" : "s"})`,
+    });
+  revalidatePrices(project.id);
+  redirect(`${reviewPath(project.id)}?updated=${ids.length}`);
+}
+
+/** "This job only": pin (keep this job's price) or unpin (follow the Item List) an item. */
+export async function pinItemPrice(projectId: string, materialItemId: string, pinned: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireStaff();
+  const project = await getProject(projectId);
+  await setItemPin(project.id, materialItemId, pinned);
+  revalidatePrices(project.id);
+  return { ok: true };
+}
+
+/** A price typed in the job's Material list (same rules as the takeoff). */
+export async function setMaterialPrice(
+  projectId: string,
+  materialItemId: string,
+  raw: string,
+  pin: boolean,
+): Promise<{ ok: true; where: "list" | "job" } | { ok: false; error: string }> {
+  const user = await requireStaff();
+  const project = await getProject(projectId);
+  const price = Number(raw.replace(/[$,\s]/g, ""));
+  if (!Number.isFinite(price) || price < 0) return { ok: false, error: "Enter a price" };
+  const item = await db.materialItem.findUnique({ where: { id: materialItemId }, select: { name: true, unitCost: true } });
+  if (!item) return { ok: false, error: "Item not found" };
+  const where = await setItemPrice({ projectId: project.id, materialItemId, unitCost: price, pin });
+  await logActivity({
+    projectId: project.id,
+    userId: user.id,
+    type: "takeoff.item_price",
+    description: `"${item.name}" at ${money(price)}${where === "list" ? ` — Item List updated (was ${money(item.unitCost)})` : " on this job only"}`,
+  });
+  if (where === "list") revalidatePath("/settings/items");
+  revalidatePrices(project.id);
+  return { ok: true, where };
 }
 
 // --- Called from the plan viewer (return data instead of redirecting) -----------------
@@ -433,7 +504,10 @@ export async function saveSheetAlign(input: { projectId: string; sheetId: string
   if (data.prevSheetId && !(await db.takeoffSheet.findFirst({ where: { id: data.prevSheetId, planId: sheet.plan.revisionOfId }, select: { id: true } })))
     throw new Error("That sheet isn't in the previous revision");
   if (data.align && (alignScale(data.align) < 0.05 || alignScale(data.align) > 20)) throw new Error("Those points don't line the sheets up — try again");
-  await db.takeoffSheet.update({ where: { id: sheet.id }, data: { prevSheetId: data.prevSheetId, align: data.align && !isNoAlign(data.align) ? JSON.stringify(data.align) : null } });
+  await db.takeoffSheet.update({
+    where: { id: sheet.id },
+    data: { prevSheetId: data.prevSheetId, align: data.align && !isNoAlign(data.align) ? JSON.stringify(data.align) : null },
+  });
   revalidate(data.projectId);
 }
 
@@ -469,7 +543,14 @@ export async function bringTakeoffsForward(input: { projectId: string; planId: s
       ...shapes.map((m) =>
         db.takeoffMeasurement.update({
           where: { id: m.id },
-          data: { sheetId: to.id, points: pointsJson(parsePoints(m.points).map((p) => applyAlign(al, p)), parseArcs(m.points)), angle: m.angle + turn },
+          data: {
+            sheetId: to.id,
+            points: pointsJson(
+              parsePoints(m.points).map((p) => applyAlign(al, p)),
+              parseArcs(m.points),
+            ),
+            angle: m.angle + turn,
+          },
         }),
       ),
       db.takeoffSheet.update({
@@ -498,9 +579,7 @@ export async function bringTakeoffsForward(input: { projectId: string; planId: s
 /** Records how many pages a PDF has and creates its sheets (first time a plan is opened). */
 export async function initPlanPages(input: { projectId: string; planId: string; pageCount: number }) {
   await requireStaff();
-  const { projectId, planId, pageCount } = z
-    .object({ projectId: z.string(), planId: z.string(), pageCount: z.number().int().min(1).max(2000) })
-    .parse(input);
+  const { projectId, planId, pageCount } = z.object({ projectId: z.string(), planId: z.string(), pageCount: z.number().int().min(1).max(2000) }).parse(input);
   const plan = await db.takeoffPlan.findFirst({ where: { id: planId, projectId }, include: { sheets: { select: { pageNumber: true } } } });
   if (!plan) throw new Error("Plan not found");
   const have = new Set(plan.sheets.map((s) => s.pageNumber));
@@ -688,7 +767,10 @@ export async function createCountMarkers(input: {
     .object({
       projectId: z.string(),
       conditionId: z.string(),
-      markers: z.array(z.object({ sheetId: z.string(), x: z.number().finite(), y: z.number().finite() })).min(1).max(2000),
+      markers: z
+        .array(z.object({ sheetId: z.string(), x: z.number().finite(), y: z.number().finite() }))
+        .min(1)
+        .max(2000),
       materialItemId: z.string().nullable().optional(),
       cased: z.boolean().nullable().optional(),
     })
@@ -718,7 +800,10 @@ export async function createCountMarkers(input: {
 export async function deleteMeasurements(input: { projectId: string; ids: string[] }) {
   await requireStaff();
   const { projectId, ids } = z.object({ projectId: z.string(), ids: z.array(z.string()).max(2000) }).parse(input);
-  const rows = await db.takeoffMeasurement.findMany({ where: { id: { in: ids }, sheet: { plan: { projectId } } }, select: { id: true, conditionId: true, condition: { select: { type: true } } } });
+  const rows = await db.takeoffMeasurement.findMany({
+    where: { id: { in: ids }, sheet: { plan: { projectId } } },
+    select: { id: true, conditionId: true, condition: { select: { type: true } } },
+  });
   await db.takeoffMeasurement.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
   for (const conditionId of new Set(rows.filter((r) => hasAutoLines(r.condition.type)).map((r) => r.conditionId))) await syncAutoItems(projectId, conditionId);
   revalidate(projectId);

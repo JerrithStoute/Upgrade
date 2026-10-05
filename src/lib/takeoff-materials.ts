@@ -15,11 +15,16 @@ export type MaterialLine = {
   extended: number;
   usedIn: string[];
   pieces: number | null; // made-to-order members listed in lf: how many pieces that is
+  /** The Item List item behind it (its price can be changed from the Material list), or null. */
+  materialItemId: string | null;
+  /** Kept at "this job only". */
+  pinned: boolean;
 };
 
 export type CutList = { condition: string; size: string | null; pieces: [number, number][]; exact: boolean; boards: BoardPattern[] };
 
-type Acc = Omit<MaterialLine, "quantity" | "unitCost" | "extended" | "usedIn" | "pieces"> & {
+type Acc = Omit<MaterialLine, "quantity" | "unitCost" | "extended" | "usedIn" | "pieces" | "pinned"> & {
+  pinned: boolean;
   raw: number;
   cost: number;
   roundUp: boolean;
@@ -47,7 +52,7 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
 
   const add = (
     key: string,
-    base: Omit<Acc, "raw" | "cost" | "roundUp" | "usedIn" | "key" | "pieces">,
+    base: Omit<Acc, "raw" | "cost" | "roundUp" | "usedIn" | "key" | "pieces" | "pinned" | "materialItemId"> & { materialItemId?: string | null; pinned?: boolean },
     raw: number,
     cost: number,
     roundUp: boolean,
@@ -55,7 +60,18 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
     pieces: number | null = null,
   ) => {
     if (!(raw > 0)) return;
-    const row = acc.get(key) ?? { key, ...base, raw: 0, cost: 0, roundUp: false, usedIn: new Set<string>(), pieces: null };
+    const row = acc.get(key) ?? {
+      key,
+      ...base,
+      materialItemId: base.materialItemId ?? null,
+      pinned: false,
+      raw: 0,
+      cost: 0,
+      roundUp: false,
+      usedIn: new Set<string>(),
+      pieces: null,
+    };
+    if (base.pinned) row.pinned = true;
     row.raw += raw;
     if (pieces !== null) row.pieces = (row.pieces ?? 0) + pieces;
     row.cost += cost;
@@ -65,6 +81,7 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
   };
 
   for (const c of conditions) {
+    if (c.referenceOnly) continue;
     const measurements = planId ? c.measurements.filter((m) => m.sheet.plan.id === planId) : c.measurements;
     if (measurements.length === 0) continue;
     const totals = conditionTotals({ ...c, measurements });
@@ -84,6 +101,8 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
             sku: i.materialItem?.sku ?? null,
             vendor: i.materialItem?.vendor ?? null,
             unit: i.unit,
+            materialItemId: i.materialItemId,
+            pinned: i.pricePinned,
           },
           raw,
           raw * i.unitCost,
@@ -92,7 +111,8 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
           exactLength ? Math.ceil(base * (1 + i.wastePct / 100) - 1e-9) : null,
         );
       }
-      if (isMemberType(c.type) && totals.cutList.length) cutLists.push({ condition: c.name, size: c.memberSize, pieces: totals.cutList, exact: c.memberSizeRef?.soldAs === "EXACT_LF", boards: totals.boards });
+      if (isMemberType(c.type) && totals.cutList.length)
+        cutLists.push({ condition: c.name, size: c.memberSize, pieces: totals.cutList, exact: c.memberSizeRef?.soldAs === "EXACT_LF", boards: totals.boards });
       continue;
     }
 
@@ -139,6 +159,8 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
       extended,
       usedIn: Array.from(r.usedIn),
       pieces: r.pieces,
+      materialItemId: r.materialItemId,
+      pinned: r.pinned,
     };
   });
   // One heading per category whatever its capitalization ("Framing lumber" / "Framing Lumber").

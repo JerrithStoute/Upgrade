@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { buttonClasses } from "@/components/ui";
 import { VendorList, type VendorGroup } from "@/components/vendor-list";
 import { companyLines } from "@/lib/company";
+import { getBrand } from "@/lib/company-brand";
 
 /** Part of the job's material list for a vendor (framing lumber, trim…) — quantities, no prices. */
 export default async function VendorMaterialListPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ plan?: string }> }) {
@@ -21,6 +22,7 @@ export default async function VendorMaterialListPage({ params, searchParams }: {
   ]);
   const planId = plans.some((p) => p.id === planParam) ? planParam! : null;
   const { lines } = await buildMaterialList(project.id, planId);
+  const brand = await getBrand();
 
   const groups: VendorGroup[] = [];
   for (const l of lines) {
@@ -64,6 +66,7 @@ export default async function VendorMaterialListPage({ params, searchParams }: {
         about={[`Job #${project.number} — ${project.name}`, address ? `Deliver to: ${address}` : ""].filter(Boolean)}
         groups={groups}
         emptyText="Nothing on the material list yet — measure takeoffs with items on them."
+        logoUrl={brand.logoUrl}
       />
     </div>
   );

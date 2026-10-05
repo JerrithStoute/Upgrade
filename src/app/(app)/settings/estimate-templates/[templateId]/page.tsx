@@ -4,46 +4,30 @@ import { ArrowLeft } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes } from "@/lib/projects";
-import { money, pct } from "@/lib/utils";
-import { lineTotals } from "@/lib/finance";
-import { Card, CardBody, CardHeader, Collapsible, Field, FormGrid, Stat, SubmitButton, buttonClasses } from "@/components/ui";
-import { LineItemsEditor } from "../../../projects/[id]/_components/line-items";
-import {
-  convertTemplateItemToAllowance,
-  createTemplateAllowance,
-  createTemplateItem,
-  deleteTemplateAllowance,
-  deleteTemplateItem,
-  updateTemplateAllowance,
-  updateTemplateDetails,
-  updateTemplateItem,
-} from "../actions";
+import { loadTemplateSheet } from "@/lib/estimate-lines";
+import { divisionCategories, loadEstimateCategories } from "@/lib/estimate-categories";
+import { codeDivisions } from "@/lib/cost-code-divisions";
+import { loadParameters } from "@/lib/estimate-parameters";
+import { pct } from "@/lib/utils";
+import { Card, CardHeader, Collapsible, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
+import { EstimateSheet } from "@/components/estimate/estimate-sheet";
+import { saveTemplate, updateTemplateDetails } from "../actions";
+import { saveMarkupDefault } from "@/app/(app)/projects/[id]/estimate/actions";
+import { parseMarkupTable } from "@/lib/markup";
 
-export default async function EstimateTemplatePage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ templateId: string }>;
-  searchParams: Promise<{ edit?: string; editAllowance?: string; addTo?: string }>;
-}) {
+export default async function EstimateTemplatePage({ params }: { params: Promise<{ templateId: string }> }) {
   await requireAdmin();
   const { templateId } = await params;
-  const { edit, editAllowance, addTo } = await searchParams;
-  const [template, costCodes] = await Promise.all([
-    db.estimateTemplate.findUnique({
-      where: { id: templateId },
-      include: {
-        items: { include: { costCode: true }, orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
-        allowances: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] },
-      },
-    }),
-    activeCostCodes(),
-  ]);
+  const template = await db.estimateTemplate.findUnique({ where: { id: templateId } });
   if (!template) notFound();
-
-  const totals = lineTotals(template.items);
-  const allowanceTotal = lineTotals(template.items.filter((i) => i.isAllowance)).price;
-  const base = `/settings/estimate-templates/${template.id}`;
+  const [sheet, costCodes, filing, divisionList, parameters, company] = await Promise.all([
+    loadTemplateSheet(template.id),
+    activeCostCodes(),
+    divisionCategories(),
+    loadEstimateCategories(),
+    loadParameters(),
+    db.company.findFirst({ select: { markupTable: true } }),
+  ]);
 
   return (
     <div className="space-y-6">
@@ -62,36 +46,29 @@ export default async function EstimateTemplatePage({
               </SubmitButton>
             </form>
           }
-          description={`Estimate template · default markup ${pct(template.defaultMarkup, 1)} · copied into a job when picked — later edits here don't change existing jobs.`}
+          description={`Estimate template · new lines start at ${pct(template.defaultMarkup, 1)} profit · copied into a job when picked — later edits here don't change existing jobs.`}
         />
-        <CardBody>
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <Stat label="Cost" value={money(totals.cost)} />
-            <Stat label="Markup" value={money(totals.markup)} />
-            <Stat label="Price" value={money(totals.price)} tone="good" hint="Excludes optional items" />
-            <Stat label="Allowances" value={money(allowanceTotal)} hint="Included in price" />
-          </div>
-        </CardBody>
       </Card>
 
-      <LineItemsEditor
-        items={template.items}
+      <EstimateSheet
+        key={template.updatedAt.getTime()}
+        viewKey={`template:${template.id}`}
+        initial={sheet}
         costCodes={costCodes}
-        editable
-        editingId={edit ?? null}
-        baseHref={base}
-        hidden={{ templateId: template.id }}
-        actions={{ create: createTemplateItem, update: updateTemplateItem, remove: deleteTemplateItem }}
-        withGroups
-        withFlags
         defaultMarkup={template.defaultMarkup}
-        allowances={template.allowances.map((a) => ({ ...a, selection: null }))}
-        allowanceActions={{ create: createTemplateAllowance, update: updateTemplateAllowance, remove: deleteTemplateAllowance, convert: convertTemplateItemToAllowance }}
-        editingAllowanceId={editAllowance ?? null}
-        addToAllowanceId={addTo ?? null}
+        save={saveTemplate.bind(null, template.id)}
+        filing={filing}
+        parameters={parameters}
+        canEditParameters
+        markupTable={parseMarkupTable(template.markupTable ?? company?.markupTable, template.defaultMarkup)}
+        saveMarkupDefault={saveMarkupDefault}
+        divisionsSetup={{
+          initial: divisionList.map((d) => ({ name: d.name, divisions: d.divisions.map((x) => x.division) })),
+          categories: codeDivisions(costCodes).map(([name, list]) => ({ name, codes: list.length })),
+        }}
       />
 
-      <Collapsible summary="Description, proposal notes, terms & default markup">
+      <Collapsible summary="Description, proposal notes, terms & starting profit %">
         <form action={updateTemplateDetails} className="space-y-4">
           <input type="hidden" name="templateId" value={template.id} />
           <FormGrid>
@@ -104,7 +81,7 @@ export default async function EstimateTemplatePage({
             <Field label="Terms (copied to the estimate, shown on proposal)" htmlFor="tpl-terms" className="md:col-span-2">
               <textarea id="tpl-terms" name="terms" rows={3} className="input" defaultValue={template.terms ?? ""} />
             </Field>
-            <Field label="Default markup %" htmlFor="tpl-markup" hint="Pre-filled on new line items.">
+            <Field label="Starting profit %" htmlFor="tpl-markup" hint="What new lines start with.">
               <input id="tpl-markup" name="defaultMarkup" type="number" step="0.1" min="0" className="input" defaultValue={template.defaultMarkup} />
             </Field>
           </FormGrid>

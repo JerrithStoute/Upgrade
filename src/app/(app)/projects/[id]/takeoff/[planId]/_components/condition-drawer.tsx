@@ -30,6 +30,7 @@ export function ConditionDrawer({
   memberSizes,
   items,
   defaultMarkup,
+  pricesLocked,
   nextColor,
   closeHref,
   stayHref,
@@ -41,6 +42,8 @@ export function ConditionDrawer({
   memberSizes: MemberSizeOption[];
   items: ItemOption[];
   defaultMarkup: number;
+  /** This job's prices are locked. */
+  pricesLocked?: boolean;
   nextColor: string;
   closeHref: string; // the viewer without the panel
   stayHref: string; // the viewer with this panel open
@@ -95,6 +98,7 @@ export function ConditionDrawer({
                       costCodes={costCodes}
                       items={items}
                       values={item}
+                      pricesLocked={pricesLocked}
                       onCancel={() => setEditItem(null)}
                     />
                   </li>
@@ -110,6 +114,7 @@ export function ConditionDrawer({
                               .toLowerCase()}`}
                         {" · "}
                         {money(item.unitCost)}/{item.unit}
+                        {item.pricePinned ? " · this job only" : ""}
                         {item.costCode ? ` · ${costCodeLabel(item.costCode)}` : ""}
                       </span>
                     </span>
@@ -137,6 +142,7 @@ export function ConditionDrawer({
                   condition={{ id: condition.id, type: condition.type, metric: condition.metric, markupPct: condition.markupPct }}
                   costCodes={costCodes}
                   items={items}
+                  pricesLocked={pricesLocked}
                   onCancel={() => setAdding(false)}
                 />
               </div>

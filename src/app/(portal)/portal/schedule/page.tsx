@@ -49,12 +49,7 @@ export default async function PortalSchedulePage({ searchParams }: { searchParam
 
   return (
     <>
-      <PortalPageHeader
-        title="Schedule"
-        description="Where the work stands, phase by phase. Dates may shift as the project progresses."
-        projects={projects}
-        project={project}
-      />
+      <PortalPageHeader title="Schedule" description="Where the work stands, phase by phase. Dates may shift as the project progresses." projects={projects} project={project} />
       <div className="space-y-6">
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
@@ -114,7 +109,11 @@ export default async function PortalSchedulePage({ searchParams }: { searchParam
                       const state = taskState(t);
                       const Icon = state === "done" ? CheckCircle2 : state === "active" ? CircleDot : Circle;
                       return (
-                        <li key={t.id} id={`task-${t.id}`} className="grid scroll-mt-32 grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm sm:grid-cols-[auto_1fr_150px_180px_auto]">
+                        <li
+                          key={t.id}
+                          id={`task-${t.id}`}
+                          className="grid scroll-mt-32 grid-cols-[auto_1fr_auto] items-center gap-x-3 gap-y-1 px-5 py-2.5 text-sm sm:grid-cols-[auto_1fr_150px_180px_auto]"
+                        >
                           <Icon className={cn("h-4 w-4", state === "done" ? "text-emerald-600" : state === "active" ? "text-blue-600" : "text-slate-300")} />
                           <span className={cn("min-w-0 truncate", state === "done" ? "text-slate-500" : "text-slate-900", t.isMilestone && "font-medium")}>
                             {t.isMilestone ? <Flag className="mr-1 inline h-3 w-3 text-slate-400" /> : null}

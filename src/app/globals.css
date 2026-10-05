@@ -45,4 +45,24 @@ textarea.input {
   body {
     background: white;
   }
+  /* Paper margins only — no screen padding on top of them. */
+  @page {
+    margin: 0.5in;
+  }
+  main {
+    padding: 0 !important;
+  }
+  /* Proposals print on their own named page so they get page numbers. */
+  .proposal-doc {
+    page: proposal;
+  }
+}
+
+@page proposal {
+  margin: 0.5in 0.5in 0.65in;
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-size: 9pt;
+    color: #64748b;
+  }
 }

@@ -1,4 +1,5 @@
-import { HardHat } from "lucide-react";
+import { BrandMark } from "@/components/brand-mark";
+import { getBrand } from "@/lib/company-brand";
 import { LoginForm } from "./login-form";
 
 export const metadata = { title: "Sign in" };
@@ -9,14 +10,13 @@ export default async function LoginPage({
   searchParams: Promise<{ next?: string }>;
 }) {
   const { next } = await searchParams;
+  const brand = await getBrand();
   return (
     <main className="flex flex-1 items-center justify-center bg-slate-100 p-6">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex items-center justify-center gap-2 text-slate-900">
-          <span className="grid h-10 w-10 place-items-center rounded-lg bg-blue-700 text-white">
-            <HardHat className="h-6 w-6" />
-          </span>
-          <span className="text-2xl font-semibold tracking-tight">Upgrade</span>
+          <BrandMark logoUrl={brand.logoUrl} size="lg" />
+          {brand.logoUrl ? null : <span className="text-2xl font-semibold tracking-tight">Upgrade</span>}
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="mb-1 text-lg font-semibold">Sign in</h1>

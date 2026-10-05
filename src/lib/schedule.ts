@@ -57,11 +57,7 @@ export type GanttWindow = { start: Date; end: Date; days: number; weeks: Date[] 
  * Chart window: min(start)-7d .. max(end)+7d, snapped outward to full Mon–Sun weeks.
  * Pass `fixed` to force a window (e.g. the 4-week overview).
  */
-export function ganttWindow(
-  tasks: { startDate: Date; endDate: Date }[],
-  today: Date,
-  fixed?: { start: Date; end: Date },
-): GanttWindow {
+export function ganttWindow(tasks: { startDate: Date; endDate: Date }[], today: Date, fixed?: { start: Date; end: Date }): GanttWindow {
   let start: Date;
   let end: Date;
   if (fixed) {

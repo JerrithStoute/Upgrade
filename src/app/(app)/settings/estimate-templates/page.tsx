@@ -13,7 +13,7 @@ export default async function EstimateTemplatesPage() {
   await requireAdmin();
   const templates = await db.estimateTemplate.findMany({
     orderBy: { name: "asc" },
-    include: { items: true, _count: { select: { allowances: true } } },
+    include: { items: true, _count: { select: { specs: { where: { isAllowance: true } } } } },
   });
 
   return (
@@ -67,7 +67,7 @@ export default async function EstimateTemplatesPage() {
                   {t.description ? <span className="block text-xs text-slate-500">{t.description}</span> : null}
                 </Td>
                 <Td right>{t.items.length}</Td>
-                <Td right>{t._count.allowances}</Td>
+                <Td right>{t._count.specs}</Td>
                 <Td right>{money(lineTotals(t.items).price)}</Td>
                 <Td className="whitespace-nowrap">{fmtDate(t.updatedAt)}</Td>
                 <Td>

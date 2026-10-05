@@ -1,12 +1,7 @@
 import { db } from "./db";
 
 /** Record an entry in the activity feed. Never throws. */
-export async function logActivity(input: {
-  projectId?: string | null;
-  userId?: string | null;
-  type: string;
-  description: string;
-}) {
+export async function logActivity(input: { projectId?: string | null; userId?: string | null; type: string; description: string }) {
   try {
     await db.activity.create({
       data: {

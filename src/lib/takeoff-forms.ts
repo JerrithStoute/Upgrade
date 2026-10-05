@@ -83,6 +83,7 @@ export async function conditionFields(fd: FormData) {
     metric: isMetricFor(type, metricRaw) ? metricRaw : DEFAULT_METRIC[type],
     color: /^#[0-9a-f]{6}$/i.test(color) ? color : CONDITION_COLORS[0],
     group: str(fd, "group") || "Takeoff",
+    referenceOnly: boolField(fd, "referenceOnly"),
     costCodeId,
     unitCost: Math.max(0, numField(fd, "unitCost", 0)),
     markupPct: numField(fd, "markupPct", 20),

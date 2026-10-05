@@ -52,8 +52,7 @@ import {
   type Pt,
 } from "./takeoff";
 
-const near = (actual: number, expected: number, tolerance = 0.001, what = "") =>
-  assert.ok(Math.abs(actual - expected) <= tolerance, `${what} expected ${expected}, got ${actual}`);
+const near = (actual: number, expected: number, tolerance = 0.001, what = "") => assert.ok(Math.abs(actual - expected) <= tolerance, `${what} expected ${expected}, got ${actual}`);
 
 // 12 page units per foot keeps the arithmetic readable: a 20' × 12' room is 240 × 144.
 const UPF = 12;
@@ -92,7 +91,7 @@ describe("areas, lines and counts", () => {
     const m = measurementMetrics(cond({ type: "AREA", depth: 4 }), shape(ROOM), UPF);
     assert.equal(m.area, 240);
     assert.equal(m.squares, 2.4);
-    near(m.volume, 2.963, 0.001, "4\" slab cy");
+    near(m.volume, 2.963, 0.001, '4" slab cy');
   });
 
   it("deductions subtract", () => {
@@ -177,7 +176,7 @@ describe("joists and rafters", () => {
     assert.ok(Math.min(...lengths) > 11.5, `shortest member ${Math.min(...lengths)}`);
   });
 
-  it("6/12 rafters with a 12\" overhang", () => {
+  it('6/12 rafters with a 12" overhang', () => {
     const rafters = cond({ type: "FRAMING", pitch: 6, overhang: 12 });
     const lengths = framingLengths(rafters, shape(ROOM), UPF);
     near(lengths[0], 21 * slopeFactor(6), 0.001, "rafter length");
@@ -199,7 +198,7 @@ describe("hips, valleys and ridges", () => {
   ]; // 20' on plan
   const hips = cond({ type: "HIP_VALLEY", pitch: 6, overhang: 12, memberSize: "2x10", stockLengths: "8-24" });
 
-  it("6/12 hip with 12\" overhang", () => {
+  it('6/12 hip with 12" overhang', () => {
     const m = measurementMetrics(hips, shape(line), UPF);
     near(m.plan_length, 21.414, 0.001, "plan");
     near(m.member_lf, 22.713, 0.001, "true length");
@@ -219,7 +218,13 @@ describe("hips, valleys and ridges", () => {
   it("hips and valleys are never packed together", () => {
     const r = framingBoards(hips, [
       { m: shape(line), unitsPerFoot: UPF },
-      { m: shape([[0, 0], [36, 0]]), unitsPerFoot: UPF },
+      {
+        m: shape([
+          [0, 0],
+          [36, 0],
+        ]),
+        unitsPerFoot: UPF,
+      },
     ]);
     assert.equal(r.boards.length, 0);
     assert.deepEqual(r.cutList, [
@@ -315,7 +320,17 @@ describe("walls", () => {
 
   it("reads a traced run: length, closed, corners", () => {
     assert.deepEqual(wallRun(loop, UPF), { lengthFt: 64, closed: true, corners: 4 });
-    assert.deepEqual(wallRun([[0, 0], [144, 0], [144, 96]], UPF), { lengthFt: 20, closed: false, corners: 1 });
+    assert.deepEqual(
+      wallRun(
+        [
+          [0, 0],
+          [144, 0],
+          [144, 96],
+        ],
+        UPF,
+      ),
+      { lengthFt: 20, closed: false, corners: 1 },
+    );
   });
 
   it("a closed 64' building loop, figured full height (no openings taken out)", () => {
@@ -336,7 +351,15 @@ describe("walls", () => {
 
   it("an open interior run: closing stud, plates packed together, drywall both sides", () => {
     const int: WallOptions = { ...ext, treatedBottom: false, sheathingSides: 0, drywallSides: 2, baseSides: 2 };
-    const { lines } = wallTakeoff({ studSize: "2x4", spacing: 16, heightFt: 8 }, int, [wallRun([[0, 0], [144, 0]], UPF)]);
+    const { lines } = wallTakeoff({ studSize: "2x4", spacing: 16, heightFt: 8 }, int, [
+      wallRun(
+        [
+          [0, 0],
+          [144, 0],
+        ],
+        UPF,
+      ),
+    ]);
     // 12' run: 9 spaces + 1 to close it
     assert.equal(qty(lines, "studs"), 10);
     // 3 plates × 12' — same lumber top and bottom, so packed together
@@ -347,7 +370,16 @@ describe("walls", () => {
   });
 
   it("a bend adds the corner studs", () => {
-    const { lines } = wallTakeoff({ studSize: "2x4", spacing: 16, heightFt: 8 }, ext, [wallRun([[0, 0], [144, 0], [144, 96]], UPF)]);
+    const { lines } = wallTakeoff({ studSize: "2x4", spacing: 16, heightFt: 8 }, ext, [
+      wallRun(
+        [
+          [0, 0],
+          [144, 0],
+          [144, 96],
+        ],
+        UPF,
+      ),
+    ]);
     // 20': 15 spaces + 1 + 1 corner × 2
     assert.equal(qty(lines, "studs"), 18);
   });
@@ -357,7 +389,18 @@ describe("openings", () => {
   const qty = (lines: { key: string; qty: number }[], key: string) => lines.find((l) => l.key === key)?.qty ?? 0;
 
   it("one line is one opening, its length the width", () => {
-    const m = measurementMetrics(cond({ type: "OPENING" }), { points: [[0, 0], [36, 0]], isDeduction: false, angle: 0 }, UPF);
+    const m = measurementMetrics(
+      cond({ type: "OPENING" }),
+      {
+        points: [
+          [0, 0],
+          [36, 0],
+        ],
+        isDeduction: false,
+        angle: 0,
+      },
+      UPF,
+    );
     assert.equal(m.count, 1);
     assert.equal(m.length, 3);
   });
@@ -376,7 +419,10 @@ describe("openings", () => {
 
   it("no header size = no header line", () => {
     const { lines } = openingTakeoff({ size: null, stockLengths: null }, DEFAULT_OPENING_OPTIONS, [3]);
-    assert.equal(lines.some((l) => l.key.startsWith("header")), false);
+    assert.equal(
+      lines.some((l) => l.key.startsWith("header")),
+      false,
+    );
     assert.equal(qty(lines, "studs"), 4);
   });
 
@@ -392,7 +438,11 @@ describe("openings", () => {
 describe("arcs", () => {
   it("a half circle through its top point is π × r long", () => {
     // 10' radius: from (-10, 0) over (0, 10) to (10, 0), in feet at UPF 12
-    const pts: Pt[] = [[-120, 0], [0, 120], [120, 0]];
+    const pts: Pt[] = [
+      [-120, 0],
+      [0, 120],
+      [120, 0],
+    ];
     const len = polylineLength(arcPath(pts, [1], false)) / UPF;
     near(len, Math.PI * 10, 0.01, "half-circle length");
     // the same three points without the arc are two straight legs
@@ -401,7 +451,13 @@ describe("arcs", () => {
 
   it("an area with a curved side: 20' × 10' plus a half circle on the 20' side", () => {
     // Rectangle 0..240 × 0..120, the top edge bowed out to a half circle of radius 10'.
-    const pts: Pt[] = [[0, 0], [240, 0], [240, 120], [120, 240], [0, 120]];
+    const pts: Pt[] = [
+      [0, 0],
+      [240, 0],
+      [240, 120],
+      [120, 240],
+      [0, 120],
+    ];
     const m = measurementMetrics(cond({ type: "AREA" }), { points: pts, arcs: [3], isDeduction: false, angle: 0 }, UPF);
     near(m.area, 200 + (Math.PI * 100) / 2, 0.1, "area");
     near(m.perimeter, 20 + 10 + 10 + Math.PI * 10, 0.01, "perimeter");
@@ -409,21 +465,45 @@ describe("arcs", () => {
 
   it("the closing edge of an outline can be the arc", () => {
     // Half disc of radius 10': flat side from (20,10) back to (0,10), curving through (10,0).
-    const pts: Pt[] = [[0, 120], [240, 120], [120, 0]];
+    const pts: Pt[] = [
+      [0, 120],
+      [240, 120],
+      [120, 0],
+    ];
     const m = measurementMetrics(cond({ type: "AREA" }), { points: pts, arcs: [2], isDeduction: false, angle: 0 }, UPF);
     near(m.area, (Math.PI * 100) / 2, 0.1, "half disc");
   });
 
   it("a curved wall has no corner at its arc point", () => {
-    const run = wallRun([[-120, 0], [0, 120], [120, 0], [120, -120]], UPF, [1]);
+    const run = wallRun(
+      [
+        [-120, 0],
+        [0, 120],
+        [120, 0],
+        [120, -120],
+      ],
+      UPF,
+      [1],
+    );
     near(run.lengthFt, Math.PI * 10 + 10, 0.01, "curved wall + straight leg");
     assert.equal(run.corners, 1);
   });
 
   it("arc points round-trip through storage", () => {
-    const json = pointsJson([[0, 0], [5, 5], [10, 0]], [1]);
+    const json = pointsJson(
+      [
+        [0, 0],
+        [5, 5],
+        [10, 0],
+      ],
+      [1],
+    );
     assert.equal(json, "[[0,0],[5,5,1],[10,0]]");
-    assert.deepEqual(parsePoints(json), [[0, 0], [5, 5], [10, 0]]);
+    assert.deepEqual(parsePoints(json), [
+      [0, 0],
+      [5, 5],
+      [10, 0],
+    ]);
     assert.deepEqual(parseArcs(json), [1]);
   });
 });
@@ -434,16 +514,37 @@ describe("sheet sizes and the Material List order", () => {
     assert.equal(withSheetSize("Sheetrock", "4x12"), "Sheetrock");
     assert.equal(sheetSizeInName('5/8" Type X 4x10 drywall'), "4x10");
     assert.equal(sheetSizeInName("2x4 × 8'"), null);
-    const { lines } = wallTakeoff({ studSize: "2x4", spacing: 16, heightFt: 8 }, { ...DEFAULT_WALL_OPTIONS, drywallSides: 2, drywallItem: '1/2" Drywall 4x8', drywallSheet: "4x12" }, [
-      wallRun([[0, 0], [144, 0]], UPF),
-    ]);
+    const { lines } = wallTakeoff(
+      { studSize: "2x4", spacing: 16, heightFt: 8 },
+      { ...DEFAULT_WALL_OPTIONS, drywallSides: 2, drywallItem: '1/2" Drywall 4x8', drywallSheet: "4x12" },
+      [
+        wallRun(
+          [
+            [0, 0],
+            [144, 0],
+          ],
+          UPF,
+        ),
+      ],
+    );
     const drywall = lines.find((l) => l.key === "drywall")!;
     assert.equal(drywall.name, '1/2" Drywall 4x12');
     near(drywall.qty, (2 * 96) / 48, 1e-9, "4x12 sheets");
   });
 
   it("lumber sorts studs first, then treated, then the rest — each by size, then length", () => {
-    const names = ["2x10 × 22'", "Tech Shield", "2x6 treated × 16'", "2x4 × 16'", '2x6 × 104-5/8" precut stud', "2x6 × 8'", "2x6x16", "2x4x9ft stud", "2x6 × 10'", "LVL 1-3/4x11-7/8 × 20'"];
+    const names = [
+      "2x10 × 22'",
+      "Tech Shield",
+      "2x6 treated × 16'",
+      "2x4 × 16'",
+      '2x6 × 104-5/8" precut stud',
+      "2x6 × 8'",
+      "2x6x16",
+      "2x4x9ft stud",
+      "2x6 × 10'",
+      "LVL 1-3/4x11-7/8 × 20'",
+    ];
     assert.deepEqual([...names].sort(compareMaterialNames), [
       "2x4x9ft stud",
       '2x6 × 104-5/8" precut stud',
@@ -469,7 +570,15 @@ describe("studs: precut or cut from stock", () => {
   });
 
   it("stock studs are ordinary lumber, the same item as plates of that length", () => {
-    const { lines } = wallTakeoff({ studSize: "2x6", spacing: 16, heightFt: 9 }, { ...DEFAULT_WALL_OPTIONS, studPrecut: false, studLengthIn: 120 }, [wallRun([[0, 0], [144, 0]], UPF)]);
+    const { lines } = wallTakeoff({ studSize: "2x6", spacing: 16, heightFt: 9 }, { ...DEFAULT_WALL_OPTIONS, studPrecut: false, studLengthIn: 120 }, [
+      wallRun(
+        [
+          [0, 0],
+          [144, 0],
+        ],
+        UPF,
+      ),
+    ]);
     assert.equal(lines.find((l) => l.key === "studs")?.name, "2x6 × 10'");
     assert.equal(studItemName("2x4", 92.625, true), '2x4 × 92-5/8" precut stud');
     const opening = openingTakeoff({ size: null, stockLengths: null }, { ...DEFAULT_OPENING_OPTIONS, studSize: "2x6", studPrecut: false, studLengthIn: 120 }, [3]);
@@ -498,7 +607,12 @@ describe("doors", () => {
   it("counts doors by name and cuts casing from whole sticks", () => {
     // 3 × 2868, both sides: per side two 6'8" legs + a 2'8" head; 7' sticks hold one leg each,
     // and the 2'8" heads pair up (2'8" + 2'8" + kerf ≤ 7').
-    const { lines, casingLf, unassigned } = doorTakeoff([d2868, d2868, d2868, { name: null, widthIn: 0, heightIn: 0 }], { ...DEFAULT_DOOR_OPTIONS, casingItem: "Casing", casingSides: 2, casingStickFt: 7 });
+    const { lines, casingLf, unassigned } = doorTakeoff([d2868, d2868, d2868, { name: null, widthIn: 0, heightIn: 0 }], {
+      ...DEFAULT_DOOR_OPTIONS,
+      casingItem: "Casing",
+      casingSides: 2,
+      casingStickFt: 7,
+    });
     const qty = (k: string) => lines.find((l) => l.key === k)?.qty ?? 0;
     assert.equal(qty("door:2868 int prehung"), 3);
     assert.equal(unassigned, 1);
@@ -566,11 +680,21 @@ describe("windows", () => {
     const apron = lines.find((l) => l.key === "apron")!;
     assert.equal(apron.unit, "lf");
     near(apron.qty, (36 + 4) / 12, 1e-9, "apron lf");
-    assert.equal(lines.some((l) => l.key === "casing"), false);
+    assert.equal(
+      lines.some((l) => l.key === "casing"),
+      false,
+    );
   });
 
   it("doors: 1x4 legs with a 1x6 head", () => {
-    const { lines } = doorTakeoff([{ name: "2868 Int prehung", widthIn: 32, heightIn: 80 }], { ...DEFAULT_DOOR_OPTIONS, casingItem: "1x4", casingSides: 2, casingStickFt: 7, headItem: "1x6", headStickFt: 8 });
+    const { lines } = doorTakeoff([{ name: "2868 Int prehung", widthIn: 32, heightIn: 80 }], {
+      ...DEFAULT_DOOR_OPTIONS,
+      casingItem: "1x4",
+      casingSides: 2,
+      casingStickFt: 7,
+      headItem: "1x6",
+      headStickFt: 8,
+    });
     const qty = (k: string) => lines.find((l) => l.key === k)?.qty ?? 0;
     assert.equal(qty("casing"), 4); // four 6'-8" legs, one per 7' stick
     assert.equal(qty("head"), 1); // two 2'-8" heads on one 8' 1x6

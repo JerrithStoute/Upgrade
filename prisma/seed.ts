@@ -64,12 +64,13 @@ async function createBuiltAllowance(
   const base = (last._max.sortOrder ?? 0) + 1;
   // Slot the allowance right after the last line of its group.
   const lastInGroup = await db.estimateItem.findFirst({ where: { estimateId, group }, orderBy: { sortOrder: "desc" } });
-  await db.estimateAllowance.create({
+  await db.estimateSpec.create({
     data: {
       estimateId,
       name,
-      group,
-      description,
+      category: group,
+      specText: description,
+      isAllowance: true,
       sortOrder: lastInGroup ? lastInGroup.sortOrder + 5 : sortOrder,
       items: {
         create: lines.map(([code, desc, quantity, unit, unitCost, markupPct], i) => ({
@@ -179,12 +180,13 @@ async function main() {
       data: { templateId: kitchenTemplate.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, sortOrder: i * 10 },
     });
   }
-  await db.estimateTemplateAllowance.create({
+  await db.estimateTemplateSpec.create({
     data: {
       templateId: kitchenTemplate.id,
       name: "Flooring",
-      group: "Tile & Flooring",
-      description: "Tile and flooring material",
+      category: "Tile & Flooring",
+      specText: "Tile and flooring material",
+      isAllowance: true,
       sortOrder: kitchenTemplateItems.length * 10,
       items: {
         create: [

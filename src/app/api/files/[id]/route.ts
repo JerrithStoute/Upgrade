@@ -4,6 +4,7 @@ import path from "path";
 import { db } from "@/lib/db";
 import { getCurrentUser, isStaff } from "@/lib/auth";
 import { uploadDir } from "@/lib/uploads";
+import { recordClientView } from "@/lib/file-views";
 
 /**
  * Types that are safe to render in the browser. Anything else (HTML, SVG, XML,
@@ -31,8 +32,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return new NextResponse("Forbidden", { status: 403 });
   }
 
+  const search = new URL(req.url).searchParams;
+  // ?open=1 is a client opening it from its link (not a thumbnail): remembered as seen.
+  if (user.role === "CLIENT" && search.get("open") === "1") await recordClientView(file, { id: user.id, name: user.name });
+
   // ?download=1 saves the file instead of opening it.
-  const inline = INLINE_TYPES.has(file.mimeType) && new URL(req.url).searchParams.get("download") !== "1";
+  const inline = INLINE_TYPES.has(file.mimeType) && search.get("download") !== "1";
 
   try {
     const data = await fs.readFile(path.join(uploadDir(), file.storagePath));

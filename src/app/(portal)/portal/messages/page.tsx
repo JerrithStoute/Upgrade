@@ -33,7 +33,7 @@ export default async function PortalMessagesPage({ searchParams }: { searchParam
     },
   });
 
-  const activeId = threadParam && threads.some((t) => t.id === threadParam) ? threadParam : threads[0]?.id ?? null;
+  const activeId = threadParam && threads.some((t) => t.id === threadParam) ? threadParam : (threads[0]?.id ?? null);
   const active = activeId
     ? await db.messageThread.findFirst({
         where: { id: activeId, projectId: project.id, clientVisible: true },
@@ -73,10 +73,7 @@ export default async function PortalMessagesPage({ searchParams }: { searchParam
                   const last = t.messages[0];
                   return (
                     <li key={t.id}>
-                      <Link
-                        href={`${base}&thread=${t.id}`}
-                        className={cn("block px-5 py-3 hover:bg-slate-50", t.id === activeId && "bg-blue-50/60 hover:bg-blue-50/60")}
-                      >
+                      <Link href={`${base}&thread=${t.id}`} className={cn("block px-5 py-3 hover:bg-slate-50", t.id === activeId && "bg-blue-50/60 hover:bg-blue-50/60")}>
                         <div className="flex items-center justify-between gap-2">
                           <p className={cn("truncate text-sm", t.id === activeId ? "font-semibold text-blue-900" : "font-medium text-slate-900")}>{t.subject}</p>
                           <span className="shrink-0 text-xs text-slate-400">{timeAgo(t.lastMessageAt)}</span>
@@ -86,7 +83,9 @@ export default async function PortalMessagesPage({ searchParams }: { searchParam
                             {last.author?.name ?? "Team"}: {last.body}
                           </p>
                         ) : null}
-                        <p className="mt-0.5 text-[11px] text-slate-400">{t._count.messages} message{t._count.messages === 1 ? "" : "s"}</p>
+                        <p className="mt-0.5 text-[11px] text-slate-400">
+                          {t._count.messages} message{t._count.messages === 1 ? "" : "s"}
+                        </p>
                       </Link>
                     </li>
                   );

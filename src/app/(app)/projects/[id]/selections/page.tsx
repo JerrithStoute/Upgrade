@@ -1,151 +1,102 @@
 import Link from "next/link";
-import { Plus, Palette } from "lucide-react";
+import { Palette, Plus } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
-import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
-import { money, fmtDate, cn } from "@/lib/utils";
-import { SELECTION_STATUSES } from "@/lib/constants";
-import { Stat, Badge, ButtonLink, Table, THead, TBody, Tr, Th, Td, EmptyState } from "@/components/ui";
-import { chosenOption, variance, isSelectionOverdue, PRICED_STATUSES } from "./_helpers";
+import { boardForViewer, scheduleOptions } from "@/lib/selections";
+import { deadlineState } from "@/lib/deadlines";
+import { money } from "@/lib/utils";
+import { Badge, ButtonLink, EmptyState, Stat } from "@/components/ui";
+import { SelectionsBoard } from "./_components/selections-board";
 
-export default async function SelectionsPage({
-  params,
-  searchParams,
-}: {
-  params: Promise<{ id: string }>;
-  searchParams: Promise<{ status?: string }>;
-}) {
-  await requireStaff();
+/**
+ * The job's selections, from its estimate: every category marked Selection or with
+ * an allowance. Choices, the client's pick and over / under live here; names, spec
+ * text and allowances follow the estimate.
+ */
+export default async function SelectionsPage({ params }: { params: Promise<{ id: string }> }) {
+  const user = await requireStaff();
   const { id } = await params;
-  const { status } = await searchParams;
   const project = await getProject(id);
-  const all = await db.selection.findMany({
-    where: { projectId: project.id },
-    include: { options: true },
-    orderBy: [{ category: "asc" }, { dueDate: "asc" }, { title: "asc" }],
-  });
-  const today = new Date();
-  const base = `/projects/${project.id}/selections`;
+  const [{ estimate, cards, others, profitDefault }, tasks] = await Promise.all([boardForViewer(project.id, user.id, false), scheduleOptions(project.id)]);
+  const overdue = cards.filter((c) => deadlineState(c.deadline.date, c.status) === "overdue").length;
 
-  const totalAllowance = all.reduce((s, x) => s + x.allowance, 0);
-  const priced = all.filter((x) => PRICED_STATUSES.includes(x.status));
-  const totalSelected = priced.reduce((s, x) => s + (chosenOption(x)?.price ?? 0), 0);
-  const netVariance = priced.reduce((s, x) => s + (variance(x) ?? 0), 0);
-  const overdue = all.filter((x) => isSelectionOverdue(x, today));
+  const allowances = cards.reduce((n, c) => n + (c.allowance ?? 0), 0);
+  const made = cards.filter((c) => c.status !== "PENDING");
+  const diff = cards.reduce((n, c) => {
+    if (c.allowance === null) return n;
+    if (c.status === "DECLINED") return n - c.allowance;
+    const pick = c.choices.find((x) => x.id === c.chosenId);
+    return pick ? n + pick.price - c.allowance : n;
+  }, 0);
 
-  const filter = status && (SELECTION_STATUSES as readonly string[]).includes(status) ? status : null;
-  const list = filter ? all.filter((x) => x.status === filter) : all;
-  const groups = new Map<string, typeof list>();
-  for (const s of list) groups.set(s.category, [...(groups.get(s.category) ?? []), s]);
+  if (!estimate) {
+    return (
+      <EmptyState
+        icon={Palette}
+        title="No estimate yet"
+        description="Selections come from the estimate: mark a category as a Selection, or tick Allowance, and it shows up here with its choices."
+        action={<ButtonLink href={`/projects/${project.id}/estimate`}>Go to the estimate</ButtonLink>}
+      />
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Total allowances" value={money(totalAllowance, true)} hint={`${all.length} selection${all.length === 1 ? "" : "s"}`} />
-        <Stat label="Selected price" value={money(totalSelected, true)} hint={`${priced.length} chosen or later`} />
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat label="Selections" value={String(cards.length)} hint={`From estimate v${estimate.version} (${estimate.status.toLowerCase()})`} />
+        <Stat label="Still to choose" value={String(cards.length - made.length)} tone={overdue ? "bad" : undefined} hint={overdue ? `${overdue} overdue` : undefined} />
+        <Stat label="Allowances" value={money(allowances)} />
         <Stat
-          label="Net variance"
-          value={`${netVariance > 0 ? "+" : ""}${money(netVariance, true)}`}
-          tone={netVariance > 0 ? "bad" : netVariance < 0 ? "good" : "default"}
-          hint={netVariance > 0 ? "Over allowance" : netVariance < 0 ? "Under allowance" : "On allowance"}
+          label="Over / under"
+          value={`${diff > 0.004 ? "+" : ""}${money(diff)}`}
+          tone={diff > 0.004 ? "bad" : diff < -0.004 ? "good" : undefined}
+          hint="Choices made vs. their allowances"
         />
-        <Stat label="Overdue" value={overdue.length} tone={overdue.length ? "bad" : "good"} hint="Pending past due date" />
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Link
-            href={base}
-            className={cn("rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset", !filter ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")}
-          >
-            All · {all.length}
-          </Link>
-          {SELECTION_STATUSES.map((s) => {
-            const n = all.filter((x) => x.status === s).length;
-            return (
-              <Link
-                key={s}
-                href={`${base}?status=${s}`}
-                className={cn("rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset", filter === s ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50")}
-              >
-                {s.charAt(0) + s.slice(1).toLowerCase()} · {n}
-              </Link>
-            );
-          })}
-        </div>
-        <ButtonLink href={`${base}/new`} size="sm">
-          <Plus className="h-3.5 w-3.5" /> New selection
-        </ButtonLink>
-      </div>
-
-      {list.length === 0 ? (
+      {cards.length === 0 ? (
         <EmptyState
           icon={Palette}
-          title={filter ? `No ${filter.toLowerCase()} selections` : "No selections yet"}
-          description="Selections track client choices against allowances — fixtures, finishes, appliances."
-          action={
-            <ButtonLink href={`${base}/new`} size="sm">
-              <Plus className="h-3.5 w-3.5" /> New selection
-            </ButtonLink>
-          }
+          title="No selections on this estimate"
+          description="On the estimate, open a category and switch it to Selection, or tick Allowance. It shows up here with its choices."
+          action={<ButtonLink href={`/projects/${project.id}/estimate?estimate=${estimate.id}`}>Open the estimate</ButtonLink>}
         />
       ) : (
-        <Table>
-          <THead>
-            <tr>
-              <Th>Selection</Th>
-              <Th>Location</Th>
-              <Th right>Allowance</Th>
-              <Th>Chosen option</Th>
-              <Th right>Variance</Th>
-              <Th>Due</Th>
-              <Th>Status</Th>
-            </tr>
-          </THead>
-          <TBody>
-            {[...groups.entries()].flatMap(([category, items]) => [
-              <tr key={`cat-${category}`} className="bg-slate-50">
-                <td colSpan={7} className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-600">
-                  {category} <span className="font-normal text-slate-400">· {items.length}</span>
-                </td>
-              </tr>,
-              ...items.map((s) => {
-                const opt = chosenOption(s);
-                const v = variance(s);
-                const od = isSelectionOverdue(s, today);
-                return (
-                  <Tr key={s.id}>
-                    <Td>
-                      <Link href={`${base}/${s.id}`} className="font-medium text-slate-900 hover:underline">
-                        {s.title}
-                      </Link>
-                      {s.options.length ? <span className="ml-2 whitespace-nowrap text-xs text-slate-400">{s.options.length} option{s.options.length === 1 ? "" : "s"}</span> : null}
-                    </Td>
-                    <Td className="text-slate-500">{s.location ?? "—"}</Td>
-                    <Td right>{money(s.allowance)}</Td>
-                    <Td>
-                      {opt ? (
-                        <span>
-                          {opt.name} <span className="text-slate-500 tabular-nums">· {money(opt.price)}</span>
-                        </span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </Td>
-                    <Td right className={cn(v === null ? "text-slate-400" : v > 0 ? "font-medium text-rose-600" : v < 0 ? "font-medium text-emerald-700" : "")}>
-                      {v === null ? "—" : `${v > 0 ? "+" : ""}${money(v)}`}
-                    </Td>
-                    <Td className={cn("whitespace-nowrap", od && "font-medium text-rose-600")}>{fmtDate(s.dueDate)}</Td>
-                    <Td>
-                      <Badge status={s.status} />
-                    </Td>
-                  </Tr>
-                );
-              }),
-            ])}
-          </TBody>
-        </Table>
+        <SelectionsBoard
+          projectId={project.id}
+          estimateHref={`/projects/${project.id}/estimate?estimate=${estimate.id}`}
+          cards={cards}
+          profitDefault={profitDefault}
+          tasks={tasks}
+        />
       )}
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-900">Other selections</h3>
+            <p className="text-xs text-slate-500">Selections that aren&apos;t on the estimate (added by hand, or from a category since removed).</p>
+          </div>
+          <ButtonLink href={`/projects/${project.id}/selections/new`} variant="secondary" size="sm">
+            <Plus className="h-3.5 w-3.5" /> New selection
+          </ButtonLink>
+        </div>
+        {others.length ? (
+          <ul className="mt-3 divide-y divide-slate-100 text-sm">
+            {others.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 py-2">
+                <Link href={`/projects/${project.id}/selections/${s.id}`} className="font-medium text-slate-800 hover:text-blue-700 hover:underline">
+                  {s.title}
+                </Link>
+                <span className="flex items-center gap-2 text-xs text-slate-500">
+                  {s.allowance ? `Allowance ${money(s.allowance)}` : null}
+                  <Badge status={s.status} />
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </section>
     </div>
   );
 }

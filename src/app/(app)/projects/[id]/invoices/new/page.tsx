@@ -4,7 +4,8 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, contractValue, nextInvoiceNumber } from "@/lib/projects";
 import { dateInput, money } from "@/lib/utils";
-import { changeOrderNumberFromDescription, linePriceOfChangeOrder } from "@/lib/finance";
+import { changeOrderNumberFromDescription } from "@/lib/finance";
+import { changeOrderTotals } from "@/lib/change-orders";
 import { Card, CardBody, CardHeader, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { createInvoice } from "../actions";
 
@@ -57,14 +58,19 @@ export default async function NewInvoicePage({ params }: { params: Promise<{ id:
                         <input type="checkbox" name="changeOrderIds" value={co.id} className="h-4 w-4 rounded border-slate-300" />
                         <span className="font-mono text-xs text-slate-500">CO #{co.number}</span>
                         {co.title}
-                        <span className="ml-auto tabular-nums">{money(linePriceOfChangeOrder(co.items))}</span>
+                        <span className="ml-auto tabular-nums">{money(changeOrderTotals(co, co.items).total)}</span>
                       </label>
                     </li>
                   ))}
                 </ul>
               )}
             </div>
-            <Field label="Percent of contract" htmlFor="inv-pct" hint={`Adds a "Progress draw (X%)" line. Contract value ${money(contract)} — 10% = ${money(contract * 0.1)}.`} className="max-w-xs">
+            <Field
+              label="Percent of contract"
+              htmlFor="inv-pct"
+              hint={`Adds a "Progress draw (X%)" line. Contract value ${money(contract)} — 10% = ${money(contract * 0.1)}.`}
+              className="max-w-xs"
+            >
               <div className="flex items-center gap-2">
                 <input id="inv-pct" name="percentOfContract" type="number" step="0.5" min="0" max="100" className="input" placeholder="0" />
                 <span className="text-sm text-slate-500">%</span>
@@ -84,7 +90,15 @@ export default async function NewInvoicePage({ params }: { params: Promise<{ id:
                 <div key={i} className="grid grid-cols-12 gap-2">
                   <input name="itemDescription" className="input col-span-12 md:col-span-7" placeholder={i === 0 ? "Description" : ""} aria-label={`Item ${i + 1} description`} />
                   <input name="itemQuantity" type="number" step="any" min="0" className="input col-span-4 md:col-span-2" defaultValue={1} aria-label={`Item ${i + 1} quantity`} />
-                  <input name="itemUnitPrice" type="number" step="0.01" min="0" className="input col-span-8 md:col-span-3" placeholder="0.00" aria-label={`Item ${i + 1} unit price`} />
+                  <input
+                    name="itemUnitPrice"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="input col-span-8 md:col-span-3"
+                    placeholder="0.00"
+                    aria-label={`Item ${i + 1} unit price`}
+                  />
                 </div>
               ))}
             </div>
