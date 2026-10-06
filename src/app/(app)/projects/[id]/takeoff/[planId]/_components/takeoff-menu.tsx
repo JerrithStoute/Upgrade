@@ -39,6 +39,8 @@ export function TakeoffMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
+  // Save as template: add to one you have (your toolbox), a new one, or replace one.
+  const [saveMode, setSaveMode] = useState<"add" | "new" | "replace">(data.templates.length ? "add" : "new");
   const box = useRef<HTMLDivElement>(null);
 
   // Click outside or Esc closes it.
@@ -201,21 +203,54 @@ export function TakeoffMenu({
           ) : null}
 
           {panel === "save" ? (
-            <form action={saveTakeoffAsTemplate} className="space-y-2">
+            <form action={saveTakeoffAsTemplate} className="space-y-2 text-xs">
               <input type="hidden" name="projectId" value={projectId} />
-              <input name="name" placeholder="New template name" className="input !h-8 !py-0 text-xs" aria-label="New template name" />
+              <input type="hidden" name="returnTo" value={here} />
+              <input type="hidden" name="mode" value={saveMode} />
               {data.templates.length ? (
-                <select name="replaceId" aria-label="Or replace a template" className="input !h-8 !py-0 text-xs" defaultValue="">
-                  <option value="">…or replace an existing one</option>
+                <div className="space-y-1" role="radiogroup" aria-label="Where to save">
+                  {(
+                    [
+                      ["add", "Add to a template I have"],
+                      ["new", "A new template"],
+                      ["replace", "Replace a template"],
+                    ] as const
+                  ).map(([m, label]) => (
+                    <label key={m} className="flex items-center gap-2 text-slate-700">
+                      <input type="radio" name="saveModePick" checked={saveMode === m} onChange={() => setSaveMode(m)} className="h-3.5 w-3.5" />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              ) : null}
+              {saveMode === "new" || !data.templates.length ? (
+                <input name="name" placeholder="New template name" className="input !h-8 !py-0 text-xs" aria-label="New template name" required />
+              ) : (
+                <select name="templateId" aria-label="Template" className="input !h-8 !py-0 text-xs" defaultValue={data.templates[0].id} required>
                   {data.templates.map((t) => (
                     <option key={t.id} value={t.id}>
-                      Replace “{t.name}”
+                      {t.name} ({t.conditions})
                     </option>
                   ))}
                 </select>
-              ) : null}
-              <SubmitButton size="sm" variant="secondary" pendingText="Saving…">
-                Save {data.takeoffCount} takeoff{data.takeoffCount === 1 ? "" : "s"}
+              )}
+              {saveMode === "add" && data.templates.length ? (
+                <>
+                  <label className="flex items-start gap-2 text-slate-700">
+                    <input type="checkbox" name="update" value="1" className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300" />
+                    <span>Also update the takeoffs it already has (same name) with this job&apos;s settings and items</span>
+                  </label>
+                  <p className="text-slate-500">
+                    Adds the takeoffs it doesn&apos;t have yet, items and all — your toolbox grows. Ones it has stay as they are unless you tick the box.
+                  </p>
+                </>
+              ) : saveMode === "replace" ? (
+                <p className="text-amber-800">Replaces everything in that template with this job&apos;s takeoffs.</p>
+              ) : (
+                <p className="text-slate-500">All {data.takeoffCount} takeoffs, with the items under them.</p>
+              )}
+              <SubmitButton size="sm" variant="secondary" pendingText="Saving…" disabled={data.takeoffCount === 0}>
+                {saveMode === "add" && data.templates.length ? "Add" : "Save"} {data.takeoffCount} takeoff{data.takeoffCount === 1 ? "" : "s"}
               </SubmitButton>
             </form>
           ) : null}

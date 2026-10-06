@@ -10,7 +10,7 @@ import { lineTotals } from "@/lib/finance";
 import { copyIntoEstimate, copyIntoTemplate, createProjectEstimate, ensureEstimateSpecs, loadTemplate, nextSortOrder, saveEstimateSheet } from "@/lib/estimate-lines";
 import { saveSheetInput } from "@/lib/estimate-sheet";
 import { learnDivisions } from "@/lib/estimate-categories";
-import { projectValues, saveProjectValues } from "@/lib/estimate-parameters";
+import { estimateValues, saveEstimateValues, templateValues } from "@/lib/estimate-parameters";
 import { saveCover } from "@/lib/project-cover";
 import { deleteUpload } from "@/lib/uploads";
 import { proposalOptionsSchema } from "@/lib/proposal-options";
@@ -82,7 +82,7 @@ export async function saveEstimate(projectId: string, estimateId: string, raw: u
         // Saved: the "what changed" note starts over.
         await tx.estimate.update({ where: { id: est.id }, data: { ...header, autoNote: null } });
         await saveEstimateSheet(tx, est.id, est.id, input);
-        if (input.parameterValues) await saveProjectValues(tx, projectId, input.parameterValues);
+        if (input.parameterValues) await saveEstimateValues(tx, est.id, input.parameterValues);
         return est;
       }
       const created = await tx.estimate.create({
@@ -99,7 +99,8 @@ export async function saveEstimate(projectId: string, estimateId: string, raw: u
         },
       });
       await saveEstimateSheet(tx, est.id, created.id, input);
-      if (input.parameterValues) await saveProjectValues(tx, projectId, input.parameterValues);
+      // Saved as a new version: it starts with the values on screen (a copy of this one).
+      await saveEstimateValues(tx, created.id, input.parameterValues ?? (await estimateValues(est.id, tx)));
       return created;
     },
     { timeout: 60000 },
@@ -222,6 +223,8 @@ export async function createEstimateVersion(formData: FormData) {
       },
     });
     await copyIntoEstimate(tx, created.id, source, { keepSelectionLinks: true });
+    // A copy of a version carries that version's parameter values.
+    await saveEstimateValues(tx, created.id, await estimateValues(source.id, tx));
     return created;
   });
   await logActivity({ projectId, userId: user.id, type: "estimate.version", description: `Estimate v${version} created from v${source.version}` });
@@ -252,8 +255,15 @@ export async function addTemplateToEstimate(formData: FormData) {
   if (!templateId) throw new Error("Pick a template");
   const est = await loadDraftEstimate(projectId, estimateId);
   const template = await loadTemplate(templateId);
-  const values = await projectValues(projectId);
-  await db.$transaction((tx) => copyIntoEstimate(tx, estimateId, template, { sortOffset: nextSortOrder(est), values }), { timeout: 30000 });
+  // The template's parameter values fill in only the ones this estimate doesn't have yet.
+  const values = { ...templateValues(template.paramValues), ...(await estimateValues(estimateId)) };
+  await db.$transaction(
+    async (tx) => {
+      await saveEstimateValues(tx, estimateId, values);
+      await copyIntoEstimate(tx, estimateId, template, { sortOffset: nextSortOrder(est), values });
+    },
+    { timeout: 30000 },
+  );
   await logActivity({
     projectId,
     userId: user.id,
@@ -275,11 +285,13 @@ export async function saveEstimateAsTemplate(formData: FormData) {
   const estimateId = str(formData, "estimateId");
   const est = await loadEstimate(projectId, estimateId);
   const name = str(formData, "name") || est.name;
+  const clear = formData.get("clear") === "1";
+  // Parameter values: blank when clearing this job's numbers, else this version's.
+  const paramValues = clear ? null : JSON.stringify(await estimateValues(est.id));
   const template = await db.$transaction(async (tx) => {
     const created = await tx.estimateTemplate.create({
-      data: { name, notes: est.notes, terms: est.terms, defaultMarkup: est.defaultMarkup, markupTable: est.markupTable },
+      data: { name, notes: est.notes, terms: est.terms, defaultMarkup: est.defaultMarkup, markupTable: est.markupTable, paramValues },
     });
-    const clear = formData.get("clear") === "1";
     const items = clear ? est.items.map((i) => ({ ...i, ...clearJobNumbers({ ...i, fromTakeoff: !!i.takeoffRollup || !!i.takeoffConditionId }) })) : est.items;
     await copyIntoTemplate(tx, created.id, { ...est, items });
     return created;
@@ -366,14 +378,14 @@ export async function saveMarkupDefault(raw: unknown): Promise<{ ok: true } | { 
   return { ok: true };
 }
 
-/** The job's parameter values — saved when you close the Parameters panel (they belong to the job, not an estimate version). */
-export async function saveParameterValues(projectId: string, raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+/** This estimate version's parameter values — saved when you close the Parameters panel (each version has its own). */
+export async function saveParameterValues(projectId: string, estimateId: string, raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireStaff();
   const parsed = saveSheetInput.shape.parameterValues.unwrap().safeParse(raw);
   if (!parsed.success) return { ok: false, error: "One of the numbers isn't valid." };
-  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true } });
-  if (!project) return { ok: false, error: "Job not found" };
-  await db.$transaction((tx) => saveProjectValues(tx, projectId, parsed.data));
+  const est = await db.estimate.findFirst({ where: { id: estimateId, projectId }, select: { id: true } });
+  if (!est) return { ok: false, error: "Estimate not found" };
+  await db.$transaction((tx) => saveEstimateValues(tx, est.id, parsed.data));
   revalidatePath(`/projects/${projectId}/estimate`);
   return { ok: true };
 }

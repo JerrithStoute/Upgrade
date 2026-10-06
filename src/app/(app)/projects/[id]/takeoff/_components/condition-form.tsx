@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { cn, costCodeLabel, money, num } from "@/lib/utils";
@@ -91,6 +91,7 @@ export function ConditionForm({
   nextColor,
   codeRules = {},
   assemblyItems,
+  toolbox,
 }: {
   action: (fd: FormData) => Promise<void>;
   /** Hidden fields identifying where the condition lives (projectId, or templateId). */
@@ -108,6 +109,8 @@ export function ConditionForm({
   codeRules?: CodeRules;
   /** New takeoffs: Item List entries for adding assembly items before the first save. */
   assemblyItems?: ItemOption[];
+  /** New takeoffs (admins): your takeoff templates, to add it to one as well. */
+  toolbox?: { id: string; name: string }[];
 }) {
   const [type, setType] = useState<ConditionType>((values?.type as ConditionType) ?? "AREA");
   const [metric, setMetric] = useState(values?.metric ?? DEFAULT_METRIC[type]);
@@ -429,6 +432,7 @@ export function ConditionForm({
         </label>
       </FormGrid>
       {!values && assemblyItems ? <PendingItems type={type} metric={metric} costCodes={costCodes} items={assemblyItems} defaultMarkup={defaultMarkup} /> : null}
+      {!values && toolbox?.length ? <ToolboxPick idPrefix={p("toolbox")} templates={toolbox} /> : null}
       <div className="flex items-center gap-2">
         <SubmitButton>{values ? "Save takeoff" : "Add takeoff"}</SubmitButton>
         {cancelHref ? (
@@ -589,3 +593,51 @@ function PackingFields({
 }
 
 type PackRow = { mode: PackMode; empty: string } | { mode: PackMode; boards: string; waste: string | null; feet: number; cost: number | null; estimated: number[] };
+
+const TOOLBOX_KEY = "takeoff-toolbox";
+const onStorage = (cb: () => void) => {
+  window.addEventListener("storage", cb);
+  return () => window.removeEventListener("storage", cb);
+};
+const readToolbox = () => {
+  try {
+    return localStorage.getItem(TOOLBOX_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+
+/**
+ * "Also add to template": a new takeoff goes into one of your takeoff templates too,
+ * items and all — your toolbox grows as you work. Remembers your last pick on this computer.
+ */
+function ToolboxPick({ idPrefix, templates }: { idPrefix: string; templates: { id: string; name: string }[] }) {
+  const saved = useSyncExternalStore(onStorage, readToolbox, () => "");
+  const [pick, setPick] = useState<string | null>(null);
+  const value = pick ?? (templates.some((t) => t.id === saved) ? saved : "");
+  return (
+    <Field label="Also add to template" htmlFor={idPrefix} hint="It goes into that takeoff template too, with its items, so the next job has it. Remembered for next time.">
+      <select
+        id={idPrefix}
+        name="toTemplate"
+        className="input"
+        value={value}
+        onChange={(e) => {
+          setPick(e.target.value);
+          try {
+            localStorage.setItem(TOOLBOX_KEY, e.target.value);
+          } catch {
+            /* storage blocked: just this time */
+          }
+        }}
+      >
+        <option value="">Don&apos;t add to a template</option>
+        {templates.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.name}
+          </option>
+        ))}
+      </select>
+    </Field>
+  );
+}

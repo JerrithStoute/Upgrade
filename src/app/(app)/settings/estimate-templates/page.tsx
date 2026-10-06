@@ -28,8 +28,8 @@ export default async function EstimateTemplatesPage() {
       >
         <form action={createTemplate} className="space-y-4">
           <p className="text-sm text-slate-600">
-            A template is a blank estimate with all your usual line items, allowances, notes and terms. Pick it when you create a new project, or add it to a draft
-            estimate. You can also turn any job&apos;s estimate into a template with <em>Save as template</em> on the estimate page.
+            A template is a blank estimate with all your usual line items, allowances, notes and terms. Pick it when you create a new project, or add it to a draft estimate. You
+            can also turn any job&apos;s estimate into a template with <em>Save as template</em> on the estimate page.
           </p>
           <FormGrid>
             <Field label="Template name" htmlFor="tpl-name">

@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { FileText, Plus, ExternalLink, Copy, FileStack, Lock, LockOpen } from "lucide-react";
+import { FileText, Plus, ExternalLink, Copy, FileStack, Lock, LockOpen, ChevronDown } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { loadEstimateSheet, templateOptions } from "@/lib/estimate-lines";
 import { divisionCategories, loadEstimateCategories } from "@/lib/estimate-categories";
 import { codeDivisions } from "@/lib/cost-code-divisions";
-import { loadParameters, projectValues, refreshFormulaQuantities } from "@/lib/estimate-parameters";
+import { estimateValues, loadParameters, refreshFormulaQuantities } from "@/lib/estimate-parameters";
 import { pct, fmtDate, cn } from "@/lib/utils";
 import { Badge, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { EstimateSheet } from "@/components/estimate/estimate-sheet";
@@ -98,7 +98,7 @@ export default async function EstimatePage({ params, searchParams }: { params: P
     divisionCategories(),
     isAdmin ? loadEstimateCategories() : null,
     loadParameters(),
-    projectValues(project.id),
+    estimateValues(selectedId),
     db.company.findFirst({ select: { allowanceProfit: true, proposalOptions: true } }),
   ]);
   // Approved, with change orders against it: the Markup, Margin & Tax table stays as the contract was priced.
@@ -225,13 +225,37 @@ export default async function EstimatePage({ params, searchParams }: { params: P
                   </SubmitButton>
                 </form>
               ) : null}
-              <form action={createEstimateVersion}>
-                <input type="hidden" name="projectId" value={project.id} />
-                <input type="hidden" name="id" value={estimate.id} />
-                <SubmitButton size="sm" variant="secondary">
-                  <Copy className="h-3.5 w-3.5" /> New version
-                </SubmitButton>
-              </form>
+              {/* A new version: a copy of this one (same plans), or a fresh start (other plans). */}
+              <details className="group relative">
+                <summary className={cn(buttonClasses("secondary", "sm"), "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
+                  <Plus className="h-3.5 w-3.5" /> New version <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+                </summary>
+                <div className="absolute right-0 z-30 mt-1 w-80 space-y-3 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-lg">
+                  <form action={createEstimateVersion} className="space-y-1">
+                    <input type="hidden" name="projectId" value={project.id} />
+                    <input type="hidden" name="id" value={estimate.id} />
+                    <SubmitButton size="sm" variant="secondary" className="w-full">
+                      <Copy className="h-3.5 w-3.5" /> Copy v{estimate.version}
+                    </SubmitButton>
+                    <p className="text-xs text-slate-500">Same plans, a revision: every line, price and parameter value of v{estimate.version}.</p>
+                  </form>
+                  <form action={createEstimate} className="space-y-1.5 border-t border-slate-100 pt-3">
+                    <input type="hidden" name="projectId" value={project.id} />
+                    <select name="templateId" aria-label="Start fresh from" className="input !py-1 text-sm" defaultValue="">
+                      <option value="">Blank estimate</option>
+                      {templates.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t._count.items} lines)
+                        </option>
+                      ))}
+                    </select>
+                    <SubmitButton size="sm" variant="secondary" className="w-full">
+                      <Plus className="h-3.5 w-3.5" /> Start fresh
+                    </SubmitButton>
+                    <p className="text-xs text-slate-500">Other plans: blank, or from a template. Parameters start blank (or with the template&apos;s values).</p>
+                  </form>
+                </div>
+              </details>
               {isDraft ? (
                 <ConfirmForm action={deleteEstimate} hidden={{ projectId: project.id, id: estimate.id }} message={`Delete estimate v${estimate.version}? This cannot be undone.`}>
                   Delete
@@ -347,7 +371,7 @@ export default async function EstimatePage({ params, searchParams }: { params: P
         parameters={parameters}
         values={values}
         canEditParameters={isAdmin}
-        saveValues={saveParameterValues.bind(null, project.id)}
+        saveValues={saveParameterValues.bind(null, project.id, estimate.id)}
         allowanceProfitDefault={company?.allowanceProfit ?? false}
         markupTable={parseMarkupTable(estimate.markupTable, estimate.defaultMarkup)}
         markupLocked={

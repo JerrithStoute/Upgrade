@@ -1,5 +1,6 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
@@ -101,4 +102,21 @@ export async function saveTemplate(templateId: string, raw: unknown): Promise<{ 
   );
   revalidate(templateId);
   return { ok: true, learned: await learnDivisions(parsed.data.specs) };
+}
+
+/**
+ * A template's parameter values (saved when its Parameters panel closes). They're copied
+ * into each estimate started from the template; changing them never touches a job.
+ */
+export async function saveTemplateValues(templateId: string, raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAdmin();
+  const parsed = z.record(z.string(), z.number().finite().min(-1e9).max(1e9)).safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "One of the numbers isn't valid." };
+  const known = new Set((await db.estimateParameter.findMany({ select: { id: true } })).map((p) => p.id));
+  const values = Object.fromEntries(Object.entries(parsed.data).filter(([id]) => known.has(id)));
+  const t = await db.estimateTemplate.findUnique({ where: { id: templateId }, select: { id: true } });
+  if (!t) return { ok: false, error: "Template not found" };
+  await db.estimateTemplate.update({ where: { id: t.id }, data: { paramValues: Object.keys(values).length ? JSON.stringify(values) : null } });
+  revalidatePath(`/settings/estimate-templates/${t.id}`);
+  return { ok: true };
 }

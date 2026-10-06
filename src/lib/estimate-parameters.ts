@@ -14,29 +14,46 @@ export function loadParameters() {
 export type EstimateParam = Awaited<ReturnType<typeof loadParameters>>[number];
 
 /** A job's parameter values, by parameter id. */
-export async function projectValues(projectId: string, client: Tx | typeof db = db) {
-  const rows = await client.projectParameterValue.findMany({ where: { projectId }, select: { parameterId: true, value: true } });
+/** An estimate version's parameter values (each version has its own). */
+export async function estimateValues(estimateId: string, client: Tx | typeof db = db) {
+  const rows = await client.estimateParameterValue.findMany({ where: { estimateId }, select: { parameterId: true, value: true } });
   return Object.fromEntries(rows.map((r) => [r.parameterId, r.value])) as Record<string, number>;
 }
 
-/** Saves the values on screen for this job (parameters that still exist; a missing value removes it). */
-export async function saveProjectValues(tx: Tx, projectId: string, values: Record<string, number>) {
+/** Saves an estimate version's values (parameters that still exist; a missing value removes it). */
+export async function saveEstimateValues(tx: Tx, estimateId: string, values: Record<string, number>) {
   const params = await tx.estimateParameter.findMany({ select: { id: true } });
   for (const { id } of params) {
     const value = values[id];
-    if (value === undefined) await tx.projectParameterValue.deleteMany({ where: { projectId, parameterId: id } });
+    if (value === undefined || !Number.isFinite(value)) await tx.estimateParameterValue.deleteMany({ where: { estimateId, parameterId: id } });
     else
-      await tx.projectParameterValue.upsert({
-        where: { projectId_parameterId: { projectId, parameterId: id } },
-        create: { projectId, parameterId: id, value },
+      await tx.estimateParameterValue.upsert({
+        where: { estimateId_parameterId: { estimateId, parameterId: id } },
+        create: { estimateId, parameterId: id, value },
         update: { value },
       });
   }
 }
 
+/** A template's parameter values (JSON { parameterId: value }); bad or missing = none. */
+export function templateValues(json: string | null | undefined): Record<string, number> {
+  try {
+    const o = JSON.parse(json ?? "{}") as Record<string, unknown>;
+    return Object.fromEntries(Object.entries(o).filter(([, v]) => typeof v === "number" && Number.isFinite(v))) as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+
+/** Old (values shared by a job's versions) — only for moving them onto each version. */
+export async function projectValues(projectId: string, client: Tx | typeof db = db) {
+  const rows = await client.projectParameterValue.findMany({ where: { projectId }, select: { parameterId: true, value: true } });
+  return Object.fromEntries(rows.map((r) => [r.parameterId, r.value])) as Record<string, number>;
+}
+
 /**
- * A draft estimate's formula quantities from the job's current values — e.g. after
- * the values were changed on another version. Sent / approved estimates keep theirs.
+ * A draft estimate's formula quantities from its parameter values (in case they were
+ * changed without the sheet saving them). Sent / approved estimates keep theirs.
  */
 export async function refreshFormulaQuantities(estimateId: string) {
   const est = await db.estimate.findUnique({ where: { id: estimateId }, select: { projectId: true, status: true, basePrice: true, markupTable: true, defaultMarkup: true } });
@@ -46,7 +63,7 @@ export async function refreshFormulaQuantities(estimateId: string) {
     select: { id: true, quantity: true, unitCost: true, markupPct: true, isOptional: true, costType: true, qtyFormula: true, costFormula: true },
   });
   if (!items.some((i) => i.qtyFormula || i.costFormula)) return;
-  const values = await projectValues(est.projectId);
+  const values = await estimateValues(estimateId);
   // Parameter formulas first; lines using "Sales price" then settle at the price they're part of.
   let lines = items.map((i) => ({
     ...i,

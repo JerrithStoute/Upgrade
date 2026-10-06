@@ -209,8 +209,9 @@ model Estimate {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  items EstimateItem[]
-  specs EstimateSpec[]
+  items           EstimateItem[]
+  specs           EstimateSpec[]
+  parameterValues EstimateParameterValue[]
 }
 
 /// A spec item: one thing the client is buying ("Hardwood flooring — main level"),
@@ -307,15 +308,31 @@ model EstimateCategoryDivision {
 /// as "Heated sq. ft." that item quantities use in formulas. One can be the job's
 /// total sq. ft.
 model EstimateParameter {
-  id        String                  @id @default(cuid())
-  name      String                  @unique
-  unit      String                  @default("")
-  sortOrder Int                     @default(0)
-  isSqFt    Boolean                 @default(false)
-  values    ProjectParameterValue[]
+  id             String                   @id @default(cuid())
+  name           String                   @unique
+  unit           String                   @default("")
+  sortOrder      Int                      @default(0)
+  isSqFt         Boolean                  @default(false)
+  values         ProjectParameterValue[]
+  estimateValues EstimateParameterValue[]
 }
 
-/// A job's value for a parameter (shared by all its estimate versions).
+/// An estimate version's value for a parameter. Each version has its own (v2 may be a
+/// different set of plans): a new version starts blank (or with its template's values),
+/// a copy of a version starts with that version's.
+model EstimateParameterValue {
+  id          String            @id @default(cuid())
+  estimateId  String
+  estimate    Estimate          @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  parameterId String
+  parameter   EstimateParameter @relation(fields: [parameterId], references: [id], onDelete: Cascade)
+  value       Float
+
+  @@unique([estimateId, parameterId])
+}
+
+/// Old: a job's value for a parameter, shared by its versions. Replaced by
+/// EstimateParameterValue (each version its own); kept only so nothing is lost.
 model ProjectParameterValue {
   id          String            @id @default(cuid())
   projectId   String
@@ -343,6 +360,8 @@ model EstimateTemplate {
 
   // Markup, Margin & Tax table copied into estimates made from this template (JSON).
   markupTable String?
+  // Parameter values copied into estimates made from this template: JSON { parameterId: value }.
+  paramValues String?
 
   items EstimateTemplateItem[]
   specs EstimateTemplateSpec[]

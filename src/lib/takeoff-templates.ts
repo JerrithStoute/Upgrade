@@ -1,4 +1,5 @@
 import "server-only";
+import type { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { isLumberMetric, itemNameKey } from "./takeoff";
 
@@ -136,6 +137,44 @@ export async function applyTemplate(templateId: string, projectId: string) {
     }
   });
   return { template, added, skipped };
+}
+
+/**
+ * Adds takeoffs to a template — your toolbox. Ones it doesn't have yet (by name) are
+ * added at the end, items and all; ones it has are left as they are, or refreshed from
+ * these when `update` is on. Lumber lines aren't saved (they come from each job's layout).
+ */
+export async function addConditionsToTemplate(
+  tx: Prisma.TransactionClient,
+  templateId: string,
+  conditions: (Parameters<typeof conditionData>[0] & { items: (Parameters<typeof itemData>[0] & { metric: string })[] })[],
+  update = false,
+) {
+  const have = await tx.takeoffTemplateCondition.findMany({ where: { templateId }, select: { id: true, name: true, sortOrder: true } });
+  const byName = new Map(have.map((c) => [itemNameKey(c.name), c]));
+  let sortOrder = Math.max(-1, ...have.map((c) => c.sortOrder)) + 1;
+  const added: string[] = [];
+  const updated: string[] = [];
+  const kept: string[] = [];
+  for (const c of conditions) {
+    const items = c.items.filter((i) => !isLumberMetric(i.metric)).map(itemData);
+    const there = byName.get(itemNameKey(c.name));
+    if (there && !update) {
+      kept.push(c.name);
+      continue;
+    }
+    if (there) {
+      await tx.takeoffTemplateItem.deleteMany({ where: { conditionId: there.id } });
+      await tx.takeoffTemplateCondition.update({ where: { id: there.id }, data: { ...conditionData(c), items: { create: items } } });
+      updated.push(c.name);
+      continue;
+    }
+    const made = await tx.takeoffTemplateCondition.create({ data: { ...conditionData(c), templateId, sortOrder: sortOrder++, items: { create: items } } });
+    byName.set(itemNameKey(c.name), { id: made.id, name: c.name, sortOrder: made.sortOrder });
+    added.push(c.name);
+  }
+  await tx.takeoffTemplate.update({ where: { id: templateId }, data: { updatedAt: new Date() } });
+  return { added, updated, kept };
 }
 
 /**

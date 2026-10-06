@@ -6,7 +6,7 @@ import { groupLooseLines, type SaveSheetInput, type SheetSpec } from "./estimate
 import { NO_VIEW, parseSpecView, specViewJson } from "./proposal-options";
 import { evaluateFormula } from "./formula";
 import { formulaQty } from "./estimate-sheet-state";
-import { projectValues } from "./estimate-parameters";
+import { saveEstimateValues, templateValues } from "./estimate-parameters";
 
 /**
  * Shared plumbing for estimate-shaped line sets (job estimates and estimate
@@ -169,7 +169,7 @@ export function templateOptions() {
 
 /**
  * Creates the next estimate version for a project — blank, or pre-filled from a
- * template (spec items, lines, notes, terms, default markup). Moves a lead to
+ * template (spec items, lines, notes, terms, default markup, parameter values). Moves a lead to
  * "Estimating". Returns the new estimate.
  */
 export async function createProjectEstimate(projectId: string, templateId: string | null) {
@@ -194,7 +194,10 @@ export async function createProjectEstimate(projectId: string, templateId: strin
         terms: template?.terms ?? null,
       },
     });
-    if (template) await copyIntoEstimate(tx, created.id, template, { values: await projectValues(projectId, tx) });
+    // Its own parameter values: the template's, else none (a new version may be other plans).
+    const values = template ? templateValues(template.paramValues) : {};
+    if (Object.keys(values).length) await saveEstimateValues(tx, created.id, values);
+    if (template) await copyIntoEstimate(tx, created.id, template, { values });
     return created;
   });
   if (project.status === "LEAD") {

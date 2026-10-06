@@ -7,11 +7,11 @@ import { activeCostCodes } from "@/lib/projects";
 import { loadTemplateSheet } from "@/lib/estimate-lines";
 import { divisionCategories, loadEstimateCategories } from "@/lib/estimate-categories";
 import { codeDivisions } from "@/lib/cost-code-divisions";
-import { loadParameters } from "@/lib/estimate-parameters";
+import { loadParameters, templateValues } from "@/lib/estimate-parameters";
 import { pct } from "@/lib/utils";
 import { Card, CardHeader, Collapsible, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { EstimateSheet } from "@/components/estimate/estimate-sheet";
-import { saveTemplate, updateTemplateDetails } from "../actions";
+import { saveTemplate, saveTemplateValues, updateTemplateDetails } from "../actions";
 import { saveMarkupDefault } from "@/app/(app)/projects/[id]/estimate/actions";
 import { parseMarkupTable } from "@/lib/markup";
 
@@ -60,6 +60,9 @@ export default async function EstimateTemplatePage({ params }: { params: Promise
         filing={filing}
         parameters={parameters}
         canEditParameters
+        values={templateValues(template.paramValues)}
+        saveValues={saveTemplateValues.bind(null, template.id)}
+        valuesOwner="template"
         markupTable={parseMarkupTable(template.markupTable ?? company?.markupTable, template.defaultMarkup)}
         saveMarkupDefault={saveMarkupDefault}
         divisionsSetup={{

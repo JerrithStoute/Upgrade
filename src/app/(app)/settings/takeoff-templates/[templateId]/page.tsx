@@ -26,10 +26,10 @@ export default async function TakeoffTemplatePage({
   searchParams,
 }: {
   params: Promise<{ templateId: string }>;
-  searchParams: Promise<{ edit?: string; editItem?: string }>;
+  searchParams: Promise<{ edit?: string; editItem?: string; added?: string; updated?: string; kept?: string }>;
 }) {
   const { templateId } = await params;
-  const { edit, editItem } = await searchParams;
+  const { edit, editItem, added, updated, kept } = await searchParams;
   const [template, costCodes, items, memberSizes, company, codeRules] = await Promise.all([
     db.takeoffTemplate.findUnique({
       where: { id: templateId },
@@ -37,7 +37,10 @@ export default async function TakeoffTemplatePage({
         conditions: {
           orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
           include: {
-            items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: { costCode: { select: { code: true, name: true } }, materialItem: { select: { unitCost: true, unit: true } } } },
+            items: {
+              orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
+              include: { costCode: { select: { code: true, name: true } }, materialItem: { select: { unitCost: true, unit: true } } },
+            },
           },
         },
       },
@@ -55,6 +58,13 @@ export default async function TakeoffTemplatePage({
 
   return (
     <div className="space-y-5">
+      {added != null ? (
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
+          Added {added} new takeoff{added === "1" ? "" : "s"} to this template
+          {Number(updated) > 0 ? `, updated ${updated}` : ""}
+          {Number(kept) > 0 ? ` · ${kept} ${kept === "1" ? "was" : "were"} already here and left as ${kept === "1" ? "it was" : "they were"}` : ""}.
+        </p>
+      ) : null}
       <Link href="/settings/takeoff-templates" className={buttonClasses("ghost", "sm")}>
         <ArrowLeft className="h-3.5 w-3.5" /> Takeoff templates
       </Link>
@@ -147,7 +157,15 @@ export default async function TakeoffTemplatePage({
                           editItem === item.id ? (
                             <tr key={item.id}>
                               <td colSpan={4} className="py-3">
-                                <AssemblyForm action={updateTemplateItem} hidden={hidden} condition={c} costCodes={costCodes} items={items} values={item} cancelHref={`${base}#condition-${c.id}`} />
+                                <AssemblyForm
+                                  action={updateTemplateItem}
+                                  hidden={hidden}
+                                  condition={c}
+                                  costCodes={costCodes}
+                                  items={items}
+                                  values={item}
+                                  cancelHref={`${base}#condition-${c.id}`}
+                                />
                               </td>
                             </tr>
                           ) : (
@@ -157,7 +175,10 @@ export default async function TakeoffTemplatePage({
                                 {item.costCode ? <span className="block text-xs text-slate-500">{costCodeLabel(item.costCode)}</span> : null}
                               </td>
                               <td className="py-1.5 text-xs text-slate-600">
-                                {num(item.qty, 4)} {item.unit} per {num(item.per, 4)} {metricUnit(item.metric)} of {metricLabel(item.metric).replace(/ \(.*\)$/, "").toLowerCase()}
+                                {num(item.qty, 4)} {item.unit} per {num(item.per, 4)} {metricUnit(item.metric)} of{" "}
+                                {metricLabel(item.metric)
+                                  .replace(/ \(.*\)$/, "")
+                                  .toLowerCase()}
                                 {item.wastePct > 0 ? ` + ${num(item.wastePct, 1)}%` : ""}
                                 {item.roundUp ? " · round up" : ""}
                               </td>

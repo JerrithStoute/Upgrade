@@ -32,6 +32,7 @@ export function ConditionDrawer({
   defaultMarkup,
   pricesLocked,
   nextColor,
+  toolbox,
   closeHref,
   stayHref,
 }: {
@@ -45,6 +46,7 @@ export function ConditionDrawer({
   /** This job's prices are locked. */
   pricesLocked?: boolean;
   nextColor: string;
+  toolbox?: { id: string; name: string }[];
   closeHref: string; // the viewer without the panel
   stayHref: string; // the viewer with this panel open
 }) {
@@ -88,6 +90,7 @@ export function ConditionDrawer({
           memberSizes={memberSizes}
           itemOptions={items}
           assemblyItems={items}
+          toolbox={toolbox}
           defaultMarkup={defaultMarkup}
           values={condition ?? undefined}
           hasMeasurements={condition?.hasMeasurements}

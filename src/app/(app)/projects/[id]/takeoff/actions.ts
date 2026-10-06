@@ -17,7 +17,7 @@ import { NO_ALIGN, alignAngle, alignScale, applyAlign, isNoAlign, parseAlign, ty
 import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { assignItemCodes, newItemPlacement, saveCodeRule } from "@/lib/item-codes";
 import { assemblyFields, conditionFields, type AssemblyFields } from "@/lib/takeoff-forms";
-import { applyTemplate, saveTemplateFromProject } from "@/lib/takeoff-templates";
+import { addConditionsToTemplate, applyTemplate, saveTemplateFromProject } from "@/lib/takeoff-templates";
 import {
   CONDITION_COLORS,
   CONDITION_TYPES,
@@ -150,8 +150,27 @@ export async function createCondition(fd: FormData) {
   // Assembly items added on the form before the takeoff was saved.
   for (const [k, item] of pending.entries())
     await db.takeoffAssemblyItem.create({ data: { ...(await withMaterialItem(item, user.id, project.id)), conditionId: c.id, sortOrder: k } });
+  // "Also add to template": the new takeoff (items and all) goes into your toolbox too. Admins only.
+  const toTemplate = strOrNull(fd, "toTemplate");
+  let toolbox: string | null = null;
+  if (toTemplate && user.role === "ADMIN") {
+    const t = await db.takeoffTemplate.findUnique({ where: { id: toTemplate }, select: { id: true, name: true } });
+    const full = await db.takeoffCondition.findUnique({ where: { id: c.id }, include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } });
+    if (t && full) {
+      const r = await db.$transaction((tx) => addConditionsToTemplate(tx, t.id, [full]));
+      toolbox = t.name;
+      await logActivity({
+        projectId: project.id,
+        userId: user.id,
+        type: "takeoff_template.saved",
+        description: r.added.length ? `Added takeoff "${c.name}" to template "${t.name}"` : `Takeoff "${c.name}" is already in template "${t.name}" — left as it is`,
+      });
+      revalidatePath(`/settings/takeoff-templates/${t.id}`);
+    }
+  }
   revalidate(project.id);
-  redirect(returnTo(fd, project.id, `#condition-${c.id}`, "conditions"));
+  const back = returnTo(fd, project.id, "", "conditions");
+  redirect(`${back}${toolbox ? `${back.includes("?") ? "&" : "?"}toolbox=${encodeURIComponent(toolbox)}` : ""}#condition-${c.id}`);
 }
 
 export async function updateCondition(fd: FormData) {
@@ -388,19 +407,47 @@ export async function applyTakeoffTemplate(fd: FormData) {
   redirect(`${back}${back.includes("?") ? "&" : "?"}applied=${added.length}&skipped=${skipped.length}`);
 }
 
-/** Admins: save this job's conditions as a new template, or replace an existing one's. */
+/**
+ * Admins: this job's takeoffs (items and all) into a template — a new one, added to one
+ * you have (only the takeoffs it doesn't have yet, or refreshing those too), or replacing one.
+ */
 export async function saveTakeoffAsTemplate(fd: FormData) {
   const admin = await requireAdmin();
   const project = await getProject(str(fd, "projectId"));
-  const replaceId = strOrNull(fd, "replaceId");
+  const mode = str(fd, "mode") || (strOrNull(fd, "replaceId") ? "replace" : "new");
+  const targetId = strOrNull(fd, "templateId") ?? strOrNull(fd, "replaceId");
   const name = str(fd, "name");
-  if (!replaceId && !name) throw new Error("Give the template a name");
-  const { id, count } = await saveTemplateFromProject(project.id, { name, replaceId });
+  const back = returnTo(fd, project.id);
+  const fail = (msg: string) => redirect(`${back}${back.includes("?") ? "&" : "?"}templateError=${encodeURIComponent(msg)}`);
+  if (mode === "new" && !name) fail("Give the new template a name");
+  if (mode !== "new" && !targetId) fail("Pick a template");
+
+  if (mode === "add") {
+    const conditions = await db.takeoffCondition.findMany({
+      where: { projectId: project.id },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+      include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
+    });
+    if (!conditions.length) fail("This job has no takeoffs to add");
+    const t = await db.takeoffTemplate.findUnique({ where: { id: targetId! }, select: { id: true, name: true } });
+    if (!t) fail("Template not found");
+    const r = await db.$transaction((tx) => addConditionsToTemplate(tx, t!.id, conditions, fd.get("update") === "1"));
+    await logActivity({
+      projectId: project.id,
+      userId: admin.id,
+      type: "takeoff_template.saved",
+      description: `Added to takeoff template "${t!.name}": ${r.added.length} new${r.updated.length ? `, ${r.updated.length} updated` : ""}${r.kept.length ? `, ${r.kept.length} already there` : ""}`,
+    });
+    revalidatePath("/settings/takeoff-templates");
+    redirect(`/settings/takeoff-templates/${t!.id}?added=${r.added.length}&updated=${r.updated.length}&kept=${r.kept.length}`);
+  }
+
+  const { id, count } = await saveTemplateFromProject(project.id, { name, replaceId: mode === "replace" ? targetId : null });
   await logActivity({
     projectId: project.id,
     userId: admin.id,
     type: "takeoff_template.saved",
-    description: `${replaceId ? "Updated" : "Saved"} takeoff template${name ? ` "${name}"` : ""} from this job (${count} takeoffs)`,
+    description: `${mode === "replace" ? "Replaced" : "Saved"} takeoff template${name ? ` "${name}"` : ""} from this job (${count} takeoffs)`,
   });
   revalidatePath("/settings/takeoff-templates");
   redirect(`/settings/takeoff-templates/${id}`);

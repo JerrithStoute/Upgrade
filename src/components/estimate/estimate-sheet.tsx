@@ -88,10 +88,12 @@ export type SheetProps = {
   divisionsSetup?: { initial: DivisionSetup[]; categories: { name: string; codes: number }[] };
   /** Your estimate parameters (Settings), for quantity formulas. */
   parameters: ParamSetup[];
-  /** The job's parameter values (job estimates only). */
+  /** The parameter values: this estimate version's, or the template's. */
   values?: Record<string, number>;
-  /** Job estimates: saves the job's parameter values (when the Parameters panel closes). */
+  /** Saves the parameter values (when the Parameters panel closes). */
   saveValues?: (values: Record<string, number>) => Promise<{ ok: true } | { ok: false; error: string }>;
+  /** Whose values they are, for the wording: an estimate version's or a template's. */
+  valuesOwner?: "estimate" | "template";
   /** Admins can edit the parameter list from the estimate. */
   canEditParameters?: boolean;
   /** Job estimates: whether new allowances include profit (company setting). */
@@ -192,6 +194,7 @@ export function EstimateSheet({
   values,
   canEditParameters,
   saveValues,
+  valuesOwner = "estimate",
   allowanceProfitDefault,
   markupTable,
   markupLocked = null,
@@ -290,11 +293,11 @@ export function EstimateSheet({
     setParamsOpen(m);
     if (m !== null || !saveValues || sameValues(state.values, savedValues)) return;
     const next = state.values;
-    setValuesNote({ ok: true, text: "Saving the job's parameters…" });
+    setValuesNote({ ok: true, text: `Saving this ${valuesOwner}'s parameters…` });
     void saveValues(next).then((r) => {
       if (r.ok) {
         setSavedValues(next);
-        setValuesNote({ ok: true, text: "The job's parameters were saved." });
+        setValuesNote({ ok: true, text: `This ${valuesOwner}'s parameters were saved.` });
       } else setValuesNote({ ok: false, text: r.error });
     });
   };
@@ -419,8 +422,9 @@ export function EstimateSheet({
       onDrop,
       setTarget,
       materialListHref,
-      // "Sales price" first in every ƒ picker (job estimates).
-      params: estimate ? [SALES_PARAM, ...parameters] : parameters,
+      // "Sales price" first in every ƒ picker — templates too (a template's formulas are
+      // copied into jobs; without it there, a "Sales price" formula couldn't be read and was lost).
+      params: [SALES_PARAM, ...parameters],
       values: state.sales === undefined ? state.values : { ...state.values, [SALES_ID]: state.sales },
       takeoffDetail,
       toggleDetail,
@@ -436,7 +440,6 @@ export function EstimateSheet({
       onDragEnd,
       onDrop,
       materialListHref,
-      estimate,
       parameters,
       state.values,
       state.sales,
@@ -610,12 +613,12 @@ export function EstimateSheet({
           <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setMarkupOpen(true)} title="Profit, overhead and tax for this estimate">
             <Percent className="h-3.5 w-3.5" /> Markup &amp; tax
           </button>
-          {estimate ? (
+          {estimate || saveValues ? (
             <button
               type="button"
               className={buttonClasses("secondary", "sm")}
               onClick={() => paramsMode("values")}
-              title="This job's numbers that item quantities and unit costs use"
+              title={`This ${valuesOwner}'s numbers that item quantities and unit costs use`}
             >
               <Calculator className="h-3.5 w-3.5" /> Parameters
             </button>
@@ -1096,6 +1099,7 @@ export function EstimateSheet({
           values={state.values}
           specs={state.specs}
           canEdit={!!canEditParameters}
+          owner={valuesOwner}
           onValue={(id, value) => dispatch({ type: "paramValue", id, value })}
           onMode={paramsMode}
         />
@@ -1844,7 +1848,7 @@ function SaveDialog({
 }
 
 /**
- * This job's parameter values (Heated sq. ft., Roof squares…). Changing one updates
+ * This estimate's (or template's) parameter values (Heated sq. ft., Roof squares…). Changing one updates
  * every item whose quantity uses it; saved with the estimate. Admins can switch to
  * editing the list itself (same as Settings).
  */
@@ -1854,9 +1858,11 @@ function ParametersPanel({
   values,
   specs,
   canEdit,
+  owner,
   onValue,
   onMode,
 }: {
+  owner: "estimate" | "template";
   mode: "values" | "list";
   parameters: ParamSetup[];
   values: Record<string, number>;
@@ -1873,7 +1879,7 @@ function ParametersPanel({
       <button type="button" aria-label="Close" className="absolute inset-0 cursor-default bg-slate-900/20" onClick={() => onMode(null)} />
       <aside className="absolute inset-y-0 right-0 flex w-full max-w-xl flex-col bg-slate-50 shadow-2xl">
         <header className="flex items-center justify-between border-b border-slate-200 bg-white px-5 py-3">
-          <h2 className="text-base font-semibold text-slate-900">{mode === "values" ? "This job's parameters" : "Your parameter list"}</h2>
+          <h2 className="text-base font-semibold text-slate-900">{mode === "values" ? `This ${owner}'s parameters` : "Your parameter list"}</h2>
           <span className="flex items-center gap-2">
             {canEdit ? (
               mode === "values" ? (
@@ -1882,7 +1888,7 @@ function ParametersPanel({
                 </button>
               ) : (
                 <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => onMode("values")}>
-                  Back to this job&apos;s values
+                  Back to this {owner}&apos;s values
                 </button>
               )
             ) : null}

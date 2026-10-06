@@ -434,6 +434,8 @@ export function PlanViewer({
     defaultMarkup: number;
     pricesLocked: boolean;
     nextColor: string;
+    /** Admins: takeoff templates a new takeoff can also go into. */
+    toolbox?: { id: string; name: string }[];
   } | null;
 }) {
   const router = useRouter();
@@ -3297,6 +3299,7 @@ export function PlanViewer({
               defaultMarkup={editor.defaultMarkup}
               pricesLocked={editor.pricesLocked}
               nextColor={editor.nextColor}
+              toolbox={editor.toolbox}
               closeHref={viewerHref}
               stayHref={editor.condition ? editHref(editor.condition.id) : editHref("new")}
             />

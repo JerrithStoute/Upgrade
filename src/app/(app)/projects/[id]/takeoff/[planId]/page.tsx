@@ -18,11 +18,11 @@ export default async function PlanViewerPage({
   searchParams,
 }: {
   params: Promise<{ id: string; planId: string }>;
-  searchParams: Promise<{ page?: string; cond?: string; applied?: string; skipped?: string }>;
+  searchParams: Promise<{ page?: string; cond?: string; applied?: string; skipped?: string; templateError?: string; toolbox?: string }>;
 }) {
   const user = await requireStaff();
   const { id, planId } = await params;
-  const { page, cond, applied, skipped } = await searchParams;
+  const { page, cond, applied, skipped, templateError, toolbox } = await searchParams;
   const project = await getProject(id);
   const [plan, plans, conditions, doorItems, costCodes, codeRules, needsCodes, drafts, templates] = await Promise.all([
     db.takeoffPlan.findFirst({
@@ -152,6 +152,7 @@ export default async function PlanViewerPage({
       defaultMarkup: company?.defaultMarkup ?? 20,
       pricesLocked: !!project.pricesLockedAt,
       nextColor: CONDITION_COLORS[conditions.length % CONDITION_COLORS.length],
+      toolbox: user.role === "ADMIN" ? templates.map((t) => ({ id: t.id, name: t.name })) : undefined,
     };
   }
 
@@ -210,7 +211,13 @@ export default async function PlanViewerPage({
         unpriced: conditions.flatMap((c) => conditionEstimateLines(c, conditionTotals(c)).flatMap((l) => (l.quantity > 0 && !(l.unitCost > 0) ? [l.description] : []))),
       }}
       notice={
-        applied != null ? `Added ${applied} takeoff${applied === "1" ? "" : "s"} from the template${skipped && skipped !== "0" ? ` · ${skipped} already on this job` : ""}` : null
+        templateError
+          ? `Not saved: ${templateError}`
+          : toolbox
+            ? `Also added to your "${toolbox}" takeoff template`
+            : applied != null
+              ? `Added ${applied} takeoff${applied === "1" ? "" : "s"} from the template${skipped && skipped !== "0" ? ` · ${skipped} already on this job` : ""}`
+              : null
       }
       pageNumber={pageNumber}
       sheet={sheet ? { id: sheet.id, name: sheet.name, unitsPerFoot: sheet.unitsPerFoot, scaleLabel: sheet.scaleLabel, prevSheetId: sheet.prevSheetId, align: sheet.align } : null}
