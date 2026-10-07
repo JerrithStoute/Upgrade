@@ -8,7 +8,7 @@ const lines = [
   { quantity: 1, unitCost: 250, markupPct: 0 },
   { quantity: 1, unitCost: 1000, markupPct: 20 },
 ];
-const co = (p: Partial<{ profitMode: string; profitValue: number; profitShown: string; taxPct: number }>) => ({
+const co = (p: Partial<{ profitMode: string; profitValue: number; profitShown: string; taxPct: number; taxShown: string }>) => ({
   profitMode: "NONE",
   profitValue: 0,
   profitShown: "LINE",
@@ -54,9 +54,15 @@ describe("change order totals", () => {
     assert.deepEqual([flat.profit, flat.total], [550, 2625]);
   });
 
-  it("puts tax on top", () => {
-    const t = changeOrderTotals(co({ profitMode: "AMOUNT", profitValue: 50, taxPct: 8 }), lines);
-    assert.deepEqual([t.tax, t.total], [480, 6480]);
+  it("puts the tax you pay in the taxed lines, with profit on it — its own line or built in", () => {
+    // The flooring and the item taxed at 8%: 4,500 + 360 and (1,000 + 80) × 1.2 = 1,296; the fee isn't.
+    const taxed = lines.map((l, i) => ({ ...l, taxed: i !== 1 }));
+    const own = changeOrderTotals(co({ profitMode: "PCT", profitValue: 10, taxPct: 8 }), taxed);
+    // Lines 4,860 + 250 + 1,296 = 6,406; profit 10% = 640.60; tax shown 360 + 80 = 440.
+    assert.deepEqual([own.tax, own.profit, own.total], [440, 640.6, 7046.6]);
+    assert.deepEqual([own.shown(taxed[0]), own.shownSubtotal], [4500, 5966]);
+    const built = changeOrderTotals(co({ profitMode: "PCT", profitValue: 10, taxPct: 8, taxShown: "FOLDED" }), taxed);
+    assert.deepEqual([built.tax, built.taxIn, built.total, built.shown(taxed[0]), built.shownSubtotal], [0, 440, 7046.6, 4860, 6406]);
   });
 
   it("shows the effect on the contract", () => {

@@ -7,12 +7,16 @@
  * Profit is your call each time: none, a %, or a $ amount — shown as its own line or
  * folded into the line prices. Each line can also have its own profit (none, a %, or a
  * $ amount); lines that don't follow the change order's %. A change order's $ amount is
- * added once. Tax goes on top.
+ * added once.
+ *
+ * Sales tax works like the estimate's: it's what you pay on each taxed line (the change
+ * order's rate on its amount), part of the line's amount, so profit is figured on it too.
+ * The client sees it as its own line or built into the prices — the total is the same.
  */
 
 /** A line's own profit: CO (the change order's — the default), NONE, PCT or AMOUNT. */
-export type CoLine = { quantity: number; unitCost: number; markupPct: number; profitMode?: string | null; profitValue?: number | null };
-export type CoProfit = { profitMode: string; profitValue: number; profitShown: string; taxPct: number };
+export type CoLine = { quantity: number; unitCost: number; markupPct: number; profitMode?: string | null; profitValue?: number | null; taxed?: boolean | null };
+export type CoProfit = { profitMode: string; profitValue: number; profitShown: string; taxPct: number; taxShown?: string | null };
 
 export const LINE_PROFIT_MODES = [
   { value: "CO", label: "Change order's" },
@@ -23,13 +27,19 @@ export const LINE_PROFIT_MODES = [
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 
-export function lineAmount(l: CoLine) {
-  return l.quantity * l.unitCost * (1 + l.markupPct / 100);
+/** The sales tax you pay on a line: the change order's rate on its amount, when it's taxed. */
+export function lineTax(co: { taxPct: number }, l: CoLine) {
+  return l.taxed && co.taxPct > 0 ? (l.quantity * l.unitCost * co.taxPct) / 100 : 0;
 }
 
-/** One line's profit: its own, or (when it follows the change order) the change order's %. */
+/** A line's amount, its tax in: (quantity × unit cost + tax) × (1 + markup). */
+export function lineAmount(l: CoLine, co?: { taxPct: number }) {
+  return (l.quantity * l.unitCost + (co ? lineTax(co, l) : 0)) * (1 + l.markupPct / 100);
+}
+
+/** One line's profit (on its amount, tax in): its own, or (when it follows the change order) the change order's %. */
 export function lineProfit(co: CoProfit, l: CoLine) {
-  const base = lineAmount(l);
+  const base = lineAmount(l, co);
   const mode = l.profitMode ?? "CO";
   if (mode === "NONE") return 0;
   if (mode === "PCT") return (base * (l.profitValue ?? 0)) / 100;
@@ -38,12 +48,15 @@ export function lineProfit(co: CoProfit, l: CoLine) {
 }
 
 export function changeOrderTotals(co: CoProfit, lines: CoLine[]) {
-  const subtotal = lines.reduce((n, l) => n + lineAmount(l), 0);
+  const subtotal = lines.reduce((n, l) => n + lineAmount(l, co), 0);
   // Each line's profit, plus the change order's $ amount (added once).
   const flat = co.profitMode === "AMOUNT" ? co.profitValue : 0;
   const profit = lines.reduce((n, l) => n + lineProfit(co, l), 0) + flat;
-  const beforeTax = subtotal + profit;
-  const tax = co.taxPct > 0 ? (beforeTax * co.taxPct) / 100 : 0;
+  const total = subtotal + profit;
+  // The tax in the lines: its own line (the other amounts before tax), or left in the prices.
+  const taxIn = lines.reduce((n, l) => n + lineTax(co, l), 0);
+  const taxLine = co.taxShown !== "FOLDED" && Math.abs(taxIn) >= 0.005;
+  const out = (l: CoLine) => (taxLine ? lineTax(co, l) : 0);
   const folded = co.profitShown === "FOLDED";
   // "Builder's fee (10%)" only when every line follows the change order's %.
   const uniform = lines.every((l) => (l.profitMode ?? "CO") === "CO");
@@ -54,16 +67,19 @@ export function changeOrderTotals(co: CoProfit, lines: CoLine[]) {
     profitLine: !folded && Math.abs(profit) >= 0.005,
     /** The % for the fee line's label, when one % covers it all. */
     feePct: uniform && co.profitMode === "PCT" ? co.profitValue : null,
-    tax: cents(tax),
-    total: cents(beforeTax + tax),
-    /** What a line shows: folded, its own profit and its share of the change order's $ amount. */
+    /** The tax line (0 when it's built into the prices). */
+    tax: taxLine ? cents(taxIn) : 0,
+    /** The tax you pay on it, shown or not. */
+    taxIn: cents(taxIn),
+    total: cents(total),
+    /** What a line shows: folded, its own profit and its share of the change order's $ amount; less its tax when tax has its own line. */
     shown: (l: CoLine) => {
-      const base = lineAmount(l);
-      if (!folded) return cents(base);
-      return cents(base + lineProfit(co, l) + (subtotal !== 0 ? (flat * base) / subtotal : 0));
+      const base = lineAmount(l, co);
+      if (!folded) return cents(base - out(l));
+      return cents(base + lineProfit(co, l) + (subtotal !== 0 ? (flat * base) / subtotal : 0) - out(l));
     },
-    /** The subtotal as shown (folded profit included). */
-    shownSubtotal: cents(folded && (subtotal !== 0 || flat === 0) ? beforeTax : subtotal),
+    /** The subtotal as shown (folded profit included, a tax line's tax not). */
+    shownSubtotal: cents((folded && (subtotal !== 0 || flat === 0) ? total : subtotal) - (taxLine ? taxIn : 0)),
   };
 }
 

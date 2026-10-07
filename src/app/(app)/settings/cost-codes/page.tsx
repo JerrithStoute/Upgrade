@@ -1,16 +1,17 @@
-import { Pencil, Plus, X, Hash, FileUp, CheckCircle2 } from "lucide-react";
+import { Pencil, Plus, X, Hash, FileUp, CheckCircle2, ListChecks } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cn, costCodeLabel } from "@/lib/utils";
 import { Button, ButtonLink, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
-import { createCostCode, updateCostCode, toggleCostCodeActive, deleteCostCode, replaceCostCodesFromCsv } from "./actions";
+import { createCostCode, updateCostCode, toggleCostCodeActive, deleteCostCode, replaceCostCodesFromCsv, addStarterCostCodes } from "./actions";
+import { STARTER_COST_CODES } from "@/lib/starter-cost-codes";
 import { CostCodeCsvImport } from "./_components/csv-import";
 
 export const metadata = { title: "Cost codes" };
 
-export default async function CostCodesSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; imported?: string }> }) {
+export default async function CostCodesSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; imported?: string; starter?: string }> }) {
   await requireAdmin();
-  const { edit, imported } = await searchParams;
+  const { edit, imported, starter } = await searchParams;
 
   const codes = await db.costCode.findMany({
     // Sort order first so groups appear in the order they were entered / imported.
@@ -27,6 +28,10 @@ export default async function CostCodesSettingsPage({ searchParams }: { searchPa
   }));
   const groups = divisions.map((d) => ({ division: d, codes: codes.filter((c) => c.division === d) }));
   const EDIT_FORM = "edit-cost-code";
+  // The NAHB-style starter codes you don't have yet (matched by code number), by group.
+  const haveCodes = new Set(codes.map((c) => c.code).filter(Boolean));
+  const missing = STARTER_COST_CODES.filter((c) => !haveCodes.has(c.code));
+  const missingGroups = [...new Set(missing.map((c) => c.division))].map((d) => ({ division: d, codes: missing.filter((c) => c.division === d) }));
 
   return (
     <div className="space-y-6">
@@ -34,6 +39,51 @@ export default async function CostCodesSettingsPage({ searchParams }: { searchPa
         <p className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
           <CheckCircle2 className="h-4 w-4" /> Cost codes replaced from your CSV file.
         </p>
+      ) : null}
+
+      {starter ? (
+        <p className="flex items-center gap-2 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">
+          <CheckCircle2 className="h-4 w-4" /> Added {starter} cost code{starter === "1" ? "" : "s"} from the starter list — rename or switch off any you don&apos;t use.
+        </p>
+      ) : null}
+
+      {missing.length ? (
+        <Collapsible
+          defaultOpen={codes.length === 0}
+          summary={
+            <span className="inline-flex items-center gap-2">
+              <ListChecks className="h-4 w-4 text-slate-500" />
+              {codes.length ? `NAHB-style starter list — ${missing.length} code${missing.length === 1 ? "" : "s"} you don't have yet` : "Start with the NAHB-style cost codes"}
+            </span>
+          }
+        >
+          <form action={addStarterCostCodes} className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Laid out the way NAHB&apos;s chart of accounts groups construction costs — 1000 Preparation, 2000 Excavation &amp; Foundation, 3000 Rough Structure, 4000 Full
+              Enclosure, 5000 Finishing Trades, 6000 Completion &amp; Inspection. Common residential codes to start from (not NAHB&apos;s own list): rename, add to or switch off
+              any of them. Codes you already have, by number, are left alone.
+            </p>
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {missingGroups.map((g) => (
+                <fieldset key={g.division} className="space-y-1">
+                  <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">{g.division}</legend>
+                  {g.codes.map((c) => (
+                    <label key={c.code} className="flex items-center gap-2 text-sm text-slate-700">
+                      <input type="checkbox" name="code" value={c.code} defaultChecked={codes.length === 0} className="h-4 w-4 rounded border-slate-300" />
+                      <span className="font-mono text-xs text-slate-500">{c.code}</span> {c.name}
+                    </label>
+                  ))}
+                </fieldset>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <SubmitButton>Add the ticked codes</SubmitButton>
+              <SubmitButton variant="secondary" name="all" value="1">
+                Add all {missing.length}
+              </SubmitButton>
+            </div>
+          </form>
+        </Collapsible>
       ) : null}
 
       <Collapsible

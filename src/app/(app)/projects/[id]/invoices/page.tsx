@@ -38,7 +38,12 @@ export default async function ProjectInvoicesPage({ params }: { params: Promise<
         <Stat label="Invoiced" value={money(fin.invoiced)} hint="Excludes void invoices" />
         <Stat label="Paid" value={money(fin.paid)} tone="good" />
         <Stat label="Balance due" value={money(fin.outstanding)} tone={fin.outstanding > 0 ? "warn" : "default"} />
-        <Stat label="Remaining to invoice" value={money(fin.remainingToInvoice)} tone={fin.remainingToInvoice < 0 ? "bad" : "default"} hint={`of ${money(fin.contract, true)} contract`} />
+        <Stat
+          label="Remaining to invoice"
+          value={money(fin.remainingToInvoice)}
+          tone={fin.remainingToInvoice < 0 ? "bad" : "default"}
+          hint={`of ${money(fin.contract, true)} contract`}
+        />
       </div>
 
       {rows.length === 0 ? (

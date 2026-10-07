@@ -32,6 +32,7 @@ export function ProposalView({
   isAdmin,
   companyName,
   cover,
+  intro,
   header,
   footer,
 }: {
@@ -49,6 +50,8 @@ export function ProposalView({
   isAdmin: boolean;
   companyName: string;
   cover: Cover;
+  /** The estimate's notes: the proposal's introduction, under the header. */
+  intro: string | null;
   header: React.ReactNode;
   footer: React.ReactNode;
 }) {
@@ -96,6 +99,17 @@ export function ProposalView({
           </label>
           <Check label="Cover page with a picture" checked={o.cover} onChange={(v) => set((p) => ({ ...p, cover: v }))} />
           {o.cover ? <CoverPicker projectId={projectId} url={cover.url} /> : null}
+          <Check label="Title over the introduction" checked={o.intro.titled} onChange={(v) => set((p) => ({ ...p, intro: { ...p.intro, titled: v } }))} />
+          <div className={cn("pl-5", !o.intro.titled && "opacity-50")}>
+            <input
+              className="input !h-8 !py-0 text-xs"
+              value={o.intro.title}
+              disabled={!o.intro.titled}
+              placeholder="Notes"
+              aria-label="Introduction title"
+              onChange={(e) => set((p) => ({ ...p, intro: { ...p.intro, title: e.target.value } }))}
+            />
+          </div>
         </Group>
         <Group title="Divisions">
           <Check label="Show divisions" checked={o.categories.show} onChange={(v) => set((p) => ({ ...p, categories: { ...p.categories, show: v } }))} />
@@ -161,8 +175,19 @@ export function ProposalView({
             />
           </div>
         </Group>
-        <Group title="Tax">
-          <p className="text-xs text-slate-500">Tax comes from the estimate&apos;s Markup, Margin &amp; Tax table — each tax row shows as its own line here.</p>
+        <Group title="Sales tax">
+          <p className="text-xs text-slate-500">The tax you pay (Tax column on the estimate) is in the total either way.</p>
+          <Radio name="tax" label="Built into the prices" checked={!o.tax.on} onChange={() => set((p) => ({ ...p, tax: { ...p.tax, on: false } }))} />
+          <Radio name="tax" label="Its own line (prices before tax)" checked={o.tax.on} onChange={() => set((p) => ({ ...p, tax: { ...p.tax, on: true } }))} />
+          <div className={cn("pl-5", !o.tax.on && "opacity-50")}>
+            <input
+              className="input !h-8 !py-0 text-xs"
+              value={o.tax.label}
+              disabled={!o.tax.on}
+              aria-label="Tax line name"
+              onChange={(e) => set((p) => ({ ...p, tax: { ...p.tax, label: e.target.value } }))}
+            />
+          </div>
         </Group>
         <Group title="Pricing">
           <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -218,6 +243,13 @@ export function ProposalView({
         {o.cover ? <CoverPage cover={cover} /> : null}
         {/* Wrapped so the server-made header/footer are each an only child (no key needed). */}
         <div>{header}</div>
+        {intro?.trim() ? (
+          // The estimate's notes open the proposal, like a letter.
+          <section className="mt-10 break-inside-avoid">
+            {o.intro.titled && o.intro.title.trim() ? <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-600">{o.intro.title.trim()}</h2> : null}
+            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-800">{intro.trim()}</p>
+          </section>
+        ) : null}
         <ProposalBody doc={doc} heading={o.heading || "Proposal"} basePrice={basePrice} />
         <div>{footer}</div>
         {o.validDays > 0 ? (

@@ -12,7 +12,7 @@ import { buttonClasses } from "@/components/ui";
 import { PrintButton } from "../../../_components/print-button";
 import { ProposalView } from "./proposal-view";
 import { coverUrl } from "@/lib/project-cover";
-import { allowanceExtras, parseMarkupTable, tableExtras } from "@/lib/markup";
+import { allowanceExtras, parseMarkupTable, tableExtras, tableTaxLabel, tableTaxRate } from "@/lib/markup";
 import { refreshDraftFromTakeoff, takeoffPriceCheck } from "@/lib/takeoff-data";
 import { refreshFormulaQuantities } from "@/lib/estimate-parameters";
 import { PriceWarnings, zeroLineNames } from "@/components/estimate/price-warnings";
@@ -72,12 +72,13 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
         unit: i.unit,
         unitCost: i.unitCost,
         markupPct: i.markupPct,
+        taxPct: i.taxPct,
         costType: i.costType,
         isOptional: i.isOptional,
       })),
   }));
   const options = parseProposalOptions(estimate.proposalOptions ?? company?.proposalOptions);
-  // The Markup, Margin & Tax table: overhead goes into what the client pays, tax rows on top.
+  // The Markup, Margin & Tax table: overhead goes into what the client pays; the sales tax is in the lines.
   const extras = tableExtras(markup, estimate.items);
   const client = project.client;
   const companyName = company?.name ?? "Your Company";
@@ -104,7 +105,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
         estimateId={estimate.id}
         specs={specs}
         basePrice={estimate.basePrice}
-        extras={{ overhead: extras.overheadTotal, taxes: extras.taxes.map((t) => ({ label: t.row.name || "Tax", pct: t.row.pct, amount: t.amount })) }}
+        extras={{ overhead: extras.overheadTotal, taxLabel: tableTaxLabel(markup), taxPct: tableTaxRate(markup) }}
         initial={options}
         isCustom={!!estimate.proposalOptions}
         pricedOn={fmtDate(estimate.sentAt ?? estimate.updatedAt, "yyyy-MM-dd")}
@@ -150,16 +151,11 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
             </div>
           </header>
         }
+        intro={estimate.notes}
         footer={
           <div>
-            {estimate.notes ? (
-              <section className="mt-10 break-inside-avoid">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Notes</h2>
-                <p className="mt-1 whitespace-pre-line text-sm text-slate-700">{estimate.notes}</p>
-              </section>
-            ) : null}
             {estimate.terms ? (
-              <section className="mt-6 break-inside-avoid">
+              <section className="mt-10 break-inside-avoid">
                 <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Terms</h2>
                 <p className="mt-1 whitespace-pre-line text-sm text-slate-700">{estimate.terms}</p>
               </section>

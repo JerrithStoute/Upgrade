@@ -87,6 +87,7 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
               <Th>Title</Th>
               <Th>Phone</Th>
               <Th>Role</Th>
+              <Th>Schedule</Th>
               <Th>Active</Th>
               <Th>Created</Th>
               <Th right>Actions</Th>
@@ -117,6 +118,34 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                           </option>
                         ))}
                       </select>
+                    </Td>
+                    <Td>
+                      <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          name="canDelay"
+                          defaultChecked={u.canDelay || u.role === "ADMIN"}
+                          disabled={u.role === "ADMIN"}
+                          form={EDIT_FORM}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        Can delay jobs
+                      </label>
+                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
+                        <input
+                          name="vacationDays"
+                          type="number"
+                          min={0}
+                          max={365}
+                          step="0.5"
+                          defaultValue={u.vacationDays ?? ""}
+                          placeholder="—"
+                          form={EDIT_FORM}
+                          className="input !h-7 !w-16 !py-0 text-right"
+                          aria-label="Vacation days a year"
+                        />
+                        vacation days / yr
+                      </label>
                     </Td>
                     <Td>
                       <input
@@ -158,6 +187,11 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                   <Td>{u.phone ?? "—"}</Td>
                   <Td>
                     <Badge status={u.role} />
+                  </Td>
+                  <Td className="text-xs text-slate-600">
+                    {u.role === "ADMIN" || u.canDelay ? <span className="block">Can delay jobs</span> : null}
+                    {u.vacationDays != null ? <span className="block">{u.vacationDays} vacation days / yr</span> : null}
+                    {!(u.role === "ADMIN" || u.canDelay) && u.vacationDays == null ? "—" : null}
                   </Td>
                   <Td>
                     {isSelf ? (

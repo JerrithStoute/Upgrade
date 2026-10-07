@@ -115,8 +115,7 @@ export async function applyTemplate(templateId: string, projectId: string) {
   const added: string[] = [];
   const skipped: string[] = [];
 
-  // A span table deleted since the template was saved: that takeoff goes back to its fixed size.
-  const tables = new Set((await db.spanTable.findMany({ select: { id: true } })).map((t) => t.id));
+  const tables = await spanTableIds();
   await db.$transaction(async (tx) => {
     for (const c of template.conditions) {
       if (taken.has(itemNameKey(c.name))) {
@@ -124,24 +123,65 @@ export async function applyTemplate(templateId: string, projectId: string) {
         continue;
       }
       taken.add(itemNameKey(c.name));
-      await tx.takeoffCondition.create({
-        data: {
-          ...conditionData(c),
-          spanTableId: c.spanTableId && tables.has(c.spanTableId) ? c.spanTableId : null,
-          projectId,
-          sortOrder: sortOrder++,
-          items: {
-            create: c.items.map((i) => ({
-              ...itemData(i),
-              ...(i.materialItem ? { unitCost: i.materialItem.unitCost, markupPct: i.materialItem.markupPct } : {}),
-            })),
-          },
-        },
-      });
+      await tx.takeoffCondition.create({ data: jobCondition(c, projectId, sortOrder++, tables) });
       added.push(c.name);
     }
   });
   return { template, added, skipped };
+}
+
+// A span table deleted since the template was saved: that takeoff goes back to its fixed size.
+async function spanTableIds() {
+  return new Set((await db.spanTable.findMany({ select: { id: true } })).map((t) => t.id));
+}
+
+type TemplateCondition = Parameters<typeof conditionData>[0] & {
+  items: (Parameters<typeof itemData>[0] & { materialItem: { unitCost: number; markupPct: number } | null })[];
+};
+
+/** A template's takeoff as a new takeoff on a job. Items picked from the Item List take today's Item List price. */
+function jobCondition(c: TemplateCondition, projectId: string, sortOrder: number, tables: Set<string>) {
+  return {
+    ...conditionData(c),
+    spanTableId: c.spanTableId && tables.has(c.spanTableId) ? c.spanTableId : null,
+    projectId,
+    sortOrder,
+    items: {
+      create: c.items.map((i) => ({
+        ...itemData(i),
+        ...(i.materialItem ? { unitCost: i.materialItem.unitCost, markupPct: i.materialItem.markupPct } : {}),
+      })),
+    },
+  };
+}
+
+/** Every takeoff in your templates — the Library you pull from on the plan. */
+export async function libraryTakeoffs() {
+  const rows = await db.takeoffTemplateCondition.findMany({
+    orderBy: [{ template: { name: "asc" } }, { sortOrder: "asc" }, { id: "asc" }],
+    select: { id: true, name: true, type: true, color: true, template: { select: { name: true } } },
+  });
+  return rows.map((r) => ({ id: r.id, name: r.name, type: r.type, color: r.color, template: r.template.name }));
+}
+
+/**
+ * One takeoff from the Library onto a job, items and all. A job that already has a
+ * takeoff by that name uses its own (no second copy). Returns the job's takeoff.
+ */
+export async function pullLibraryTakeoff(templateConditionId: string, projectId: string) {
+  const c = await db.takeoffTemplateCondition.findUnique({
+    where: { id: templateConditionId },
+    include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: { materialItem: { select: { unitCost: true, markupPct: true } } } } },
+  });
+  if (!c) throw new Error("That takeoff is no longer in the Library");
+  const existing = await db.takeoffCondition.findMany({ where: { projectId }, select: { id: true, name: true, sortOrder: true } });
+  const have = existing.find((e) => itemNameKey(e.name) === itemNameKey(c.name));
+  if (have) return { id: have.id, name: have.name, added: false };
+  const made = await db.takeoffCondition.create({
+    data: jobCondition(c, projectId, Math.max(-1, ...existing.map((e) => e.sortOrder)) + 1, await spanTableIds()),
+    select: { id: true, name: true },
+  });
+  return { ...made, added: true };
 }
 
 /**

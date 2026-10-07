@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { allowanceExtras, asMarkup, followTable, parseMarkupTable, startingTable, tableExtras, tableProfitPct, type MarkupRow } from "./markup";
+import { allowanceExtras, asMarkup, followTable, followTax, parseMarkupTable, startingTable, tableExtras, tableProfitPct, tableTaxPct, taxRateFor, type MarkupRow } from "./markup";
 
 const row = (p: Partial<MarkupRow>): MarkupRow => ({ id: "x", name: "", kind: "PROFIT", pct: 0, basis: "MARKUP", appliesTo: "ALL", costCodeId: null, inAllowance: false, ...p });
 const lines = [
@@ -19,11 +19,28 @@ describe("markup, margin & tax table", () => {
     assert.equal(tableProfitPct([row({ pct: 20, basis: "MARGIN" })], "LABOR"), 25);
   });
 
-  it("adds overhead and tax on the cost of the lines they apply to (optional lines left out)", () => {
-    const x = tableExtras([row({ kind: "OVERHEAD", pct: 5 }), row({ kind: "TAX", pct: 8.25, appliesTo: "MATERIAL" }), row({ pct: 20 })], lines);
+  it("adds overhead on the cost of the lines it applies to; tax is in the taxed lines, not on top (optional lines left out)", () => {
+    const taxed = lines.map((l) => (l.costType === "MATERIAL" ? { ...l, taxPct: 8.25 } : l));
+    const x = tableExtras([row({ kind: "OVERHEAD", pct: 5 }), row({ kind: "TAX", pct: 8.25, appliesTo: "MATERIAL" }), row({ pct: 20 })], taxed);
     assert.equal(x.overheadTotal, 800);
     assert.equal(x.taxTotal, 825);
-    assert.equal(x.total, 1625);
+    assert.equal(x.total, 800);
+  });
+
+  it("gives a cost type its tax rate, and taxed lines follow a new rate", () => {
+    const rows = [row({ kind: "TAX", name: "Sales tax", pct: 8.25, appliesTo: "MATERIAL" })];
+    assert.equal(tableTaxPct(rows, "MATERIAL"), 8.25);
+    assert.equal(tableTaxPct(rows, "LABOR"), 0);
+    // Ticking a labor line taxed by hand takes the table's rate.
+    assert.equal(taxRateFor(rows, "LABOR"), 8.25);
+    const after = [row({ kind: "TAX", pct: 8.5, appliesTo: "MATERIAL" })];
+    assert.equal(followTax(rows, after, { costType: "MATERIAL", taxPct: 8.25 }), 8.5);
+    assert.equal(followTax(rows, after, { costType: "MATERIAL", taxPct: 0 }), null); // you unticked it: stays untaxed
+    // A table that had no tax: adding it taxes the lines it covers.
+    assert.equal(followTax([], rows, { costType: "MATERIAL", taxPct: 0 }), 8.25);
+    assert.equal(followTax([], rows, { costType: "LABOR", taxPct: 0 }), null);
+    // Taking the tax row out: no tax.
+    assert.equal(followTax(rows, [], { costType: "MATERIAL", taxPct: 8.25 }), 0);
   });
 
   it("counts only the rows marked for allowances", () => {

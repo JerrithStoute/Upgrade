@@ -10,6 +10,7 @@ import { PAYMENT_METHODS } from "@/lib/constants";
 import { money, numField, parseDateInput, str, strOrNull } from "@/lib/utils";
 import { deriveInvoiceStatus, invoiceTotal, paymentsTotal } from "@/lib/finance";
 import { changeOrderTotals } from "@/lib/change-orders";
+import { billedChangeOrderIds, syncInvoiceTax } from "@/lib/billing-flow";
 
 function invoicePath(projectId: string, invoiceId?: string) {
   return `/projects/${projectId}/invoices${invoiceId ? `/${invoiceId}` : ""}`;
@@ -39,32 +40,6 @@ async function syncStatus(invoiceId: string) {
   if (next !== inv.status) await db.invoice.update({ where: { id: invoiceId }, data: { status: next } });
 }
 
-/**
- * The invoice's tax line: rate x the other lines, kept last. Off (taxPct null) removes it.
- * Runs after anything changes the lines.
- */
-async function syncTax(invoiceId: string) {
-  const inv = await db.invoice.findUnique({ where: { id: invoiceId }, include: { items: true } });
-  if (!inv) return;
-  const taxLines = inv.items.filter((i) => i.isTax);
-  const others = inv.items.filter((i) => !i.isTax);
-  if (inv.taxPct === null) {
-    if (taxLines.length) await db.invoiceItem.deleteMany({ where: { invoiceId, isTax: true } });
-    return;
-  }
-  const amount = Math.round(((invoiceTotal(others) * inv.taxPct) / 100) * 100) / 100;
-  const data = {
-    description: `${inv.taxLabel || "Sales tax"} (${Math.round(inv.taxPct * 1000) / 1000}%)`,
-    quantity: 1,
-    unitPrice: amount,
-    sortOrder: others.reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1,
-  };
-  const [first, ...extra] = taxLines;
-  if (first) await db.invoiceItem.update({ where: { id: first.id }, data });
-  else await db.invoiceItem.create({ data: { invoiceId, isTax: true, ...data } });
-  if (extra.length) await db.invoiceItem.deleteMany({ where: { id: { in: extra.map((i) => i.id) } } });
-}
-
 function itemData(fd: FormData) {
   const description = str(fd, "description");
   if (!description) throw new Error("Description is required");
@@ -82,14 +57,22 @@ export async function createInvoice(formData: FormData) {
   const dueDate = parseDateInput(formData.get("dueDate"));
   const notes = strOrNull(formData, "notes");
 
-  const items: { description: string; quantity: number; unitPrice: number; sortOrder: number }[] = [];
+  const items: { description: string; quantity: number; unitPrice: number; sortOrder: number; changeOrderId?: string }[] = [];
+  const number = await invoiceNumberFrom(formData);
 
-  // Approved change orders selected for billing.
+  // Approved change orders selected for billing (never one that's already on an invoice).
   const coIds = formData.getAll("changeOrderIds").filter((v): v is string => typeof v === "string" && v.length > 0);
   if (coIds.length) {
+    const billed = await billedChangeOrderIds(projectId);
     const cos = await db.changeOrder.findMany({ where: { id: { in: coIds }, projectId, status: "APPROVED" }, include: { items: true }, orderBy: { number: "asc" } });
-    for (const co of cos) {
-      items.push({ description: `Change Order #${co.number} — ${co.title}`, quantity: 1, unitPrice: changeOrderTotals(co, co.items).total, sortOrder: items.length });
+    for (const co of cos.filter((c) => !billed.has(c.id))) {
+      items.push({
+        description: `Change Order #${co.number} — ${co.title}`,
+        quantity: 1,
+        unitPrice: changeOrderTotals(co, co.items).total,
+        sortOrder: items.length,
+        changeOrderId: co.id,
+      });
     }
   }
 
@@ -113,7 +96,6 @@ export async function createInvoice(formData: FormData) {
     items.push({ description, quantity: q, unitPrice: p, sortOrder: items.length });
   });
 
-  const number = await nextInvoiceNumber();
   const inv = await db.invoice.create({
     data: { projectId, number, title, issueDate, dueDate, notes, items: { create: items } },
   });
@@ -126,10 +108,17 @@ export async function updateInvoice(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
-  await loadInvoice(projectId, id);
+  const inv = await loadInvoice(projectId, id);
+  // A draft's number can be changed (it has to be one no other invoice uses).
+  const typed = str(formData, "number") ? Math.round(numField(formData, "number", inv.number)) : inv.number;
+  if (typed !== inv.number) {
+    if (inv.status !== "DRAFT") throw new Error("Only a draft invoice's number can change");
+    await assertNumberFree(typed);
+  }
   await db.invoice.update({
     where: { id },
     data: {
+      number: typed,
       title: str(formData, "title") || "Invoice",
       issueDate: parseDateInput(formData.get("issueDate")) ?? new Date(),
       dueDate: parseDateInput(formData.get("dueDate")),
@@ -187,7 +176,7 @@ export async function createInvoiceItem(formData: FormData) {
   if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
   const sortOrder = inv.items.reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1;
   await db.invoiceItem.create({ data: { invoiceId, sortOrder, ...itemData(formData) } });
-  await syncTax(invoiceId);
+  await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
 }
@@ -201,7 +190,7 @@ export async function updateInvoiceItem(formData: FormData) {
   if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
   if (!inv.items.some((i) => i.id === id && !i.isTax)) throw new Error("Item not found");
   await db.invoiceItem.update({ where: { id }, data: itemData(formData) });
-  await syncTax(invoiceId);
+  await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
 }
@@ -215,7 +204,7 @@ export async function deleteInvoiceItem(formData: FormData) {
   if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
   if (!inv.items.some((i) => i.id === id && !i.isTax)) throw new Error("Item not found");
   await db.invoiceItem.delete({ where: { id } });
-  await syncTax(invoiceId);
+  await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
 }
@@ -231,7 +220,7 @@ export async function setInvoiceTax(formData: FormData) {
   const pct = numField(formData, "taxPct", 0);
   if (on && !(pct > 0 && pct <= 100)) throw new Error("Enter a tax rate between 0 and 100");
   await db.invoice.update({ where: { id: invoiceId }, data: { taxPct: on ? pct : null, taxLabel: str(formData, "taxLabel").slice(0, 60) || "Sales tax" } });
-  await syncTax(invoiceId);
+  await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
 }
@@ -281,4 +270,20 @@ export async function deletePayment(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "invoice.payment_removed", description: `Payment of ${money(payment.amount)} removed from Invoice #${inv.number}` });
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
+}
+
+/** No two invoices share a number. */
+async function assertNumberFree(number: number) {
+  if (!(Number.isInteger(number) && number > 0)) throw new Error("Invoice numbers are whole numbers above 0");
+  const used = await db.invoice.findUnique({ where: { number }, select: { id: true } });
+  if (used) throw new Error(`Invoice #${number} is already used — pick another number`);
+}
+
+/** The new invoice's number: the one you typed (when you number them yourself), else the next automatic one. */
+async function invoiceNumberFrom(formData: FormData) {
+  const typed = str(formData, "number");
+  if (!typed) return nextInvoiceNumber();
+  const n = Math.round(Number(typed));
+  await assertNumberFree(n);
+  return n;
 }

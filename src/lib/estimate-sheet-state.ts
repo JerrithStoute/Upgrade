@@ -1,7 +1,7 @@
 import { byCategory, type SheetLine, type SheetSpec } from "./estimate-sheet";
 import { NO_VIEW } from "./proposal-options";
 import { evaluateFormula, formulaRefs } from "./formula";
-import { followTable, tableProfitPct, type MarkupRow } from "./markup";
+import { followTable, followTax, tableProfitPct, tableTaxPct, type MarkupRow } from "./markup";
 import { settleSales, usesSales } from "./sales-price";
 
 /**
@@ -80,6 +80,7 @@ export function newLine(key: string, markupPct: number, init?: Partial<SheetLine
     unit: "ea",
     unitCost: 0,
     markupPct,
+    taxPct: 0,
     costType: "MATERIAL",
     notes: "",
     isOptional: false,
@@ -176,6 +177,11 @@ function reduce(state: SheetState, a: SheetAction): SheetState {
         const after = tableProfitPct(state.markup, patch.costType);
         if (line && before !== null && after !== null && Math.abs(line.markupPct - before) < 1e-6) patch.markupPct = after;
       }
+      // …and a line taxed (or not) as the table has it for its old type follows the new type's.
+      if (patch.costType !== undefined && patch.taxPct === undefined) {
+        const line = state.specs.find((s) => s.key === a.spec)?.lines.find((l) => l.key === a.line);
+        if (line && Math.abs(line.taxPct - tableTaxPct(state.markup, line.costType)) < 1e-6) patch.taxPct = tableTaxPct(state.markup, patch.costType);
+      }
       return edit(
         state,
         mapSpec(state.specs, a.spec, (s) => ({ ...s, lines: s.lines.map((l) => (l.key === a.line ? { ...l, ...patch } : l)) })),
@@ -186,9 +192,10 @@ function reduce(state: SheetState, a: SheetAction): SheetState {
         let changed = false;
         const lines = s.lines.map((l) => {
           const pct = followTable(state.markup, a.rows, l);
-          if (pct === null) return l;
+          const tax = followTax(state.markup, a.rows, l);
+          if (pct === null && tax === null) return l;
           changed = true;
-          return { ...l, markupPct: pct };
+          return { ...l, ...(pct !== null ? { markupPct: pct } : {}), ...(tax !== null ? { taxPct: tax } : {}) };
         });
         return changed ? { ...s, lines } : s;
       });
@@ -218,7 +225,9 @@ function reduce(state: SheetState, a: SheetAction): SheetState {
         mapSpec(state.specs, spec, (s) => {
           const lines = [...s.lines];
           const at = a.before ? lines.findIndex((l) => l.key === a.before) : -1;
-          lines.splice(at === -1 ? lines.length : at, 0, newLine(a.key, a.markupPct, a.init));
+          // Taxed when the table's tax rows cover its cost type.
+          const init = { taxPct: tableTaxPct(state.markup, a.init?.costType ?? "MATERIAL"), ...a.init };
+          lines.splice(at === -1 ? lines.length : at, 0, newLine(a.key, a.markupPct, init));
           return { ...s, lines };
         }),
       );

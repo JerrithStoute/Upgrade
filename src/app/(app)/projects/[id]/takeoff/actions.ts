@@ -9,7 +9,6 @@ import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
 import { deleteUpload } from "@/lib/uploads";
 import { boolField, money, str, strOrNull } from "@/lib/utils";
-import { syncTakeoffToEstimate } from "@/lib/takeoff-data";
 import { resolveMaterialItem } from "@/lib/material-items";
 import { syncAutoItems } from "@/lib/walls";
 import { copyTakeoff, placeBySpan, resizeFamily, resizeSheet } from "@/lib/span-sizing";
@@ -23,7 +22,8 @@ import { NO_ALIGN, alignAngle, alignScale, applyAlign, isNoAlign, parseAlign, ty
 import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { assignItemCodes, newItemPlacement, saveCodeRule } from "@/lib/item-codes";
 import { assemblyFields, conditionFields, type AssemblyFields } from "@/lib/takeoff-forms";
-import { addConditionsToTemplate, applyTemplate, saveTemplateFromProject } from "@/lib/takeoff-templates";
+import { addConditionsToTemplate, applyTemplate, pullLibraryTakeoff, saveTemplateFromProject } from "@/lib/takeoff-templates";
+import { addSubstitution, swapBack } from "@/lib/substitutions";
 import {
   CONDITION_COLORS,
   CONDITION_TYPES,
@@ -344,7 +344,7 @@ async function withMaterialItem(data: AssemblyFields, userId: string, projectId:
  */
 async function priceEverywhere(fd: FormData, data: AssemblyFields & { materialItemId: string }, userId: string, projectId: string) {
   const before = await db.materialItem.findUnique({ where: { id: data.materialItemId }, select: { unitCost: true } });
-  const where = await setItemPrice({ projectId, materialItemId: data.materialItemId, unitCost: data.unitCost, pin: boolField(fd, "pinPrice"), costCodeId: data.costCodeId });
+  const where = await setItemPrice({ projectId, materialItemId: data.materialItemId, unitCost: data.unitCost, pin: boolField(fd, "pinPrice") });
   if (where === "list" && before && Math.abs(before.unitCost - data.unitCost) > 0.0001) {
     await logActivity({
       projectId,
@@ -399,27 +399,6 @@ export async function deleteAssemblyItem(fd: FormData) {
   redirect(returnTo(fd, project.id, `#condition-${item.conditionId}`, "conditions"));
 }
 
-// --- Send to estimate -------------------------------------------------------------
-
-/** Writes the takeoff into a draft estimate (see syncTakeoffToEstimate). */
-export async function sendToEstimate(fd: FormData) {
-  const user = await requireStaff();
-  const project = await getProject(str(fd, "projectId"));
-  const estimateId = str(fd, "estimateId");
-  await syncAutoItems(project.id);
-  const { estimate, created, updated } = await syncTakeoffToEstimate(project.id, estimateId);
-  await logActivity({
-    projectId: project.id,
-    userId: user.id,
-    type: "takeoff.sent_to_estimate",
-    description: `Takeoff sent to estimate v${estimate.version}: ${created} line${created === 1 ? "" : "s"} added, ${updated} updated`,
-  });
-  revalidatePath(`/projects/${project.id}/estimate`);
-  revalidatePath(`/projects/${project.id}/budget`);
-  revalidatePath(`/projects/${project.id}`);
-  redirect(`/projects/${project.id}/estimate?estimate=${estimateId}`);
-}
-
 // --- Templates ---------------------------------------------------------------------
 
 /** Adds a template's conditions to this job (skipping names it already has). */
@@ -439,6 +418,52 @@ export async function applyTakeoffTemplate(fd: FormData) {
   // Back to the sheet you were on, with a note of what was added.
   const back = returnTo(fd, project.id);
   redirect(`${back}${back.includes("?") ? "&" : "?"}applied=${added.length}&skipped=${skipped.length}`);
+}
+
+/** One takeoff from the Library (your templates) onto this job, ready to measure. */
+export async function pullFromLibrary(input: { projectId: string; templateConditionId: string }) {
+  const user = await requireStaff();
+  const { projectId, templateConditionId } = z.object({ projectId: z.string(), templateConditionId: z.string() }).parse(input);
+  const project = await getProject(projectId);
+  const r = await pullLibraryTakeoff(templateConditionId, project.id);
+  if (r.added) {
+    await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.template_applied", description: `Added takeoff "${r.name}" from the Library` });
+    revalidate(project.id);
+  }
+  return r;
+}
+
+/**
+ * Admins: one takeoff (items and all) into the Library — a template you have (refreshing
+ * the one by that name if it's there) or a new one.
+ */
+export async function saveConditionToLibrary(fd: FormData) {
+  const admin = await requireAdmin();
+  const project = await getProject(str(fd, "projectId"));
+  const back = returnTo(fd, project.id);
+  const join = back.includes("?") ? "&" : "?";
+  const c = await db.takeoffCondition.findFirst({
+    where: { id: str(fd, "id"), projectId: project.id },
+    include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
+  });
+  if (!c) throw new Error("Takeoff not found");
+  const templateId = str(fd, "templateId");
+  const newName = str(fd, "newName");
+  if (templateId === "new" && !newName) redirect(`${back}${join}templateError=${encodeURIComponent("Give the new template a name")}`);
+  const t =
+    templateId === "new"
+      ? await db.takeoffTemplate.create({ data: { name: newName }, select: { id: true, name: true } })
+      : await db.takeoffTemplate.findUnique({ where: { id: templateId }, select: { id: true, name: true } });
+  if (!t) redirect(`${back}${join}templateError=${encodeURIComponent("Pick a template")}`);
+  const r = await db.$transaction((tx) => addConditionsToTemplate(tx, t!.id, [c], true));
+  await logActivity({
+    projectId: project.id,
+    userId: admin.id,
+    type: "takeoff_template.saved",
+    description: `${r.updated.length ? "Updated" : "Saved"} takeoff "${c.name}" in template "${t!.name}"`,
+  });
+  revalidatePath("/settings/takeoff-templates");
+  redirect(`${back}${join}library=${encodeURIComponent(`${r.updated.length ? "Updated" : "Saved"} "${c.name}" in your Library (${t!.name})`)}`);
 }
 
 /**
@@ -1215,4 +1240,55 @@ export async function assignCostCodes(input: { projectId: string; items: { id: s
   revalidatePath(`/projects/${data.projectId}/takeoff`, "layout");
   revalidatePath("/settings/items");
   return { count };
+}
+
+// --- Substitutions ----------------------------------------------------------------
+
+const substituteInput = z.object({
+  projectId: z.string(),
+  fromItemId: z.string(),
+  with: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("length"), length: z.number().positive().max(100) }),
+    z.object({ kind: z.literal("item"), itemId: z.string() }),
+    z.object({ kind: z.literal("new"), name: z.string().trim().min(1).max(200), unit: z.string().trim().max(20) }),
+  ]),
+  unitCost: z.number().min(0).max(1e7).nullable(),
+});
+
+/** Orders something else instead of an item on this job (see substitutions.ts). */
+export async function substituteItem(raw: z.input<typeof substituteInput>): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireStaff();
+  const parsed = substituteInput.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: "Pick what to order instead" };
+  const project = await getProject(parsed.data.projectId);
+  try {
+    const s = await addSubstitution(project.id, { fromItemId: parsed.data.fromItemId, with: parsed.data.with, unitCost: parsed.data.unitCost });
+    await logActivity({
+      projectId: project.id,
+      userId: user.id,
+      type: "takeoff.substitution",
+      description: `Substituted ${s.toName} for ${s.fromName}${s.unitCost != null ? ` at ${money(s.unitCost)}` : ""}`,
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Could not substitute it" };
+  }
+  revalidatePrices(project.id);
+  revalidatePath("/settings/items");
+  return { ok: true };
+}
+
+/** Undoes a substitution on this job. */
+export async function swapBackSubstitution(fd: FormData) {
+  const user = await requireStaff();
+  const project = await getProject(str(fd, "projectId"));
+  const s = await swapBack(project.id, str(fd, "id"));
+  await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.substitution", description: `Swapped back to ${s.fromName} (was ${s.toName})` });
+  revalidatePrices(project.id);
+  redirect(backTo(fd, project.id, `/projects/${project.id}/materials`));
+}
+
+/** The Item List, to pick a substitute from. */
+export async function substituteChoices() {
+  await requireStaff();
+  return db.materialItem.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, unit: true, unitCost: true, category: true } });
 }

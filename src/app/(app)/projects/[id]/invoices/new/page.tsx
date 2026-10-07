@@ -6,6 +6,7 @@ import { getProject, contractValue, nextInvoiceNumber } from "@/lib/projects";
 import { dateInput, money } from "@/lib/utils";
 import { changeOrderNumberFromDescription } from "@/lib/finance";
 import { changeOrderTotals } from "@/lib/change-orders";
+import { billedChangeOrderIds } from "@/lib/billing-flow";
 import { Card, CardBody, CardHeader, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { createInvoice } from "../actions";
 
@@ -13,24 +14,36 @@ export default async function NewInvoicePage({ params }: { params: Promise<{ id:
   await requireStaff();
   const { id } = await params;
   const project = await getProject(id);
-  const [number, contract, approvedCOs, invoiceItems] = await Promise.all([
+  const [number, contract, approvedCOs, invoiceItems, billedIds, company] = await Promise.all([
     nextInvoiceNumber(),
     contractValue(project.id, project.contractAmount),
     db.changeOrder.findMany({ where: { projectId: project.id, status: "APPROVED" }, include: { items: true }, orderBy: { number: "asc" } }),
     db.invoiceItem.findMany({ where: { invoice: { projectId: project.id, status: { not: "VOID" } } }, select: { description: true } }),
+    billedChangeOrderIds(project.id),
+    db.company.findFirst({ select: { invoiceNumbering: true } }),
   ]);
+  const manual = company?.invoiceNumbering === "MANUAL";
   const billedCoNumbers = new Set(invoiceItems.map((i) => changeOrderNumberFromDescription(i.description)).filter((n): n is number => n !== null));
-  const unbilledCOs = approvedCOs.filter((co) => !billedCoNumbers.has(co.number));
+  // Billed: on an invoice line tied to it, or (older lines) named for it.
+  const unbilledCOs = approvedCOs.filter((co) => !billedIds.has(co.id) && !billedCoNumbers.has(co.number));
   const today = new Date();
 
   return (
     <Card className="max-w-4xl">
-      <CardHeader title={`New invoice #${number}`} description="Set the basics and add opening line items. You can refine items on the invoice page before sending." />
+      <CardHeader
+        title={manual ? "New invoice" : `New invoice #${number}`}
+        description="Set the basics and add opening line items. You can refine items on the invoice page before sending."
+      />
       <CardBody>
         <form action={createInvoice} className="space-y-6">
           <input type="hidden" name="projectId" value={project.id} />
           <FormGrid>
-            <Field label="Title" htmlFor="inv-title" className="md:col-span-2">
+            {manual ? (
+              <Field label="Invoice number" htmlFor="inv-number" hint={`You number your invoices (Settings → Billing). Next unused: ${number}.`}>
+                <input id="inv-number" name="number" type="number" min={1} step={1} required className="input" defaultValue={number} />
+              </Field>
+            ) : null}
+            <Field label="Title" htmlFor="inv-title" className={manual ? undefined : "md:col-span-2"}>
               <input id="inv-title" name="title" className="input" required placeholder="e.g. Draw 4 — Cabinets installed" />
             </Field>
             <Field label="Issue date" htmlFor="inv-issue">

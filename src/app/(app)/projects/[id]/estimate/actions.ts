@@ -17,6 +17,7 @@ import { proposalOptionsSchema } from "@/lib/proposal-options";
 import { markupTableSchema } from "@/lib/markup";
 import { lockJobPrices } from "@/lib/job-prices";
 import { clearJobNumbers } from "@/lib/template-numbers";
+import { fillFromTakeoff, lockAfterAutoChanges } from "@/lib/takeoff-data";
 
 function estimatePath(projectId: string, estimateId?: string) {
   return `/projects/${projectId}/estimate${estimateId ? `?estimate=${estimateId}` : ""}`;
@@ -79,8 +80,8 @@ export async function saveEstimate(projectId: string, estimateId: string, raw: u
   const saved = await db.$transaction(
     async (tx) => {
       if (mode === "over") {
-        // Saved: the "what changed" note starts over.
-        await tx.estimate.update({ where: { id: est.id }, data: { ...header, autoNote: null } });
+        // Saved: the "what changed" note (and its copy of the last save) starts over.
+        await tx.estimate.update({ where: { id: est.id }, data: { ...header, autoNote: null, autoBase: null } });
         await saveEstimateSheet(tx, est.id, est.id, input);
         if (input.parameterValues) await saveEstimateValues(tx, est.id, input.parameterValues);
         return est;
@@ -123,6 +124,8 @@ export async function createEstimate(formData: FormData) {
   const projectId = str(formData, "projectId");
   await loadProject(projectId);
   const { estimate: est, template } = await createProjectEstimate(projectId, strOrNull(formData, "templateId"));
+  // It starts with the job's takeoff on it (no sending needed).
+  await fillFromTakeoff(projectId, est.id).catch(() => null);
   await logActivity({
     projectId,
     userId: user.id,
@@ -414,7 +417,28 @@ export async function lockEstimate(formData: FormData) {
 export async function dismissAutoNote(projectId: string, estimateId: string): Promise<{ ok: true }> {
   await requireStaff();
   // Without touching the estimate's "updated" time — that would reload the sheet and lose unsaved edits.
-  await db.$executeRaw`UPDATE "Estimate" SET "autoNote" = NULL WHERE "id" = ${estimateId} AND "projectId" = ${projectId}`;
+  await db.$executeRaw`UPDATE "Estimate" SET "autoNote" = NULL, "autoBase" = NULL WHERE "id" = ${estimateId} AND "projectId" = ${projectId}`;
   revalidatePath(`/projects/${projectId}/estimate`);
+  return { ok: true };
+}
+
+/**
+ * From the "what changed" note: lock the estimate, either putting it back to what you
+ * last saved (what you bid) or keeping the takeoff's changes.
+ */
+export async function lockFromAutoNote(projectId: string, estimateId: string, keep: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireStaff();
+  try {
+    const { estimate, restored } = await lockAfterAutoChanges(projectId, estimateId, keep);
+    await logActivity({
+      projectId,
+      userId: user.id,
+      type: "estimate.locked",
+      description: restored ? `Estimate v${estimate.version} put back to its last save and locked` : `Estimate v${estimate.version} locked with the takeoff's changes`,
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Couldn't lock the estimate" };
+  }
+  revalidate(projectId);
   return { ok: true };
 }

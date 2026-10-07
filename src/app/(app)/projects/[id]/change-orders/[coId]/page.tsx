@@ -144,6 +144,7 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
           profitShown: co.profitShown,
           taxPct: co.taxPct,
           taxLabel: co.taxLabel,
+          taxShown: co.taxShown,
           scheduleImpactDays: co.scheduleImpactDays,
           priorCompletion: co.priorCompletion ? co.priorCompletion.toISOString().slice(0, 10) : "",
           newCompletion: co.newCompletion ? co.newCompletion.toISOString().slice(0, 10) : "",
@@ -169,6 +170,7 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
           costCodeId: i.costCodeId,
           profitMode: i.profitMode,
           profitValue: i.profitValue,
+          taxed: i.taxed,
         }))}
         costCodes={costCodes.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
         open={open}

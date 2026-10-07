@@ -17,7 +17,7 @@ export async function getProject(id: string) {
 
 /**
  * Approved-estimate total: its base price (what was quoted), or the price of its
- * lines incl. profit plus the table's overhead — and the table's tax on top.
+ * lines (sales tax and profit in) plus the table's overhead.
  */
 export async function approvedEstimateTotal(projectId: string) {
   const est = await db.estimate.findFirst({
@@ -28,7 +28,7 @@ export async function approvedEstimateTotal(projectId: string) {
   if (!est) return 0;
   const extras = tableExtras(parseMarkupTable(est.markupTable, est.defaultMarkup), est.items);
   const lines = est.items.filter((i) => !i.isOptional).reduce((s, i) => s + linePrice(i), 0);
-  return (est.basePrice ?? lines + extras.overheadTotal) + extras.taxTotal;
+  return est.basePrice ?? lines + extras.overheadTotal;
 }
 
 /** Approved change-order total (lines, profit and tax). */
@@ -68,9 +68,13 @@ export async function nextProjectNumber() {
   return (last?.number ?? 1000) + 1;
 }
 
+/** The next invoice number: your starting number (Settings → Billing), or one past the highest used, whichever is more. */
 export async function nextInvoiceNumber() {
-  const last = await db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } });
-  return (last?.number ?? 1000) + 1;
+  const [last, company] = await Promise.all([
+    db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } }),
+    db.company.findFirst({ select: { invoiceNextNumber: true } }),
+  ]);
+  return Math.max((last?.number ?? 1000) + 1, company?.invoiceNextNumber ?? 1001);
 }
 
 export async function nextChangeOrderNumber(projectId: string) {

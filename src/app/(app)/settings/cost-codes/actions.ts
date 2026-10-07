@@ -7,6 +7,7 @@ import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { costCodeLabel, str, strOrNull, intField } from "@/lib/utils";
 import { parseCostCodeCsv, planCostCodeImport } from "@/lib/cost-code-csv";
+import { STARTER_COST_CODES } from "@/lib/starter-cost-codes";
 
 function done() {
   revalidatePath("/settings/cost-codes");
@@ -121,4 +122,29 @@ export async function replaceCostCodesFromCsv(formData: FormData) {
   });
   done();
   redirect("/settings/cost-codes?imported=1");
+}
+
+/**
+ * The NAHB-style starter list: adds the codes you tick (or every one you don't have yet).
+ * Codes you already have — by number — are never changed or doubled.
+ */
+export async function addStarterCostCodes(formData: FormData) {
+  const admin = await requireAdmin();
+  const have = new Set((await db.costCode.findMany({ where: { code: { not: null } }, select: { code: true } })).map((c) => c.code!));
+  const missing = STARTER_COST_CODES.filter((c) => !have.has(c.code));
+  const picked = formData.get("all") === "1" ? missing : missing.filter((c) => formData.getAll("code").includes(c.code));
+  if (!picked.length) redirect("/settings/cost-codes");
+  const last = await db.costCode.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
+  let order = (last?.sortOrder ?? 0) + 10;
+  for (const c of picked) {
+    await db.costCode.create({ data: { code: c.code, name: c.name, division: c.division, sortOrder: order, active: true } });
+    order += 10;
+  }
+  await logActivity({
+    userId: admin.id,
+    type: "cost_code.created",
+    description: `Added ${picked.length} cost code${picked.length === 1 ? "" : "s"} from the NAHB-style starter list`,
+  });
+  done();
+  redirect(`/settings/cost-codes?starter=${picked.length}`);
 }

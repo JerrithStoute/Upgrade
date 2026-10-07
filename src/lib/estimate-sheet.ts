@@ -73,8 +73,10 @@ export type SheetLine = {
   quantity: number;
   unit: string;
   unitCost: number;
-  /** Profit % of cost. */
+  /** Profit % of cost (cost with tax). */
   markupPct: number;
+  /** Sales tax you pay on it, % of cost (0 = not taxed). */
+  taxPct: number;
   costType: string;
   notes: string;
   isOptional: boolean;
@@ -112,17 +114,19 @@ export type SheetSpec = {
   lines: SheetLine[];
 };
 
-export function lineMath(l: { quantity: number; unitCost: number; markupPct: number }) {
+/** A line's money: cost, the sales tax you pay on it, profit on the two, and the price. */
+export function lineMath(l: { quantity: number; unitCost: number; markupPct: number; taxPct?: number | null }) {
   const cost = l.quantity * l.unitCost;
-  const profit = cost * (l.markupPct / 100);
-  return { cost, profit, price: cost + profit };
+  const tax = (cost * (l.taxPct ?? 0)) / 100;
+  const profit = (cost + tax) * (l.markupPct / 100);
+  return { cost, tax, profit, price: cost + tax + profit };
 }
 
-export type Totals = { cost: number; profit: number; price: number };
-const ZERO: Totals = { cost: 0, profit: 0, price: 0 };
+export type Totals = { cost: number; tax: number; profit: number; price: number };
+const ZERO: Totals = { cost: 0, tax: 0, profit: 0, price: 0 };
 
 function add(a: Totals, b: Totals): Totals {
-  return { cost: a.cost + b.cost, profit: a.profit + b.profit, price: a.price + b.price };
+  return { cost: a.cost + b.cost, tax: a.tax + b.tax, profit: a.profit + b.profit, price: a.price + b.price };
 }
 
 /** Totals of lines; optional lines are left out (they aren't in the price). */
@@ -282,10 +286,13 @@ const lineInput = z.object({
   unit: text(20),
   unitCost: money,
   markupPct: z.number().finite().min(-100).max(10000),
+  taxPct: z.number().finite().min(0).max(100).catch(0),
   costType: z.enum(COST_TYPES.map((t) => t.value) as [CostType, ...CostType[]]),
   notes: text(2000),
   isOptional: z.boolean(),
   fromTakeoff: z.boolean(),
+  /** The takeoff line it was when the sheet loaded ("Stop updating" keeps it, so a stop can be told from a stale sheet). */
+  takeoffKey: z.string().nullable().optional(),
   materialItemId: z.string().nullable(),
   addToItemList: z.boolean(),
   qtyFormula: z.string().max(1000).nullable(),

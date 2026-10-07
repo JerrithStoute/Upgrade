@@ -190,8 +190,30 @@ async function main() {
       sortOrder: kitchenTemplateItems.length * 10,
       items: {
         create: [
-          { templateId: kitchenTemplate.id, costCodeId: codes["09-410"], group: "Tile & Flooring", description: "Tile material — backsplash", quantity: 40, unit: "sf", unitCost: 12, markupPct: 15, isAllowance: true, sortOrder: kitchenTemplateItems.length * 10 + 1 },
-          { templateId: kitchenTemplate.id, costCodeId: codes["09-310"], group: "Tile & Flooring", description: "Flooring material", quantity: 200, unit: "sf", unitCost: 7, markupPct: 15, isAllowance: true, sortOrder: kitchenTemplateItems.length * 10 + 2 },
+          {
+            templateId: kitchenTemplate.id,
+            costCodeId: codes["09-410"],
+            group: "Tile & Flooring",
+            description: "Tile material — backsplash",
+            quantity: 40,
+            unit: "sf",
+            unitCost: 12,
+            markupPct: 15,
+            isAllowance: true,
+            sortOrder: kitchenTemplateItems.length * 10 + 1,
+          },
+          {
+            templateId: kitchenTemplate.id,
+            costCodeId: codes["09-310"],
+            group: "Tile & Flooring",
+            description: "Flooring material",
+            quantity: 200,
+            unit: "sf",
+            unitCost: 7,
+            markupPct: 15,
+            isAllowance: true,
+            sortOrder: kitchenTemplateItems.length * 10 + 2,
+          },
         ],
       },
     },
@@ -213,10 +235,31 @@ async function main() {
     },
   });
   const patel = await db.client.create({
-    data: { firstName: "Raj", lastName: "Patel", email: "raj.patel@example.com", phone: "(512) 555-0177", address: "9 Lakeview Dr", city: "Lakeway", state: "TX", zip: "78734", source: "Website" },
+    data: {
+      firstName: "Raj",
+      lastName: "Patel",
+      email: "raj.patel@example.com",
+      phone: "(512) 555-0177",
+      address: "9 Lakeview Dr",
+      city: "Lakeway",
+      state: "TX",
+      zip: "78734",
+      source: "Website",
+    },
   });
   const greenleaf = await db.client.create({
-    data: { firstName: "Elena", lastName: "Ruiz", company: "Greenleaf Dental", email: "elena@greenleafdental.com", phone: "(512) 555-0155", address: "2201 S Lamar Blvd", city: "Austin", state: "TX", zip: "78704", source: "Repeat client" },
+    data: {
+      firstName: "Elena",
+      lastName: "Ruiz",
+      company: "Greenleaf Dental",
+      email: "elena@greenleafdental.com",
+      phone: "(512) 555-0155",
+      address: "2201 S Lamar Blvd",
+      city: "Austin",
+      state: "TX",
+      zip: "78704",
+      source: "Repeat client",
+    },
   });
 
   const today = new Date();
@@ -306,8 +349,12 @@ async function main() {
     },
   });
   const faucetOpts = await Promise.all([
-    db.selectionOption.create({ data: { selectionId: selFaucet.id, name: "Kohler Simplice — Matte Black", vendor: "Ferguson", modelNumber: "K-596-BL", price: 620, isRecommended: true, sortOrder: 0 } }),
-    db.selectionOption.create({ data: { selectionId: selFaucet.id, name: "Delta Trinsic Pro — Black Stainless", vendor: "Ferguson", modelNumber: "9659T-KS", price: 880, sortOrder: 1 } }),
+    db.selectionOption.create({
+      data: { selectionId: selFaucet.id, name: "Kohler Simplice — Matte Black", vendor: "Ferguson", modelNumber: "K-596-BL", price: 620, isRecommended: true, sortOrder: 0 },
+    }),
+    db.selectionOption.create({
+      data: { selectionId: selFaucet.id, name: "Delta Trinsic Pro — Black Stainless", vendor: "Ferguson", modelNumber: "9659T-KS", price: 880, sortOrder: 1 },
+    }),
     db.selectionOption.create({ data: { selectionId: selFaucet.id, name: "Moen Align — Chrome", vendor: "Home Depot", modelNumber: "5923", price: 410, sortOrder: 2 } }),
   ]);
   await db.selection.update({ where: { id: selFaucet.id }, data: { chosenOptionId: faucetOpts[1].id } });
@@ -325,9 +372,28 @@ async function main() {
       status: "PENDING",
     },
   });
-  await db.selectionOption.create({ data: { selectionId: selCounter.id, name: "Caesarstone Calacatta Nuvo", vendor: "Austin Stone Works", price: 9350, isRecommended: true, description: "Soft grey veining, matches cabinet sample #2.", sortOrder: 0 } });
+  await db.selectionOption.create({
+    data: {
+      selectionId: selCounter.id,
+      name: "Caesarstone Calacatta Nuvo",
+      vendor: "Austin Stone Works",
+      price: 9350,
+      isRecommended: true,
+      description: "Soft grey veining, matches cabinet sample #2.",
+      sortOrder: 0,
+    },
+  });
   await db.selectionOption.create({ data: { selectionId: selCounter.id, name: "Silestone Eternal Statuario", vendor: "Austin Stone Works", price: 8800, sortOrder: 1 } });
-  await db.selectionOption.create({ data: { selectionId: selCounter.id, name: "MSI Q Carrara Marmi", vendor: "Austin Stone Works", price: 7650, description: "Budget-friendly option; slightly less veining.", sortOrder: 2 } });
+  await db.selectionOption.create({
+    data: {
+      selectionId: selCounter.id,
+      name: "MSI Q Carrara Marmi",
+      vendor: "Austin Stone Works",
+      price: 7650,
+      description: "Budget-friendly option; slightly less veining.",
+      sortOrder: 2,
+    },
+  });
 
   const selTile = await db.selection.create({
     data: {
@@ -343,16 +409,32 @@ async function main() {
     },
   });
   const tileOpts = await Promise.all([
-    db.selectionOption.create({ data: { selectionId: selTile.id, name: "12x24 Porcelain — Bianco Dolomite look", vendor: "Floor & Decor", price: 1720, isRecommended: true, sortOrder: 0 } }),
+    db.selectionOption.create({
+      data: { selectionId: selTile.id, name: "12x24 Porcelain — Bianco Dolomite look", vendor: "Floor & Decor", price: 1720, isRecommended: true, sortOrder: 0 },
+    }),
     db.selectionOption.create({ data: { selectionId: selTile.id, name: "Zellige 4x4 — Weathered White", vendor: "Clé Tile", price: 2980, sortOrder: 1 } }),
   ]);
   await db.selection.update({ where: { id: selTile.id }, data: { chosenOptionId: tileOpts[1].id } });
 
   const selAppliance = await db.selection.create({
-    data: { projectId: p1.id, costCodeId: codes["11-100"], title: "Appliance Package", category: "Appliances", location: "Kitchen", allowance: 9500, dueDate: addDays(today, 14), status: "PENDING", description: "Range, hood, dishwasher, refrigerator. Panel-ready fridge requires cabinet confirmation by due date." },
+    data: {
+      projectId: p1.id,
+      costCodeId: codes["11-100"],
+      title: "Appliance Package",
+      category: "Appliances",
+      location: "Kitchen",
+      allowance: 9500,
+      dueDate: addDays(today, 14),
+      status: "PENDING",
+      description: "Range, hood, dishwasher, refrigerator. Panel-ready fridge requires cabinet confirmation by due date.",
+    },
   });
-  await db.selectionOption.create({ data: { selectionId: selAppliance.id, name: "Bosch 800 Series package", vendor: "Ferguson Appliance", price: 9200, isRecommended: true, sortOrder: 0 } });
-  await db.selectionOption.create({ data: { selectionId: selAppliance.id, name: "Thermador Pro package (panel-ready fridge)", vendor: "Ferguson Appliance", price: 16400, sortOrder: 1 } });
+  await db.selectionOption.create({
+    data: { selectionId: selAppliance.id, name: "Bosch 800 Series package", vendor: "Ferguson Appliance", price: 9200, isRecommended: true, sortOrder: 0 },
+  });
+  await db.selectionOption.create({
+    data: { selectionId: selAppliance.id, name: "Thermador Pro package (panel-ready fridge)", vendor: "Ferguson Appliance", price: 16400, sortOrder: 1 },
+  });
 
   // Change orders
   const co1 = await db.changeOrder.create({
@@ -369,8 +451,21 @@ async function main() {
       decidedBy: "Sarah Whitfield",
     },
   });
-  await db.changeOrderItem.create({ data: { changeOrderId: co1.id, costCodeId: codes["15-100"], description: "Gas line extension & pot filler rough-in", quantity: 1, unit: "ls", unitCost: 1450, markupPct: 20, sortOrder: 0 } });
-  await db.changeOrderItem.create({ data: { changeOrderId: co1.id, costCodeId: codes["16-100"], description: "Relocate range circuit", quantity: 1, unit: "ls", unitCost: 380, markupPct: 20, sortOrder: 1 } });
+  await db.changeOrderItem.create({
+    data: {
+      changeOrderId: co1.id,
+      costCodeId: codes["15-100"],
+      description: "Gas line extension & pot filler rough-in",
+      quantity: 1,
+      unit: "ls",
+      unitCost: 1450,
+      markupPct: 20,
+      sortOrder: 0,
+    },
+  });
+  await db.changeOrderItem.create({
+    data: { changeOrderId: co1.id, costCodeId: codes["16-100"], description: "Relocate range circuit", quantity: 1, unit: "ls", unitCost: 380, markupPct: 20, sortOrder: 1 },
+  });
 
   const co2 = await db.changeOrder.create({
     data: {
@@ -384,8 +479,21 @@ async function main() {
       sentAt: subDays(today, 1),
     },
   });
-  await db.changeOrderItem.create({ data: { changeOrderId: co2.id, costCodeId: codes["06-100"], description: "Remove & replace subfloor, sister joist", quantity: 1, unit: "ls", unitCost: 1650, markupPct: 20, sortOrder: 0 } });
-  await db.changeOrderItem.create({ data: { changeOrderId: co2.id, costCodeId: codes["06-200"], description: "Lumber & fasteners", quantity: 1, unit: "ls", unitCost: 320, markupPct: 20, sortOrder: 1 } });
+  await db.changeOrderItem.create({
+    data: {
+      changeOrderId: co2.id,
+      costCodeId: codes["06-100"],
+      description: "Remove & replace subfloor, sister joist",
+      quantity: 1,
+      unit: "ls",
+      unitCost: 1650,
+      markupPct: 20,
+      sortOrder: 0,
+    },
+  });
+  await db.changeOrderItem.create({
+    data: { changeOrderId: co2.id, costCodeId: codes["06-200"], description: "Lumber & fasteners", quantity: 1, unit: "ls", unitCost: 320, markupPct: 20, sortOrder: 1 },
+  });
 
   // Schedule
   const sched1: Array<[string, string, number, number, number, boolean?, string?]> = [
@@ -425,11 +533,12 @@ async function main() {
         percentComplete: pct,
         isMilestone: !!milestone,
         assigneeId: who === "super" ? superintendent.id : who === "pm" ? pm.id : null,
-        predecessorId: i > 0 && !milestone ? prevTaskId : null,
         sortOrder: i,
         color: milestone ? "#7c3aed" : pct === 100 ? "#059669" : "#2563eb",
       },
     });
+    // Each task waits on the one before it.
+    if (i > 0 && !milestone && prevTaskId) await db.taskLink.create({ data: { taskId: t.id, predecessorId: prevTaskId } });
     prevTaskId = t.id;
   }
 
@@ -457,20 +566,58 @@ async function main() {
 
   // Invoices
   const inv1 = await db.invoice.create({
-    data: { projectId: p1.id, number: 1001, title: "Deposit — 10%", status: "PAID", issueDate: subDays(today, 52), dueDate: subDays(today, 45), items: { create: [{ description: "Contract deposit (10%)", quantity: 1, unitPrice: 13687.5 }] } },
+    data: {
+      projectId: p1.id,
+      number: 1001,
+      title: "Deposit — 10%",
+      status: "PAID",
+      issueDate: subDays(today, 52),
+      dueDate: subDays(today, 45),
+      items: { create: [{ description: "Contract deposit (10%)", quantity: 1, unitPrice: 13687.5 }] },
+    },
   });
   await db.payment.create({ data: { invoiceId: inv1.id, amount: 13687.5, date: subDays(today, 50), method: "CHECK", reference: "#4471" } });
   const inv2 = await db.invoice.create({
-    data: { projectId: p1.id, number: 1002, title: "Draw 2 — Demo complete (40%)", status: "PAID", issueDate: subDays(today, 30), dueDate: subDays(today, 23), items: { create: [{ description: "Progress draw at demolition complete (40%)", quantity: 1, unitPrice: 54750 }, { description: "Change Order #1 — pot filler & range relocation", quantity: 1, unitPrice: 2196 }] } },
+    data: {
+      projectId: p1.id,
+      number: 1002,
+      title: "Draw 2 — Demo complete (40%)",
+      status: "PAID",
+      issueDate: subDays(today, 30),
+      dueDate: subDays(today, 23),
+      items: {
+        create: [
+          { description: "Progress draw at demolition complete (40%)", quantity: 1, unitPrice: 54750 },
+          { description: "Change Order #1 — pot filler & range relocation", quantity: 1, unitPrice: 2196 },
+        ],
+      },
+    },
   });
   await db.payment.create({ data: { invoiceId: inv2.id, amount: 56946, date: subDays(today, 26), method: "ACH", reference: "ACH-88213" } });
   await db.invoice.create({
-    data: { projectId: p1.id, number: 1003, title: "Draw 3 — Rough-ins complete", status: "SENT", issueDate: subDays(today, 3), dueDate: addDays(today, 11), items: { create: [{ description: "Progress draw at rough inspections passed (20%)", quantity: 1, unitPrice: 27375 }] } },
+    data: {
+      projectId: p1.id,
+      number: 1003,
+      title: "Draw 3 — Rough-ins complete",
+      status: "SENT",
+      issueDate: subDays(today, 3),
+      dueDate: addDays(today, 11),
+      items: { create: [{ description: "Progress draw at rough inspections passed (20%)", quantity: 1, unitPrice: 27375 }] },
+    },
   });
 
   // Daily logs
   const logs: Array<[number, string, number, number, number, number, string, string?]> = [
-    [1, "Sunny", 91, 72, 4, 32, "Drywall crew finished taping master bath. Painter primed kitchen ceiling. Super met with tile installer to confirm shower niche layout.", "Discovered soft subfloor at old shower pan — photos taken, CO #2 drafted."],
+    [
+      1,
+      "Sunny",
+      91,
+      72,
+      4,
+      32,
+      "Drywall crew finished taping master bath. Painter primed kitchen ceiling. Super met with tile installer to confirm shower niche layout.",
+      "Discovered soft subfloor at old shower pan — photos taken, CO #2 drafted.",
+    ],
     [2, "Partly Cloudy", 88, 70, 3, 24, "Hung remaining drywall in kitchen. Delivered hardwood flooring to acclimate (12 boxes)."],
     [3, "Rain", 79, 68, 2, 12, "Rain delay — no exterior work. Interior drywall mud coat 2."],
     [6, "Sunny", 94, 74, 5, 40, "Insulation inspection passed. Drywall hang started kitchen."],
@@ -478,7 +625,18 @@ async function main() {
   ];
   for (const [daysAgo, weather, hi, lo, crew, hours, work, issues] of logs) {
     await db.dailyLog.create({
-      data: { projectId: p1.id, authorId: superintendent.id, date: subDays(today, daysAgo), weather, tempHigh: hi, tempLow: lo, crewCount: crew, hoursWorked: hours, workCompleted: work, issues: issues ?? null },
+      data: {
+        projectId: p1.id,
+        authorId: superintendent.id,
+        date: subDays(today, daysAgo),
+        weather,
+        tempHigh: hi,
+        tempLow: lo,
+        crewCount: crew,
+        hoursWorked: hours,
+        workCompleted: work,
+        issues: issues ?? null,
+      },
     });
   }
 
@@ -487,8 +645,22 @@ async function main() {
     data: [
       { projectId: p1.id, title: "Get client approval on CO #2 (subfloor)", priority: "HIGH", dueDate: addDays(today, 1), assigneeId: pm.id, createdById: pm.id },
       { projectId: p1.id, title: "Confirm countertop selection before template", priority: "HIGH", dueDate: addDays(today, 4), assigneeId: pm.id, createdById: pm.id },
-      { projectId: p1.id, title: "Schedule countertop template with Austin Stone Works", priority: "NORMAL", dueDate: addDays(today, 8), assigneeId: superintendent.id, createdById: pm.id },
-      { projectId: p1.id, title: "Order shower glass — need field measure after tile", priority: "NORMAL", dueDate: addDays(today, 20), assigneeId: superintendent.id, createdById: pm.id },
+      {
+        projectId: p1.id,
+        title: "Schedule countertop template with Austin Stone Works",
+        priority: "NORMAL",
+        dueDate: addDays(today, 8),
+        assigneeId: superintendent.id,
+        createdById: pm.id,
+      },
+      {
+        projectId: p1.id,
+        title: "Order shower glass — need field measure after tile",
+        priority: "NORMAL",
+        dueDate: addDays(today, 20),
+        assigneeId: superintendent.id,
+        createdById: pm.id,
+      },
       { projectId: p1.id, title: "Pay Bright Electric rough invoice", priority: "NORMAL", dueDate: addDays(today, 3), assigneeId: owner.id, createdById: pm.id },
       { projectId: p1.id, title: "Send draw 2 receipt to client", priority: "LOW", status: "DONE", completedAt: subDays(today, 25), assigneeId: pm.id, createdById: pm.id },
     ],
@@ -498,17 +670,47 @@ async function main() {
   const thread1 = await db.messageThread.create({
     data: { projectId: p1.id, subject: "Countertop decision", lastMessageAt: subDays(today, 1) },
   });
-  await db.message.create({ data: { threadId: thread1.id, authorId: pm.id, body: "Hi Sarah & Tom — countertop template is scheduled for the 11th. We need your final selection by Friday so the fabricator can hold the slab. The Calacatta Nuvo is my recommendation; it matches your cabinet sample really well.", createdAt: subDays(today, 3) } });
-  await db.message.create({ data: { threadId: thread1.id, authorId: clientUser.id, body: "Thanks Maria. We're leaning Calacatta Nuvo but want to see it against the backsplash tile in person. Can we stop by the showroom Thursday?", createdAt: subDays(today, 2) } });
-  await db.message.create({ data: { threadId: thread1.id, authorId: pm.id, body: "Absolutely — I'll set it up for 10am Thursday and bring the tile sample.", createdAt: subDays(today, 1) } });
+  await db.message.create({
+    data: {
+      threadId: thread1.id,
+      authorId: pm.id,
+      body: "Hi Sarah & Tom — countertop template is scheduled for the 11th. We need your final selection by Friday so the fabricator can hold the slab. The Calacatta Nuvo is my recommendation; it matches your cabinet sample really well.",
+      createdAt: subDays(today, 3),
+    },
+  });
+  await db.message.create({
+    data: {
+      threadId: thread1.id,
+      authorId: clientUser.id,
+      body: "Thanks Maria. We're leaning Calacatta Nuvo but want to see it against the backsplash tile in person. Can we stop by the showroom Thursday?",
+      createdAt: subDays(today, 2),
+    },
+  });
+  await db.message.create({
+    data: { threadId: thread1.id, authorId: pm.id, body: "Absolutely — I'll set it up for 10am Thursday and bring the tile sample.", createdAt: subDays(today, 1) },
+  });
   const thread2 = await db.messageThread.create({
     data: { projectId: p1.id, subject: "Subfloor damage found under shower", lastMessageAt: subDays(today, 1) },
   });
-  await db.message.create({ data: { threadId: thread2.id, authorId: superintendent.id, body: "When we pulled the old pan we found about 40 sf of rotted subfloor and one joist that needs sistering. Photos are in the daily log. Maria is sending over a change order — it's a safety item so we'd like to get it fixed this week.", createdAt: subDays(today, 1) } });
+  await db.message.create({
+    data: {
+      threadId: thread2.id,
+      authorId: superintendent.id,
+      body: "When we pulled the old pan we found about 40 sf of rotted subfloor and one joist that needs sistering. Photos are in the daily log. Maria is sending over a change order — it's a safety item so we'd like to get it fixed this week.",
+      createdAt: subDays(today, 1),
+    },
+  });
   const thread3 = await db.messageThread.create({
     data: { projectId: p1.id, subject: "Weekly update — Week 5", clientVisible: true, lastMessageAt: subDays(today, 5) },
   });
-  await db.message.create({ data: { threadId: thread3.id, authorId: pm.id, body: "Rough inspections passed on all three trades. Insulation is complete and drywall starts Monday. We're tracking about 3 days behind the original schedule due to the range relocation but still on target for completion within the contract window.", createdAt: subDays(today, 5) } });
+  await db.message.create({
+    data: {
+      threadId: thread3.id,
+      authorId: pm.id,
+      body: "Rough inspections passed on all three trades. Insulation is complete and drywall starts Monday. We're tracking about 3 days behind the original schedule due to the range relocation but still on target for completion within the contract window.",
+      createdAt: subDays(today, 5),
+    },
+  });
 
   // Activity
   await db.activity.createMany({
@@ -518,7 +720,13 @@ async function main() {
       { projectId: p1.id, userId: superintendent.id, type: "daily_log.created", description: "Daily log added", createdAt: subDays(today, 1) },
       { projectId: p1.id, userId: pm.id, type: "change_order.sent", description: "Change Order #2 sent for approval", createdAt: subDays(today, 1) },
       { projectId: p1.id, userId: pm.id, type: "invoice.sent", description: "Invoice #1003 sent", createdAt: subDays(today, 3) },
-      { projectId: p1.id, userId: clientUser.id, type: "selection.chosen", description: "Client chose 'Zellige 4x4 — Weathered White' for Master Shower Tile", createdAt: subDays(today, 1) },
+      {
+        projectId: p1.id,
+        userId: clientUser.id,
+        type: "selection.chosen",
+        description: "Client chose 'Zellige 4x4 — Weathered White' for Master Shower Tile",
+        createdAt: subDays(today, 1),
+      },
     ],
   });
 
@@ -544,7 +752,9 @@ async function main() {
       managerId: pm.id,
     },
   });
-  const est2 = await db.estimate.create({ data: { projectId: p2.id, name: "Custom Home — Base Contract", status: "APPROVED", approvedAt: subDays(today, 10), sentAt: subDays(today, 15), defaultMarkup: 18 } });
+  const est2 = await db.estimate.create({
+    data: { projectId: p2.id, name: "Custom Home — Base Contract", status: "APPROVED", approvedAt: subDays(today, 10), sentAt: subDays(today, 15), defaultMarkup: 18 },
+  });
   const est2Items: Array<[string, string, string, number, string, number, number, boolean?]> = [
     ["General Conditions", "01-100", "Permits, impact fees, surveys", 1, "ls", 14500, 10],
     ["General Conditions", "01-200", "Supervision (40 weeks)", 40, "wk", 1400, 18],
@@ -566,7 +776,9 @@ async function main() {
     ["Exterior", "17-100", "Landscaping & irrigation allowance", 1, "ls", 30000, 15, true],
   ];
   for (const [i, [group, code, description, quantity, unit, unitCost, markupPct, isAllowance]] of est2Items.entries()) {
-    await db.estimateItem.create({ data: { estimateId: est2.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, isAllowance: !!isAllowance, sortOrder: i * 10 } });
+    await db.estimateItem.create({
+      data: { estimateId: est2.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, isAllowance: !!isAllowance, sortOrder: i * 10 },
+    });
   }
   await createBuiltAllowance(est2.id, "Flooring", "Interior", "Hardwood, tile and carpet — material and installation", 15, codes, [
     ["09-310", "Wide-plank hardwood material", 2400, "sf", 6.5, 15],
@@ -589,17 +801,70 @@ async function main() {
   ];
   for (const [i, [name, phase, startOffset, duration, milestone]] of sched2.entries()) {
     const start = addDays(today, startOffset);
-    await db.scheduleTask.create({ data: { projectId: p2.id, name, phase, startDate: start, endDate: addDays(start, Math.max(0, duration - 1)), isMilestone: !!milestone, sortOrder: i, color: milestone ? "#7c3aed" : "#2563eb", assigneeId: superintendent.id } });
+    await db.scheduleTask.create({
+      data: {
+        projectId: p2.id,
+        name,
+        phase,
+        startDate: start,
+        endDate: addDays(start, Math.max(0, duration - 1)),
+        isMilestone: !!milestone,
+        sortOrder: i,
+        color: milestone ? "#7c3aed" : "#2563eb",
+        assigneeId: superintendent.id,
+      },
+    });
   }
-  await db.selection.create({ data: { projectId: p2.id, costCodeId: codes["08-100"], title: "Window Package", category: "Windows & Doors", allowance: 58000, dueDate: addDays(today, 20), status: "PENDING", description: "Must be ordered before framing starts — 8-10 week lead time.", options: { create: [{ name: "Andersen 100 Series — Black", vendor: "BMC", price: 54200, isRecommended: true }, { name: "Marvin Elevate — Ebony", vendor: "BMC", price: 71800 }] } } });
-  await db.todo.createMany({ data: [
-    { projectId: p2.id, title: "Submit septic permit application", priority: "HIGH", dueDate: addDays(today, 2), assigneeId: pm.id, createdById: owner.id },
-    { projectId: p2.id, title: "Confirm window selection with Raj", priority: "HIGH", dueDate: addDays(today, 7), assigneeId: pm.id, createdById: pm.id },
-    { projectId: p2.id, title: "Line up excavation sub for the 12th", priority: "NORMAL", dueDate: addDays(today, 5), assigneeId: superintendent.id, createdById: pm.id },
-  ] });
-  const inv4 = await db.invoice.create({ data: { projectId: p2.id, number: 1004, title: "Contract deposit", status: "PAID", issueDate: subDays(today, 9), dueDate: subDays(today, 2), items: { create: [{ description: "Deposit (10%)", quantity: 1, unitPrice: 98500 }] } } });
+  await db.selection.create({
+    data: {
+      projectId: p2.id,
+      costCodeId: codes["08-100"],
+      title: "Window Package",
+      category: "Windows & Doors",
+      allowance: 58000,
+      dueDate: addDays(today, 20),
+      status: "PENDING",
+      description: "Must be ordered before framing starts — 8-10 week lead time.",
+      options: {
+        create: [
+          { name: "Andersen 100 Series — Black", vendor: "BMC", price: 54200, isRecommended: true },
+          { name: "Marvin Elevate — Ebony", vendor: "BMC", price: 71800 },
+        ],
+      },
+    },
+  });
+  await db.todo.createMany({
+    data: [
+      { projectId: p2.id, title: "Submit septic permit application", priority: "HIGH", dueDate: addDays(today, 2), assigneeId: pm.id, createdById: owner.id },
+      { projectId: p2.id, title: "Confirm window selection with Raj", priority: "HIGH", dueDate: addDays(today, 7), assigneeId: pm.id, createdById: pm.id },
+      { projectId: p2.id, title: "Line up excavation sub for the 12th", priority: "NORMAL", dueDate: addDays(today, 5), assigneeId: superintendent.id, createdById: pm.id },
+    ],
+  });
+  const inv4 = await db.invoice.create({
+    data: {
+      projectId: p2.id,
+      number: 1004,
+      title: "Contract deposit",
+      status: "PAID",
+      issueDate: subDays(today, 9),
+      dueDate: subDays(today, 2),
+      items: { create: [{ description: "Deposit (10%)", quantity: 1, unitPrice: 98500 }] },
+    },
+  });
   await db.payment.create({ data: { invoiceId: inv4.id, amount: 98500, date: subDays(today, 4), method: "ACH", reference: "WIRE-2291" } });
-  await db.expense.create({ data: { projectId: p2.id, costCodeId: codes["01-100"], vendor: "Travis County", category: "PERMIT", amount: 9800, date: subDays(today, 3), status: "PAID", description: "Building permit & impact fees", enteredById: pm.id } });
+  await db.expense.create({
+    data: {
+      projectId: p2.id,
+      costCodeId: codes["01-100"],
+      vendor: "Travis County",
+      category: "PERMIT",
+      amount: 9800,
+      date: subDays(today, 3),
+      status: "PAID",
+      description: "Building permit & impact fees",
+      enteredById: pm.id,
+    },
+  });
 
   // -------------------------------------------------------------------------
   // Project 3: Greenleaf Dental tenant finish-out (estimating)
@@ -636,25 +901,62 @@ async function main() {
   for (const [i, [group, code, description, quantity, unit, unitCost, markupPct]] of est3Items.entries()) {
     await db.estimateItem.create({ data: { estimateId: est3.id, costCodeId: codes[code], group, description, quantity, unit, unitCost, markupPct, sortOrder: i } });
   }
-  await db.todo.create({ data: { projectId: p3.id, title: "Get sub bids for med-gas and casework", priority: "NORMAL", dueDate: addDays(today, 6), assigneeId: owner.id, createdById: owner.id } });
+  await db.todo.create({
+    data: { projectId: p3.id, title: "Get sub bids for med-gas and casework", priority: "NORMAL", dueDate: addDays(today, 6), assigneeId: owner.id, createdById: owner.id },
+  });
 
   // A lead with no estimate yet
   await db.project.create({
-    data: { number: 1004, name: "Hernandez Garage Apartment", status: "LEAD", type: "ADDITION", description: "Inquiry via website — 600 sf ADU over existing garage.", city: "Austin", state: "TX", managerId: owner.id },
+    data: {
+      number: 1004,
+      name: "Hernandez Garage Apartment",
+      status: "LEAD",
+      type: "ADDITION",
+      description: "Inquiry via website — 600 sf ADU over existing garage.",
+      city: "Austin",
+      state: "TX",
+      managerId: owner.id,
+    },
   });
 
   // A completed project for history
   const p5 = await db.project.create({
-    data: { number: 1000, name: "Okafor Screened Porch & Deck", status: "COMPLETED", type: "ADDITION", address: "77 Cedar Hollow", city: "Austin", state: "TX", zip: "78731", startDate: subDays(today, 120), targetEndDate: subDays(today, 70), actualEndDate: subDays(today, 66), contractAmount: 68400, managerId: pm.id },
+    data: {
+      number: 1000,
+      name: "Okafor Screened Porch & Deck",
+      status: "COMPLETED",
+      type: "ADDITION",
+      address: "77 Cedar Hollow",
+      city: "Austin",
+      state: "TX",
+      zip: "78731",
+      startDate: subDays(today, 120),
+      targetEndDate: subDays(today, 70),
+      actualEndDate: subDays(today, 66),
+      contractAmount: 68400,
+      managerId: pm.id,
+    },
   });
-  const inv5 = await db.invoice.create({ data: { projectId: p5.id, number: 1000, title: "Final invoice", status: "PAID", issueDate: subDays(today, 66), dueDate: subDays(today, 52), items: { create: [{ description: "Screened porch & composite deck — final balance", quantity: 1, unitPrice: 68400 }] } } });
+  const inv5 = await db.invoice.create({
+    data: {
+      projectId: p5.id,
+      number: 1000,
+      title: "Final invoice",
+      status: "PAID",
+      issueDate: subDays(today, 66),
+      dueDate: subDays(today, 52),
+      items: { create: [{ description: "Screened porch & composite deck — final balance", quantity: 1, unitPrice: 68400 }] },
+    },
+  });
   await db.payment.create({ data: { invoiceId: inv5.id, amount: 68400, date: subDays(today, 58), method: "CHECK", reference: "#2210" } });
-  await db.expense.createMany({ data: [
-    { projectId: p5.id, costCodeId: codes["17-200"], vendor: "Lone Star Decking", category: "SUBCONTRACTOR", amount: 31200, date: subDays(today, 80), status: "PAID" },
-    { projectId: p5.id, costCodeId: codes["17-200"], vendor: "Trex / BMC", category: "MATERIAL", amount: 14750, date: subDays(today, 95), status: "PAID" },
-    { projectId: p5.id, costCodeId: codes["16-200"], vendor: "Bright Electric LLC", category: "SUBCONTRACTOR", amount: 3400, date: subDays(today, 72), status: "PAID" },
-    { projectId: p5.id, costCodeId: codes["01-100"], vendor: "City of Austin", category: "PERMIT", amount: 640, date: subDays(today, 118), status: "PAID" },
-  ] });
+  await db.expense.createMany({
+    data: [
+      { projectId: p5.id, costCodeId: codes["17-200"], vendor: "Lone Star Decking", category: "SUBCONTRACTOR", amount: 31200, date: subDays(today, 80), status: "PAID" },
+      { projectId: p5.id, costCodeId: codes["17-200"], vendor: "Trex / BMC", category: "MATERIAL", amount: 14750, date: subDays(today, 95), status: "PAID" },
+      { projectId: p5.id, costCodeId: codes["16-200"], vendor: "Bright Electric LLC", category: "SUBCONTRACTOR", amount: 3400, date: subDays(today, 72), status: "PAID" },
+      { projectId: p5.id, costCodeId: codes["01-100"], vendor: "City of Austin", category: "PERMIT", amount: 640, date: subDays(today, 118), status: "PAID" },
+    ],
+  });
 
   console.log("Seed complete.");
   console.log("Sign in with owner@upgradebuilders.com / password");

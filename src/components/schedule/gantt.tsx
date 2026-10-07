@@ -2,7 +2,7 @@ import Link from "next/link";
 import { format } from "date-fns";
 import { cn, initials } from "@/lib/utils";
 import { barGeometry, dayIndex, ganttWindow, groupByPhase, isTaskOverdue, type GanttTask } from "@/lib/schedule";
-import { CalendarRange } from "lucide-react";
+import { BetweenHorizontalEnd, BetweenHorizontalStart, CalendarRange, GripVertical } from "lucide-react";
 
 /**
  * Server-rendered Gantt chart. Pure CSS (flex + absolute positioning with percentage offsets),
@@ -16,6 +16,9 @@ export function Gantt({
   compact = false,
   taskHref,
   selectedTaskId,
+  draggable = false,
+  insertHref,
+  rowTools,
 }: {
   tasks: GanttTask[];
   today?: Date;
@@ -25,6 +28,12 @@ export function Gantt({
   /** Builds the link for a task row / bar. */
   taskHref: (task: GanttTask) => string;
   selectedTaskId?: string;
+  /** Rows can be dragged to a new place (inside the job's ScheduleReorder). */
+  draggable?: boolean;
+  /** "Insert a task above / below" links on each row (on hover). */
+  insertHref?: (task: GanttTask, at: "above" | "below") => string;
+  /** More hover tools on each row, after the insert links (e.g. erase). */
+  rowTools?: (task: GanttTask) => React.ReactNode;
 }) {
   const win = ganttWindow(tasks, today, fixedWindow);
   const leftW = compact ? 200 : 272;
@@ -54,11 +63,7 @@ export function Gantt({
         {/* Grid overlay: week columns, weekend shading and today line — behind rows, right of the left column. */}
         <div className="pointer-events-none absolute inset-y-0 right-0" style={{ left: leftW }} aria-hidden>
           {win.weeks.map((w, i) => (
-            <div
-              key={i}
-              className="absolute inset-y-0 border-r border-slate-200"
-              style={{ left: pctOfDay(i * 7), width: pctOfDay(7) }}
-            >
+            <div key={i} className="absolute inset-y-0 border-r border-slate-200" style={{ left: pctOfDay(i * 7), width: pctOfDay(7) }}>
               <div className="absolute inset-y-0 right-0 bg-slate-400/10" style={{ width: `${(2 / 7) * 100}%` }} />
             </div>
           ))}
@@ -86,10 +91,7 @@ export function Gantt({
               ) : null,
             )}
             {todayVisible ? (
-              <div
-                className="absolute top-1 z-[2] rounded-sm bg-rose-500 px-1 text-[9px] font-semibold uppercase leading-4 text-white"
-                style={{ left: todayLeft, marginLeft: 3 }}
-              >
+              <div className="absolute top-1 z-[2] rounded-sm bg-rose-500 px-1 text-[9px] font-semibold uppercase leading-4 text-white" style={{ left: todayLeft, marginLeft: 3 }}>
                 Today
               </div>
             ) : null}
@@ -121,38 +123,37 @@ export function Gantt({
               const pctW = Math.max(0, Math.min(100, t.percentComplete));
               // Put the label on the left of the bar when the bar sits in the right quarter of the window.
               const labelLeft = geo ? (geo.left + geo.width) / win.days > 0.72 : false;
-              const labelClass = cn(
-                "flex items-center gap-1 whitespace-nowrap font-medium text-slate-700 hover:underline",
-                compact ? "text-[10px]" : "text-[11px]",
-              );
+              const labelClass = cn("flex items-center gap-1 whitespace-nowrap font-medium text-slate-700 hover:underline", compact ? "text-[10px]" : "text-[11px]");
               const ownerChip = owner ? (
-                <span
-                  className="grid h-4 min-w-4 place-items-center rounded-full bg-slate-200 px-0.5 text-[9px] font-semibold text-slate-700"
-                  title={owner}
-                >
+                <span className="grid h-4 min-w-4 place-items-center rounded-full bg-slate-200 px-0.5 text-[9px] font-semibold text-slate-700" title={owner}>
                   {initials(owner)}
                 </span>
               ) : null;
               return (
                 <div
                   key={t.id}
-                  className={cn("relative flex border-b border-slate-100", selected && "bg-blue-50/60")}
+                  className={cn("group/row relative flex border-b border-slate-100", selected && "bg-blue-50/60")}
                   style={{ height: rowH }}
+                  data-drop-task={draggable ? t.id : undefined}
+                  data-task-name={draggable ? t.name : undefined}
                 >
-                  <div
-                    className={cn(
-                      "flex shrink-0 flex-col justify-center border-r border-slate-200 bg-white px-3",
-                      selected && "bg-blue-50",
-                    )}
-                    style={{ width: leftW }}
-                  >
+                  <div className={cn("relative flex shrink-0 flex-col justify-center border-r border-slate-200 bg-white px-3", selected && "bg-blue-50")} style={{ width: leftW }}>
+                    {draggable ? (
+                      // In the left padding, so nothing shifts when it shows.
+                      <span
+                        draggable
+                        data-drag-task={t.id}
+                        title="Drag to move it in the schedule"
+                        aria-hidden
+                        className="absolute left-0 top-1/2 flex h-6 w-3 -translate-y-1/2 cursor-grab items-center justify-center text-slate-400 opacity-0 transition-opacity hover:text-slate-700 active:cursor-grabbing group-hover/row:opacity-100"
+                      >
+                        <GripVertical className="h-3.5 w-3.5" />
+                      </span>
+                    ) : null}
+                    {insertHref ? <InsertLinks above={insertHref(t, "above")} below={insertHref(t, "below")} name={t.name} more={rowTools?.(t)} /> : null}
                     <Link
                       href={href}
-                      className={cn(
-                        "truncate font-medium leading-tight hover:underline",
-                        compact ? "text-xs" : "text-[13px]",
-                        done ? "text-slate-500" : "text-slate-900",
-                      )}
+                      className={cn("truncate font-medium leading-tight hover:underline", compact ? "text-xs" : "text-[13px]", done ? "text-slate-500" : "text-slate-900")}
                       title={t.name}
                     >
                       {t.isMilestone ? <span className="mr-1 text-violet-600">◆</span> : null}
@@ -161,14 +162,10 @@ export function Gantt({
                     {!compact ? (
                       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] leading-tight text-slate-500 tabular-nums">
                         <span className={cn("whitespace-nowrap", overdue && "font-medium text-rose-600")}>
-                          {t.isMilestone
-                            ? format(t.startDate, "MMM d")
-                            : `${format(t.startDate, "MMM d")} – ${format(t.endDate, "MMM d")}`}
+                          {t.isMilestone ? format(t.startDate, "MMM d") : `${format(t.startDate, "MMM d")} – ${format(t.endDate, "MMM d")}`}
                         </span>
                         <span>·</span>
-                        <span className={cn(done ? "text-emerald-700" : overdue ? "text-rose-600" : "")}>
-                          {t.percentComplete}%
-                        </span>
+                        <span className={cn(done ? "text-emerald-700" : overdue ? "text-rose-600" : "")}>{t.percentComplete}%</span>
                         {owner ? (
                           <>
                             <span>·</span>
@@ -227,11 +224,7 @@ export function Gantt({
                           <Link
                             href={href}
                             className={cn(labelClass, "absolute inset-y-0")}
-                            style={
-                              labelLeft
-                                ? { right: `calc(${pctOfDay(win.days - geo.left)} + 6px)` }
-                                : { left: `calc(${pctOfDay(geo.left + geo.width)} + 6px)` }
-                            }
+                            style={labelLeft ? { right: `calc(${pctOfDay(win.days - geo.left)} + 6px)` } : { left: `calc(${pctOfDay(geo.left + geo.width)} + 6px)` }}
                           >
                             {t.name}
                             {ownerChip}
@@ -247,5 +240,21 @@ export function Gantt({
         ))}
       </div>
     </div>
+  );
+}
+
+/** Insert a task above / below this one — over the row's right edge on hover, so nothing shifts. */
+export function InsertLinks({ above, below, name, more }: { above: string; below: string; name: string; more?: React.ReactNode }) {
+  const cls = "rounded p-0.5 text-slate-400 hover:bg-blue-50 hover:text-blue-700";
+  return (
+    <span className="absolute right-1 top-1/2 z-[1] flex -translate-y-1/2 items-center gap-0.5 rounded bg-white/90 opacity-0 shadow-sm ring-1 ring-slate-200 transition-opacity group-hover/row:opacity-100 focus-within:opacity-100">
+      <Link href={above} className={cls} title="Insert a task above" aria-label={`Insert a task above ${name}`}>
+        <BetweenHorizontalStart className="h-3.5 w-3.5" />
+      </Link>
+      <Link href={below} className={cls} title="Insert a task below" aria-label={`Insert a task below ${name}`}>
+        <BetweenHorizontalEnd className="h-3.5 w-3.5" />
+      </Link>
+      {more}
+    </span>
   );
 }

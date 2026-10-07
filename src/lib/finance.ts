@@ -5,6 +5,7 @@ export type CostLine = {
   quantity: number;
   unitCost: number;
   markupPct: number;
+  taxPct?: number | null;
   isOptional?: boolean;
 };
 

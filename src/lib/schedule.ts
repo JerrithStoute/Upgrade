@@ -7,7 +7,7 @@ import { SCHEDULE_PHASES } from "./constants";
  * stored on a task never matters.
  */
 
-export type TaskDates = { id: string; startDate: Date; endDate: Date; predecessorId: string | null };
+export type TaskDates = { id: string; startDate: Date; endDate: Date };
 
 export type GanttTask = TaskDates & {
   name: string;
@@ -107,75 +107,4 @@ export function isTaskOverdue(t: { endDate: Date; percentComplete: number }, tod
 
 export function overlapsRange(t: { startDate: Date; endDate: Date }, start: Date, end: Date) {
   return dayIndex(start, t.endDate) >= 0 && dayIndex(t.startDate, end) >= 0;
-}
-
-export function shiftDates(t: { startDate: Date; endDate: Date }, days: number) {
-  return { startDate: addDays(t.startDate, days), endDate: addDays(t.endDate, days) };
-}
-
-export type DateUpdate = { id: string; startDate: Date; endDate: Date };
-
-/** Direct successors of a task (tasks whose predecessorId === id). */
-function successorsOf<T extends TaskDates>(tasks: T[], id: string) {
-  return tasks.filter((t) => t.predecessorId === id);
-}
-
-/**
- * Given that `changedId` now spans newStart..newEnd, push every successor (transitively) whose start
- * is not after newEnd so it starts the day after its predecessor ends. Durations are preserved.
- * Returns only the tasks that actually move (excluding `changedId` itself).
- */
-export function cascadeSuccessors<T extends TaskDates>(tasks: T[], changedId: string, newEnd: Date): DateUpdate[] {
-  const updates = new Map<string, DateUpdate>();
-  const visited = new Set<string>([changedId]);
-  const queue: { id: string; end: Date }[] = [{ id: changedId, end: newEnd }];
-  while (queue.length) {
-    const { id, end } = queue.shift()!;
-    for (const s of successorsOf(tasks, id)) {
-      if (visited.has(s.id)) continue;
-      visited.add(s.id);
-      const earliest = addDays(startOfDay(end), 1);
-      let sEnd = s.endDate;
-      if (dayIndex(earliest, s.startDate) < 0) {
-        const delta = dayIndex(s.startDate, earliest);
-        const moved = shiftDates(s, delta);
-        updates.set(s.id, { id: s.id, ...moved });
-        sEnd = moved.endDate;
-      }
-      queue.push({ id: s.id, end: sEnd });
-    }
-  }
-  return [...updates.values()];
-}
-
-/** Shift a task and its whole successor chain by N days (N may be negative). */
-export function shiftChain<T extends TaskDates>(tasks: T[], rootId: string, days: number): DateUpdate[] {
-  const root = tasks.find((t) => t.id === rootId);
-  if (!root) return [];
-  const updates: DateUpdate[] = [];
-  const visited = new Set<string>();
-  const queue = [rootId];
-  while (queue.length) {
-    const id = queue.shift()!;
-    if (visited.has(id)) continue;
-    visited.add(id);
-    const t = tasks.find((x) => x.id === id);
-    if (!t) continue;
-    updates.push({ id, ...shiftDates(t, days) });
-    for (const s of successorsOf(tasks, id)) queue.push(s.id);
-  }
-  return updates;
-}
-
-/** True if setting `taskId`'s predecessor to `predecessorId` would create a cycle. */
-export function wouldCycle<T extends TaskDates>(tasks: T[], taskId: string, predecessorId: string | null) {
-  let cur = predecessorId;
-  const seen = new Set<string>();
-  while (cur) {
-    if (cur === taskId) return true;
-    if (seen.has(cur)) return true;
-    seen.add(cur);
-    cur = tasks.find((t) => t.id === cur)?.predecessorId ?? null;
-  }
-  return false;
 }

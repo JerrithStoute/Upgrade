@@ -1007,6 +1007,32 @@ export function lumberItemName(memberSize: string | null | undefined, conditionN
   return `${base} × ${len}'`;
 }
 
+/** "2x6 × 26'" → { size: "2x6", length: 26 } (lumber sold by the stock length), else null. */
+export function lumberOf(name: string): { size: string; length: number } | null {
+  const m = /^(.+?) × (\d+(?:\.\d+)?)'$/.exec(name.trim());
+  return m ? { size: m[1].trim(), length: Number(m[2]) } : null;
+}
+
+/**
+ * A substitute written on a bid for a board ("2x6x28", "28'", "2x6 28 ft"): the length it means
+ * when it's the same size at another length, else null (another product).
+ */
+export function substituteLength(boardName: string, text: string): number | null {
+  const board = lumberOf(boardName);
+  if (!board) return null;
+  const tight = (t: string) =>
+    t
+      .toLowerCase()
+      .replace(/\s*[x×]\s*/g, "x")
+      .trim();
+  let rest = tight(text);
+  const size = tight(board.size);
+  if (rest.includes(size)) rest = rest.replace(size, " ");
+  const m = /^[\sx]*(\d+(?:\.\d+)?)\s*(?:'|ft|feet|foot)?\s*(?:long)?\s*$/.exec(rest);
+  const n = m ? Number(m[1]) : NaN;
+  return Number.isFinite(n) && n >= 6 && n <= 60 && n !== board.length ? n : null;
+}
+
 /** The quantity an assembly item multiplies: a condition metric, a count of lumber pieces, or a wall / opening material. */
 export function assemblyBase(item: { metric: string }, metrics: Metrics, cutList: [number, number][] = [], auto: Record<string, number> = {}) {
   if (

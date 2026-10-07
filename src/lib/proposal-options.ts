@@ -10,9 +10,9 @@ import { z } from "zod";
  * options panel — no database code here.
  */
 
-/** An allowance: its items' cost, or their price with profit in — your choice per allowance. Optional items are left out. */
-export function allowanceAmount(lines: { quantity: number; unitCost: number; markupPct: number; isOptional: boolean }[], withProfit: boolean) {
-  const t = lines.filter((l) => !l.isOptional).reduce((n, l) => n + l.quantity * l.unitCost * (withProfit ? 1 + l.markupPct / 100 : 1), 0);
+/** An allowance: its items' cost (sales tax in), or their price with profit in — your choice per allowance. Optional items are left out. */
+export function allowanceAmount(lines: { quantity: number; unitCost: number; markupPct: number; taxPct?: number | null; isOptional: boolean }[], withProfit: boolean) {
+  const t = lines.filter((l) => !l.isOptional).reduce((n, l) => n + l.quantity * l.unitCost * (1 + (l.taxPct ?? 0) / 100) * (withProfit ? 1 + l.markupPct / 100 : 1), 0);
   return Math.round(t * 100) / 100;
 }
 
@@ -34,6 +34,8 @@ export const proposalOptionsSchema = z.object({
   heading: z.string().max(60).catch("Proposal"),
   /** A cover page with the job's picture. */
   cover: bool(false),
+  /** The estimate's notes open the proposal as its introduction — untitled unless you give it one. */
+  intro: z.object({ titled: bool(false), title: z.string().max(60).catch("Notes") }).catch({ titled: false, title: "Notes" }),
   /** Who signs for you ("Builder: …"); empty = your company name. */
   signer: z.string().max(80).catch(""),
   /** A signature line for the client too. */
@@ -43,6 +45,7 @@ export const proposalOptionsSchema = z.object({
   profit: z
     .object({ mode: z.enum(["BUILT_IN", "FEE"]).catch("BUILT_IN"), label: z.string().max(60).catch("Builder's fee"), showPct: bool(true) })
     .catch({ mode: "BUILT_IN", label: "Builder's fee", showPct: true }),
+  /** Sales tax: `on` shows it as its own line (prices before tax); off builds it into the prices. */
   tax: z
     .object({
       on: bool(false),
@@ -87,7 +90,18 @@ export function specViewJson(v: SpecView) {
 
 // --- Building the document ------------------------------------------------------------
 
-export type ProposalLine = { id: string; description: string; quantity: number; unit: string; unitCost: number; markupPct: number; costType: string; isOptional: boolean };
+export type ProposalLine = {
+  id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  unitCost: number;
+  markupPct: number;
+  /** Sales tax you pay on it, % of cost (in its price). */
+  taxPct?: number | null;
+  costType: string;
+  isOptional: boolean;
+};
 export type ProposalSpec = {
   id: string;
   name: string;
@@ -145,25 +159,35 @@ export type ProposalDoc = {
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 
-/**
- * The proposal as the client sees it. With a base price (what you quoted) the
- * numbers add up to it: built-in profit scales every amount to it; a fee line is
- * the base price less cost. Tax goes on top of the base price / total.
- */
-/** From the estimate's Markup, Margin & Tax table: overhead on top of the lines, and the tax rows. */
-export type ProposalExtras = { overhead: number; taxes: { label: string; pct: number; amount: number }[] };
+/** From the estimate's Markup, Margin & Tax table: overhead on top of the lines, and what its tax is called and its rate. */
+export type ProposalExtras = { overhead: number; taxLabel?: string; taxPct?: number };
 
-export function buildProposal(specs: ProposalSpec[], o: ProposalOptions, basePrice: number | null, extras: ProposalExtras = { overhead: 0, taxes: [] }): ProposalDoc {
+/**
+ * The proposal as the client sees it. The sales tax you pay is in each line's price (profit
+ * figured on cost with tax), so the total is the same either way; `tax.on` shows it as its
+ * own line — the other amounts before tax — instead of built into them. With a base price
+ * (what you quoted, tax in) the numbers add up to it: built-in profit scales every amount to
+ * it; a fee line is the base price less cost.
+ */
+export function buildProposal(specs: ProposalSpec[], o: ProposalOptions, basePrice: number | null, extras: ProposalExtras = { overhead: 0 }): ProposalDoc {
   const included = specs.flatMap((s) => s.lines.filter((l) => !l.isOptional));
-  const cost = included.reduce((t, l) => t + l.quantity * l.unitCost, 0);
-  const price = included.reduce((t, l) => t + l.quantity * l.unitCost * (1 + l.markupPct / 100), 0);
+  const taxOf = (l: ProposalLine) => (l.quantity * l.unitCost * (l.taxPct ?? 0)) / 100;
+  const full = (l: ProposalLine) => l.quantity * l.unitCost * (1 + (l.taxPct ?? 0) / 100) * (1 + l.markupPct / 100);
+  const taxAmount = cents(included.reduce((t, l) => t + taxOf(l), 0));
+  // Its own line: every other amount is before tax.
+  const taxLine = o.tax.on && taxAmount > 0;
+  const lineAmount = (l: ProposalLine) => full(l) - (taxLine ? taxOf(l) : 0);
+  const costOf = (l: ProposalLine) => l.quantity * l.unitCost + (taxLine ? 0 : taxOf(l));
+  const cost = included.reduce((t, l) => t + costOf(l), 0);
+  const price = included.reduce((t, l) => t + lineAmount(l), 0);
   // Overhead (from the table) is part of what the client pays: built into the prices, or in the fee.
-  const preTax = basePrice ?? price + extras.overhead;
+  const all = basePrice ?? included.reduce((t, l) => t + full(l), 0) + extras.overhead;
+  const preTax = all - (taxLine ? taxAmount : 0);
   // Each line's share of what the client pays (profit included).
   const k = price > 0 ? preTax / price : 1;
-  const share = (l: ProposalLine) => l.quantity * l.unitCost * (1 + l.markupPct / 100) * k;
+  const share = (l: ProposalLine) => lineAmount(l) * k;
   const fee = o.profit.mode === "FEE";
-  const shown = (l: ProposalLine) => (fee ? l.quantity * l.unitCost : share(l));
+  const shown = (l: ProposalLine) => (fee ? costOf(l) : share(l));
   const sum = (lines: ProposalLine[]) => cents(lines.filter((l) => !l.isOptional).reduce((t, l) => t + shown(l), 0));
 
   const order: string[] = [];
@@ -192,12 +216,8 @@ export function buildProposal(specs: ProposalSpec[], o: ProposalOptions, basePri
   });
 
   const feeAmount = fee ? cents(preTax - cost) : 0;
-  const taxBase = o.tax.base === "MATERIAL" ? included.filter((l) => l.costType === "MATERIAL").reduce((t, l) => t + share(l), 0) : preTax;
-  const legacyTax = o.tax.on && o.tax.pct > 0 ? { label: o.tax.label || "Sales tax", pct: o.tax.pct, amount: cents((taxBase * o.tax.pct) / 100) } : null;
-  // Tax comes from the table's tax rows (older estimates may still use the proposal's own tax option).
-  const taxes = extras.taxes.length ? extras.taxes : legacyTax ? [legacyTax] : [];
-  const taxTotal = cents(taxes.reduce((n, t) => n + t.amount, 0));
-  const tax = taxes.length ? { label: taxes.map((t) => t.label).join(" + "), pct: cents(taxes.reduce((n, t) => n + t.pct, 0)), amount: taxTotal } : null;
+  const tax = taxLine ? { label: o.tax.label.trim() || extras.taxLabel || "Sales tax", pct: extras.taxPct ?? 0, amount: taxAmount } : null;
+  const taxes = tax ? [tax] : [];
 
   const allowances = o.allowances
     ? specs
@@ -220,9 +240,7 @@ export function buildProposal(specs: ProposalSpec[], o: ProposalOptions, basePri
     allowances,
     allowancesTotal: cents(allowances.reduce((t, a) => t + a.amount, 0)),
     optional: specs.flatMap((s) =>
-      s.lines
-        .filter((l) => l.isOptional)
-        .map((l) => ({ id: l.id, description: l.description, quantity: l.quantity, unit: l.unit, amount: cents(l.quantity * l.unitCost * (1 + l.markupPct / 100)) })),
+      s.lines.filter((l) => l.isOptional).map((l) => ({ id: l.id, description: l.description, quantity: l.quantity, unit: l.unit, amount: cents(full(l)) })),
     ),
     totalOnly: o.totalOnly,
   };

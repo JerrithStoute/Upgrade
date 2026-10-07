@@ -137,7 +137,12 @@ export function AssemblyForm({
             )
           ) : null}
         </Field>
-        <Field label="Cost code" htmlFor={p("costCodeId")} className="col-span-2 md:col-span-4">
+        <Field
+          label="Cost code"
+          htmlFor={p("costCodeId")}
+          className="col-span-2 md:col-span-4"
+          hint="Just this takeoff's line — the same item can go under another cost code in another takeoff. The price is shared."
+        >
           <select id={p("costCodeId")} name="costCodeId" className="input" value={costCodeId} onChange={(e) => setCostCodeId(e.target.value)}>
             <option value="">—</option>
             {costCodes.map((c) => (

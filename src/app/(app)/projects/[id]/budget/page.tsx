@@ -80,7 +80,8 @@ export default async function BudgetPage({ params, searchParams }: { params: Pro
   const divisions = groupBy(sorted, (r) => r.division);
 
   // The quoted base price when there is one; otherwise what the lines add up to.
-  const approvedEstimatePrice = (estimate?.basePrice ?? estimateItems.reduce((s, i) => s + linePrice(i), 0) + (tableAmounts?.overheadTotal ?? 0)) + (tableAmounts?.taxTotal ?? 0);
+  // Sales tax is in the lines' prices (and costs).
+  const approvedEstimatePrice = estimate?.basePrice ?? estimateItems.reduce((s, i) => s + linePrice(i), 0) + (tableAmounts?.overheadTotal ?? 0);
   const approvedCoPrice = cos.reduce((s, co) => s + changeOrderTotals(co, co.items).total, 0);
   const budget = (estimate ? approvedEstimatePrice : project.contractAmount) + approvedCoPrice;
   const budgetCost = sorted.reduce((s, r) => s + r.budgetCost, 0);

@@ -15,6 +15,7 @@ import {
   removeChangeOrderLine,
   setChangeOrderLineCode,
   setChangeOrderLineProfit,
+  setChangeOrderLineTax,
   saveChangeOrder,
   saveChangeOrderLine,
   saveCoDefault,
@@ -37,6 +38,7 @@ type Co = {
   profitShown: string;
   taxPct: number;
   taxLabel: string;
+  taxShown: string;
   scheduleImpactDays: number;
   priorCompletion: string;
   newCompletion: string;
@@ -62,6 +64,7 @@ type Item = {
   costCodeId: string | null;
   profitMode: string;
   profitValue: number;
+  taxed: boolean;
 };
 type Code = { id: string; code: string | null; name: string };
 
@@ -140,6 +143,24 @@ export function ChangeOrderEditor({
   const save = (patch: Partial<Co> & Record<string, unknown>) => run(() => saveChangeOrder(projectId, co.id, patch));
 
   const totals = changeOrderTotals(co, items);
+  const taxOn = co.taxPct > 0;
+  // Taxed or not, beside the line's profit (only when the change order has tax).
+  const taxTick = (i: Item) =>
+    taxOn ? (
+      <label
+        className="flex cursor-pointer items-center gap-1 whitespace-nowrap text-[11px] text-slate-600"
+        title="You pay sales tax on it — part of its price, profit figured on it too"
+      >
+        <input
+          type="checkbox"
+          className="h-3.5 w-3.5 rounded border-slate-300"
+          checked={i.taxed}
+          disabled={!draft || busy}
+          onChange={(e) => run(() => setChangeOrderLineTax(projectId, co.id, i.id, e.target.checked))}
+        />
+        Tax
+      </label>
+    ) : null;
   const selections = items.filter((i) => i.kind !== "CHARGE");
   // No client choices on it: the Choice and Allowance columns would only ever be empty — leave them out.
   const ch = items.some((i) => i.kind === "SELECTION");
@@ -190,7 +211,7 @@ export function ChangeOrderEditor({
                 {ch ? <th className="px-3 py-2 text-right font-medium">Allowance</th> : null}
                 <th className="px-3 py-2 text-right font-medium">{ch ? "Difference" : "Price"}</th>
                 <th className="px-3 py-2 font-medium" title="This line's own profit — or the change order's">
-                  Profit
+                  {taxOn ? "Profit · tax" : "Profit"}
                 </th>
                 <th className="w-10" />
               </tr>
@@ -217,7 +238,10 @@ export function ChangeOrderEditor({
                     {ch ? <td className="px-3 py-2 text-right tabular-nums text-slate-600">{i.allowance !== null ? money(i.allowance) : ""}</td> : null}
                     <td className="px-3 py-2 text-right font-medium tabular-nums">{money(totals.shown(i))}</td>
                     <td className="px-2 py-1.5">
-                      <ProfitCell item={i} co={co} disabled={!draft || busy} onSave={(m, v) => run(() => setChangeOrderLineProfit(projectId, co.id, i.id, m, v))} />
+                      <span className="flex items-center gap-2">
+                        <ProfitCell item={i} co={co} disabled={!draft || busy} onSave={(m, v) => run(() => setChangeOrderLineProfit(projectId, co.id, i.id, m, v))} />
+                        {taxTick(i)}
+                      </span>
                     </td>
                     <td className="px-1">
                       {draft ? (
@@ -275,7 +299,10 @@ export function ChangeOrderEditor({
                     {ch ? <td /> : null}
                     <td className="px-3 py-2 text-right font-medium tabular-nums">{money(totals.shown(i))}</td>
                     <td className="px-2 py-1.5">
-                      <ProfitCell item={i} co={co} disabled={!draft || busy} onSave={(m, v) => run(() => setChangeOrderLineProfit(projectId, co.id, i.id, m, v))} />
+                      <span className="flex items-center gap-2">
+                        <ProfitCell item={i} co={co} disabled={!draft || busy} onSave={(m, v) => run(() => setChangeOrderLineProfit(projectId, co.id, i.id, m, v))} />
+                        {taxTick(i)}
+                      </span>
                     </td>
                     <td className="px-1">
                       {draft ? (
@@ -396,10 +423,28 @@ export function ChangeOrderEditor({
           ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span className="text-slate-600">Tax</span>
+          <span className="text-slate-600">Sales tax you pay</span>
           <NumInput value={co.taxPct} disabled={!draft} label="%" onSave={(v) => save({ taxPct: v })} />
-          {co.taxPct ? <Text inline label="Line name" value={co.taxLabel} disabled={!draft} onSave={(v) => save({ taxLabel: v })} /> : null}
+          {co.taxPct ? (
+            <>
+              <Seg
+                value={co.taxShown}
+                disabled={!draft}
+                options={[
+                  ["LINE", "Its own line"],
+                  ["FOLDED", "Built into the prices"],
+                ]}
+                onChange={(v) => save({ taxShown: v })}
+              />
+              {co.taxShown === "LINE" ? <Text inline label="Line name" value={co.taxLabel} disabled={!draft} onSave={(v) => save({ taxLabel: v })} /> : null}
+            </>
+          ) : null}
         </div>
+        {co.taxPct ? (
+          <p className="text-xs text-slate-500">
+            On the lines ticked Tax (your items start ticked; extra charges don&apos;t), it&apos;s part of their price — profit is figured on it too, like the estimate.
+          </p>
+        ) : null}
       </Section>
 
       <Section title="Effect on contract">

@@ -2,9 +2,17 @@ import "server-only";
 import { db } from "./db";
 import { changeOrderTotals, isFullyApproved } from "./change-orders";
 import { noteChange } from "./selection-activity";
+import { billApprovedChangeOrder } from "./billing-flow";
 
 /** A change order's total (lines + profit + tax). */
-export function coTotal(co: { profitMode: string; profitValue: number; profitShown: string; taxPct: number; items: { quantity: number; unitCost: number; markupPct: number }[] }) {
+export function coTotal(co: {
+  profitMode: string;
+  profitValue: number;
+  profitShown: string;
+  taxPct: number;
+  taxShown?: string | null;
+  items: { quantity: number; unitCost: number; markupPct: number; taxed?: boolean | null }[];
+}) {
   return changeOrderTotals(co, co.items).total;
 }
 
@@ -52,6 +60,8 @@ export async function finalizeIfApproved(coId: string, who: { id: string | null;
     await db.selection.update({ where: { id }, data: { status: "APPROVED", approvedAt: new Date() } });
     await noteChange(id, who, `Approved on change order #${co.number}`);
   }
+  // Onto the job's next draft invoice (Settings → Billing).
+  await billApprovedChangeOrder(co.id, who);
   return true;
 }
 

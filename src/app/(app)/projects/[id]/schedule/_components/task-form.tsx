@@ -1,6 +1,8 @@
 import { SCHEDULE_PHASES } from "@/lib/constants";
 import { dateInput } from "@/lib/utils";
 import { Field, FormGrid } from "@/components/ui";
+import { ColorSwatches } from "@/components/ui/color-swatches";
+import { PredecessorsField, type LinkValue } from "./predecessors-field";
 
 type TaskValues = {
   id?: string;
@@ -10,24 +12,24 @@ type TaskValues = {
   endDate?: Date | null;
   percentComplete?: number;
   assigneeId?: string | null;
-  predecessorId?: string | null;
   isMilestone?: boolean;
   color?: string;
   notes?: string | null;
 };
-
-const COLORS = ["#2563eb", "#0891b2", "#059669", "#d97706", "#dc2626", "#7c3aed", "#db2777", "#475569"];
 
 /** Shared field set for the add/edit task forms. Renders inside a <form>. */
 export function TaskFields({
   values,
   staff,
   otherTasks,
+  links = [],
   idPrefix,
 }: {
   values: TaskValues;
   staff: { id: string; name: string }[];
   otherTasks: { id: string; name: string; phase: string }[];
+  /** What this task waits on now. */
+  links?: LinkValue[];
   idPrefix: string;
 }) {
   const phase = values.phase ?? "";
@@ -69,26 +71,17 @@ export function TaskFields({
           ))}
         </select>
       </Field>
-      <Field label="Predecessor" htmlFor={`${idPrefix}-pred`} className="md:col-span-2" hint="Successors are pushed when this task's end moves past their start">
-        <select id={`${idPrefix}-pred`} name="predecessorId" className="input" defaultValue={values.predecessorId ?? ""}>
-          <option value="">None</option>
-          {otherTasks
-            .filter((t) => t.id !== values.id)
-            .map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.phase} · {t.name}
-              </option>
-            ))}
-        </select>
+      <Field
+        label="Waits on"
+        htmlFor={`${idPrefix}-pred`}
+        className="md:col-span-2"
+        hint="It starts after the last of these finishes (plus any lag, in workdays) — and moves when they do"
+      >
+        <PredecessorsField name="links" idPrefix={idPrefix} options={otherTasks.filter((t) => t.id !== values.id)} initial={links} />
       </Field>
-      <Field label="Color" htmlFor={`${idPrefix}-color`}>
+      <Field label="Color">
         <div className="flex items-center gap-2">
-          <input id={`${idPrefix}-color`} type="color" name="color" defaultValue={values.color ?? "#2563eb"} list={`${idPrefix}-colors`} className="h-9 w-14 cursor-pointer rounded-md border border-slate-300 bg-white p-0.5" />
-          <datalist id={`${idPrefix}-colors`}>
-            {COLORS.map((c) => (
-              <option key={c} value={c} />
-            ))}
-          </datalist>
+          <ColorSwatches name="color" defaultValue={values.color ?? "#2563eb"} label="Bar color" />
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" name="isMilestone" defaultChecked={values.isMilestone ?? false} className="h-4 w-4 rounded border-slate-300" />
             Milestone

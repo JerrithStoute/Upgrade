@@ -2,14 +2,14 @@ import { notFound } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
-import { conditionEstimateLines, conditionTotals, jobEstimateLines, loadConditions } from "@/lib/takeoff-data";
+import { conditionEstimateLines, conditionTotals, loadConditions } from "@/lib/takeoff-data";
 import { materialListFrom } from "@/lib/takeoff-materials";
 import { linePrice } from "@/lib/utils";
 import { materialItemOptions } from "@/lib/material-items";
 import { CONDITION_COLORS, boardFeetPerLf, isCountType, metricLabel, parseArcs, parsePoints, type MetricKey } from "@/lib/takeoff";
 import { itemsNeedingCodes, loadCodeRules } from "@/lib/item-codes";
 import { NeedsCodes } from "../_components/needs-codes";
-import { templateOptions } from "@/lib/takeoff-templates";
+import { libraryTakeoffs, templateOptions } from "@/lib/takeoff-templates";
 import { itemKind } from "@/lib/code-groups";
 import { PlanViewer } from "./_components/plan-viewer";
 
@@ -18,13 +18,13 @@ export default async function PlanViewerPage({
   searchParams,
 }: {
   params: Promise<{ id: string; planId: string }>;
-  searchParams: Promise<{ page?: string; cond?: string; applied?: string; skipped?: string; templateError?: string; toolbox?: string }>;
+  searchParams: Promise<{ page?: string; cond?: string; applied?: string; skipped?: string; templateError?: string; toolbox?: string; library?: string }>;
 }) {
   const user = await requireStaff();
   const { id, planId } = await params;
-  const { page, cond, applied, skipped, templateError, toolbox } = await searchParams;
+  const { page, cond, applied, skipped, templateError, toolbox, library: libraryNote } = await searchParams;
   const project = await getProject(id);
-  const [plan, plans, conditions, doorItems, costCodes, codeRules, needsCodes, drafts, templates] = await Promise.all([
+  const [plan, plans, conditions, doorItems, costCodes, codeRules, needsCodes, templates, library] = await Promise.all([
     db.takeoffPlan.findFirst({
       where: { id: planId, projectId: project.id },
       include: { sheets: { orderBy: { pageNumber: "asc" }, include: { _count: { select: { measurements: true } } } } },
@@ -49,9 +49,10 @@ export default async function PlanViewerPage({
     activeCostCodes(),
     loadCodeRules(),
     itemsNeedingCodes(project.id),
-    // For the "⋯ Takeoff" menu: draft estimates to send to, and takeoff templates.
-    db.estimate.findMany({ where: { projectId: project.id, status: "DRAFT", lockedAt: null }, orderBy: { version: "desc" }, select: { id: true, name: true, version: true } }),
+    // For the "⋯ Takeoff" menu: takeoff templates.
     templateOptions(),
+    // The Library: every template's takeoffs, to pull one onto the job from the plan.
+    libraryTakeoffs(),
   ]);
   const codeChoices = costCodes.map((c) => ({ id: c.id, code: c.code, name: c.name }));
   // Doors and windows to pick from: Item List items of that kind (whatever category they're filed in) with a size.
@@ -205,22 +206,22 @@ export default async function PlanViewerPage({
         sheets: p.sheets.map((s) => ({ pageNumber: s.pageNumber, name: s.name, scaled: !!s.unitsPerFoot, count: s._count.measurements })),
       }))}
       revision={revision}
+      library={library}
       menu={{
-        drafts,
         templates: templates.map((t) => ({ id: t.id, name: t.name, conditions: t._count.conditions })),
         isAdmin: user.role === "ADMIN",
-        takeoffCost: jobEstimateLines(conditions).reduce((s, l) => s + l.quantity * l.unitCost, 0),
         takeoffCount: conditions.length,
-        unpriced: conditions.flatMap((c) => conditionEstimateLines(c, conditionTotals(c)).flatMap((l) => (l.quantity > 0 && !(l.unitCost > 0) ? [l.description] : []))),
       }}
       notice={
         templateError
           ? `Not saved: ${templateError}`
-          : toolbox
-            ? `Also added to your "${toolbox}" takeoff template`
-            : applied != null
-              ? `Added ${applied} takeoff${applied === "1" ? "" : "s"} from the template${skipped && skipped !== "0" ? ` · ${skipped} already on this job` : ""}`
-              : null
+          : libraryNote
+            ? libraryNote
+            : toolbox
+              ? `Also added to your "${toolbox}" takeoff template`
+              : applied != null
+                ? `Added ${applied} takeoff${applied === "1" ? "" : "s"} from the template${skipped && skipped !== "0" ? ` · ${skipped} already on this job` : ""}`
+                : null
       }
       pageNumber={pageNumber}
       sheet={sheet ? { id: sheet.id, name: sheet.name, unitsPerFoot: sheet.unitsPerFoot, scaleLabel: sheet.scaleLabel, prevSheetId: sheet.prevSheetId, align: sheet.align } : null}

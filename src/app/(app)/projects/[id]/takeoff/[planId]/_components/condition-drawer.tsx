@@ -2,14 +2,23 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Copy, Plus, X } from "lucide-react";
+import { BookMarked, Copy, Plus, X } from "lucide-react";
 import { ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";
 import { costCodeLabel, money, num } from "@/lib/utils";
 import type { CodeRules } from "@/lib/code-groups";
 import { isLumberMetric, metricLabel, metricUnit } from "@/lib/takeoff";
 import { ConditionForm, type ConditionFormValues, type MemberSizeOption } from "../../_components/condition-form";
 import { AssemblyForm, type AssemblyFormValues, type ItemOption } from "../../_components/assembly-form";
-import { copyCondition, createAssemblyItem, createCondition, deleteAssemblyItem, deleteCondition, updateAssemblyItem, updateCondition } from "../../actions";
+import {
+  copyCondition,
+  createAssemblyItem,
+  createCondition,
+  deleteAssemblyItem,
+  deleteCondition,
+  saveConditionToLibrary,
+  updateAssemblyItem,
+  updateCondition,
+} from "../../actions";
 
 export type DrawerCondition = ConditionFormValues & {
   markupPct: number;
@@ -172,6 +181,8 @@ export function ConditionDrawer({
           </div>
         ) : null}
 
+        {condition && toolbox ? <SaveToLibrary projectId={projectId} condition={condition} templates={toolbox} returnTo={stayHref} /> : null}
+
         {condition ? (
           <div className="flex justify-end border-t border-slate-100 pt-4">
             <ConfirmForm
@@ -185,5 +196,48 @@ export function ConditionDrawer({
         ) : null}
       </div>
     </div>
+  );
+}
+
+/**
+ * Admins: this takeoff, settings and items, into the Library (one of your takeoff templates)
+ * so the next job can pull it from the plan. One by that name there already is refreshed.
+ */
+function SaveToLibrary({
+  projectId,
+  condition,
+  templates,
+  returnTo,
+}: {
+  projectId: string;
+  condition: { id: string; name: string };
+  templates: { id: string; name: string }[];
+  returnTo: string;
+}) {
+  const [pick, setPick] = useState(templates[0]?.id ?? "new");
+  return (
+    <form action={saveConditionToLibrary} className="space-y-2 border-t border-slate-100 pt-4">
+      <input type="hidden" name="projectId" value={projectId} />
+      <input type="hidden" name="id" value={condition.id} />
+      <input type="hidden" name="returnTo" value={returnTo} />
+      <p className="label !mb-0">Save to Library</p>
+      <p className="text-xs text-slate-500">
+        Puts &ldquo;{condition.name}&rdquo; — settings and items — in a template, so any job can find it on the plan. One there by this name is updated.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <select name="templateId" aria-label="Template to save it in" className="input !h-8 !w-auto !py-0 text-xs" value={pick} onChange={(e) => setPick(e.target.value)}>
+          {templates.map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.name}
+            </option>
+          ))}
+          <option value="new">New template…</option>
+        </select>
+        {pick === "new" ? <input name="newName" required placeholder="New template name" aria-label="New template name" className="input !h-8 !w-44 !py-0 text-xs" /> : null}
+        <SubmitButton variant="secondary" size="sm" pendingText="Saving…">
+          <BookMarked className="h-3.5 w-3.5" /> Save to Library
+        </SubmitButton>
+      </div>
+    </form>
   );
 }

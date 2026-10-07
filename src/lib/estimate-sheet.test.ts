@@ -21,12 +21,20 @@ const order = (s: SheetState) => s.specs.map((x) => `${x.category}/${x.key}:${x.
 
 describe("estimate sheet math", () => {
   it("prices a line as cost plus profit on cost", () => {
-    assert.deepEqual(lineMath({ quantity: 10, unitCost: 5, markupPct: 20 }), { cost: 50, profit: 10, price: 60 });
+    assert.deepEqual(lineMath({ quantity: 10, unitCost: 5, markupPct: 20 }), { cost: 50, tax: 0, profit: 10, price: 60 });
+  });
+
+  it("puts the sales tax you pay in a taxed line's cost, with profit on cost and tax", () => {
+    // $1,000 of lumber, 8.25% tax, 20% profit: 1,082.50 + 216.50 = 1,299.
+    const m = lineMath({ quantity: 1, unitCost: 1000, markupPct: 20, taxPct: 8.25 });
+    assert.equal(m.tax, 82.5);
+    assert.equal(Math.round(m.profit * 100) / 100, 216.5);
+    assert.equal(Math.round(m.price * 100) / 100, 1299);
   });
 
   it("totals every spec item and leaves optional lines out", () => {
     const s = sheet();
-    assert.deepEqual(specsTotals(s.specs), { cost: 50 + 200 + 50 + 800, profit: 10 + 20 + 0 + 200, price: 60 + 220 + 50 + 1000 });
+    assert.deepEqual(specsTotals(s.specs), { cost: 50 + 200 + 50 + 800, tax: 0, profit: 10 + 20 + 0 + 200, price: 60 + 220 + 50 + 1000 });
     s.specs[0].lines[1].isOptional = true;
     assert.equal(specsTotals(s.specs).cost, 50 + 50 + 800);
   });

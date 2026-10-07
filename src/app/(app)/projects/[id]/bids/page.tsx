@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { AlertTriangle, ArrowLeft, Check, Download, FileSpreadsheet, Lock, Pencil, Printer } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, Download, FileSpreadsheet, Lock, Pencil, Printer, Replace } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { bidComparison, codeGroups, isLadderLine, overWarnings, OVER_WARNING, priceLadders } from "@/lib/bids";
 import { vendorCodes } from "@/lib/vendors";
 import { cn, fmtDate, money } from "@/lib/utils";
+import { substituteLength } from "@/lib/takeoff";
 import { Card, CardBody, CardHeader, ConfirmForm, EmptyState, SubmitButton, buttonClasses } from "@/components/ui";
 import { RequestBids } from "./_components/request-bids";
 import { ImportButton } from "./_components/import-button";
@@ -39,6 +40,10 @@ export default async function BidsPage({
     skipped?: string;
     scope?: string;
     error?: string;
+    subbed?: string;
+    kept?: string;
+    /** Taking bids with substitutes on them: what you picked, waiting on "use theirs / keep mine". */
+    confirm?: string;
   }>;
 }) {
   await requireStaff();
@@ -58,6 +63,22 @@ export default async function BidsPage({
   const importedBid = q.imported ? cmp.bids.find((b) => b.id === q.imported) : null;
   const from = companyLines(company);
   const address = [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", ");
+  // "Take the picked bids" found substitutes: they're asked about here before anything is priced.
+  const confirm = (() => {
+    try {
+      const v = q.confirm ? (JSON.parse(q.confirm) as { picks: { codeKey: string; bidId: string }[]; scope: string; reapply: boolean }) : null;
+      return v && Array.isArray(v.picks) && v.picks.length ? v : null;
+    } catch {
+      return null;
+    }
+  })();
+  const subLines = confirm
+    ? await db.bidLine.findMany({
+        where: { OR: confirm.picks.map((p) => ({ bidId: p.bidId, codeKey: p.codeKey })), unitPrice: { not: null }, substitute: { not: null } },
+        orderBy: [{ codeLabel: "asc" }, { sortOrder: "asc" }],
+        include: { bid: { select: { number: true, vendorName: true } } },
+      })
+    : [];
   /** The email to a vendor about a bid — shown to you first (EmailPreview), then opened in your email program. */
   const emailFor = (b: (typeof cmp.bids)[number], contact: string | null) => {
     const items = b.lines.filter((l) => !isLadderLine(l));
@@ -93,6 +114,57 @@ export default async function BidsPage({
       </div>
 
       {q.error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-800">{q.error}</p> : null}
+      {confirm && subLines.length ? (
+        <form action={takeBids} id="substitutes" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <input type="hidden" name="projectId" value={project.id} />
+          <input type="hidden" name="scope" value={confirm.scope} />
+          {confirm.reapply ? <input type="hidden" name="reapply" value="1" /> : null}
+          {confirm.picks.map((p) => (
+            <input key={p.codeKey} type="hidden" name={`pick:${p.codeKey}`} value={p.bidId} />
+          ))}
+          <p className="flex items-center gap-1.5 font-semibold text-amber-950">
+            <Replace className="h-4 w-4" /> {subLines.length === 1 ? "A vendor quoted a different product" : `Vendors quoted a different product on ${subLines.length} lines`}
+          </p>
+          <p className="text-sm text-amber-900">
+            Their price is for what they quoted, not what you asked for. Use theirs and this job orders their product, at their price (swap back any time on the Material list) — or
+            keep yours and leave that line&apos;s price out.
+          </p>
+          <ul className="mt-2 divide-y divide-amber-200/70">
+            {subLines.map((l) => {
+              const length = substituteLength(l.name, l.substitute!);
+              return (
+                <li key={l.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-2 text-sm">
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-slate-900">
+                      You asked for <span className="font-medium">{l.name}</span> — they quoted <span className="font-medium">{l.substitute}</span> at{" "}
+                      <span className="font-medium">
+                        {money(l.unitPrice!)}/{l.unit}
+                      </span>
+                    </span>
+                    <span className="block text-xs text-slate-500">
+                      Bid #{l.bid.number} {l.bid.vendorName} · {l.codeLabel}
+                      {length ? ` · same board at ${length}' — pieces cut from ${l.name.replace(/^.* × /, "")} come from ${length}' boards` : ""}
+                      {l.note ? ` · “${l.note}”` : ""}
+                    </span>
+                  </span>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-slate-800">
+                    <input type="radio" name={`sub:${l.id}`} value="use" required className="h-4 w-4" /> Use theirs
+                  </label>
+                  <label className="inline-flex cursor-pointer items-center gap-1.5 font-medium text-slate-800">
+                    <input type="radio" name={`sub:${l.id}`} value="keep" required className="h-4 w-4" /> Keep mine
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="mt-2 flex items-center gap-2">
+            <SubmitButton pendingText="Taking…">Take the bids</SubmitButton>
+            <Link href={`${base}#compare`} className={buttonClasses("ghost", "sm")}>
+              Cancel
+            </Link>
+          </div>
+        </form>
+      ) : null}
       {q.made ? (
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
           Sent to {q.made} vendor{q.made === "1" ? "" : "s"} — below, download the Excel file (or Print / PDF) and email it. When the vendor sends it back, their file is saved to
@@ -114,7 +186,8 @@ export default async function BidsPage({
               ? "into the Item List (this job's prices are locked — Price review brings them in)"
               : "into the Item List for every job"
             : "on this job only"}
-          .
+          .{Number(q.subbed) > 0 ? ` ${q.subbed} substitute${q.subbed === "1" ? "" : "s"} used — see Substitutions on the Material list.` : ""}
+          {Number(q.kept) > 0 ? ` ${q.kept} substitute${q.kept === "1" ? "" : "s"} turned down (kept your item's price).` : ""}
           {Number(q.skipped) > 0
             ? ` ${q.skipped} line${q.skipped === "1" ? " isn't" : "s aren't"} an Item List item — price ${q.skipped === "1" ? "it" : "them"} on the takeoff.`
             : ""}

@@ -6,10 +6,10 @@ import { z } from "zod";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { nextChangeOrderNumber } from "@/lib/projects";
 import { intField, money, str, strOrNull } from "@/lib/utils";
 import { parseApprovals, parseCoDefaults, type CoDefaults } from "@/lib/change-orders";
 import { applyDecline, coTotal, finalizeIfApproved, unaddedChoices } from "@/lib/change-orders-server";
+import { newChangeOrder } from "@/lib/billing-flow";
 import { noteChange } from "@/lib/selection-activity";
 import { deleteUpload, saveUpload } from "@/lib/uploads";
 
@@ -50,26 +50,13 @@ export async function createChangeOrder(formData: FormData) {
   if (!project) throw new Error("Project not found");
   const title = str(formData, "title");
   if (!title) redirect(`${coPath(projectId)}/new`);
-  const number = await nextChangeOrderNumber(projectId);
-  const d = parseCoDefaults((await db.company.findFirst({ select: { changeOrderDefaults: true } }))?.changeOrderDefaults);
-  const co = await db.changeOrder.create({
-    data: {
-      projectId,
-      number,
-      title,
-      description: strOrNull(formData, "description"),
-      reason: strOrNull(formData, "reason"),
-      scheduleImpactDays: intField(formData, "scheduleImpactDays", 0),
-      introText: d.introText ?? null,
-      closingText: d.closingText ?? null,
-      terms: d.terms ?? null,
-      ifDeclined: d.ifDeclined === "CLEAR" ? "CLEAR" : "KEEP",
-      profitMode: d.profitMode && ["NONE", "PCT", "AMOUNT"].includes(d.profitMode) ? d.profitMode : "NONE",
-      profitValue: typeof d.profitValue === "number" ? d.profitValue : 0,
-      profitShown: d.profitShown === "FOLDED" ? "FOLDED" : "LINE",
-    },
+  const co = await newChangeOrder(projectId, {
+    title,
+    description: strOrNull(formData, "description"),
+    reason: strOrNull(formData, "reason"),
+    scheduleImpactDays: intField(formData, "scheduleImpactDays", 0),
   });
-  await logActivity({ projectId, userId: user.id, type: "change_order.created", description: `Change Order #${number} "${title}" created` });
+  await logActivity({ projectId, userId: user.id, type: "change_order.created", description: `Change Order #${co.number} "${title}" created` });
   revalidate(projectId, co.id);
   redirect(coPath(projectId, co.id));
 }
@@ -88,6 +75,7 @@ const fields = z
     profitShown: z.enum(["LINE", "FOLDED"]),
     taxPct: z.number().finite().min(0).max(100),
     taxLabel: z.string().trim().max(60),
+    taxShown: z.enum(["LINE", "FOLDED"]),
     scheduleImpactDays: z.number().int().min(-3650).max(3650),
     priorCompletion: z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/),
     newCompletion: z.string().regex(/^(\d{4}-\d{2}-\d{2})?$/),
@@ -107,8 +95,11 @@ export async function saveChangeOrder(projectId: string, coId: string, raw: unkn
   const parsed = fields.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the fields" };
   try {
-    await draftCO(projectId, coId);
+    const current = await draftCO(projectId, coId);
     const { priorCompletion, newCompletion, approverIds, description, reason, introText, closingText, terms, profitLabel, taxLabel, ...rest } = parsed.data;
+    // Tax added to a change order that had none: its items (not extra charges) are taxed — untick any you don't pay tax on.
+    if (rest.taxPct !== undefined && rest.taxPct > 0 && !(current.taxPct > 0))
+      await db.changeOrderItem.updateMany({ where: { changeOrderId: current.id, kind: { not: "CHARGE" } }, data: { taxed: true } });
     const text = (v: string | undefined) => (v === undefined ? undefined : v.trim() || null);
     await db.changeOrder.update({
       where: { id: coId },
@@ -169,6 +160,7 @@ export async function addChoicesToChangeOrder(projectId: string, coId: string, s
           unitCost: c.difference,
           markupPct: 0,
           costCodeId: c.costCodeId,
+          taxed: co.taxPct > 0,
           sortOrder: order++,
         },
       });
@@ -211,7 +203,11 @@ export async function saveChangeOrderLine(projectId: string, coId: string, raw: 
     if (id) {
       if (!co.items.some((i) => i.id === id && i.kind !== "SELECTION")) return { ok: false, error: "Line not found" };
       await db.changeOrderItem.update({ where: { id }, data });
-    } else await db.changeOrderItem.create({ data: { ...data, changeOrderId: co.id, sortOrder: co.items.reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1 } });
+    } else
+      await db.changeOrderItem.create({
+        // A new item is taxed when the change order has tax; an extra charge (a fee) isn't.
+        data: { ...data, taxed: kind === "LINE" && co.taxPct > 0, changeOrderId: co.id, sortOrder: co.items.reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1 },
+      });
   } catch (e) {
     return err(e);
   }
@@ -240,6 +236,20 @@ export async function setChangeOrderLineProfit(projectId: string, coId: string, 
     const co = await draftCO(projectId, coId);
     if (!co.items.some((i) => i.id === itemId)) return { ok: false, error: "Line not found" };
     await db.changeOrderItem.update({ where: { id: itemId }, data: { profitMode: mode, profitValue: mode === "PCT" || mode === "AMOUNT" ? value : 0 } });
+  } catch (e) {
+    return err(e);
+  }
+  revalidate(projectId, coId);
+  return { ok: true };
+}
+
+/** Taxed or not (draft only): you pay sales tax on it at the change order's rate. */
+export async function setChangeOrderLineTax(projectId: string, coId: string, itemId: string, taxed: boolean): Promise<Result> {
+  await requireStaff();
+  try {
+    const co = await draftCO(projectId, coId);
+    if (!co.items.some((i) => i.id === itemId)) return { ok: false, error: "Line not found" };
+    await db.changeOrderItem.update({ where: { id: itemId }, data: { taxed } });
   } catch (e) {
     return err(e);
   }

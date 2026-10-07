@@ -25,6 +25,7 @@ import {
   saveParameterValues,
   lockEstimate,
   dismissAutoNote,
+  lockFromAutoNote,
 } from "./actions";
 import { refreshDraftFromTakeoff } from "@/lib/takeoff-data";
 import { parseAutoNote } from "@/lib/takeoff-changes";
@@ -334,7 +335,14 @@ export default async function EstimatePage({ params, searchParams }: { params: P
         ) : null}
       </div>
 
-      {autoNote ? <AutoChanges note={autoNote} onDismiss={dismissAutoNote.bind(null, project.id, estimate.id)} /> : null}
+      {autoNote ? (
+        <AutoChanges
+          note={autoNote}
+          canPutBack={!!estimate.autoBase}
+          onDismiss={dismissAutoNote.bind(null, project.id, estimate.id)}
+          onLock={lockFromAutoNote.bind(null, project.id, estimate.id)}
+        />
+      ) : null}
 
       <PriceWarnings
         unpriced={isDraft ? check?.unpriced : undefined}
@@ -390,16 +398,21 @@ export default async function EstimatePage({ params, searchParams }: { params: P
         }
       />
 
-      <Collapsible summary="Proposal notes, terms & starting profit %">
+      <Collapsible summary="Proposal introduction, terms & starting profit %">
         <form action={updateEstimateDetails} className="space-y-4">
           <input type="hidden" name="projectId" value={project.id} />
           <input type="hidden" name="id" value={estimate.id} />
           <FormGrid>
-            <Field label="Notes (shown on proposal)" htmlFor="est-notes" className="md:col-span-2">
-              <textarea id="est-notes" name="notes" rows={3} className="input" defaultValue={estimate.notes ?? ""} />
+            <Field
+              label="Introduction (top of the proposal)"
+              htmlFor="est-notes"
+              className="md:col-span-2"
+              hint="Opens the proposal, under your header — a thank-you and what it covers."
+            >
+              <textarea id="est-notes" name="notes" rows={5} className="input" defaultValue={estimate.notes ?? ""} />
             </Field>
-            <Field label="Terms (shown on proposal)" htmlFor="est-terms" className="md:col-span-2">
-              <textarea id="est-terms" name="terms" rows={3} className="input" defaultValue={estimate.terms ?? ""} />
+            <Field label="Terms (end of the proposal)" htmlFor="est-terms" className="md:col-span-2">
+              <textarea id="est-terms" name="terms" rows={5} className="input" defaultValue={estimate.terms ?? ""} />
             </Field>
             <Field label="Starting profit %" htmlFor="est-markup" hint="What new lines start with.">
               <input id="est-markup" name="defaultMarkup" type="number" step="0.1" min="0" className="input" defaultValue={estimate.defaultMarkup} />

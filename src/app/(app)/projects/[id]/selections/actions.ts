@@ -1,5 +1,6 @@
 "use server";
 
+import { syncSelectionChangeOrder } from "@/lib/billing-flow";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { redirect } from "next/navigation";
@@ -63,6 +64,8 @@ export async function updateSelection(fd: FormData) {
   const data = readSelectionFields(fd);
   await db.selection.update({ where: { id: sel.id }, data });
   await logActivity({ projectId: project.id, userId: user.id, type: "selection.updated", description: `Updated selection "${data.title}"` });
+  // A new allowance changes the overage or credit on a draft change order.
+  await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
 }
@@ -104,18 +107,19 @@ export async function addOption(fd: FormData) {
 }
 
 export async function updateOption(fd: FormData) {
-  await requireStaff();
+  const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const id = str(fd, "id");
   if (!sel.options.some((o) => o.id === id)) throw new Error("Option not found");
   await db.selectionOption.update({ where: { id }, data: readOptionFields(fd) });
+  if (sel.chosenOptionId === id) await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
 }
 
 export async function deleteOption(fd: FormData) {
-  await requireStaff();
+  const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const id = str(fd, "id");
@@ -123,6 +127,7 @@ export async function deleteOption(fd: FormData) {
   await db.selectionOption.delete({ where: { id } });
   if (sel.chosenOptionId === id) {
     await db.selection.update({ where: { id: sel.id }, data: { chosenOptionId: null, status: "PENDING", chosenAt: null, approvedAt: null } });
+    await syncSelectionChangeOrder(sel.id, user);
   }
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
@@ -145,6 +150,7 @@ export async function chooseOption(fd: FormData) {
     type: "selection.chosen",
     description: `Chose "${opt.name}" for "${sel.title}"`,
   });
+  await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
 }
@@ -172,6 +178,7 @@ export async function setSelectionStatus(fd: FormData) {
     type: `selection.${status.toLowerCase()}`,
     description: `Selection "${sel.title}" marked ${status.toLowerCase()}`,
   });
+  if (status === "PENDING") await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
 }
@@ -252,6 +259,7 @@ export async function removeChoice(projectId: string, selectionId: string, choic
     db.selectionOption.delete({ where: { id: choiceId } }),
   ]);
   await noteChange(sel.id, user, `Removed choice "${sel.options.find((o) => o.id === choiceId)?.name ?? ""}"`);
+  if (sel.chosenOptionId === choiceId) await syncSelectionChangeOrder(sel.id, user);
   revalidate(projectId, sel.id);
   return { ok: true };
 }
@@ -275,6 +283,8 @@ export async function makeChoice(projectId: string, selectionId: string, choice:
     await logActivity({ projectId, userId: user.id, type: "selection.chosen", description: `Chose "${opt.name}" for "${sel.title}"` });
     await noteChange(sel.id, user, `Chose "${opt.name}"`);
   }
+  // Over or under the allowance: onto a draft change order (or off it, when cleared).
+  await syncSelectionChangeOrder(sel.id, user);
   revalidate(projectId, sel.id);
   revalidatePath(`/projects/${projectId}/estimate`, "layout");
   return { ok: true };

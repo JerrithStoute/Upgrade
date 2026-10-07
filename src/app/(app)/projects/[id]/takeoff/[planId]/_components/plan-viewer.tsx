@@ -103,6 +103,7 @@ import {
   deleteConditionShapes,
   restoreShapes,
   reorderConditions,
+  pullFromLibrary,
 } from "../../actions";
 
 type ViewerCondition = {
@@ -157,6 +158,37 @@ type ViewerMeasurement = {
 };
 
 type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount" | "findwalls";
+
+/** A takeoff in your templates (the Library), to pull onto the job. */
+export type LibraryTakeoff = { id: string; name: string; type: string; color: string; template: string };
+
+// "Show all job takeoffs" in the takeoff list (instead of just this page's), remembered per browser.
+const SHOW_ALL_KEY = "takeoff.showAllTakeoffs";
+const SHOW_ALL_EVENT = "takeoff-show-all";
+function readShowAll() {
+  try {
+    return localStorage.getItem(SHOW_ALL_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+function writeShowAll(on: boolean) {
+  try {
+    localStorage.setItem(SHOW_ALL_KEY, on ? "1" : "0");
+  } catch {
+    /* storage blocked: just this page */
+  }
+  window.dispatchEvent(new Event(SHOW_ALL_EVENT));
+}
+function subscribeShowAll(cb: () => void) {
+  window.addEventListener(SHOW_ALL_EVENT, cb);
+  window.addEventListener("storage", cb);
+  return () => {
+    window.removeEventListener(SHOW_ALL_EVENT, cb);
+    window.removeEventListener("storage", cb);
+  };
+}
+const NO_IDS = new Set<string>();
 
 /** Windows: cased (trimmed) or not. */
 function CasedSwitch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -222,7 +254,7 @@ function writeSnap(on: boolean) {
   }
   window.dispatchEvent(new Event(LABELS_EVENT));
 }
-const SNAP_PX = 10; // how close (screen px) the pointer must be to snap
+const SNAP_PX = 14; // how close (screen px) the pointer must be to snap
 
 /** Everything needed to (re)create a shape — for undo / redo and copy / paste. */
 type ShapeData = {
@@ -309,7 +341,7 @@ function subscribeLabels(cb: () => void) {
 
 const MIN_ZOOM = 0.05;
 const MAX_ZOOM = 8;
-const CLOSE_PX = 10; // screen px to snap onto the first point and close a shape
+const CLOSE_PX = 22; // screen px to snap onto the first point and close a shape — a generous target
 
 const EDGE_PICK_PX = 12; // how close (screen px) the pointer must be to pick a wall
 
@@ -395,6 +427,7 @@ export function PlanViewer({
   codeAlert,
   countMarkers,
   revision,
+  library,
   menu,
   notice,
 }: {
@@ -429,6 +462,8 @@ export function PlanViewer({
   countMarkers: { sheetId: string; conditionId: string; x: number; y: number }[];
   /** Where this plan set sits among its revisions. */
   revision: RevisionInfo;
+  /** Every takeoff in your templates — pulled onto the job from the takeoff search. */
+  library: LibraryTakeoff[];
   /** The "⋯ Takeoff" menu: estimates, templates, admin or not. */
   menu: TakeoffMenuData;
   /** A note to show on arrival (e.g. "Added 4 takeoffs from the template"). */
@@ -473,13 +508,14 @@ export function PlanViewer({
   const [zoom, setZoom] = useState(1);
   const [fitted, setFitted] = useState(false);
   const [tool, setTool] = useState<Tool>("select");
-  const [activeId, setActiveId] = useState<string | null>(conditions[0]?.id ?? null);
+  const [activeId, setActiveId] = useState<string | null>(() => conditions.find((c) => measurements.some((m) => m.conditionId === c.id))?.id ?? null);
   const [deduct, setDeduct] = useState(false);
   const [draft, setDraft] = useState<Pt[]>([]);
   // Arcs while drawing: which draft points are arc points, and whether the next click is one.
   const [draftArcs, setDraftArcs] = useState<number[]>([]);
   const [arcNext, setArcNext] = useState(false);
   const [doorPanelMin, setDoorPanelMin] = useState(false);
+  const [nextCardMin, setNextCardMin] = useState(false);
   // Windows: whether the next window placed is cased, per Windows takeoff (cased unless switched off).
   const [casedPick, setCasedPick] = useState<Record<string, boolean>>({});
   // Doors: the door the next click places, per Doors takeoff (starts as the last one used there).
@@ -513,6 +549,12 @@ export function PlanViewer({
   const [sheetName, setSheetName] = useState(sheet?.name ?? "");
   const [newCondName, setNewCondName] = useState("");
   const [newCondType, setNewCondType] = useState<ConditionType>("AREA");
+  // The takeoff search under the name box: open while you're in it; ↑ / ↓ move through it.
+  const [findOpen, setFindOpen] = useState(false);
+  const [findAt, setFindAt] = useState(0);
+  const showAll = useSyncExternalStore(subscribeShowAll, readShowAll, () => false);
+  // Takeoffs picked onto this page this visit (nothing measured with them here yet) stay in the list.
+  const [pulled, setPulled] = useState<{ sheetId: string | null; ids: Set<string> }>({ sheetId: sheet?.id ?? null, ids: new Set() });
   const [shiftHeld, setShiftHeld] = useState(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
   // Framing direction: a new outline waiting for its member direction, or an existing shape being re-aimed.
@@ -593,6 +635,10 @@ export function PlanViewer({
   const [newLike, setNewLike] = useState<{ id: string; name: string } | null>(null);
   // …and for several shapes picked together: the name being typed (null = not asking).
   const [newLikeMany, setNewLikeMany] = useState<string | null>(null);
+  // Sheets where you chose to draw without a scale (asked once per sheet per visit).
+  const [scaleSkipped, setScaleSkipped] = useState<string[]>([]);
+  // Calibrating because measuring asked for a scale: back to that tool once it's set.
+  const [afterCalibrate, setAfterCalibrate] = useState<Tool | null>(null);
   const [autoBox, setAutoBox] = useState<{ a: Pt; b: Pt } | null>(null);
   const autoAbort = useRef<AbortController | null>(null);
   // Revisions: comparing with the previous one, points clicked to line the sheets up, where they differ, and the bring-forward panel.
@@ -658,6 +704,8 @@ export function PlanViewer({
     });
   };
   const active = activeId ? (condById.get(activeId) ?? null) : null;
+  // The pitch / wall height card over the plan, for the next shape drawn with this takeoff.
+  const nextCard = !!active && tool === "measure" && !editor && (hasShapePitch(active.type) || active.type === "LINEAR");
   const unitsPerFoot = sheet?.unitsPerFoot ?? null;
 
   const shapes = useMemo(
@@ -671,6 +719,77 @@ export function PlanViewer({
     [measurements, pending, removing, drag, overrides],
   );
   const selected = shapes.find((m) => m.id === selectedId) ?? null;
+
+  // The takeoff list: the takeoffs used on this page (plus the one you're measuring with and any
+  // you just picked); "Show all" lists the whole job. A span-table family shows together.
+  const onPage = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of shapes) {
+      ids.add(m.conditionId);
+      for (const o of m.memberOwners ?? []) ids.add(o);
+    }
+    const groups = new Set(conditions.flatMap((c) => (ids.has(c.id) && c.sizeGroup ? [c.sizeGroup] : [])));
+    for (const c of conditions) if ((c.sizeGroup && groups.has(c.sizeGroup)) || groups.has(c.id)) ids.add(c.id);
+    return ids;
+  }, [shapes, conditions]);
+  const pulledIds = pulled.sheetId === (sheet?.id ?? null) ? pulled.ids : NO_IDS;
+  const shownList = showAll ? listed : listed.filter((c) => onPage.has(c.id) || c.id === activeId || pulledIds.has(c.id));
+  const shownIds = new Set(shownList.map((c) => c.id));
+  /** Puts a takeoff in this page's list and starts measuring with it. */
+  const pickTakeoff = (id: string) => {
+    setPulled((cur) => ({ sheetId: sheet?.id ?? null, ids: new Set([...(cur.sheetId === (sheet?.id ?? null) ? cur.ids : []), id]) }));
+    setActiveId(id);
+    setTool("measure");
+    resetDraft();
+    showTakeoff(id);
+    setNewCondName("");
+    setFindOpen(false);
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-cond-row="${id}"]`)?.scrollIntoView({ block: "nearest" }));
+  };
+  const pickLibrary = (l: LibraryTakeoff) =>
+    startTransition(async () => {
+      try {
+        const r = await pullFromLibrary({ projectId, templateConditionId: l.id });
+        pickTakeoff(r.id);
+        if (r.added) setFlash(`Added "${r.name}" from your Library`);
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not add the takeoff");
+      }
+    });
+  const createNew = () => {
+    const name = newCondName.trim();
+    if (!name) return;
+    startTransition(async () => {
+      try {
+        const { id } = await quickCreateCondition({ projectId, name, type: newCondType });
+        pickTakeoff(id);
+        // Walls and openings need their options set: open the new condition's settings.
+        if (["WALL", "OPENING", "DOOR", "WINDOW"].includes(newCondType)) router.push(editHref(id), { scroll: false });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not add the takeoff");
+      }
+    });
+  };
+  // What the search finds: this job's other takeoffs, then the Library's (ones the job has by name are the job's).
+  const findQ = newCondName.trim().toLowerCase();
+  const findMatch = (n: string) => !findQ || n.toLowerCase().includes(findQ);
+  const jobHits = conditions.filter((c) => !shownIds.has(c.id) && findMatch(c.name));
+  const jobNames = new Set(conditions.map((c) => c.name.trim().toLowerCase()));
+  const libHits = library.filter((l) => !jobNames.has(l.name.trim().toLowerCase()) && findMatch(l.name));
+  const exact = [...conditions, ...library].some((c) => c.name.trim().toLowerCase() === findQ);
+  const findOptions: ({ kind: "job"; c: ViewerCondition } | { kind: "lib"; l: LibraryTakeoff } | { kind: "new" })[] = [
+    ...jobHits.map((c) => ({ kind: "job" as const, c })),
+    ...libHits.map((l) => ({ kind: "lib" as const, l })),
+    ...(findQ && !exact ? [{ kind: "new" as const }] : []),
+  ];
+  const chooseFind = (i: number) => {
+    const o = findOptions[i];
+    if (!o) return;
+    if (o.kind === "job") pickTakeoff(o.c.id);
+    else if (o.kind === "lib") pickLibrary(o.l);
+    else createNew();
+  };
   const picked = multi.length ? multi : selectedId ? [selectedId] : [];
   /** Picks these shapes: one is selected for editing, more are a group. */
   const selectSet = (ids: string[]) => {
@@ -1544,6 +1663,12 @@ export function PlanViewer({
       return;
     }
     if (tool === "measure" || tool === "calibrate" || tool === "ruler") {
+      // Near the first point of an outline: it locks on, so the last click closes the shape.
+      if (closingAt(raw)) {
+        setSnapHit({ point: draft[0], kind: "vertex" });
+        setCursor(draft[0]);
+        return;
+      }
       const hit = magnet(raw);
       setSnapHit(hit);
       setCursor(hit?.point ?? raw);
@@ -1624,6 +1749,8 @@ export function PlanViewer({
   };
 
   const onClick = (e: React.MouseEvent) => {
+    // No scale yet: the card in the middle of the plan asks for one before anything is drawn.
+    if (needsScale) return;
     if (suppressClick.current) {
       suppressClick.current = false;
       return;
@@ -1707,14 +1834,9 @@ export function PlanViewer({
       finishDraft(draft);
       return;
     }
-    const closes = !isLineType(active.type) && draft.length >= 3 && dist(raw, draft[0]) * zoom <= CLOSE_PX;
-    if (closes) {
-      finishDraft(draft);
-      return;
-    }
-    // A wall run that comes back to its first corner closes the building and finishes in one click.
-    if (active.type === "WALL" && draft.length >= 3 && dist(raw, draft[0]) * zoom <= CLOSE_PX) {
-      finishDraft([...draft, draft[0]]);
+    if (closingAt(pointer) || closingAt(raw)) {
+      // A wall run that comes back to its first corner closes the building; an outline closes on its first point.
+      finishDraft(active.type === "WALL" ? [...draft, draft[0]] : draft);
       return;
     }
     // Arc: this click is a point the curve passes through; the next click is where it ends.
@@ -1732,8 +1854,12 @@ export function PlanViewer({
     setDraft((d) => [...d, snap(raw, d[d.length - 1])]);
   };
 
+  /** The pointer is on the first point of an outline (or a wall run) being drawn: the next click closes it. */
+  const closingAt = (p: Pt) => tool === "measure" && !!active && (!isLineType(active.type) || active.type === "WALL") && draft.length >= 3 && dist(p, draft[0]) * zoom <= CLOSE_PX;
+  const willClose = !!cursor && closingAt(cursor);
+
   // --- Scale ------------------------------------------------------------------------------
-  const applyScale = (upf: number, label: string) => {
+  const applyScale = (upf: number, label: string, thenTool: Tool = "select") => {
     if (!sheet) return;
     startTransition(async () => {
       try {
@@ -1745,7 +1871,8 @@ export function PlanViewer({
           applyToPlan,
         });
         setCalib([]);
-        setTool("select");
+        setAfterCalibrate(null);
+        setTool(thenTool);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not set the scale");
       }
@@ -1753,6 +1880,9 @@ export function PlanViewer({
   };
 
   const calibLength = (Number(calibFeet) || 0) + (Number(calibInches) || 0) / 12;
+  // Measuring (or finding walls) on a sheet with no scale: stop and ask first — nothing drawn would
+  // get a length or area. Counts, doors and windows don't need one. "Draw anyway" lets you go on.
+  const needsScale = !!sheet && !unitsPerFoot && !!active && !isCountType(active.type) && (tool === "measure" || tool === "findwalls") && !scaleSkipped.includes(sheet.id);
   const presetValue = PRESET_SCALES.find((s) => sheet?.unitsPerFoot && Math.abs(s.paperInchesPerFoot * PDF_UNITS_PER_INCH - sheet.unitsPerFoot) < 1e-6)?.label ?? "";
 
   // --- Live readout -----------------------------------------------------------------------
@@ -2478,6 +2608,7 @@ export function PlanViewer({
             variant={tool === "calibrate" ? "primary" : "secondary"}
             disabled={!sheet}
             onClick={() => {
+              setAfterCalibrate(null);
               setTool(tool === "calibrate" ? "select" : "calibrate");
               setCalib([]);
               resetDraft();
@@ -2713,7 +2844,7 @@ export function PlanViewer({
                   : active.type === "OPENING"
                     ? "click one side of the opening, then the other. Each line is one opening; its length is the width."
                     : active.type === "HIP_VALLEY"
-                      ? "click the wall corner, then the ridge end; right-click, double-click or Enter to finish. Each line is one piece."
+                      ? "click the wall corner, then the ridge end; right-click, double-click or Enter to finish. Each line is one piece — its pitch is in the card on the plan."
                       : active.type === "BEAM"
                         ? "click one bearing end, then the other; right-click, double-click or Enter to finish. Each line is one beam — the bearing is added at both ends."
                         : active.type === "LINEAR"
@@ -2727,79 +2858,6 @@ export function PlanViewer({
             {!isCountType(active.type) ? `Shift = straight${canArc(active.type) ? " · A = arc" : ""} · Backspace = undo point · Esc = cancel.` : null}
             {active.type === "FRAMING" ? " After closing the outline you'll choose horizontal, vertical or parallel to a wall." : null}
             {!unitsPerFoot && !isCountType(active.type) ? <strong className="ml-1 text-amber-700">Set the scale first.</strong> : null}
-            {hasShapePitch(active.type) ? (
-              <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 ring-1 ring-slate-200">
-                Pitch for next {active.type === "HIP_VALLEY" ? "line" : "outline"}:
-                <input
-                  aria-label="Pitch for next shape"
-                  type="number"
-                  min="0"
-                  step="0.25"
-                  value={nextPitch.p1}
-                  placeholder={String(active.pitch)}
-                  onChange={(e) =>
-                    setNextPitch({
-                      forId: active.id,
-                      p1: e.target.value,
-                      p2: nextPitch.p2,
-                    })
-                  }
-                  className="w-12 rounded border border-slate-300 px-1 py-0.5 text-xs"
-                />
-                {active.type === "HIP_VALLEY" ? (
-                  <>
-                    &amp;
-                    <input
-                      aria-label="Side 2 pitch for next line"
-                      type="number"
-                      min="0"
-                      step="0.25"
-                      value={nextPitch.p2}
-                      placeholder={nextPitch.p1 || String(active.pitch2 ?? active.pitch)}
-                      onChange={(e) =>
-                        setNextPitch({
-                          forId: active.id,
-                          p1: nextPitch.p1,
-                          p2: e.target.value,
-                        })
-                      }
-                      className="w-12 rounded border border-slate-300 px-1 py-0.5 text-xs"
-                    />
-                  </>
-                ) : null}
-                /12
-                {nextPitch.p1 || nextPitch.p2 ? (
-                  <button type="button" className="ml-1 text-blue-700 underline" onClick={() => setNextPitch({ forId: active.id, p1: "", p2: "" })}>
-                    use condition&apos;s
-                  </button>
-                ) : (
-                  <span className="text-slate-400">(blank = takeoff&apos;s)</span>
-                )}
-              </span>
-            ) : null}
-            {active.type === "LINEAR" ? (
-              <span className="ml-2 inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 ring-1 ring-slate-200">
-                Wall height for next line:
-                <input
-                  aria-label="Wall height for next line"
-                  type="number"
-                  min="0"
-                  step="0.25"
-                  value={nextHeight[active.id] ?? ""}
-                  placeholder={active.height ? num(active.height, 2) : "8"}
-                  onChange={(e) => setNextHeight((cur) => ({ ...cur, [active.id]: e.target.value }))}
-                  className="w-14 rounded border border-slate-300 px-1 py-0.5 text-xs"
-                />
-                ft
-                {nextHeight[active.id] ? (
-                  <button type="button" className="ml-1 text-blue-700 underline" onClick={() => setNextHeight((cur) => ({ ...cur, [active.id]: "" }))}>
-                    use takeoff&apos;s
-                  </button>
-                ) : (
-                  <span className="text-slate-400">(blank = takeoff&apos;s{active.height ? ` ${num(active.height, 2)}'` : ""})</span>
-                )}
-              </span>
-            ) : null}
           </span>
         ) : (
           <span>
@@ -2816,44 +2874,98 @@ export function PlanViewer({
       <div className="flex min-h-0 flex-1">
         {/* Conditions panel ------------------------------------------------------------------- */}
         <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200">
-          {/* Quick add sits at the top, so it's always in reach */}
+          {/* Find or add a takeoff — this job's, the Library's, or a new one. At the top, always in reach. */}
           <form
             className="space-y-2 border-b border-slate-200 bg-slate-50/60 p-3"
             onSubmit={(e) => {
               e.preventDefault();
-              const name = newCondName.trim();
-              if (!name) return;
-              startTransition(async () => {
-                try {
-                  const { id } = await quickCreateCondition({
-                    projectId,
-                    name,
-                    type: newCondType,
-                  });
-                  setNewCondName("");
-                  setActiveId(id);
-                  setTool("measure");
-                  // Walls and openings need their options set: open the new condition's settings.
-                  if (["WALL", "OPENING", "DOOR", "WINDOW"].includes(newCondType)) router.push(editHref(id), { scroll: false });
-                } catch (err) {
-                  setError(err instanceof Error ? err.message : "Could not add the takeoff");
-                }
-              });
+              createNew();
             }}
           >
             <div className="flex items-center justify-between">
-              <p className="label !mb-0">Quick add</p>
+              <p className="label !mb-0">Find or add a takeoff</p>
               <Link href={editHref("new")} scroll={false} className="text-xs text-blue-700 hover:underline">
                 More options
               </Link>
             </div>
-            <input
-              value={newCondName}
-              onChange={(e) => setNewCondName(e.target.value)}
-              placeholder="Takeoff name"
-              className="input !py-1.5 text-xs"
-              aria-label="New takeoff name"
-            />
+            <div className="relative">
+              <input
+                value={newCondName}
+                onChange={(e) => {
+                  setNewCondName(e.target.value);
+                  setFindOpen(true);
+                  setFindAt(0);
+                }}
+                onFocus={() => {
+                  setFindOpen(true);
+                  setFindAt(0);
+                }}
+                onBlur={() => setFindOpen(false)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setFindOpen(false);
+                  else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setFindOpen(true);
+                    const n = findOptions.length;
+                    if (n) setFindAt((i) => (i + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
+                  } else if (e.key === "Enter" && findOpen && findOptions.length) {
+                    e.preventDefault();
+                    chooseFind(Math.min(findAt, findOptions.length - 1));
+                  }
+                }}
+                placeholder="Type to find one, or name a new one"
+                className="input !py-1.5 text-xs"
+                aria-label="Find or add a takeoff"
+                role="combobox"
+                aria-controls="takeoff-find-list"
+                aria-expanded={findOpen}
+                autoComplete="off"
+              />
+              {findOpen && (findOptions.length || findQ) ? (
+                // Floats over the list below, so nothing moves.
+                <div
+                  className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 text-xs shadow-xl"
+                  role="listbox"
+                  id="takeoff-find-list"
+                >
+                  {findOptions.length === 0 ? <p className="px-3 py-2 text-slate-500">Nothing by that name — pick its type below and Add.</p> : null}
+                  {findOptions.map((o, i) => {
+                    const head =
+                      i === 0 || findOptions[i - 1].kind !== o.kind ? (
+                        <p className="px-3 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+                          {o.kind === "job" ? "On this job" : o.kind === "lib" ? "Library" : "New"}
+                        </p>
+                      ) : null;
+                    const color = o.kind === "job" ? o.c.color : o.kind === "lib" ? o.l.color : null;
+                    return (
+                      <div key={o.kind === "job" ? o.c.id : o.kind === "lib" ? `lib:${o.l.id}` : "new"}>
+                        {head}
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={i === findAt}
+                          // Keep the box's focus until the click lands.
+                          onMouseDown={(e) => e.preventDefault()}
+                          onMouseEnter={() => setFindAt(i)}
+                          onClick={() => chooseFind(i)}
+                          className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === findAt ? "bg-blue-50 text-blue-900" : "text-slate-700")}
+                        >
+                          {color ? <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} /> : <Plus className="h-3 w-3 shrink-0 text-blue-700" />}
+                          <span className="min-w-0 flex-1 truncate">{o.kind === "job" ? o.c.name : o.kind === "lib" ? o.l.name : `New "${newCondName.trim()}"`}</span>
+                          <span className="shrink-0 text-[10px] text-slate-400">
+                            {o.kind === "job"
+                              ? (CONDITION_TYPE_LABELS[o.c.type as ConditionType] ?? o.c.type)
+                              : o.kind === "lib"
+                                ? o.l.template
+                                : CONDITION_TYPE_LABELS[newCondType]}
+                          </span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
             <div className="flex gap-2">
               <select value={newCondType} onChange={(e) => setNewCondType(e.target.value as ConditionType)} className="input !py-1.5 text-xs" aria-label="New takeoff type">
                 {CONDITION_TYPES.map((t) => (
@@ -2862,13 +2974,23 @@ export function PlanViewer({
                   </option>
                 ))}
               </select>
-              <Button type="submit" size="sm" disabled={!newCondName.trim()}>
+              <Button type="submit" size="sm" disabled={!newCondName.trim()} title="A new takeoff with this name and type">
                 <Plus className="h-3.5 w-3.5" /> Add
               </Button>
             </div>
           </form>
           <div className="flex items-center gap-2 py-2 pl-3 pr-2">
-            <p className="label !mb-0 flex-1">Takeoffs</p>
+            <p className="label !mb-0 flex-1">{showAll ? "All takeoffs" : "On this page"}</p>
+            {conditions.length ? (
+              <button
+                type="button"
+                className="rounded px-1.5 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
+                title={showAll ? "List just the takeoffs used on this page" : "List every takeoff on this job"}
+                onClick={() => writeShowAll(!showAll)}
+              >
+                {showAll ? "Just this page" : `Show all (${conditions.length})`}
+              </button>
+            ) : null}
             {conditions.length ? (
               // One click for a clean plan: hide every condition (or show them all again).
               <button
@@ -2889,8 +3011,13 @@ export function PlanViewer({
             ) : null}
           </div>
           <ul className="min-h-0 flex-1 overflow-y-auto">
-            {conditions.length === 0 ? <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — add one above.</li> : null}
-            {listed.map((c) => {
+            {conditions.length === 0 ? <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — find one in your Library or add one above.</li> : null}
+            {conditions.length > 0 && shownList.length === 0 ? (
+              <li className="px-3 py-2 text-xs text-slate-500">
+                Nothing measured on this page yet — find a takeoff above (this job&apos;s or your Library&apos;s) and start measuring.
+              </li>
+            ) : null}
+            {shownList.map((c) => {
               const isActive = c.id === activeId;
               const isHidden = hidden.has(c.id);
               const info = infoOpen.has(c.id) ? totalsPanel.conditions.find((t) => t.id === c.id) : undefined;
@@ -2955,11 +3082,14 @@ export function PlanViewer({
                     onKeyDown={(e) => {
                       if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
                         e.preventDefault();
+                        // Swaps with the next one up / down in the list as you see it.
+                        const seen = shownList.map((x) => x.id);
+                        const j = seen.indexOf(c.id) + (e.key === "ArrowUp" ? -1 : 1);
+                        if (j < 0 || j >= seen.length) return;
                         const ids = listed.map((x) => x.id);
-                        const i = ids.indexOf(c.id);
-                        const j = i + (e.key === "ArrowUp" ? -1 : 1);
-                        if (j < 0 || j >= ids.length) return;
-                        [ids[i], ids[j]] = [ids[j], ids[i]];
+                        const a = ids.indexOf(c.id);
+                        const b = ids.indexOf(seen[j]);
+                        [ids[a], ids[b]] = [ids[b], ids[a]];
                         reorder(ids);
                         requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-cond-row="${c.id}"]`)?.focus());
                         return;
@@ -3113,7 +3243,7 @@ export function PlanViewer({
               className="absolute left-1/2 top-3 z-30 w-[min(92%,24rem)] -translate-x-1/2 rounded-xl border border-red-200 bg-white p-4 shadow-xl"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (calibLength > 0) applyScale(dist(calib[0], calib[1]) / calibLength, "Calibrated");
+                if (calibLength > 0) applyScale(dist(calib[0], calib[1]) / calibLength, "Calibrated", afterCalibrate ?? "select");
               }}
               onKeyDown={(e) => {
                 if (e.key === "Escape") {
@@ -3172,7 +3302,7 @@ export function PlanViewer({
             <span
               className={cn(
                 "pointer-events-none absolute top-3 z-30",
-                panel && !editor ? "left-3" : "right-3",
+                panel && !editor ? (nextCard ? (nextCardMin ? "left-40" : "left-[19.5rem]") : "left-3") : "right-3",
                 "rounded bg-slate-900 px-2 py-0.5 text-xs font-medium tabular-nums text-white shadow",
               )}
             >
@@ -3424,6 +3554,15 @@ export function PlanViewer({
                             {...stroke}
                           />
                         )}
+                        {willClose ? (
+                          // About to close: the first point rings green — click anywhere in the ring.
+                          <g>
+                            <circle cx={draft[0][0]} cy={draft[0][1]} r={px(CLOSE_PX)} fill="#16a34a" fillOpacity={0.12} stroke="#16a34a" strokeWidth={1.5} {...stroke} />
+                            <text x={draft[0][0]} y={draft[0][1] - px(CLOSE_PX + 4)} textAnchor="middle" fontSize={px(10)} fontWeight={700} fill="#15803d">
+                              Click to close
+                            </text>
+                          </g>
+                        ) : null}
                         {draft.map((p, i) => (
                           <circle
                             key={i}
@@ -3668,6 +3807,101 @@ export function PlanViewer({
             />
           ) : null}
 
+          {/* Pitch (hips/valleys, joists/rafters) or wall height (linear) for the next shape: up over the plan the whole time you draw */}
+          {nextCard && active ? (
+            nextCardMin ? (
+              <button
+                type="button"
+                onClick={() => setNextCardMin(false)}
+                title="Show the pitch / height card"
+                className="absolute left-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-blue-900 shadow-lg hover:bg-blue-100"
+              >
+                <span className="h-2.5 w-2.5 rounded-sm" style={{ background: active.color }} />
+                {hasShapePitch(active.type)
+                  ? `${nextPitch.p1 || active.pitch}${active.type === "HIP_VALLEY" ? ` & ${nextPitch.p2 || nextPitch.p1 || (active.pitch2 ?? active.pitch)}` : ""}/12`
+                  : `${nextHeight[active.id] || (active.height ? num(active.height, 2) : "8")}' walls`}
+              </button>
+            ) : (
+              <div className="absolute left-3 top-3 z-10 w-72 rounded-xl border border-blue-200 bg-white p-3 shadow-lg">
+                <div className="mb-2 flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: active.color }} />
+                  <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{active.name}</p>
+                  <button type="button" aria-label="Shrink the pitch card" title="Shrink" className="text-slate-400 hover:text-slate-700" onClick={() => setNextCardMin(true)}>
+                    <Minus className="h-4 w-4" />
+                  </button>
+                </div>
+                {hasShapePitch(active.type) ? (
+                  <>
+                    <p className="text-xs font-medium text-slate-700">{active.type === "HIP_VALLEY" ? "Next line's pitch (side 1 & side 2)" : "Next outline's pitch"}</p>
+                    <div className="mt-1 flex items-center gap-1.5 text-sm text-slate-700">
+                      <input
+                        aria-label="Pitch for next shape"
+                        type="number"
+                        min="0"
+                        step="0.25"
+                        value={nextPitch.p1}
+                        placeholder={String(active.pitch)}
+                        onChange={(e) => setNextPitch({ forId: active.id, p1: e.target.value, p2: nextPitch.p2 })}
+                        className="h-8 w-16 rounded-md border border-blue-300 px-2 text-sm font-semibold"
+                      />
+                      {active.type === "HIP_VALLEY" ? (
+                        <>
+                          &amp;
+                          <input
+                            aria-label="Side 2 pitch for next line"
+                            type="number"
+                            min="0"
+                            step="0.25"
+                            value={nextPitch.p2}
+                            placeholder={nextPitch.p1 || String(active.pitch2 ?? active.pitch)}
+                            onChange={(e) => setNextPitch({ forId: active.id, p1: nextPitch.p1, p2: e.target.value })}
+                            className="h-8 w-16 rounded-md border border-blue-300 px-2 text-sm font-semibold"
+                          />
+                        </>
+                      ) : null}
+                      <span>/12</span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-4 text-slate-500">
+                      {nextPitch.p1 || nextPitch.p2 ? (
+                        <button type="button" className="text-blue-700 underline" onClick={() => setNextPitch({ forId: active.id, p1: "", p2: "" })}>
+                          Back to the takeoff&apos;s pitch
+                        </button>
+                      ) : (
+                        "Blank = the takeoff's pitch. Stays till you change it."
+                      )}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-xs font-medium text-slate-700">Next line&apos;s wall height</p>
+                    <div className="mt-1 flex items-center gap-1.5 text-sm text-slate-700">
+                      <input
+                        aria-label="Wall height for next line"
+                        type="number"
+                        min="0"
+                        step="0.25"
+                        value={nextHeight[active.id] ?? ""}
+                        placeholder={active.height ? num(active.height, 2) : "8"}
+                        onChange={(e) => setNextHeight((cur) => ({ ...cur, [active.id]: e.target.value }))}
+                        className="h-8 w-16 rounded-md border border-blue-300 px-2 text-sm font-semibold"
+                      />
+                      <span>ft</span>
+                    </div>
+                    <p className="mt-1.5 text-[11px] leading-4 text-slate-500">
+                      {nextHeight[active.id] ? (
+                        <button type="button" className="text-blue-700 underline" onClick={() => setNextHeight((cur) => ({ ...cur, [active.id]: "" }))}>
+                          Back to the takeoff&apos;s height
+                        </button>
+                      ) : (
+                        `Blank = the takeoff's${active.height ? ` ${num(active.height, 2)}'` : ""}. Stays till you change it.`
+                      )}
+                    </p>
+                  </>
+                )}
+              </div>
+            )
+          ) : null}
+
           {/* Doors / windows: the one to place stays up over the plan the whole time you're counting */}
           {active && isUnitType(active.type) && tool === "measure" && !editor ? (
             doorPanelMin ? (
@@ -3758,6 +3992,72 @@ export function PlanViewer({
                 {edgePick ? "Point at a wall of the outline — it highlights — and click it." : "Hover a choice to preview it on the plan."}
                 {readout ? <span className="ml-1 font-medium text-slate-700">{readout}</span> : null}
               </p>
+            </div>
+          ) : null}
+
+          {/* No scale on this sheet: set it before measuring */}
+          {needsScale && sheet ? (
+            <div className="absolute inset-0 z-20 flex items-start justify-center bg-slate-900/10 pt-16">
+              <div className="w-[26rem] max-w-[calc(100%-2rem)] rounded-xl border-2 border-amber-400 bg-white p-4 shadow-2xl">
+                <div className="flex items-start gap-2.5">
+                  <Scaling className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-900">Set this sheet&apos;s scale first</p>
+                    <p className="mt-0.5 text-sm text-slate-600">
+                      &ldquo;{sheet.name}&rdquo; has no scale yet, so nothing you draw would get a length or area. Pick the scale printed on the sheet, or calibrate from a
+                      dimension you know.
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  {plan.kind === "PDF" ? (
+                    <select
+                      aria-label="Pick the scale"
+                      autoFocus
+                      className="input !w-auto !py-1.5 text-sm"
+                      value=""
+                      onChange={(e) => {
+                        const preset = PRESET_SCALES.find((x) => x.label === e.target.value);
+                        if (!preset) return;
+                        // Set it, then carry on measuring.
+                        applyScale(preset.paperInchesPerFoot * PDF_UNITS_PER_INCH, preset.label, tool);
+                      }}
+                    >
+                      <option value="">Pick the scale…</option>
+                      {PRESET_SCALES.map((x) => (
+                        <option key={x.label} value={x.label}>
+                          {x.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={plan.kind === "PDF" ? "secondary" : "primary"}
+                    onClick={() => {
+                      setAfterCalibrate(tool);
+                      setTool("calibrate");
+                      setCalib([]);
+                      resetDraft();
+                    }}
+                  >
+                    <Ruler className="h-3.5 w-3.5" /> Calibrate
+                  </Button>
+                  <label className="flex items-center gap-1 text-xs text-slate-600" title="Use this scale on every sheet of this plan">
+                    <input type="checkbox" checked={applyToPlan} onChange={(e) => setApplyToPlan(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+                    all sheets
+                  </label>
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+                  <button type="button" className="text-xs text-slate-500 hover:text-slate-800 hover:underline" onClick={() => setScaleSkipped((x) => [...x, sheet.id])}>
+                    Draw anyway, without lengths
+                  </button>
+                  <button type="button" className="text-xs text-slate-500 hover:text-slate-800 hover:underline" onClick={() => setTool("select")}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
             </div>
           ) : null}
 

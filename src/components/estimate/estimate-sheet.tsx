@@ -49,7 +49,7 @@ import { CodePicker, CostCodePanel } from "./cost-codes";
 import { DivisionsForm, type DivisionSetup } from "./divisions-form";
 import type { SheetCostCode } from "@/lib/cost-code-divisions";
 import type { TakeoffDetailRow } from "@/lib/takeoff-data";
-import { allowanceExtras, tableExtras, tableProfitPct, type MarkupRow } from "@/lib/markup";
+import { allowanceExtras, tableExtras, tableProfitPct, tableTaxRate, taxRateFor, type MarkupRow } from "@/lib/markup";
 import { MarkupPanel } from "./markup-table";
 import { moveByArrow } from "@/components/grid-keys";
 
@@ -119,6 +119,8 @@ const COLUMNS = [
   { key: "extCost", label: "Ext. cost", width: 108 },
   { key: "costType", label: "Cost type", width: 132 },
   { key: "costCode", label: "Cost code", width: 210 },
+  // Shown when the Markup, Margin & Tax table has a tax rate (or a line is taxed).
+  { key: "tax", label: "Tax", width: 110 },
   { key: "profitPct", label: "Profit %", width: 84 },
   { key: "profit", label: "Profit $", width: 104 },
   { key: "price", label: "Total price", width: 116 },
@@ -230,8 +232,13 @@ export function EstimateSheet({
   const [saving, startSaving] = useTransition();
   const hiddenRaw = usePref(HIDDEN_KEY);
   const hidden = useMemo(() => new Set(hiddenRaw.split(",").filter(Boolean)), [hiddenRaw]);
-  const cols = COLUMNS.filter((c) => !hidden.has(c.key));
-  const show = useCallback((k: ColKey) => !hidden.has(k), [hidden]);
+  // The Tax column: only once there's tax to show (a tax row in the table, or a taxed line).
+  const taxRate = useMemo(() => tableTaxRate(state.markup), [state.markup]);
+  const taxOn = useMemo(() => taxRate > 0 || state.specs.some((s) => s.lines.some((l) => l.taxPct > 0)), [taxRate, state.specs]);
+  const cols = COLUMNS.filter((c) => !hidden.has(c.key) && (c.key !== "tax" || taxOn));
+  const show = useCallback((k: ColKey) => !hidden.has(k) && (k !== "tax" || taxOn), [hidden, taxOn]);
+  const markupRows = state.markup;
+  const taxFor = useCallback((costType: string) => taxRateFor(markupRows, costType), [markupRows]);
 
   const totals = useMemo(() => specsTotals(state.specs), [state.specs]);
   // Overhead / tax rows of the Markup, Margin & Tax table, on top of the lines.
@@ -429,8 +436,10 @@ export function EstimateSheet({
       takeoffDetail,
       toggleDetail,
       colCount: cols.length + 3,
+      taxFor,
     }),
     [
+      taxFor,
       show,
       totals.price,
       sqft,
@@ -698,7 +707,7 @@ export function EstimateSheet({
                   <th className="px-2 py-2.5 font-medium">Description</th>
                   {cols.map((c) => (
                     <th key={c.key} className={cn("px-2 py-2.5 font-medium", isNumCol(c.key) && "text-right")}>
-                      {c.label}
+                      {c.key === "tax" && taxRate > 0 ? `Tax ${num(taxRate, 3)}%` : c.label}
                     </th>
                   ))}
                   <th />
@@ -892,7 +901,7 @@ export function EstimateSheet({
                                               ? [
                                                   {
                                                     label: "Stop updating from Item List",
-                                                    hint: "The takeoff and Item List stop changing these items",
+                                                    hint: "The takeoff and Item List stop changing these items (delete a line to let the takeoff fill it in again)",
                                                     onClick: () =>
                                                       dispatch({
                                                         type: "specLines",
@@ -998,14 +1007,18 @@ export function EstimateSheet({
             </label>
           ) : null}
           <Figure label="Est. cost" value={money(totals.cost)} hint={sqft ? `${money(totals.cost / sqft)} / sq. ft.` : undefined} />
-          <Figure label="Est. profit" value={money(totals.profit)} hint={totals.cost > 0 ? `${num((totals.profit / totals.cost) * 100, 1)}% on cost` : undefined} />
+          {totals.tax ? <Figure label="Sales tax" value={money(totals.tax)} hint="you pay — in the cost" /> : null}
+          <Figure
+            label="Est. profit"
+            value={money(totals.profit)}
+            hint={totals.cost + totals.tax > 0 ? `${num((totals.profit / (totals.cost + totals.tax)) * 100, 1)}% on cost${totals.tax ? " with tax" : ""}` : undefined}
+          />
           {extras.overheadTotal ? <Figure label="Overhead" value={money(extras.overheadTotal)} /> : null}
-          {extras.taxTotal ? <Figure label="Tax" value={money(extras.taxTotal)} /> : null}
           <Figure
             label="Est. total"
             value={money(totals.price + extras.total)}
             strong
-            hint={[sqft ? `${money((totals.price + extras.total) / sqft)} / sq. ft.` : "", extras.taxTotal ? "with tax" : ""].filter(Boolean).join(" · ") || undefined}
+            hint={[sqft ? `${money((totals.price + extras.total) / sqft)} / sq. ft.` : "", totals.tax ? "tax included" : ""].filter(Boolean).join(" · ") || undefined}
           />
           {estimate ? (
             <div>
@@ -1023,7 +1036,7 @@ export function EstimateSheet({
                 <button
                   type="button"
                   className={buttonClasses("ghost", "sm")}
-                  title={extras.taxTotal ? "Put the estimate total (before tax — tax is added on top) in the base price" : "Put the estimate total in the base price"}
+                  title={totals.tax ? "Put the estimate total (tax included) in the base price" : "Put the estimate total in the base price"}
                   disabled={state.basePrice !== null && Math.abs(state.basePrice - estimateTotal) < 0.005}
                   onClick={() => dispatch({ type: "header", patch: { basePrice: estimateTotal } })}
                 >
@@ -1196,6 +1209,8 @@ type RowCtx = {
   takeoffDetail: Record<string, TakeoffDetailRow[]> | null;
   toggleDetail: (lineKey: string) => void;
   colCount: number;
+  /** The tax rate a line of this cost type takes when you tick it taxed. */
+  taxFor: (costType: string) => number;
   params: ParamSetup[];
   values: Record<string, number>;
 };
@@ -1217,6 +1232,12 @@ function TotalsCells({ ctx, t, strong }: { ctx: RowCtx; t: Totals; strong?: bool
             return (
               <td key={c.key} className={cell}>
                 {money(t.profit)}
+              </td>
+            );
+          case "tax":
+            return (
+              <td key={c.key} className={cn(cell, "text-slate-500")}>
+                {t.tax ? money(t.tax) : ""}
               </td>
             );
           case "price":
@@ -1341,6 +1362,25 @@ function LineCells({ line: l, spec, ctx }: { line: SheetLine; spec: string; ctx:
       {show("costCode") ? (
         <td className="px-1 py-0.5">
           <CostCodeCell value={l.costCodeId} costCodes={ctx.costCodes} onChange={(costCodeId) => set({ costCodeId })} />
+        </td>
+      ) : null}
+      {show("tax") ? (
+        <td className={cn("px-2 py-0.5", muted)}>
+          {/* Taxed or not: ticking it takes the table's rate; the $ is part of the line's cost. */}
+          <label
+            className="flex cursor-pointer items-center justify-end gap-1.5 tabular-nums"
+            title={l.taxPct > 0 ? `Taxed at ${num(l.taxPct, 3)}% — untick if you don't pay tax on it` : "Not taxed — tick to add the sales tax you pay"}
+          >
+            <span className={l.taxPct > 0 ? "text-slate-700" : "text-slate-300"}>{l.taxPct > 0 ? money(m.tax) : "—"}</span>
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 rounded border-slate-300"
+              aria-label="Taxed"
+              checked={l.taxPct > 0}
+              disabled={!(l.taxPct > 0) && !(ctx.taxFor(l.costType) > 0)}
+              onChange={(e) => set({ taxPct: e.target.checked ? ctx.taxFor(l.costType) : 0 })}
+            />
+          </label>
         </td>
       ) : null}
       {show("profitPct") ? (
@@ -1777,7 +1817,7 @@ function BaseNote({ basePrice, totals, sqft }: { basePrice: number | null; total
   let note = "Goes on the proposal";
   if (basePrice !== null) {
     const diff = basePrice - totals.price;
-    if (Math.abs(diff) >= 0.5) note = `${money(Math.abs(diff))} ${diff > 0 ? "over" : "under"} the estimate · profit at this price ${money(basePrice - totals.cost)}`;
+    if (Math.abs(diff) >= 0.5) note = `${money(Math.abs(diff))} ${diff > 0 ? "over" : "under"} the estimate · profit at this price ${money(basePrice - totals.cost - totals.tax)}`;
     else note = "Matches the estimate total";
   }
   // Its price per sq. ft. first, like the cost and total beside it.

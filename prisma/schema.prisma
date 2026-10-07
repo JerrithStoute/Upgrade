@@ -41,6 +41,15 @@ model Company {
   changeOrderDefaults String?
   // Your default Markup, Margin & Tax table for new estimates (JSON).
   markupTable         String?
+  // The days you work, 0 = Sunday … 6 = Saturday ("1,2,3,4,5" = Monday–Friday). Schedules count these.
+  workDays            String   @default("1,2,3,4,5")
+  // A client's choice over (or under) its allowance goes on a draft change order by itself.
+  autoSelectionCO     Boolean  @default(true)
+  // An approved change order goes on the job's next draft invoice by itself.
+  autoInvoiceCO       Boolean  @default(true)
+  // Invoice numbers: AUTO (counted up from invoiceNextNumber) or MANUAL (you type them).
+  invoiceNumbering    String   @default("AUTO")
+  invoiceNextNumber   Int?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
@@ -55,10 +64,16 @@ model User {
   phone        String?
   title        String?
   active       Boolean  @default(true)
+  // May delay a job's schedule (admins always can).
+  canDelay     Boolean  @default(false)
+  // Vacation days a year (null = not tracked).
+  vacationDays Float?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   client          Client?
+  timeOff         CalendarEvent[] @relation("TimeOffFor")
+  jobDelays       JobDelay[]
   managedProjects Project[]      @relation("ProjectManager")
   assignedTasks   ScheduleTask[] @relation("TaskAssignee")
   assignedTodos   Todo[]         @relation("TodoAssignee")
@@ -139,6 +154,7 @@ model Project {
   selections        Selection[]
   changeOrders      ChangeOrder[]
   tasks             ScheduleTask[]
+  delays            JobDelay[]
   expenses          Expense[]
   invoices          Invoice[]
   dailyLogs         DailyLog[]
@@ -150,6 +166,7 @@ model Project {
   takeoffConditions TakeoffCondition[]
   bids              Bid[]
   bidAwards         BidAward[]
+  substitutions     JobSubstitution[]
 }
 
 // ---------------------------------------------------------------------------
@@ -206,6 +223,8 @@ model Estimate {
   lockedAt        DateTime?
   // "What changed": automatic updates from the takeoff since the last save (JSON, see takeoff-changes.ts).
   autoNote        String?
+  // The lines and spec items as last saved, kept when the takeoff first changes them (JSON) — "Put back what I bid".
+  autoBase        String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -259,6 +278,8 @@ model EstimateItem {
   unit           String        @default("ea")
   unitCost       Float         @default(0)
   markupPct      Float         @default(20)
+  // Sales tax you pay on this line, % of its cost (0 = not taxed). Profit is figured on cost with tax.
+  taxPct         Float         @default(0)
   isAllowance    Boolean       @default(false) // copied from its spec item
   isOptional     Boolean       @default(false)
   costType       String        @default("MATERIAL")
@@ -282,6 +303,9 @@ model EstimateItem {
   // Older estimates: one line per takeoff item (merged into the rolled-up line on the next send).
   takeoffConditionId String?
   takeoffCondition   TakeoffCondition?    @relation(fields: [takeoffConditionId], references: [id], onDelete: SetNull)
+  // "Stop updating": the takeoff line this was ("code:<id>"). The takeoff leaves that cost code
+  // alone on this estimate — it doesn't take this line back or add another beside it.
+  takeoffStopped     String?
   takeoffItemId      String?
   takeoffItem        TakeoffAssemblyItem? @relation(fields: [takeoffItemId], references: [id], onDelete: SetNull)
 }
@@ -397,6 +421,8 @@ model EstimateTemplateItem {
   unit        String                @default("ea")
   unitCost    Float                 @default(0)
   markupPct   Float                 @default(20)
+  // Sales tax on this line, % of its cost (0 = not taxed) — as on an estimate line.
+  taxPct      Float                 @default(0)
   isAllowance Boolean               @default(false)
   isOptional  Boolean               @default(false)
   costType    String                @default("MATERIAL")
@@ -535,8 +561,11 @@ model ChangeOrder {
   profitValue        Float     @default(0)
   profitLabel        String    @default("Builder's fee")
   profitShown        String    @default("LINE")
+  // Sales tax you pay, % of each taxed line's amount — in its price, so profit is figured on it too.
+  // Shown as its own line (LINE) or built into the prices (FOLDED).
   taxPct             Float     @default(0)
   taxLabel           String    @default("Sales tax")
+  taxShown           String    @default("LINE")
   priorCompletion    DateTime?
   newCompletion      DateTime?
   // Who must approve: team members (JSON array of user ids), and the client (true/false).
@@ -549,8 +578,12 @@ model ChangeOrder {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  items ChangeOrderItem[]
-  files FileAsset[]
+  // Started by the app for selection overages and credits (more go on it while it's a draft).
+  autoSelections     Boolean   @default(false)
+
+  items        ChangeOrderItem[]
+  files        FileAsset[]
+  invoiceItems InvoiceItem[]
 
   @@unique([projectId, number])
 }
@@ -569,6 +602,8 @@ model ChangeOrderItem {
   // This line's own profit: CO (follows the change order's — the default), NONE, PCT or AMOUNT.
   profitMode    String      @default("CO")
   profitValue   Float       @default(0)
+  // You pay sales tax on it (at the change order's rate).
+  taxed         Boolean     @default(false)
   sortOrder     Int         @default(0)
   // LINE (an item), CHARGE (an extra charge, e.g. a change order fee) or SELECTION
   // (a client choice: clientPrice − allowance = the difference, kept in unitCost).
@@ -600,9 +635,10 @@ model ScheduleTask {
   sortOrder       Int            @default(0)
   assigneeId      String?
   assignee        User?          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
-  predecessorId   String?
-  predecessor     ScheduleTask?  @relation("TaskPredecessor", fields: [predecessorId], references: [id], onDelete: SetNull)
-  successors      ScheduleTask[] @relation("TaskPredecessor")
+  // What it waits on (several, each with lag days) and what waits on it.
+  waitsOn         TaskLink[]     @relation("LinkTask")
+  waitedOnBy      TaskLink[]     @relation("LinkPredecessor")
+  reminders       Todo[]
   selections      Selection[]
   createdAt       DateTime       @default(now())
   updatedAt       DateTime       @updatedAt
@@ -666,7 +702,10 @@ model InvoiceItem {
   unitPrice   Float   @default(0)
   sortOrder   Int     @default(0)
   // The invoice's tax line (its amount follows the other lines).
-  isTax       Boolean @default(false)
+  isTax         Boolean      @default(false)
+  // The change order this line bills (so it's never billed twice).
+  changeOrderId String?
+  changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
 }
 
 model Payment {
@@ -723,6 +762,10 @@ model Todo {
   completedAt DateTime?
   assigneeId  String?
   assignee    User?     @relation("TodoAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  // A reminder tied to a schedule task: due `taskOffset` workdays from its start (−3 = 3 before), moving with it.
+  taskId      String?
+  task        ScheduleTask? @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  taskOffset  Int?
   createdById String?
   createdBy   User?     @relation("TodoCreator", fields: [createdById], references: [id], onDelete: SetNull)
   createdAt   DateTime  @default(now())
@@ -1204,4 +1247,110 @@ model BidAward {
   awardedAt DateTime @default(now())
 
   @@unique([projectId, codeKey])
+}
+
+/// A job's substitution: wherever the job orders `from`, it orders `to` instead (a hanger the vendor
+/// quoted another brand of, OSB for plywood). Lumber of the same size at another length ("2x6 × 26'"
+/// → "2x6 × 28'") is a length substitution (`size`, `fromLen`, `toLen`): that length isn't used on the
+/// job, so its cuts come from the other everywhere — the takeoff, labels, cut sheet and order.
+model JobSubstitution {
+  id         String   @id @default(cuid())
+  projectId  String
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  fromItemId String
+  fromName   String
+  toItemId   String?
+  toName     String
+  size       String?
+  fromLen    Float?
+  toLen      Float?
+  // What it's bought at on this job (a bid's price, or one you typed); null = the Item List's.
+  unitCost   Float?
+  // "Bid #3, ABC Lumber"; null = you.
+  source     String?
+  // The takeoff lines it changed and what they were (JSON) — "Swap back" puts them back.
+  restore    String?
+  createdAt  DateTime @default(now())
+
+  @@unique([projectId, fromItemId])
+}
+
+/// One task waits on another: it starts after `predecessor` finishes, plus `lagDays` workdays.
+model TaskLink {
+  id            String       @id @default(cuid())
+  taskId        String
+  task          ScheduleTask @relation("LinkTask", fields: [taskId], references: [id], onDelete: Cascade)
+  predecessorId String
+  predecessor   ScheduleTask @relation("LinkPredecessor", fields: [predecessorId], references: [id], onDelete: Cascade)
+  lagDays       Int          @default(0)
+
+  @@unique([taskId, predecessorId])
+}
+
+/// Your list of reasons a job is delayed (Rain, Inspection, Material late…).
+model DelayReason {
+  id        String   @id @default(cuid())
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+}
+
+/// A day a job was delayed: everything not finished moved out `days` workdays from `date`.
+model JobDelay {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  date            DateTime
+  days            Int      @default(1)
+  reason          String
+  notes           String?
+  // The client sees the reason (they always see the new dates).
+  shareWithClient Boolean  @default(false)
+  // How many tasks it moved.
+  moved           Int      @default(0)
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt       DateTime @default(now())
+}
+
+/// The company calendar: HOLIDAY (nobody works — schedules skip it) or TIME_OFF (one person:
+/// VACATION | SICK | PERSONAL). Reminders are To-Dos with a due date.
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  kind        String
+  title       String
+  startDate   DateTime
+  endDate     DateTime
+  userId      String?
+  user        User?    @relation("TimeOffFor", fields: [userId], references: [id], onDelete: Cascade)
+  timeOffType String?
+  notes       String?
+  createdAt   DateTime @default(now())
+}
+
+/// A schedule you start jobs from: tasks with lengths in workdays and what each waits on.
+model ScheduleTemplate {
+  id          String                 @id @default(cuid())
+  name        String
+  description String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  tasks       ScheduleTemplateTask[]
+}
+
+model ScheduleTemplateTask {
+  id          String           @id @default(cuid())
+  templateId  String
+  template    ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  name        String
+  phase       String           @default("General")
+  // Workdays (a milestone is 1).
+  duration    Int              @default(1)
+  isMilestone Boolean          @default(false)
+  color       String           @default("#2563eb")
+  notes       String?
+  assigneeId  String?
+  // What it waits on: JSON [{ "id": <template task id>, "lag": <workdays> }].
+  links       String?
+  sortOrder   Int              @default(0)
 }

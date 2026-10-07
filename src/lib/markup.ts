@@ -5,7 +5,9 @@ import { z } from "zod";
  *
  *  - PROFIT rows fill each line's profit % (by cost type); a line can still be changed by hand.
  *  - OVERHEAD / OTHER rows add an amount on top of the lines.
- *  - TAX rows add tax on top (a real amount: estimate total, contract, budget).
+ *  - TAX rows set the sales tax you pay: each line you mark taxed carries it as part of its
+ *    cost (profit is figured on cost with tax). The proposal shows it as its own line or
+ *    built into the prices — your choice.
  *
  * Each row is a % "markup" (of cost) or "margin" (of the selling price), applies to
  * all costs or one cost type, can carry a cost code (budget), and can count toward
@@ -56,30 +58,66 @@ const applies = (r: MarkupRow, costType: string) => r.appliesTo === "ALL" || r.a
 export const asMarkup = (r: { pct: number; basis: string }) => (r.basis === "MARGIN" ? (r.pct >= 100 ? 0 : (r.pct / (100 - r.pct)) * 100) : r.pct);
 const round = (n: number) => Math.round(n * 10000) / 10000;
 
+/** The tax rate (%) the table's tax rows put on a line of this cost type (0 when none apply). */
+export function tableTaxPct(rows: MarkupRow[], costType: string) {
+  return round(rows.filter((r) => r.kind === "TAX" && r.pct > 0 && applies(r, costType)).reduce((n, r) => n + r.pct, 0));
+}
+
+/** The table's tax rate for any line you mark taxed by hand (every tax row, whatever it applies to). */
+export function tableTaxRate(rows: MarkupRow[]) {
+  return round(rows.filter((r) => r.kind === "TAX" && r.pct > 0).reduce((n, r) => n + r.pct, 0));
+}
+
+/** The name the tax goes by ("Sales tax"), from the table's tax rows. */
+export function tableTaxLabel(rows: MarkupRow[]) {
+  return (
+    rows
+      .filter((r) => r.kind === "TAX" && r.pct > 0)
+      .map((r) => r.name.trim())
+      .filter(Boolean)
+      .join(" + ") || "Sales tax"
+  );
+}
+
+/** The rate a taxed line of this cost type carries: its type's tax rows, else every tax row. */
+export function taxRateFor(rows: MarkupRow[], costType: string) {
+  return tableTaxPct(rows, costType) || tableTaxRate(rows);
+}
+
+/**
+ * When the table's tax changes: taxed lines take the new rate (none left: untaxed). Adding
+ * tax to a table that had none marks the lines it applies to taxed.
+ */
+export function followTax(oldRows: MarkupRow[], newRows: MarkupRow[], line: { costType: string; taxPct: number }) {
+  const had = tableTaxRate(oldRows) > 0;
+  const next = line.taxPct > 0 ? (tableTaxRate(newRows) > 0 ? taxRateFor(newRows, line.costType) : 0) : had ? 0 : tableTaxPct(newRows, line.costType);
+  return Math.abs(next - line.taxPct) < 1e-9 ? null : next;
+}
+
 /** The profit % a line of this cost type gets from the table (the profit rows that apply to it), or null when none do. */
 export function tableProfitPct(rows: MarkupRow[], costType: string): number | null {
   const hits = rows.filter((r) => r.kind === "PROFIT" && applies(r, costType));
   return hits.length ? round(hits.reduce((n, r) => n + asMarkup(r), 0)) : null;
 }
 
-type Line = { quantity: number; unitCost: number; costType: string; isOptional?: boolean };
+type Line = { quantity: number; unitCost: number; costType: string; isOptional?: boolean; taxPct?: number | null };
 
 /**
- * The amounts the overhead / other / tax rows add on top of the lines. Each is % of
- * the cost of the lines it applies to (markup), or that share of the selling price (margin).
+ * The amounts the overhead / other rows add on top of the lines. Each is % of the cost of
+ * the lines it applies to (markup), or that share of the selling price (margin).
+ * `taxTotal`: the sales tax in the lines (already part of their prices — not added on top).
  */
 export function tableExtras(rows: MarkupRow[], lines: Line[]) {
   const included = lines.filter((l) => !l.isOptional);
   const out = rows
-    .filter((r) => r.kind !== "PROFIT" && r.pct > 0)
+    .filter((r) => r.kind !== "PROFIT" && r.kind !== "TAX" && r.pct > 0)
     .map((r) => {
       const base = included.filter((l) => applies(r, l.costType)).reduce((n, l) => n + l.quantity * l.unitCost, 0);
       return { row: r, amount: Math.round(((base * asMarkup(r)) / 100) * 100) / 100 };
     });
-  const overhead = out.filter((x) => x.row.kind !== "TAX");
-  const taxes = out.filter((x) => x.row.kind === "TAX");
   const sum = (xs: typeof out) => Math.round(xs.reduce((n, x) => n + x.amount, 0) * 100) / 100;
-  return { rows: out, overhead, taxes, overheadTotal: sum(overhead), taxTotal: sum(taxes), total: sum(out) };
+  const taxTotal = Math.round(included.reduce((n, l) => n + (l.quantity * l.unitCost * (l.taxPct ?? 0)) / 100, 0) * 100) / 100;
+  return { rows: out, overhead: out, overheadTotal: sum(out), taxTotal, total: sum(out) };
 }
 
 /** What the rows marked "include in client allowance amounts" add to an allowance (its lines' share). */

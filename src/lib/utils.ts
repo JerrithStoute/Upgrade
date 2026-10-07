@@ -89,13 +89,19 @@ export function boolField(fd: FormData, key: string): boolean {
   return v === "on" || v === "true" || v === "1";
 }
 
-/** Line total with markup applied: qty * unitCost * (1 + markup%). */
-export function lineCost(item: { quantity: number; unitCost: number }) {
-  return item.quantity * item.unitCost;
+/** A line's cost to you: qty × unit cost, plus the sales tax you pay on it (taxPct, estimate lines). */
+export function lineCost(item: { quantity: number; unitCost: number; taxPct?: number | null }) {
+  return item.quantity * item.unitCost * (1 + (item.taxPct ?? 0) / 100);
 }
 
-export function linePrice(item: { quantity: number; unitCost: number; markupPct: number }) {
-  return item.quantity * item.unitCost * (1 + item.markupPct / 100);
+/** The sales tax on a line (part of its cost). */
+export function lineTax(item: { quantity: number; unitCost: number; taxPct?: number | null }) {
+  return (item.quantity * item.unitCost * (item.taxPct ?? 0)) / 100;
+}
+
+/** A line's price: its cost with tax, plus profit (markup %) on that. */
+export function linePrice(item: { quantity: number; unitCost: number; markupPct: number; taxPct?: number | null }) {
+  return lineCost(item) * (1 + item.markupPct / 100);
 }
 
 export function sum(values: number[]) {

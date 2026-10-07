@@ -39,7 +39,6 @@ import {
   deletePayment,
   setInvoiceTax,
 } from "../actions";
-import { parseMarkupTable } from "@/lib/markup";
 
 export default async function InvoiceDetailPage({ params, searchParams }: { params: Promise<{ id: string; invoiceId: string }>; searchParams: Promise<{ edit?: string }> }) {
   await requireStaff();
@@ -51,16 +50,6 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
     include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }, payments: { orderBy: { date: "desc" } } },
   });
   if (!inv) notFound();
-  // "Add tax" starts at the estimate's tax rate (approved estimate, else the latest).
-  const est =
-    inv.status === "DRAFT" && inv.taxPct === null
-      ? await db.estimate.findFirst({
-          where: { projectId: project.id },
-          orderBy: [{ approvedAt: { sort: "desc", nulls: "last" } }, { version: "desc" }],
-          select: { markupTable: true, defaultMarkup: true },
-        })
-      : null;
-  const estTax = est ? parseMarkupTable(est.markupTable, est.defaultMarkup).find((r) => r.kind === "TAX" && r.pct > 0) : undefined;
 
   const isDraft = inv.status === "DRAFT";
   const isVoid = inv.status === "VOID";
@@ -227,10 +216,10 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
               Add tax
             </label>
             <Field label="Label" htmlFor="tax-label">
-              <input id="tax-label" name="taxLabel" className="input !w-48" defaultValue={inv.taxPct !== null ? inv.taxLabel : estTax?.name || inv.taxLabel} />
+              <input id="tax-label" name="taxLabel" className="input !w-48" defaultValue={inv.taxLabel} />
             </Field>
             <Field label="Rate %" htmlFor="tax-pct">
-              <input id="tax-pct" name="taxPct" type="number" step="any" min="0" max="100" className="input !w-28" defaultValue={inv.taxPct ?? estTax?.pct ?? ""} />
+              <input id="tax-pct" name="taxPct" type="number" step="any" min="0" max="100" className="input !w-28" defaultValue={inv.taxPct ?? ""} />
             </Field>
             <SubmitButton size="sm" variant="secondary">
               Apply
@@ -238,9 +227,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
             <p className="basis-full text-xs text-slate-500">
               {inv.taxPct !== null
                 ? "Tax is a line on this invoice and follows the other lines when they change."
-                : estTax
-                  ? "The rate starts at your estimate's tax row — change it for this invoice if you need to."
-                  : "Tick to add a tax line on the other lines."}
+                : "The sales tax you pay is already in your estimate's prices — only add tax here for something billed without it."}
             </p>
           </form>
         ) : null}
@@ -353,7 +340,10 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
           <input type="hidden" name="projectId" value={project.id} />
           <input type="hidden" name="id" value={inv.id} />
           <FormGrid>
-            <Field label="Title" htmlFor="inv-title" className="md:col-span-2">
+            <Field label="Invoice number" htmlFor="inv-number" hint={isDraft ? "Any number no other invoice uses." : "Set once it's sent."}>
+              <input id="inv-number" name="number" type="number" min={1} step={1} className="input" defaultValue={inv.number} disabled={!isDraft} />
+            </Field>
+            <Field label="Title" htmlFor="inv-title">
               <input id="inv-title" name="title" className="input" defaultValue={inv.title} required />
             </Field>
             <Field label="Issue date" htmlFor="inv-issue">

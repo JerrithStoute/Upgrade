@@ -18,6 +18,8 @@ export type SessionUser = {
   name: string;
   role: Role;
   clientId: string | null;
+  /** May delay a job's schedule (admins always can). */
+  canDelay: boolean;
 };
 
 function secretKey() {
@@ -77,6 +79,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     name: user.name,
     role: user.role as Role,
     clientId: user.client?.id ?? null,
+    canDelay: user.canDelay,
   };
 });
 
@@ -137,6 +140,7 @@ export const requireClient = cache(async (): Promise<ClientUser> => {
         name: client.user?.name ?? `${client.firstName} ${client.lastName}`.trim(),
         role: "CLIENT",
         clientId: client.id,
+        canDelay: false,
         preview: true,
         previewProjectId: projectId || null,
       };

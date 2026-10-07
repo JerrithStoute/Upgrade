@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { fmtDate, cn } from "@/lib/utils";
 import { isTaskOverdue, overlapsRange } from "@/lib/schedule";
 import { Gantt } from "@/components/schedule/gantt";
-import { PageHeader, Card, CardHeader, CardBody, Badge, Table, THead, TBody, Tr, Th, Td, EmptyState, Progress, Avatar } from "@/components/ui";
+import { Card, CardHeader, CardBody, Badge, Table, THead, TBody, Tr, Th, Td, EmptyState, Progress, Avatar } from "@/components/ui";
 
 export default async function GlobalSchedulePage() {
   await requireStaff();
@@ -34,10 +34,9 @@ export default async function GlobalSchedulePage() {
 
   return (
     <div>
-      <PageHeader
-        title="Schedule"
-        description={`Four-week overview across active projects · ${fmtDate(windowStart)} – ${fmtDate(windowEnd)}`}
-      />
+      <p className="mb-4 text-sm text-slate-500">
+        Four-week overview across active projects · {fmtDate(windowStart)} – {fmtDate(windowEnd)}
+      </p>
       <div className="space-y-6">
         <Card>
           <CardHeader title="This week" description={`${fmtDate(weekStart)} – ${fmtDate(weekEnd)} · ${thisWeek.length} task${thisWeek.length === 1 ? "" : "s"} in progress`} />
@@ -125,13 +124,7 @@ export default async function GlobalSchedulePage() {
                 }
               />
               <CardBody className="px-3 py-3">
-                <Gantt
-                  tasks={p.tasks}
-                  today={today}
-                  compact
-                  window={{ start: windowStart, end: windowEnd }}
-                  taskHref={(t) => `/projects/${p.id}/schedule?task=${t.id}`}
-                />
+                <Gantt tasks={p.tasks} today={today} compact window={{ start: windowStart, end: windowEnd }} taskHref={(t) => `/projects/${p.id}/schedule?task=${t.id}`} />
               </CardBody>
             </Card>
           ))

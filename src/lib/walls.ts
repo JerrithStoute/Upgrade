@@ -109,6 +109,9 @@ export async function syncAutoItems(projectId: string, conditionId?: string) {
   const { syncLumberItems } = await import("./lumber");
   await syncLumberItems(projectId, conditionId);
   await syncWallItems(projectId, conditionId);
+  // Items substituted on this job: the lines order the substitute.
+  const { applySubstitutions } = await import("./substitutions");
+  await applySubstitutions(projectId);
   // An unlocked job follows the Item List's prices.
   const { pullListPrices } = await import("./job-prices");
   await pullListPrices(projectId);

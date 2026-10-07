@@ -1,5 +1,8 @@
 import "server-only";
 import { db } from "./db";
+import type { EstimateItem, EstimateSpec } from "@prisma/client";
+import { withLengthSubstitutions } from "./substitutions";
+import { parseMarkupTable, tableTaxPct } from "./markup";
 import { guessCostType, rollupTakeoff } from "./estimate-sheet";
 import { divisionCategories } from "./estimate-categories";
 import { detailChanges, mergeNote, parseAutoNote, parseSnapshot, toSnapshot, type ChangeLine, type SnapRow } from "./takeoff-changes";
@@ -56,7 +59,9 @@ import { memberSizes, pickSize, spanSpec } from "./span-tables";
  * plus, for joists/rafters, the price of each board length (for packing by cost).
  */
 export async function loadConditions(projectId: string) {
-  const conditions = await findConditions(projectId);
+  const [found, lengthSubs] = await Promise.all([findConditions(projectId), db.jobSubstitution.findMany({ where: { projectId, fromLen: { not: null } } })]);
+  // A length substituted on this job ("2x6 × 26'" → 28'): its takeoffs don't use that length.
+  const conditions = withLengthSubstitutions(found, lengthSubs);
   return withSizeBands(await withLengthPrices(conditions));
 }
 
@@ -142,7 +147,10 @@ async function withLengthPrices<T extends Awaited<ReturnType<typeof findConditio
   // Prices from the bids taken on this job, by item name.
   const projectId = priced[0]?.projectId;
   const awarded = projectId
-    ? await db.bidAward.findMany({ where: { projectId }, select: { bid: { select: { lines: { where: { unitPrice: { not: null } }, select: { name: true, unitPrice: true } } } } } })
+    ? await db.bidAward.findMany({
+        where: { projectId },
+        select: { bid: { select: { lines: { where: { unitPrice: { not: null }, substitute: null }, select: { name: true, unitPrice: true } } } } },
+      })
     : [];
   const bidPrice = new Map<string, number>();
   for (const a of awarded) for (const l of a.bid.lines) if (l.unitPrice! > 0 && keys.has(itemNameKey(l.name))) bidPrice.set(itemNameKey(l.name), l.unitPrice!);
@@ -432,8 +440,10 @@ const madeByTakeoff = (description: string) => description.startsWith("From take
  * notes are yours and stay). A new line goes into your spec item that already uses
  * its cost code, else where older takeoff lines were, else the item named after the
  * code's division ("3100 Framing"), made in General if it isn't there yet. Lines typed straight into the estimate are never touched.
+ *
+ * `quiet`: a brand-new estimate filling in — no "what changed" note (there's no bid to compare with).
  */
-export async function syncTakeoffToEstimate(projectId: string, estimateId: string) {
+export async function syncTakeoffToEstimate(projectId: string, estimateId: string, opts: { quiet?: boolean } = {}) {
   const est = await db.estimate.findFirst({ where: { id: estimateId, projectId }, include: { items: true, specs: true } });
   if (!est) throw new Error("Pick an estimate");
   if (est.status !== "DRAFT") throw new Error("Only draft estimates can be updated");
@@ -461,6 +471,8 @@ export async function syncTakeoffToEstimate(projectId: string, estimateId: strin
   });
 
   const existing = new Map(est.items.filter((i) => i.takeoffRollup).map((i) => [i.takeoffRollup!, i]));
+  // Lines you stopped updating: the takeoff leaves their cost codes alone on this estimate.
+  const stopped = new Set(est.items.flatMap((i) => (i.takeoffStopped ? [i.takeoffStopped] : [])));
   // Item-by-item takeoff lines from before: replaced by the rolled-up lines.
   const oldLines = est.items.filter((i) => i.takeoffConditionId && !i.takeoffRollup);
   let sortOrder = Math.max(-1, ...est.items.map((i) => i.sortOrder), ...est.specs.map((a) => a.sortOrder)) + 1;
@@ -492,12 +504,13 @@ export async function syncTakeoffToEstimate(projectId: string, estimateId: strin
       const ownLine = (codeId: string | null) =>
         codeId
           ? est.items
-              .filter((i) => i.costCodeId === codeId && i.specId && !i.takeoffConditionId && !i.takeoffRollup && !taken.has(i.id))
+              .filter((i) => i.costCodeId === codeId && i.specId && !i.takeoffConditionId && !i.takeoffRollup && !i.takeoffStopped && !taken.has(i.id))
               .sort((a, b) => a.sortOrder - b.sortOrder)[0]
           : undefined;
       const fill = { quantity: 1, unit: "ls", qtyFormula: null, costFormula: null };
 
       for (const r of rollups) {
+        if (stopped.has(r.key)) continue;
         const snap = snapByKey.get(r.key) ?? [];
         const snapshot = JSON.stringify(snap);
         const data = { costCodeId: r.costCodeId, description: r.description, quantity: 1, unit: "ls", unitCost: r.cost, takeoffSnapshot: snapshot };
@@ -544,6 +557,8 @@ export async function syncTakeoffToEstimate(projectId: string, estimateId: strin
               isAllowance: spec?.isAllowance ?? false,
               markupPct: est.defaultMarkup,
               costType: guessCostType(r.name),
+              // Taxed when the estimate's tax rows cover its cost type.
+              taxPct: tableTaxPct(parseMarkupTable(est.markupTable, est.defaultMarkup), guessCostType(r.name)),
               takeoffRollup: r.key,
               sortOrder: sortOrder++,
             },
@@ -581,12 +596,15 @@ export async function syncTakeoffToEstimate(projectId: string, estimateId: strin
         if ((await tx.estimateItem.count({ where: { specId: s.id } })) === 0) await tx.estimateSpec.delete({ where: { id: s.id } });
       }
       // "What changed" — piles up until the estimate is saved.
-      if (changes.length) {
+      if (changes.length && !opts.quiet) {
         const merged = mergeNote(parseAutoNote(est.autoNote), changes, new Date());
+        // The first change since the last save keeps a copy of the estimate as it was saved,
+        // so "Put back what I bid" can restore it exactly.
+        const base = merged ? (est.autoNote ? est.autoBase : estimateBase(est)) : null;
         // Written without touching the estimate's "updated" time: the open sheet is keyed on it,
         // and a new key would throw away edits you haven't saved yet.
         const json = merged ? JSON.stringify(merged) : null;
-        await tx.$executeRaw`UPDATE "Estimate" SET "autoNote" = ${json} WHERE "id" = ${est.id}`;
+        await tx.$executeRaw`UPDATE "Estimate" SET "autoNote" = ${json}, "autoBase" = ${base} WHERE "id" = ${est.id}`;
       }
     },
     { timeout: 30000 },
@@ -605,10 +623,103 @@ export async function refreshDraftFromTakeoff(projectId: string, estimateId: str
     where: { id: estimateId, projectId },
     select: { status: true, lockedAt: true, items: { where: { OR: [{ takeoffRollup: { not: null } }, { takeoffConditionId: { not: null } }] }, select: { id: true }, take: 1 } },
   });
-  if (!est || est.status !== "DRAFT" || est.lockedAt || !est.items.length) return null;
+  if (!est || est.status !== "DRAFT" || est.lockedAt) return null;
+  // A draft without the takeoff on it yet picks it up too — once the job has a takeoff.
+  if (!est.items.length && !(await db.takeoffCondition.count({ where: { projectId } }))) return null;
   const { syncAutoItems } = await import("./walls");
   await syncAutoItems(projectId);
   return syncTakeoffToEstimate(projectId, estimateId);
+}
+
+/** A new draft estimate starts with the job's takeoff on it (nothing to compare with yet, so no note). */
+export async function fillFromTakeoff(projectId: string, estimateId: string) {
+  if (!(await db.takeoffCondition.count({ where: { projectId } }))) return null;
+  const { syncAutoItems } = await import("./walls");
+  await syncAutoItems(projectId);
+  return syncTakeoffToEstimate(projectId, estimateId, { quiet: true });
+}
+
+// --- "Put back what I bid" ---------------------------------------------------------------
+
+type EstimateRows = { items: EstimateItem[]; specs: EstimateSpec[] };
+
+/** The estimate's lines and spec items as saved — kept when the takeoff first changes them. */
+function estimateBase(est: EstimateRows) {
+  return JSON.stringify({ items: est.items, specs: est.specs });
+}
+
+function parseBase(json: string | null | undefined): EstimateRows | null {
+  if (!json) return null;
+  try {
+    const v = JSON.parse(json) as EstimateRows;
+    return v && Array.isArray(v.items) && Array.isArray(v.specs) ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Locks a draft after the takeoff changed it. Put back (`keep` false): the estimate goes
+ * back exactly to how it was last saved (quantities, prices, lines the takeoff added or
+ * removed) first, so a bid you already gave doesn't move. Keep: the changes stay.
+ */
+export async function lockAfterAutoChanges(projectId: string, estimateId: string, keep: boolean) {
+  const est = await db.estimate.findFirst({ where: { id: estimateId, projectId }, include: { items: { select: { id: true } }, specs: { select: { id: true } } } });
+  if (!est) throw new Error("Estimate not found");
+  if (est.status !== "DRAFT") throw new Error("Only a draft estimate changes by itself");
+  const base = keep ? null : parseBase(est.autoBase);
+  if (!keep && !base) throw new Error("There's no saved copy to put back — these changes came in before this option existed.");
+
+  await db.$transaction(
+    async (tx) => {
+      if (base) {
+        // Things deleted since (an Item List item, a takeoff, a cost code): the line keeps everything else.
+        const ids = (vals: (string | null)[]) => Array.from(new Set(vals.filter((v): v is string => !!v)));
+        const has = (rows: { id: string }[]) => new Set(rows.map((r) => r.id));
+        const [codes, mats, conds, tItems, sels] = await Promise.all([
+          tx.costCode.findMany({ where: { id: { in: ids(base.items.map((i) => i.costCodeId)) } }, select: { id: true } }).then(has),
+          tx.materialItem.findMany({ where: { id: { in: ids(base.items.map((i) => i.materialItemId)) } }, select: { id: true } }).then(has),
+          tx.takeoffCondition.findMany({ where: { id: { in: ids(base.items.map((i) => i.takeoffConditionId)) } }, select: { id: true } }).then(has),
+          tx.takeoffAssemblyItem.findMany({ where: { id: { in: ids(base.items.map((i) => i.takeoffItemId)) } }, select: { id: true } }).then(has),
+          tx.selection.findMany({ where: { id: { in: ids(base.specs.map((s) => s.selectionId)) } }, select: { id: true } }).then(has),
+        ]);
+        const ok = (set: Set<string>, id: string | null) => (id && set.has(id) ? id : null);
+        const specIds = new Set(base.specs.map((s) => s.id));
+        const itemIds = new Set(base.items.map((i) => i.id));
+
+        for (const { id, ...s } of base.specs) {
+          const data = {
+            ...s,
+            estimateId,
+            requestedBy: s.requestedBy ? new Date(s.requestedBy) : null,
+            createdAt: new Date(s.createdAt),
+            selectionId: ok(sels, s.selectionId),
+          };
+          await tx.estimateSpec.upsert({ where: { id }, update: data, create: { ...data, id } });
+        }
+        const goneItems = est.items.filter((i) => !itemIds.has(i.id)).map((i) => i.id);
+        if (goneItems.length) await tx.estimateItem.deleteMany({ where: { id: { in: goneItems } } });
+        for (const { id, ...i } of base.items) {
+          const data = {
+            ...i,
+            estimateId,
+            specId: i.specId && specIds.has(i.specId) ? i.specId : null,
+            costCodeId: ok(codes, i.costCodeId),
+            materialItemId: ok(mats, i.materialItemId),
+            takeoffConditionId: ok(conds, i.takeoffConditionId),
+            takeoffItemId: ok(tItems, i.takeoffItemId),
+          };
+          await tx.estimateItem.upsert({ where: { id }, update: data, create: { ...data, id } });
+        }
+        const goneSpecs = est.specs.filter((s) => !specIds.has(s.id)).map((s) => s.id);
+        if (goneSpecs.length) await tx.estimateSpec.deleteMany({ where: { id: { in: goneSpecs } } });
+      }
+      // A normal update (new "updated" time): the sheet reloads with what's saved now.
+      await tx.estimate.update({ where: { id: estimateId }, data: { lockedAt: est.lockedAt ?? new Date(), autoNote: null, autoBase: null } });
+    },
+    { timeout: 60000 },
+  );
+  return { estimate: est, restored: !!base };
 }
 
 export type PriceCheck = { unpriced: { name: string; quantity: number; unit: string }[]; changed: { count: number; change: number } };

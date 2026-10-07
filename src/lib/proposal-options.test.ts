@@ -123,24 +123,35 @@ describe("proposal", () => {
     assert.equal(d.total, 3300);
   });
 
-  it("adds tax on the whole price or on materials only", () => {
-    const whole = buildProposal(specs, opts({ tax: { on: true, pct: 10, label: "Sales tax", base: "TOTAL" } }), null);
-    assert.equal(whole.tax?.amount, 300);
-    assert.equal(whole.total, 3300);
-    const materials = buildProposal(specs, opts({ tax: { on: true, pct: 10, label: "Sales tax", base: "MATERIAL" } }), null);
-    assert.equal(materials.tax?.amount, 240); // excavation 1,200 + tile 1,200
-    assert.equal(materials.total, 3240);
+  it("builds the tax you pay into the prices, or shows it as its own line — same total", () => {
+    // The materials (dig, tile) taxed at 10%: each 1,000 + 100 tax + 20% profit on 1,100 = 1,320.
+    const taxed = specs.map((s) => ({ ...s, lines: s.lines.map((l) => (l.costType === "MATERIAL" ? { ...l, taxPct: 10 } : l)) }));
+    const built = buildProposal(taxed, DEFAULT_PROPOSAL_OPTIONS, null, { overhead: 0, taxLabel: "Sales tax", taxPct: 10 });
+    assert.equal(built.tax, null);
+    assert.deepEqual(
+      built.categories.map((c) => c.amount),
+      [1920, 1320],
+    );
+    assert.equal(built.total, 3240);
+    const own = buildProposal(taxed, opts({ tax: { on: true, pct: 0, label: "", base: "TOTAL" } }), null, { overhead: 0, taxLabel: "Sales tax", taxPct: 10 });
+    assert.deepEqual(own.tax, { label: "Sales tax", pct: 10, amount: 200 });
+    assert.deepEqual(
+      own.categories.map((c) => c.amount),
+      [1820, 1220],
+    ); // before tax
+    assert.equal(own.subtotal, 3040);
+    assert.equal(own.total, 3240);
   });
 
-  it("puts the table's overhead into what the client pays and its tax rows on top", () => {
-    const d = buildProposal(specs, DEFAULT_PROPOSAL_OPTIONS, null, { overhead: 300, taxes: [{ label: "Sales tax", pct: 8.25, amount: 165 }] });
+  it("puts the table's overhead into what the client pays", () => {
+    const d = buildProposal(specs, DEFAULT_PROPOSAL_OPTIONS, null, { overhead: 300 });
     assert.deepEqual(
       d.categories.map((c) => c.amount),
       [1980, 1320],
     ); // 3,000 + 300 overhead, built into the prices
-    assert.equal(d.tax?.amount, 165);
-    assert.equal(d.total, 3465);
-    const fee = buildProposal(specs, opts({ profit: { mode: "FEE", label: "Fee", showPct: false } }), null, { overhead: 300, taxes: [] });
+    assert.equal(d.tax, null);
+    assert.equal(d.total, 3300);
+    const fee = buildProposal(specs, opts({ profit: { mode: "FEE", label: "Fee", showPct: false } }), null, { overhead: 300 });
     assert.equal(fee.fee?.amount, 800); // profit 500 + overhead 300
   });
 

@@ -50,18 +50,19 @@ export async function pullListPrices(projectId: string) {
 /**
  * A price typed in the takeoff or the Material list for one Item List item on a job.
  * Returns where it went: "list" (the Item List, so every unlocked job) or "job".
+ * Only the price is shared: each takeoff's line keeps its own cost code (concrete can be
+ * Footings in one takeoff and Flatwork in another).
  */
-export async function setItemPrice(opts: { projectId: string; materialItemId: string; unitCost: number; pin: boolean; costCodeId?: string | null }) {
+export async function setItemPrice(opts: { projectId: string; materialItemId: string; unitCost: number; pin: boolean }) {
   const { projectId, materialItemId, unitCost, pin } = opts;
   const locked = await isJobLocked(projectId);
   const where = { materialItemId, condition: { projectId } };
-  const code = opts.costCodeId !== undefined ? { costCodeId: opts.costCodeId } : {};
   if (locked || pin) {
-    await db.takeoffAssemblyItem.updateMany({ where, data: { unitCost, ...code, ...(locked ? {} : { pricePinned: true }) } });
+    await db.takeoffAssemblyItem.updateMany({ where, data: { unitCost, ...(locked ? {} : { pricePinned: true }) } });
     return "job" as const;
   }
   await db.materialItem.update({ where: { id: materialItemId }, data: { unitCost } });
-  await db.takeoffAssemblyItem.updateMany({ where, data: { unitCost, ...code, pricePinned: false } });
+  await db.takeoffAssemblyItem.updateMany({ where, data: { unitCost, pricePinned: false } });
   return "list" as const;
 }
 

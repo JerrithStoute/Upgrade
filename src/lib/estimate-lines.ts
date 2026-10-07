@@ -52,7 +52,9 @@ export type SourceItem = {
   takeoffConditionId?: string | null;
   takeoffItemId?: string | null;
   takeoffRollup?: string | null;
+  takeoffStopped?: string | null;
   materialItemId?: string | null;
+  taxPct?: number | null;
   qtyFormula?: string | null;
   costFormula?: string | null;
 };
@@ -86,6 +88,7 @@ function itemCopy(i: SourceItem, sortOffset: number, specMap: Map<string, string
     unit: i.unit,
     unitCost: i.unitCost,
     markupPct: i.markupPct,
+    taxPct: i.taxPct ?? 0,
     costType: i.costType,
     notes: i.notes,
     qtyFormula: i.qtyFormula ?? null,
@@ -134,6 +137,7 @@ export async function copyIntoEstimate(
         takeoffConditionId: i.takeoffConditionId ?? null,
         takeoffItemId: i.takeoffItemId ?? null,
         takeoffRollup: i.takeoffRollup ?? null,
+        takeoffStopped: i.takeoffStopped ?? null,
         materialItemId: i.materialItemId ?? null,
       })),
     });
@@ -276,6 +280,7 @@ function toSheet(specs: LoadedSpec[]): SheetSpec[] {
       unit: l.unit,
       unitCost: l.unitCost,
       markupPct: l.markupPct,
+      taxPct: l.taxPct ?? 0,
       costType: l.costType,
       notes: l.notes ?? "",
       isOptional: l.isOptional,
@@ -325,6 +330,7 @@ function lineData(l: SaveSheetInput["specs"][number]["lines"][number], spec: Sav
     unit: l.unit || "ea",
     unitCost: l.unitCost,
     markupPct: l.markupPct,
+    taxPct: l.taxPct,
     costType: l.costType,
     notes: l.notes || null,
     qtyFormula: l.qtyFormula && !evaluateFormula(l.qtyFormula, {}, []).error ? l.qtyFormula : null,
@@ -358,7 +364,21 @@ export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: stri
   const over = sourceId === targetId;
   const [srcSpecs, srcItems, valid] = await Promise.all([
     tx.estimateSpec.findMany({ where: { estimateId: sourceId }, select: { id: true, selectionId: true } }),
-    tx.estimateItem.findMany({ where: { estimateId: sourceId }, select: { id: true, takeoffConditionId: true, takeoffItemId: true, takeoffRollup: true } }),
+    tx.estimateItem.findMany({
+      where: { estimateId: sourceId },
+      select: {
+        id: true,
+        takeoffConditionId: true,
+        takeoffItemId: true,
+        takeoffRollup: true,
+        takeoffStopped: true,
+        quantity: true,
+        unit: true,
+        unitCost: true,
+        qtyFormula: true,
+        costFormula: true,
+      },
+    }),
     existingIds(tx, input),
   ]);
   const specById = new Map(srcSpecs.map((s) => [s.id, s]));
@@ -373,9 +393,19 @@ export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: stri
     if (goneSpecs.length) await tx.estimateSpec.deleteMany({ where: { id: { in: goneSpecs }, estimateId: sourceId } });
   }
 
+  // The takeoff can update the estimate while the sheet is open (it's opened, or refreshed). The
+  // sheet's copy of those lines is older then: a takeoff line it still has that the takeoff has
+  // since removed isn't brought back, and the takeoff's numbers win on the lines it fills.
+  const removedByTakeoff = (l: SaveSheetInput["specs"][number]["lines"][number]) => !!l.id && !itemById.has(l.id) && l.fromTakeoff;
+  const takeoffOwns = (l: SaveSheetInput["specs"][number]["lines"][number], src: (typeof srcItems)[number] | undefined) =>
+    // Not after "Stop updating" (the line loaded as a takeoff line and isn't one now).
+    !!src?.takeoffRollup && (l.fromTakeoff || !l.takeoffKey);
+
   let order = 0;
   for (const s of input.specs) {
     const src = s.id ? specById.get(s.id) : undefined;
+    // A spec item the takeoff made and has since emptied and removed: not brought back.
+    if (s.id && !src && s.lines.length && s.lines.every(removedByTakeoff)) continue;
     const data = {
       ...specData(s, order++),
       urgent: s.urgent,
@@ -389,6 +419,7 @@ export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: stri
         : (await tx.estimateSpec.create({ data: { ...data, estimateId: targetId, selectionId: src?.selectionId ?? null } })).id;
 
     for (const l of s.lines) {
+      if (removedByTakeoff(l)) continue;
       const srcLine = l.id ? itemById.get(l.id) : undefined;
       let materialItemId = l.materialItemId && valid.items.has(l.materialItemId) ? l.materialItemId : null;
       if (l.addToItemList && !materialItemId && l.description) {
@@ -412,7 +443,21 @@ export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: stri
         takeoffConditionId: l.fromTakeoff ? (srcLine?.takeoffConditionId ?? null) : null,
         takeoffItemId: l.fromTakeoff ? (srcLine?.takeoffItemId ?? null) : null,
         takeoffRollup: l.fromTakeoff ? (srcLine?.takeoffRollup ?? null) : null,
+        // "Stop updating" on a takeoff line: remember which one, so the takeoff leaves it be.
+        takeoffStopped: l.fromTakeoff ? null : (srcLine?.takeoffRollup ?? srcLine?.takeoffStopped ?? null),
       };
+      if (takeoffOwns(l, srcLine) && srcLine)
+        Object.assign(data, {
+          quantity: srcLine.quantity,
+          unit: srcLine.unit,
+          unitCost: srcLine.unitCost,
+          qtyFormula: srcLine.qtyFormula,
+          costFormula: srcLine.costFormula,
+          takeoffConditionId: srcLine.takeoffConditionId,
+          takeoffItemId: srcLine.takeoffItemId,
+          takeoffRollup: srcLine.takeoffRollup,
+          takeoffStopped: null,
+        });
       if (over && srcLine) await tx.estimateItem.update({ where: { id: srcLine.id }, data });
       else await tx.estimateItem.create({ data: { ...data, estimateId: targetId } });
     }

@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { Download, Truck } from "lucide-react";
+import { Download, Replace, Truck, Undo2 } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { buildMaterialList } from "@/lib/takeoff-materials";
-import { cn, fmtDate } from "@/lib/utils";
-import { buttonClasses } from "@/components/ui";
+import { cn, fmtDate, money } from "@/lib/utils";
+import { SubmitButton, buttonClasses } from "@/components/ui";
+import { jobSubstitutions } from "@/lib/substitutions";
+import { swapBackSubstitution } from "../takeoff/actions";
 import { PrintButton } from "../_components/print-button";
 import { MaterialTable } from "../takeoff/_components/material-table";
 import { getBrand } from "@/lib/company-brand";
@@ -20,7 +22,7 @@ export default async function MaterialListPage({ params, searchParams }: { param
   const plans = await db.takeoffPlan.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } });
   const planId = plans.some((p) => p.id === planParam) ? planParam! : null;
   const showPrices = prices !== "0";
-  const { lines, cutLists, total } = await buildMaterialList(project.id, planId);
+  const [{ lines, cutLists, total }, substitutions] = await Promise.all([buildMaterialList(project.id, planId), jobSubstitutions(project.id)]);
   const brand = await getBrand();
 
   const base = `/projects/${project.id}/materials`;
@@ -101,7 +103,44 @@ export default async function MaterialListPage({ params, searchParams }: { param
         </p>
       </div>
 
-      <MaterialTable lines={lines} cutLists={cutLists} total={total} showPrices={showPrices} edit={{ projectId: project.id, locked: !!project.pricesLockedAt }} />
+      {substitutions.length ? (
+        // What this job orders instead — each with its way back.
+        <div className="no-print rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
+          <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-900">
+            <Replace className="h-4 w-4" /> Substitutions on this job
+          </p>
+          <ul className="mt-1.5 divide-y divide-amber-100">
+            {substitutions.map((s) => (
+              <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
+                <span className="min-w-0 flex-1 text-slate-800">
+                  <span className="font-medium">{s.toName}</span> instead of {s.fromName}
+                  <span className="text-xs text-slate-500">
+                    {" "}
+                    · {s.source ?? "you"}
+                    {s.unitCost != null && showPrices ? ` · ${money(s.unitCost)}` : ""}
+                  </span>
+                </span>
+                <form action={swapBackSubstitution}>
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <input type="hidden" name="id" value={s.id} />
+                  <input type="hidden" name="back" value={href({})} />
+                  <SubmitButton variant="ghost" size="sm" pendingText="Swapping back…">
+                    <Undo2 className="h-3.5 w-3.5" /> Swap back
+                  </SubmitButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      <MaterialTable
+        lines={lines}
+        cutLists={cutLists}
+        total={total}
+        showPrices={showPrices}
+        edit={{ projectId: project.id, locked: !!project.pricesLockedAt, substitutions: substitutions.map((s) => ({ fromName: s.fromName, toName: s.toName })) }}
+      />
     </div>
   );
 }

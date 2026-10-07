@@ -12,7 +12,7 @@ type SaveDefault = (rows: MarkupRow[]) => Promise<{ ok: true } | { ok: false; er
 
 /**
  * The Markup, Margin & Tax table, beside the sheet. Changes go into the sheet (saved
- * with it); profit rows fill the lines' profit %, the others add on top.
+ * with it); profit rows fill the lines' profit %, tax rows the lines' sales tax, the others add on top.
  */
 export function MarkupPanel({
   rows,
@@ -198,8 +198,11 @@ export function MarkupPanel({
               yours.
             </li>
             <li>
-              <b>Overhead</b> and <b>Other</b> rows add to the estimate total; <b>Tax</b> rows add tax on top (its own line on the proposal). Each is a % of the cost of the lines
-              it applies to — markup on cost, or margin of the selling price.
+              <b>Overhead</b> and <b>Other</b> rows add to the estimate total, a % of the cost of the lines they apply to — markup on cost, or margin of the selling price.
+            </li>
+            <li>
+              <b>Tax</b> is the sales tax you pay: lines of the cost type it applies to start taxed (tick or untick any line in the Tax column). It&apos;s part of each line&apos;s
+              cost, so profit is figured on cost with tax. The proposal shows it built into the prices or as its own line — your choice there.
             </li>
             <li>The cost code puts the amount in that line of the budget. Saved with the estimate when you click Save changes.</li>
           </ul>

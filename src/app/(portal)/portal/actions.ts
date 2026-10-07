@@ -9,6 +9,7 @@ import { str, strOrNull } from "@/lib/utils";
 import { addComment, noteChange, saveSelectionFiles } from "@/lib/selection-activity";
 import { deleteUpload } from "@/lib/uploads";
 import { applyDecline, finalizeIfApproved } from "@/lib/change-orders-server";
+import { syncSelectionChangeOrder } from "@/lib/billing-flow";
 import { fileSeen, requiredFiles } from "@/lib/file-views";
 import { headers } from "next/headers";
 
@@ -73,6 +74,7 @@ export async function chooseOption(formData: FormData) {
     type: "selection.chosen",
     description: `Client chose "${option.name}" for ${selection.title}`,
   });
+  await syncSelectionChangeOrder(selection.id, user);
   revalidatePortal(selection.projectId);
   redirect(`/portal/selections/${selection.id}`);
 }
@@ -131,6 +133,7 @@ export async function clientMakeChoice(selectionId: string, choice: string | nul
     await noteChange(sel.id, user, `Chose "${opt.name}"`);
   }
   await logActivity({ projectId: sel.projectId, userId: user.id, type: "selection.chosen", description: `Client made a choice for ${sel.title}` });
+  await syncSelectionChangeOrder(sel.id, user);
   revalidatePortal(sel.projectId);
   return { ok: true };
 }

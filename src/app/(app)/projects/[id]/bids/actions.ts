@@ -10,7 +10,8 @@ import { biddableLines, isLadderLine, ladderLines, parsePrice, priceLadders, rea
 import { isJobLocked, setItemPrice } from "@/lib/job-prices";
 import { saveUpload } from "@/lib/uploads";
 import { str } from "@/lib/utils";
-import { itemNameKey } from "@/lib/takeoff";
+import { itemNameKey, substituteLength } from "@/lib/takeoff";
+import { addSubstitution } from "@/lib/substitutions";
 import { newItemPlacement } from "@/lib/item-codes";
 import { cleanVendorName, vendorCodes, vendorKey } from "@/lib/vendors";
 
@@ -237,6 +238,10 @@ async function lumberItemFor(name: string) {
  * The bids you picked, one per cost code: their prices go on this job only (JOB), or into
  * the Item List for every job (COMPANY) — with the vendor's name on the items. A locked job
  * keeps its prices on COMPANY (Price review brings them in); JOB changes it, as asked.
+ *
+ * A line the vendor quoted a substitute for is never priced as the item you asked for: you
+ * choose first (the page asks) — "use theirs" substitutes it on this job at their price
+ * (substitutions.ts), "keep mine" leaves that line's price out.
  */
 export async function takeBids(fd: FormData) {
   const user = await requireStaff();
@@ -250,14 +255,44 @@ export async function takeBids(fd: FormData) {
   const changed = picks.filter((p) => awards.find((a) => a.codeKey === p.codeKey)?.bidId !== p.bidId || fd.has("reapply"));
   if (!changed.length) redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("Pick a bid for a cost code first")}#compare`);
 
+  // Substitutes on the picked bids: ask what to do with each before anything is priced.
+  const subLines = await db.bidLine.findMany({
+    where: { OR: changed.map((p) => ({ bidId: p.bidId, codeKey: p.codeKey })), unitPrice: { not: null }, substitute: { not: null } },
+    select: { id: true },
+  });
+  if (subLines.some((l) => !["use", "keep"].includes(str(fd, `sub:${l.id}`)))) {
+    const ask = { picks: changed, scope, reapply: fd.has("reapply") };
+    redirect(`${bidsPath(project.id)}?confirm=${encodeURIComponent(JSON.stringify(ask))}#substitutes`);
+  }
+
   let items = 0;
   let skipped = 0;
+  let subbed = 0;
+  let keptOut = 0;
   const done: string[] = [];
   for (const p of changed) {
     const bid = await db.bid.findFirst({ where: { id: p.bidId, projectId: project.id }, include: { lines: { where: { codeKey: p.codeKey } } } });
     if (!bid) continue;
     for (const l of bid.lines) {
       if (l.unitPrice == null) continue;
+      if (l.substitute) {
+        if (str(fd, `sub:${l.id}`) !== "use") {
+          keptOut++;
+          continue;
+        }
+        const fromItemId = l.materialItemId ?? (await lumberItemFor(l.name));
+        const length = substituteLength(l.name, l.substitute);
+        await addSubstitution(project.id, {
+          fromItemId,
+          with: length ? { kind: "length", length } : { kind: "new", name: l.substitute, unit: l.unit },
+          unitCost: l.unitPrice,
+          source: `Bid #${bid.number}, ${bid.vendorName}`,
+          listPrice: scope === "COMPANY",
+          vendor: bid.vendorName,
+        });
+        subbed++;
+        continue;
+      }
       let materialItemId = l.materialItemId;
       if (!materialItemId && isLadderLine(l)) {
         // A price list length the Item List doesn't have yet: added there on "every job";
@@ -291,9 +326,9 @@ export async function takeBids(fd: FormData) {
     projectId: project.id,
     userId: user.id,
     type: "bid.taken",
-    description: `Took ${done.join("; ")} — ${items} prices ${scope === "JOB" ? "on this job only" : locked ? "into the Item List (job prices locked)" : "into the Item List for every job"}`,
+    description: `Took ${done.join("; ")} — ${items} prices ${scope === "JOB" ? "on this job only" : locked ? "into the Item List (job prices locked)" : "into the Item List for every job"}${subbed ? `, ${subbed} substitute${subbed === 1 ? "" : "s"} used` : ""}${keptOut ? `, ${keptOut} substitute${keptOut === 1 ? "" : "s"} turned down` : ""}`,
   });
   if (scope === "COMPANY") revalidatePath("/settings/items");
   revalidateBids(project.id);
-  redirect(`${bidsPath(project.id)}?taken=${done.length}&items=${items}&skipped=${skipped}&scope=${scope}#compare`);
+  redirect(`${bidsPath(project.id)}?taken=${done.length}&items=${items}&skipped=${skipped}&subbed=${subbed}&kept=${keptOut}&scope=${scope}#compare`);
 }

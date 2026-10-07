@@ -1,10 +1,11 @@
 import { ClipboardList } from "lucide-react";
-import { boardPatternText, feetInches } from "@/lib/takeoff";
+import { boardPatternText, feetInches, itemNameKey } from "@/lib/takeoff";
 import type { CutList, MaterialLine } from "@/lib/takeoff-materials";
 import { groupBy } from "@/lib/finance";
 import { money, num } from "@/lib/utils";
 import { EmptyState, TBody, TFoot, THead, Table, Td, Th, Tr } from "@/components/ui";
 import { PriceCell } from "./price-cell";
+import { SubstituteButton } from "./substitute-button";
 
 /** The Material List table (by category) and the framing cut sheet — the Material List page and the takeoff tab. */
 export function MaterialTable({
@@ -18,10 +19,12 @@ export function MaterialTable({
   cutLists: CutList[];
   total: number;
   showPrices: boolean;
-  /** The job's Material list: prices of Item List items can be changed right here. */
-  edit?: { projectId: string; locked: boolean };
+  /** The job's Material list: prices of Item List items can be changed right here, and items substituted. */
+  edit?: { projectId: string; locked: boolean; substitutions?: { fromName: string; toName: string }[] };
 }) {
   const groups = groupBy(lines, (l) => l.category);
+  // "Instead of 2x6 × 26'" under a line that's a substitute on this job.
+  const insteadOf = new Map((edit?.substitutions ?? []).map((s) => [itemNameKey(s.toName), s.fromName]));
   return (
     <>
       {lines.length === 0 ? (
@@ -59,6 +62,10 @@ export function MaterialTable({
                         ({l.pieces} {l.pieces === 1 ? "pc" : "pcs"})
                       </span>
                     ) : null}
+                    {edit && l.materialItemId ? (
+                      <SubstituteButton projectId={edit.projectId} line={{ materialItemId: l.materialItemId, name: l.name, unit: l.unit, quantity: l.quantity }} />
+                    ) : null}
+                    {insteadOf.has(itemNameKey(l.name)) ? <span className="block text-xs font-normal text-amber-700">Instead of {insteadOf.get(itemNameKey(l.name))}</span> : null}
                   </Td>
                   <Td className="text-xs text-slate-500">{[l.sku, l.vendor].filter(Boolean).join(" · ") || "—"}</Td>
                   <Td className="text-xs text-slate-500">{l.usedIn.join(", ")}</Td>

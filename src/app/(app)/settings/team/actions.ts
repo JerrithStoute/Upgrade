@@ -60,6 +60,8 @@ export async function updateTeamMember(formData: FormData) {
       phone: strOrNull(formData, "phone"),
       role,
       active,
+      canDelay: boolField(formData, "canDelay"),
+      vacationDays: str(formData, "vacationDays") ? Math.max(0, Math.min(365, Number(str(formData, "vacationDays")) || 0)) : null,
       ...(password ? { passwordHash: await hashPassword(password) } : {}),
     },
   });

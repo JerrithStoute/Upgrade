@@ -27,6 +27,9 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
   const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   // New sizes / lengths: tagged framing lumber, filed where you chose, with its cost code.
   const place = await newItemPlacement("framing lumber");
+  // Boards substituted on this job with another product (an LVL for a 2x10 × 16').
+  const { productSubstitutions } = await import("./substitutions");
+  const subs = await productSubstitutions(projectId);
 
   for (const c of conditions) {
     const { cutList, metrics } = conditionTotals(c);
@@ -61,7 +64,7 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
     let sortOrder = Math.min(0, ...c.items.map((i) => i.sortOrder)) - lines.length - 1;
     for (const line of lines) {
       const nameKey = itemNameKey(line.listName);
-      const listItem =
+      const board =
         (await db.materialItem.findUnique({ where: { nameKey } })) ??
         (await db.materialItem.create({
           data: {
@@ -76,11 +79,15 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
             costCodeId: place.costCodeId,
           },
         }));
+      const sub = subs.get(board.id);
+      const subItem = sub?.toItemId ? await db.materialItem.findUnique({ where: { id: sub.toItemId } }) : null;
+      const listItem = subItem ?? board;
+      if (subItem) line.description = subItem.name;
       const current = existing.find((i) => i.metric === line.metric);
       // No Item List price yet, but the bid you took priced this length (its price list):
       // the line takes that price, kept for this job.
       const len = Number(line.metric.slice(LUMBER_METRIC_PREFIX.length));
-      const fromBid = listItem.unitCost > 0 || soldAs !== "STOCK" ? 0 : (c.lengthPrices?.[len] ?? 0);
+      const fromBid = subItem ? (sub?.unitCost ?? 0) : listItem.unitCost > 0 || soldAs !== "STOCK" ? 0 : (c.lengthPrices?.[len] ?? 0);
       // Pieces carry no waste of their own: it's in their counts, as whole extra boards.
       const shape = { description: line.description, qty: line.qty, per: 1, unit: line.unit, roundUp: line.roundUp, wastePct: line.metric === LUMBER_LF_METRIC ? c.wastePct : 0 };
       if (!current) {
