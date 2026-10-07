@@ -3,25 +3,7 @@ import { Pencil, UserPlus, Users, X } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fmtDate } from "@/lib/utils";
-import {
-  Badge,
-  Button,
-  ButtonLink,
-  Card,
-  CardHeader,
-  Collapsible,
-  ConfirmForm,
-  EmptyState,
-  Field,
-  FormGrid,
-  SubmitButton,
-  Table,
-  THead,
-  TBody,
-  Tr,
-  Th,
-  Td,
-} from "@/components/ui";
+import { Badge, Button, ButtonLink, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
 import { createTeamMember, updateTeamMember, toggleTeamMemberActive, deleteTeamMember } from "./actions";
 
 export const metadata = { title: "Team" };
@@ -149,15 +131,7 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                       />
                     </Td>
                     <Td>
-                      <input
-                        name="password"
-                        type="password"
-                        placeholder="New password"
-                        className="input"
-                        form={EDIT_FORM}
-                        autoComplete="new-password"
-                        aria-label="New password"
-                      />
+                      <input name="password" type="password" placeholder="New password" className="input" form={EDIT_FORM} autoComplete="new-password" aria-label="New password" />
                     </Td>
                     <Td right>
                       <div className="flex justify-end gap-1.5">
@@ -234,10 +208,7 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
       </Card>
 
       <Card>
-        <CardHeader
-          title="Client logins"
-          description="Portal accounts linked to a client record. Create or manage them from the client's page."
-        />
+        <CardHeader title="Client logins" description="Portal accounts linked to a client record. Create or manage them from the client's page." />
         {clients.length === 0 ? (
           <div className="p-5">
             <EmptyState icon={Users} title="No client logins" description="Client portal accounts are created from a client's detail page." />

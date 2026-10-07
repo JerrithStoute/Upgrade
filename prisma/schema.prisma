@@ -861,6 +861,11 @@ model TakeoffCondition {
   stockLengths  String? // framing: lengths you buy, in feet, e.g. "8,10,12,14,16" (blank = even lengths from 8')
   packMode      String      @default("WASTE") // joists/rafters: WASTE (least waste) | CHEAPEST | LENGTH (one board length)
   packLength    Float? // LENGTH: the board length in feet
+  // Joists/rafters sized by a span table: each shape goes to the takeoff of the size its span
+  // calls for. The takeoffs of one family (one per size) share `sizeGroup`.
+  spanTableId   String?
+  spanTable     SpanTable?  @relation(fields: [spanTableId], references: [id], onDelete: SetNull)
+  sizeGroup     String?
   sortOrder     Int         @default(0)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -890,6 +895,8 @@ model TakeoffMeasurement {
   materialItemId String?
   materialItem   MaterialItem?    @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
   cased          Boolean? // Windows: trimmed (cased) or not; null = cased
+  // Joists/rafters on a span table: you picked this shape's size yourself — the table leaves it be.
+  sizeLocked     Boolean          @default(false)
   createdAt      DateTime         @default(now())
 }
 
@@ -976,6 +983,24 @@ model ItemCodeRule {
 /// soldAs: STOCK (pieces rounded up to stock lengths, priced each)
 ///       | EXACT_LF (made to exact length, listed per length, priced per lf)
 ///       | LF (one lineal-foot total, priced per lf)
+/// Settings → Span tables: which joist / rafter size a span calls for — your own rows
+/// ("up to 12' → 2x6"), or the code's (figured from species, grade and loads).
+model SpanTable {
+  id        String   @id @default(cuid())
+  name      String
+  use       String   @default("FLOOR") // FLOOR | CEILING | RAFTER
+  source    String   @default("CUSTOM") // CUSTOM (your rows) | CODE
+  species   String   @default("SPF2") // CODE: species & grade (span-tables.ts SPECIES)
+  load      String   @default("") // CODE: design loads (span-tables.ts SPAN_LOADS)
+  rows      String   @default("[]") // CUSTOM: JSON [{ upToFt, size }] — size is a member size name
+  overSize  String? // past the table: this member (a member size name, e.g. "TJI 210")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  conditions TakeoffCondition[]
+}
+
 model MemberSize {
   id           String   @id @default(cuid())
   name         String
@@ -986,6 +1011,8 @@ model MemberSize {
   soldAs       String   @default("STOCK")
   stockLengths String? // default stock lengths in feet, e.g. "8-24"
   boardFeet    Boolean  @default(true) // report board feet (nominal size from the name)
+  // Its color on the plan: joist / rafter takeoffs of this size use it, on every job.
+  color        String?
   sortOrder    Int      @default(0)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -1034,6 +1061,7 @@ model TakeoffTemplateCondition {
   stockLengths  String?
   packMode      String          @default("WASTE")
   packLength    Float?
+  spanTableId   String? // the span table it sizes by (kept as is; checked when the template is used)
   sortOrder     Int             @default(0)
 
   items TakeoffTemplateItem[]

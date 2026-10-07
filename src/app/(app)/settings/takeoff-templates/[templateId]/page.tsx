@@ -30,7 +30,7 @@ export default async function TakeoffTemplatePage({
 }) {
   const { templateId } = await params;
   const { edit, editItem, added, updated, kept } = await searchParams;
-  const [template, costCodes, items, memberSizes, company, codeRules] = await Promise.all([
+  const [template, costCodes, items, memberSizes, company, codeRules, spanTables] = await Promise.all([
     db.takeoffTemplate.findUnique({
       where: { id: templateId },
       include: {
@@ -50,6 +50,7 @@ export default async function TakeoffTemplatePage({
     db.memberSize.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, kind: true, soldAs: true, stockLengths: true } }),
     db.company.findFirst({ select: { defaultMarkup: true } }),
     loadCodeRules(),
+    db.spanTable.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, use: true } }),
   ]);
   if (!template) notFound();
   const base = `/settings/takeoff-templates/${template.id}`;
@@ -129,6 +130,7 @@ export default async function TakeoffTemplatePage({
                       costCodes={costCodes}
                       codeRules={codeRules}
                       memberSizes={memberSizes}
+                      spanTables={spanTables}
                       itemOptions={items}
                       defaultMarkup={defaultMarkup}
                       values={c}
@@ -231,6 +233,7 @@ export default async function TakeoffTemplatePage({
           costCodes={costCodes}
           codeRules={codeRules}
           memberSizes={memberSizes}
+          spanTables={spanTables}
           itemOptions={items}
           defaultMarkup={defaultMarkup}
           nextColor={CONDITION_COLORS[template.conditions.length % CONDITION_COLORS.length]}

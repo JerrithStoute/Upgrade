@@ -94,10 +94,11 @@ export default async function PlanViewerPage({
   const editing = cond === "new" ? null : (conditions.find((c) => c.id === cond) ?? null);
   let editor = null;
   if (cond === "new" || editing) {
-    const [memberSizes, items, company] = await Promise.all([
+    const [memberSizes, items, company, spanTables] = await Promise.all([
       db.memberSize.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, kind: true, soldAs: true, stockLengths: true } }),
       materialItemOptions(),
       db.company.findFirst({ select: { defaultMarkup: true } }),
+      db.spanTable.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, use: true } }),
     ]);
     editor = {
       condition: editing
@@ -126,6 +127,7 @@ export default async function PlanViewerPage({
             stockLengths: editing.stockLengths,
             packMode: editing.packMode,
             packLength: editing.packLength,
+            spanTableId: editing.spanTableId,
             packing: editing.type === "FRAMING" ? { cuts: conditionTotals(editing).memberCuts, prices: editing.lengthPrices } : undefined,
             hasMeasurements: editing.measurements.length > 0,
             items: editing.items.map((i) => ({
@@ -148,6 +150,7 @@ export default async function PlanViewerPage({
       costCodes,
       codeRules,
       memberSizes,
+      spanTables,
       items,
       defaultMarkup: company?.defaultMarkup ?? 20,
       pricesLocked: !!project.pricesLockedAt,
@@ -253,6 +256,9 @@ export default async function PlanViewerPage({
           stockLengths: c.stockLengths,
           options: c.options,
           memberWidthIn: c.memberSizeRef?.widthIn ?? null,
+          spanTable: c.spanTable?.name ?? null,
+          shapeCount: c.measurements.length,
+          sizeGroup: c.sizeGroup,
           boardFeetPerLf: c.memberSizeRef ? boardFeetPerLf(c.memberSizeRef) : null,
           soldAs: c.memberSizeRef?.soldAs ?? null,
           total: totals.quantity,
@@ -265,12 +271,14 @@ export default async function PlanViewerPage({
         c.measurements
           .filter((m) => m.sheetId === sheet?.id)
           .map((m) => ({
+            memberOwners: c.bandSplit.owners.get(m.id),
             id: m.id,
             conditionId: c.id,
             points: parsePoints(m.points),
             arcs: parseArcs(m.points),
             materialItemId: m.materialItemId,
             cased: m.cased,
+            sizeLocked: m.sizeLocked,
             isDeduction: m.isDeduction,
             angle: m.angle,
             pitch: m.pitch,

@@ -55,6 +55,9 @@ export async function conditionFields(fd: FormData) {
   }
   const size = memberSizeId ? await db.memberSize.findUnique({ where: { id: memberSizeId }, select: { id: true, name: true } }) : null;
   if (memberSizeId && !size) throw new Error("Member size not found");
+  // Joists/rafters: sized by a span table instead (each shape gets the size its span calls for).
+  const spanTableId = type === "FRAMING" ? strOrNull(fd, "spanTableId") : null;
+  if (spanTableId && !(await db.spanTable.findUnique({ where: { id: spanTableId }, select: { id: true } }))) throw new Error("Span table not found");
   const options =
     type === "WALL"
       ? wallOptions(fd)
@@ -87,6 +90,7 @@ export async function conditionFields(fd: FormData) {
     memberSizeId: size?.id ?? null,
     options,
     memberSize: size?.name ?? null,
+    spanTableId,
     stockLengths: isMemberType(type) || type === "OPENING" ? (stockLengths?.slice(0, 120) ?? null) : null,
     // Joists/rafters: least waste, cheapest, or one board length.
     packMode: type === "FRAMING" ? pack : "WASTE",

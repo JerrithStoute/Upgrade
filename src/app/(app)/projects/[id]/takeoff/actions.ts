@@ -12,6 +12,12 @@ import { boolField, money, str, strOrNull } from "@/lib/utils";
 import { syncTakeoffToEstimate } from "@/lib/takeoff-data";
 import { resolveMaterialItem } from "@/lib/material-items";
 import { syncAutoItems } from "@/lib/walls";
+import { copyTakeoff, placeBySpan, resizeFamily, resizeSheet } from "@/lib/span-sizing";
+
+/** Walls and beams hold joists up: when they change, span-table joists on those sheets are sized again. */
+async function supportsChanged(projectId: string, rows: { type: string; sheetId: string }[]) {
+  for (const sheetId of new Set(rows.filter((r) => r.type === "WALL" || r.type === "BEAM").map((r) => r.sheetId))) await resizeSheet(projectId, sheetId);
+}
 import { applyListPrices, lockJobPrices, setItemPin, setItemPrice, unlockJobPrices } from "@/lib/job-prices";
 import { NO_ALIGN, alignAngle, alignScale, applyAlign, isNoAlign, parseAlign, type Align } from "@/lib/revisions";
 import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
@@ -146,7 +152,11 @@ export async function createCondition(fd: FormData) {
   const project = await getProject(str(fd, "projectId"));
   const data = await conditionFields(fd);
   const pending = await pendingItemFields(fd, data.type, data.metric);
-  const c = await db.takeoffCondition.create({ data: { ...data, projectId: project.id, sortOrder: await nextConditionSort(project.id) } });
+  // A joist / rafter takeoff starts in its size's color (Settings → Member sizes), when it has one.
+  const sizeColor = data.type === "FRAMING" && data.memberSizeId ? (await db.memberSize.findUnique({ where: { id: data.memberSizeId }, select: { color: true } }))?.color : null;
+  const c = await db.takeoffCondition.create({
+    data: { ...data, ...(sizeColor ? { color: sizeColor } : {}), projectId: project.id, sortOrder: await nextConditionSort(project.id) },
+  });
   // Assembly items added on the form before the takeoff was saved.
   for (const [k, item] of pending.entries())
     await db.takeoffAssemblyItem.create({ data: { ...(await withMaterialItem(item, user.id, project.id)), conditionId: c.id, sortOrder: k } });
@@ -195,17 +205,22 @@ export async function updateCondition(fd: FormData) {
         ]
       : []),
   ]);
+  // A span-table family (one takeoff per size): the settings they share go to all of them —
+  // each keeps its own name and size — and the shapes are sized again.
+  const group = existing.sizeGroup ?? (data.spanTableId ? id : null);
+  if (group && data.type === "FRAMING") {
+    const { name: _name, memberSize: _size, memberSizeId: _sizeId, color: _color, ...shared } = data;
+    void [_name, _size, _sizeId, _color];
+    await db.takeoffCondition.updateMany({ where: { projectId: project.id, sizeGroup: group, NOT: { id } }, data: shared });
+    if (!existing.sizeGroup) await db.takeoffCondition.update({ where: { id }, data: { sizeGroup: group } });
+  }
+  // Saving a span-table takeoff sizes its areas again (cheap — and it picks up walls traced since).
+  const resize = !!data.spanTableId;
+  if (resize) await resizeFamily(project.id, id);
   // Size, spacing, pitch, overhang or stock lengths can change the lumber.
-  if (hasAutoLines(data.type) || hasAutoLines(existing.type)) await syncAutoItems(project.id, id);
+  if (hasAutoLines(data.type) || hasAutoLines(existing.type)) await syncAutoItems(project.id, resize ? undefined : id);
   revalidate(project.id);
   redirect(returnTo(fd, project.id, `#condition-${id}`, "conditions"));
-}
-
-/** A copy of a row without the given fields (its id, links…). */
-function without<T extends object, K extends keyof T>(row: T, ...keys: K[]): Omit<T, K> {
-  const out = { ...row };
-  for (const k of keys) delete out[k];
-  return out;
 }
 
 /**
@@ -213,31 +228,50 @@ function without<T extends object, K extends keyof T>(row: T, ...keys: K[]): Omi
  * right below the original, opened so you can change what differs (a roof's other pitch).
  * Lines the takeoff writes itself (lumber, wall and door materials) come back on their own.
  */
+/** A copy of a takeoff with its items, named `name`, right below the original. */
+async function copyConditionRow(projectId: string, userId: string, id: string, name?: string) {
+  const copy = await copyTakeoff(projectId, id, { name, sizeGroup: null });
+  await logActivity({ projectId, userId, type: "takeoff.condition_copied", description: `Copied a takeoff as "${copy.name}"` });
+  return copy;
+}
+
 export async function copyCondition(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
-  const c = await db.takeoffCondition.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } });
-  if (!c) throw new Error("Takeoff not found");
-  const { items, name, sortOrder } = c;
-  const settings = without(c, "id", "createdAt", "updatedAt", "items", "name", "sortOrder");
-  // Make room right below the original.
-  await db.takeoffCondition.updateMany({ where: { projectId: project.id, sortOrder: { gt: sortOrder } }, data: { sortOrder: { increment: 1 } } });
-  const copy = await db.takeoffCondition.create({
-    data: {
-      ...settings,
-      name: `${name} (copy)`.slice(0, 200),
-      sortOrder: sortOrder + 1,
-      items: {
-        create: items.filter((i) => !isLumberMetric(i.metric)).map((i) => without(i, "id", "conditionId")),
-      },
-    },
-  });
-  if (hasAutoLines(copy.type)) await syncAutoItems(project.id, copy.id);
-  await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.condition_copied", description: `Copied takeoff "${name}"` });
+  const copy = await copyConditionRow(project.id, user.id, str(fd, "id"));
   revalidate(project.id);
   // Back to the plan with the copy's edit panel open.
   const back = returnTo(fd, project.id);
   redirect(`${back}${back.includes("?") ? "&" : "?"}cond=${copy.id}`);
+}
+
+/**
+ * From a shape on the plan: "New takeoff like this…" — a copy of its takeoff (items and all)
+ * under a new name, and the shape moved into it. E.g. one room → "Tile", one wall → "2x6 Walls".
+ */
+export async function copyConditionForShape(input: { projectId: string; measurementId?: string; measurementIds?: string[]; name: string }) {
+  const user = await requireStaff();
+  const data = z
+    .object({ projectId: z.string(), measurementId: z.string().optional(), measurementIds: z.array(z.string()).max(2000).optional(), name: z.string().trim().min(1).max(200) })
+    .parse(input);
+  // One shape, or several picked together (drag a box): the new takeoff is copied from the first one's.
+  const ids = data.measurementIds?.length ? data.measurementIds : data.measurementId ? [data.measurementId] : [];
+  const shapes = await db.takeoffMeasurement.findMany({ where: { id: { in: ids }, sheet: { plan: { projectId: data.projectId } } }, include: { condition: true } });
+  if (!shapes.length) throw new Error("Measurement not found");
+  const first = shapes.find((m) => m.id === ids[0]) ?? shapes[0];
+  if (shapes.some((m) => m.condition.type !== first.condition.type)) throw new Error("Pick shapes of one kind of takeoff (all walls, all areas…)");
+  const copy = await copyConditionRow(data.projectId, user.id, first.conditionId, data.name);
+  // Off a span table: you're picking this one by hand, so the new takeoff is one fixed size.
+  if (first.condition.spanTableId) await db.takeoffCondition.update({ where: { id: copy.id }, data: { spanTableId: null, sizeGroup: null } });
+  await db.takeoffMeasurement.updateMany({ where: { id: { in: shapes.map((m) => m.id) } }, data: { conditionId: copy.id, sizeLocked: false } });
+  if (hasAutoLines(first.condition.type)) await syncAutoItems(data.projectId);
+  if (first.condition.type === "WALL" || first.condition.type === "BEAM")
+    await supportsChanged(
+      data.projectId,
+      shapes.map((m) => ({ type: m.condition.type, sheetId: m.sheetId })),
+    );
+  revalidate(data.projectId);
+  return { id: copy.id, from: first.conditionId, moved: shapes.map((m) => ({ id: m.id, from: m.conditionId })) };
 }
 
 export async function deleteCondition(fd: FormData) {
@@ -777,8 +811,11 @@ export async function createMeasurement(input: {
     },
   });
   if (hasAutoLines(c.type)) await syncAutoItems(data.projectId, c.id);
+  // Joists/rafters on a span table: filed under the size its span calls for.
+  const placed = c.spanTableId ? await placeBySpan(data.projectId, m.id) : null;
+  await supportsChanged(data.projectId, [{ type: c.type, sheetId: data.sheetId }]);
   revalidate(data.projectId);
-  return { id: m.id, isDeduction: m.isDeduction };
+  return { id: m.id, isDeduction: m.isDeduction, conditionId: placed?.conditionId ?? c.id, sizedAs: placed?.size ?? null, sizeNote: placed?.pick?.reason ?? null };
 }
 
 export async function updateMeasurement(input: {
@@ -794,6 +831,7 @@ export async function updateMeasurement(input: {
   arcs?: number[]; // with points: which are arc points
   materialItemId?: string | null; // Doors: change which door this marker is
   cased?: boolean | null; // Windows: cased or not
+  sizeLocked?: boolean; // span-table joists/rafters: false = back to "Auto (span table)"
 }) {
   await requireStaff();
   const data = z
@@ -810,6 +848,7 @@ export async function updateMeasurement(input: {
       arcs: arcsSchema,
       materialItemId: z.string().nullable().optional(),
       cased: z.boolean().nullable().optional(),
+      sizeLocked: z.boolean().optional(),
     })
     .parse(input);
   const m = await db.takeoffMeasurement.findFirst({ where: { id: data.id, sheet: { plan: { projectId: data.projectId } } }, include: { condition: true } });
@@ -817,10 +856,13 @@ export async function updateMeasurement(input: {
   const minPoints = minPointsFor(m.condition.type);
   if (data.points && data.points.length < minPoints) throw new Error("Not enough points for this shape");
   let conditionId: string | undefined;
+  // Onto a span-table takeoff with no size of its own (the one you draw with): sized automatically.
+  let toAuto = false;
   if (data.conditionId && data.conditionId !== m.conditionId) {
     const target = await loadCondition(data.projectId, data.conditionId);
     if (target.type !== m.condition.type) throw new Error("Can only move a shape to a condition of the same type");
     conditionId = target.id;
+    toAuto = !!target.spanTableId && !target.memberSize;
   }
   await db.takeoffMeasurement.update({
     where: { id: m.id },
@@ -834,11 +876,17 @@ export async function updateMeasurement(input: {
       points: data.points ? pointsJson(data.points, data.arcs) : undefined,
       materialItemId: (m.condition.type === "DOOR" || m.condition.type === "WINDOW") && data.materialItemId !== undefined ? await doorItemId(data.materialItemId) : undefined,
       cased: m.condition.type === "WINDOW" && data.cased !== undefined ? data.cased : undefined,
+      // Span-table joists/rafters: picking a size yourself locks it; "Auto" lets the table size it again.
+      sizeLocked: data.sizeLocked !== undefined ? data.sizeLocked : toAuto ? false : conditionId && m.condition.spanTableId ? true : undefined,
     },
   });
   if (hasAutoLines(m.condition.type)) await syncAutoItems(data.projectId);
+  // Reshaped, turned, or back on Auto: the span may call for another size.
+  let placed = null;
+  if ((m.condition.spanTableId && (data.points || data.angle !== undefined || data.sizeLocked === false)) || toAuto) placed = await placeBySpan(data.projectId, m.id);
+  if (data.points || data.conditionId) await supportsChanged(data.projectId, [{ type: m.condition.type, sheetId: m.sheetId }]);
   revalidate(data.projectId);
-  return { ok: true };
+  return { ok: true, conditionId: placed?.conditionId ?? conditionId ?? m.conditionId, sizeNote: placed?.pick?.reason ?? null };
 }
 
 export async function deleteMeasurement(input: { projectId: string; id: string }) {
@@ -848,6 +896,7 @@ export async function deleteMeasurement(input: { projectId: string; id: string }
   if (!m) throw new Error("Measurement not found");
   await db.takeoffMeasurement.delete({ where: { id } });
   if (hasAutoLines(m.condition.type)) await syncAutoItems(projectId, m.conditionId);
+  await supportsChanged(projectId, [{ type: m.condition.type, sheetId: m.sheetId }]);
   revalidate(projectId);
 }
 
@@ -903,11 +952,146 @@ export async function deleteMeasurements(input: { projectId: string; ids: string
   const { projectId, ids } = z.object({ projectId: z.string(), ids: z.array(z.string()).max(2000) }).parse(input);
   const rows = await db.takeoffMeasurement.findMany({
     where: { id: { in: ids }, sheet: { plan: { projectId } } },
-    select: { id: true, conditionId: true, condition: { select: { type: true } } },
+    select: { id: true, conditionId: true, sheetId: true, condition: { select: { type: true } } },
   });
   await db.takeoffMeasurement.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+  await supportsChanged(
+    projectId,
+    rows.map((r) => ({ type: r.condition.type, sheetId: r.sheetId })),
+  );
   for (const conditionId of new Set(rows.filter((r) => hasAutoLines(r.condition.type)).map((r) => r.conditionId))) await syncAutoItems(projectId, conditionId);
   revalidate(projectId);
+}
+
+/** A saved shape as the plan viewer keeps it (for undo). */
+export type SavedShape = {
+  id: string;
+  sheetId: string;
+  conditionId: string;
+  points: [number, number][];
+  arcs: number[];
+  isDeduction: boolean;
+  angle: number;
+  pitch: number | null;
+  pitch2: number | null;
+  height: number | null;
+  materialItemId: string | null;
+  cased: boolean | null;
+};
+
+/**
+ * "Clear takeoff": every shape of one takeoff — on one sheet, or on all of them. Returns what
+ * it removed, so Undo can put it all back.
+ */
+export async function deleteConditionShapes(input: { projectId: string; conditionId: string; sheetId?: string | null }): Promise<SavedShape[]> {
+  const user = await requireStaff();
+  const data = z.object({ projectId: z.string(), conditionId: z.string(), sheetId: z.string().nullable().optional() }).parse(input);
+  const c = await loadCondition(data.projectId, data.conditionId);
+  const rows = await db.takeoffMeasurement.findMany({
+    where: { conditionId: c.id, ...(data.sheetId ? { sheetId: data.sheetId } : {}), sheet: { plan: { projectId: data.projectId } } },
+  });
+  if (!rows.length) return [];
+  await db.takeoffMeasurement.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+  if (hasAutoLines(c.type)) await syncAutoItems(data.projectId, c.id);
+  await supportsChanged(
+    data.projectId,
+    rows.map((r) => ({ type: c.type, sheetId: r.sheetId })),
+  );
+  await logActivity({
+    projectId: data.projectId,
+    userId: user.id,
+    type: "takeoff.cleared",
+    description: `Cleared ${rows.length} measurement${rows.length === 1 ? "" : "s"} from takeoff "${c.name}"${data.sheetId ? " on one sheet" : ""}`,
+  });
+  revalidate(data.projectId);
+  return rows.map((r) => ({
+    id: r.id,
+    sheetId: r.sheetId,
+    conditionId: r.conditionId,
+    points: parsePoints(r.points),
+    arcs: parseArcs(r.points),
+    isDeduction: r.isDeduction,
+    angle: r.angle,
+    pitch: r.pitch,
+    pitch2: r.pitch2,
+    height: r.height,
+    materialItemId: r.materialItemId,
+    cased: r.cased,
+  }));
+}
+
+/** Undo of a delete of many shapes (drag-selected, or a cleared takeoff): all put back at once. Returns their new ids, in order. */
+export async function restoreShapes(input: {
+  projectId: string;
+  shapes: (Pick<SavedShape, "sheetId" | "conditionId" | "points" | "isDeduction" | "angle"> &
+    Partial<Pick<SavedShape, "arcs" | "pitch" | "pitch2" | "height" | "materialItemId" | "cased">>)[];
+}) {
+  await requireStaff();
+  const data = z
+    .object({
+      projectId: z.string(),
+      shapes: z
+        .array(
+          z.object({
+            sheetId: z.string(),
+            conditionId: z.string(),
+            points: z.array(ptSchema).min(1).max(5000),
+            arcs: arcsSchema,
+            isDeduction: z.boolean(),
+            angle: z.number().finite(),
+            pitch: z.number().finite().nullable().optional(),
+            pitch2: z.number().finite().nullable().optional(),
+            height: z.number().finite().nullable().optional(),
+            materialItemId: z.string().nullable().optional(),
+            cased: z.boolean().nullable().optional(),
+          }),
+        )
+        .max(5000),
+    })
+    .parse(input);
+  const sheets = new Set(
+    (await db.takeoffSheet.findMany({ where: { id: { in: [...new Set(data.shapes.map((x) => x.sheetId))] }, plan: { projectId: data.projectId } }, select: { id: true } })).map(
+      (x) => x.id,
+    ),
+  );
+  const conds = new Set(
+    (await db.takeoffCondition.findMany({ where: { id: { in: [...new Set(data.shapes.map((x) => x.conditionId))] }, projectId: data.projectId }, select: { id: true } })).map(
+      (x) => x.id,
+    ),
+  );
+  const ids: (string | null)[] = [];
+  await db.$transaction(async (tx) => {
+    for (const x of data.shapes) {
+      // A takeoff or sheet deleted since: that shape can't come back.
+      if (!sheets.has(x.sheetId) || !conds.has(x.conditionId)) {
+        ids.push(null);
+        continue;
+      }
+      const m = await tx.takeoffMeasurement.create({
+        data: {
+          sheetId: x.sheetId,
+          conditionId: x.conditionId,
+          points: pointsJson(x.points, x.arcs),
+          isDeduction: x.isDeduction,
+          angle: x.angle,
+          pitch: x.pitch ?? null,
+          pitch2: x.pitch2 ?? null,
+          height: x.height ?? null,
+          materialItemId: x.materialItemId ?? null,
+          cased: x.cased ?? null,
+        },
+      });
+      ids.push(m.id);
+    }
+  });
+  await syncAutoItems(data.projectId);
+  const types = await db.takeoffCondition.findMany({ where: { id: { in: [...conds] } }, select: { id: true, type: true } });
+  await supportsChanged(
+    data.projectId,
+    data.shapes.map((x) => ({ type: types.find((t) => t.id === x.conditionId)?.type ?? "", sheetId: x.sheetId })),
+  );
+  revalidate(data.projectId);
+  return { ids };
 }
 
 /** Minimal condition created from the viewer; details can be filled in on the Takeoff page. */

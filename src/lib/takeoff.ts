@@ -464,6 +464,11 @@ export type MeasurementShape = {
   height?: number | null; // Linear: this line's own wall height (ft); null/undefined = the condition's
   arcs?: number[] | null; // indexes of arc points (see arcPath)
   door?: { widthIn: number; heightIn: number; cased?: boolean | null } | null; // Doors / windows: the unit picked for this marker
+  /**
+   * Joists/rafters on a span table: the member lengths (ft, pitch and overhang in) this shape gives
+   * this takeoff — where some of its joists need another size, those go to that size's takeoff.
+   */
+  memberLengths?: number[] | null;
 };
 
 /** Conditions whose shapes become pieces of lumber. */
@@ -568,6 +573,7 @@ export function addMetrics(a: Metrics, b: Metrics): Metrics {
 
 /** Framing members for one shape, in feet, with pitch and overhang applied. */
 export function framingLengths(c: ConditionCalc, m: MeasurementShape, unitsPerFoot: number) {
+  if (m.memberLengths) return m.memberLengths;
   const members = framingMembers(shapePath(c.type, m), m.angle, (c.spacing / 12) * unitsPerFoot, memberThickness(c.memberSize, unitsPerFoot, c.memberWidthIn));
   const factor = slopeFactor(m.pitch ?? c.pitch);
   return members.map(([a, b]) => (dist(a, b) / unitsPerFoot + c.overhang / 12) * factor);
@@ -1263,8 +1269,12 @@ export function parseOptions<T extends Record<string, unknown>>(json: string | n
 export type AutoLine = { key: string; name: string; unit: "ea" | "sf" | "lf"; qty: number; category: string; waste: boolean };
 export type WallLine = AutoLine;
 
-/** One traced wall run, in feet: corners are the bends (and the closing corner of a closed run). */
-export type WallRun = { lengthFt: number; closed: boolean; corners: number };
+/**
+ * One traced wall run, in feet: corners are the bends (and the closing corner of a closed run).
+ * Walls joined from separate pieces (see wallNetworks) also carry `ends` — the studs that
+ * close their open ends — and `cuts`, each piece's length for the plates.
+ */
+export type WallRun = { lengthFt: number; closed: boolean; corners: number; ends?: number; cuts?: number[] };
 
 export function wallRun(points: Pt[], unitsPerFoot: number, arcs: number[] = []): WallRun {
   const lengthFt = polylineLength(arcPath(points, arcs, false)) / unitsPerFoot;
@@ -1272,6 +1282,71 @@ export function wallRun(points: Pt[], unitsPerFoot: number, arcs: number[] = [])
   // Bends are the inside vertices; arc points sit on a curved wall, not at a corner.
   const bends = points.slice(1, -1).filter((_, i) => !arcs.includes(i + 1)).length;
   return { lengthFt, closed, corners: bends + (closed ? 1 : 0) };
+}
+
+/**
+ * Walls drawn as separate pieces (one per wall, so each can be changed on its own) still
+ * frame like one run where they meet: pieces whose ends meet (within 6") are joined, each
+ * meeting is a corner, and only the run's open ends get a closing stud. Pieces on different
+ * sheets never join. A piece by itself counts exactly as `wallRun` does.
+ */
+export function wallNetworks(pieces: { sheetId: string; points: Pt[]; arcs?: number[]; unitsPerFoot: number }[]): WallRun[] {
+  const out: WallRun[] = [];
+  const bySheet = new Map<string, typeof pieces>();
+  for (const p of pieces) bySheet.set(p.sheetId, [...(bySheet.get(p.sheetId) ?? []), p]);
+  for (const list of bySheet.values()) {
+    const runs = list.map((p) => wallRun(p.points, p.unitsPerFoot, p.arcs ?? []));
+    // Ends that meet are one node.
+    const nodes: { at: Pt; tol: number; pieces: number[]; toward: Pt[] }[] = [];
+    const nodeOf = (pt: Pt, tol: number) => {
+      const n = nodes.find((x) => dist(x.at, pt) <= Math.max(tol, x.tol));
+      if (n) return n;
+      const fresh = { at: pt, tol, pieces: [] as number[], toward: [] as Pt[] };
+      nodes.push(fresh);
+      return fresh;
+    };
+    list.forEach((p, i) => {
+      if (runs[i].closed || p.points.length < 2) return;
+      const last = p.points.length - 1;
+      for (const [pt, next] of [
+        [p.points[0], p.points[1]],
+        [p.points[last], p.points[last - 1]],
+      ]) {
+        const n = nodeOf(pt, 0.5 * p.unitsPerFoot);
+        n.pieces.push(i);
+        n.toward.push(next);
+      }
+    });
+    // Pieces joined through shared ends: one run.
+    const group = list.map((_, i) => i);
+    const root = (i: number): number => (group[i] === i ? i : (group[i] = root(group[i])));
+    for (const n of nodes) for (const i of n.pieces.slice(1)) group[root(i)] = root(n.pieces[0]);
+    const members = new Map<number, number[]>();
+    list.forEach((_, i) => members.set(root(i), [...(members.get(root(i)) ?? []), i]));
+    for (const idx of members.values()) {
+      if (idx.length === 1) {
+        out.push(runs[idx[0]]);
+        continue;
+      }
+      const mine = nodes.filter((n) => n.pieces.length && idx.includes(n.pieces[0]));
+      // Two pieces carrying straight on (a wall drawn in two) meet without a corner.
+      const straightOn = (n: (typeof nodes)[number]) => {
+        if (n.pieces.length !== 2) return false;
+        const [a, b] = n.toward.map((t) => Math.atan2(t[1] - n.at[1], t[0] - n.at[0]));
+        return Math.abs((Math.abs(a - b) % (2 * Math.PI)) - Math.PI) < (15 * Math.PI) / 180;
+      };
+      const meetings = mine.reduce((sum, n) => sum + (straightOn(n) ? 0 : Math.max(0, n.pieces.length - 1)), 0);
+      const openEnds = mine.filter((n) => n.pieces.length === 1).length;
+      out.push({
+        lengthFt: idx.reduce((sum, i) => sum + runs[i].lengthFt, 0),
+        closed: openEnds === 0,
+        corners: idx.reduce((sum, i) => sum + runs[i].corners, 0) + meetings,
+        ends: Math.ceil(openEnds / 2),
+        cuts: idx.map((i) => runs[i].lengthFt),
+      });
+    }
+  }
+  return out;
 }
 
 /** Precut stud lengths sold for 8', 9' and 10' walls. */
@@ -1314,9 +1389,11 @@ export function wallTakeoff(wall: { studSize: string; spacing: number; heightFt:
   for (const r of runs) {
     if (!(r.lengthFt > 0)) continue;
     length += r.lengthFt;
-    studs += Math.ceil((r.lengthFt * 12) / Math.max(1, wall.spacing) - 1e-9) + (r.closed ? 0 : 1) + r.corners * Math.max(0, o.cornerStuds);
-    for (let i = 0; i < Math.max(0, o.topPlates); i++) topCuts.push(r.lengthFt);
-    for (let i = 0; i < Math.max(0, o.bottomPlates); i++) bottomCuts.push(r.lengthFt);
+    studs += Math.ceil((r.lengthFt * 12) / Math.max(1, wall.spacing) - 1e-9) + (r.ends ?? (r.closed ? 0 : 1)) + r.corners * Math.max(0, o.cornerStuds);
+    for (const cut of r.cuts ?? [r.lengthFt]) {
+      for (let i = 0; i < Math.max(0, o.topPlates); i++) topCuts.push(cut);
+      for (let i = 0; i < Math.max(0, o.bottomPlates); i++) bottomCuts.push(cut);
+    }
   }
   const area = length * wall.heightFt;
   const stud = wall.studSize.trim() || "2x4";

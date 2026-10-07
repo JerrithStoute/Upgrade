@@ -35,12 +35,12 @@ export function CostCodeCsvImport({ existing, action }: { existing: ExistingCost
       <div className="text-sm text-slate-600">
         <p>
           Upload a comma-delimited <strong>.csv</strong> file. <strong>Column A</strong> is the group (used exactly as written; one group per unique value).{" "}
-          <strong>Column B</strong> is the cost code; it goes into the group on the same row. If Column B starts with a number, that number becomes the code and the rest
-          becomes the name — e.g. <code className="rounded bg-slate-100 px-1">09-410 Tile Material</code>.
+          <strong>Column B</strong> is the cost code; it goes into the group on the same row. If Column B starts with a number, that number becomes the code and the rest becomes
+          the name — e.g. <code className="rounded bg-slate-100 px-1">09-410 Tile Material</code>.
         </p>
         <p className="mt-1">
-          This <strong>replaces the entire cost code list</strong>. Existing codes with the same name are kept so estimates and expenses stay linked; all others are
-          deleted. You&apos;ll see a preview before anything changes.
+          This <strong>replaces the entire cost code list</strong>. Existing codes with the same name are kept so estimates and expenses stay linked; all others are deleted.
+          You&apos;ll see a preview before anything changes.
         </p>
       </div>
 
@@ -101,7 +101,11 @@ export function CostCodeCsvImport({ existing, action }: { existing: ExistingCost
                 {plan.removed.map((r) => (
                   <li key={r.id}>
                     {r.code ? <span className="font-mono">{r.code} </span> : null}
-                    {r.name} <span className="text-xs text-slate-500">({r.division}{r.refs ? ` · used ${r.refs}×` : ""})</span>
+                    {r.name}{" "}
+                    <span className="text-xs text-slate-500">
+                      ({r.division}
+                      {r.refs ? ` · used ${r.refs}×` : ""})
+                    </span>
                   </li>
                 ))}
               </ul>

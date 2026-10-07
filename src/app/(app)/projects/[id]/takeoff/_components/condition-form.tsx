@@ -59,6 +59,8 @@ export type ConditionFormValues = {
   /** Joists/rafters: how cuts are packed into boards (WASTE | CHEAPEST | LENGTH) and the length for LENGTH. */
   packMode?: string;
   packLength?: number | null;
+  /** Joists/rafters: the span table that sizes each area (null = one size for all). */
+  spanTableId?: string | null;
   /** Job takeoffs: every member's length and the board prices, to compare the packings. */
   packing?: { cuts: number[]; prices: LengthPrices | null };
 };
@@ -92,6 +94,7 @@ export function ConditionForm({
   codeRules = {},
   assemblyItems,
   toolbox,
+  spanTables = [],
 }: {
   action: (fd: FormData) => Promise<void>;
   /** Hidden fields identifying where the condition lives (projectId, or templateId). */
@@ -111,6 +114,8 @@ export function ConditionForm({
   assemblyItems?: ItemOption[];
   /** New takeoffs (admins): your takeoff templates, to add it to one as well. */
   toolbox?: { id: string; name: string }[];
+  /** Settings → Span tables, for "Size by span table" on joists / rafters. */
+  spanTables?: { id: string; name: string; use: string }[];
 }) {
   const [type, setType] = useState<ConditionType>((values?.type as ConditionType) ?? "AREA");
   const [metric, setMetric] = useState(values?.metric ?? DEFAULT_METRIC[type]);
@@ -119,6 +124,7 @@ export function ConditionForm({
   const [pitch2Text, setPitch2Text] = useState(values?.pitch2 == null ? "" : String(values.pitch2));
   const pitch2 = pitch2Text.trim() === "" ? pitch : Math.max(0, Number(pitch2Text) || 0);
   const [sizeId, setSizeId] = useState(values?.memberSizeId ?? "");
+  const [spanTableId, setSpanTableId] = useState(values?.spanTableId ?? "");
   const [stockText, setStockText] = useState(values?.stockLengths ?? "");
   const [pack, setPack] = useState<PackMode>((values?.packMode as PackMode) ?? "WASTE");
   const [packLengthText, setPackLengthText] = useState(values?.packLength ? String(values.packLength) : "");
@@ -294,12 +300,43 @@ export function ConditionForm({
           </Field>
         ) : null}
       </FormGrid>
+      {type === "FRAMING" ? (
+        <FormGrid className="md:grid-cols-4">
+          <Field
+            label="Size"
+            htmlFor={p("spanTableId")}
+            className="md:col-span-2"
+            hint={
+              spanTableId
+                ? "Each area you draw gets the size its longest span calls for — the longest stretch a joist runs between the walls or beams you've traced — and goes into that size's takeoff (made for you). Click an area to pick a size yourself."
+                : spanTables.length
+                  ? "Or let a span table pick the size for each area."
+                  : "Make a span table in Settings → Span tables to have sizes picked for you."
+            }
+          >
+            <select id={p("spanTableId")} name="spanTableId" className="input" value={spanTableId} onChange={(e) => setSpanTableId(e.target.value)}>
+              <option value="">One size — the member size below</option>
+              {spanTables.map((t) => (
+                <option key={t.id} value={t.id}>
+                  By span table: {t.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </FormGrid>
+      ) : null}
       {isMember ? (
         <FormGrid className="md:grid-cols-4">
           <Field
-            label="Member size"
+            label={type === "FRAMING" && spanTableId ? "This takeoff's size" : "Member size"}
             htmlFor={p("memberSizeId")}
-            hint={size ? SOLD_AS_LABELS[size.soldAs as keyof typeof SOLD_AS_LABELS] : "Sizes are managed in Settings → Member sizes"}
+            hint={
+              type === "FRAMING" && spanTableId
+                ? "Leave blank: you draw with this takeoff, and each area goes to a takeoff of its size (made for you)"
+                : size
+                  ? SOLD_AS_LABELS[size.soldAs as keyof typeof SOLD_AS_LABELS]
+                  : "Sizes are managed in Settings → Member sizes"
+            }
           >
             <select
               id={p("memberSizeId")}

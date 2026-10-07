@@ -2,24 +2,7 @@ import { Pencil, Plus, X, Hash, FileUp, CheckCircle2 } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cn, costCodeLabel } from "@/lib/utils";
-import {
-  Button,
-  ButtonLink,
-  Card,
-  CardHeader,
-  Collapsible,
-  ConfirmForm,
-  EmptyState,
-  Field,
-  FormGrid,
-  SubmitButton,
-  Table,
-  THead,
-  TBody,
-  Tr,
-  Th,
-  Td,
-} from "@/components/ui";
+import { Button, ButtonLink, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
 import { createCostCode, updateCostCode, toggleCostCodeActive, deleteCostCode, replaceCostCodesFromCsv } from "./actions";
 import { CostCodeCsvImport } from "./_components/csv-import";
 
@@ -183,7 +166,9 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
             <Td>{c.division}</Td>
             <Td right>{c.sortOrder}</Td>
             <Td right>
-              <span title={`${c._count.estimateItems} estimate items · ${c._count.templateItems} template items · ${c._count.changeOrderItems} change order items · ${c._count.expenses} expenses · ${c._count.selections} selections`}>
+              <span
+                title={`${c._count.estimateItems} estimate items · ${c._count.templateItems} template items · ${c._count.changeOrderItems} change order items · ${c._count.expenses} expenses · ${c._count.selections} selections`}
+              >
                 {refs || "—"}
               </span>
             </Td>
@@ -194,9 +179,7 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
                   type="submit"
                   className={cn(
                     "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
-                    c.active
-                      ? "bg-emerald-50 text-emerald-800 ring-emerald-200 hover:bg-emerald-100"
-                      : "bg-slate-100 text-slate-600 ring-slate-200 hover:bg-slate-200",
+                    c.active ? "bg-emerald-50 text-emerald-800 ring-emerald-200 hover:bg-emerald-100" : "bg-slate-100 text-slate-600 ring-slate-200 hover:bg-slate-200",
                   )}
                   title={c.active ? "Click to deactivate" : "Click to activate"}
                 >

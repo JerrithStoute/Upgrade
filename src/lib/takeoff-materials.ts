@@ -112,8 +112,10 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
   for (const c of conditions) {
     if (c.referenceOnly) continue;
     const measurements = planId ? c.measurements.filter((m) => m.sheet.plan.id === planId) : c.measurements;
-    if (measurements.length === 0) continue;
-    const totals = conditionTotals({ ...c, measurements });
+    // Span-table joists handed to this size by other areas (on this plan).
+    const extra = (c.bandSplit?.extra ?? []).filter((x) => !planId || x.sheet.plan.id === planId);
+    if (measurements.length === 0 && extra.length === 0) continue;
+    const totals = conditionTotals({ ...c, measurements, bandSplit: c.bandSplit ? { ...c.bandSplit, extra } : c.bandSplit });
 
     if (c.items.length > 0) {
       for (const i of c.items) {

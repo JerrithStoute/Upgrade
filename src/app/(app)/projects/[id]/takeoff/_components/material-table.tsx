@@ -110,8 +110,9 @@ export function MaterialTable({
             What each stock board is cut into. Short pieces within a condition share boards; identical boards are grouped. 1/8&quot; saw kerf allowed per cut.
           </p>
           <div className="space-y-3">
-            {cutLists.map((c) => (
-              <div key={c.condition} className="break-inside-avoid">
+            {cutLists.map((c, i) => (
+              // Two takeoffs can share a name (a "2x6 Rafters" on each plan): keyed by place, not name.
+              <div key={`${i}:${c.condition}`} className="break-inside-avoid">
                 <p className="text-sm font-medium text-slate-900">
                   {c.condition}
                   {c.size ? <span className="font-normal text-slate-500"> · {c.size}</span> : null}

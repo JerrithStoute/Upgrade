@@ -7,7 +7,17 @@ import { MEMBER_KINDS, MEMBER_KIND_LABELS, SOLD_AS, SOLD_AS_LABELS } from "@/lib
 import { Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
 import { createMemberSize, deleteMemberSize, updateMemberSize } from "./actions";
 
-type SizeValues = { id: string; name: string; kind: string; widthIn: number; depthIn: number; soldAs: string; stockLengths: string | null; boardFeet: boolean };
+type SizeValues = {
+  id: string;
+  name: string;
+  kind: string;
+  widthIn: number;
+  depthIn: number;
+  soldAs: string;
+  stockLengths: string | null;
+  boardFeet: boolean;
+  color: string | null;
+};
 
 const SOLD_AS_SHORT: Record<string, string> = { STOCK: "Stock lengths", EXACT_LF: "Exact length · per lf", LF: "Lineal feet" };
 
@@ -54,6 +64,20 @@ function SizeForm({ action, values }: { action: (fd: FormData) => Promise<void>;
           Report board feet
         </label>
       </FormGrid>
+      <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" name="useColor" defaultChecked={!!values?.color} className="h-4 w-4 rounded border-slate-300" />
+          Its own color on the plan
+        </label>
+        <input
+          aria-label="Color"
+          type="color"
+          name="color"
+          defaultValue={values?.color ?? "#ea580c"}
+          className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+        />
+        <span className="text-xs text-slate-500">Joist and rafter takeoffs of this size use it, on every job — so a 2x8 looks the same everywhere.</span>
+      </div>
       <div className="flex items-center gap-2">
         <SubmitButton>{values ? "Save size" : "Add size"}</SubmitButton>
         {values ? (
@@ -81,9 +105,9 @@ export default async function MemberSizesPage({ searchParams }: { searchParams: 
   return (
     <div className="space-y-5">
       <p className="text-sm text-slate-600">
-        Joist and rafter members you can pick on a takeoff condition. <strong>Sold as</strong> decides how they reach the Material List and estimate: stock-length pieces priced each
-        (&ldquo;2x6 × 20&apos;&rdquo;), made-to-order members listed per exact length and priced per lf (open-web trusses), or one lineal-foot total. Prices live in the Item List under
-        Framing Lumber.
+        Joist and rafter members you can pick on a takeoff condition. <strong>Sold as</strong> decides how they reach the Material List and estimate: stock-length pieces priced
+        each (&ldquo;2x6 × 20&apos;&rdquo;), made-to-order members listed per exact length and priced per lf (open-web trusses), or one lineal-foot total. Prices live in the Item
+        List under Framing Lumber.
       </p>
       <Collapsible
         defaultOpen={sizes.length === 0}
@@ -127,7 +151,8 @@ export default async function MemberSizesPage({ searchParams }: { searchParams: 
                 ) : (
                   <Tr key={s.id}>
                     <Td>
-                      <span id={`size-${s.id}`} className="scroll-mt-24 font-medium text-slate-900">
+                      <span id={`size-${s.id}`} className="flex scroll-mt-24 items-center gap-2 font-medium text-slate-900">
+                        {s.color ? <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: s.color }} title="Its color on the plan" /> : null}
                         {s.name}
                       </span>
                     </Td>
@@ -144,7 +169,12 @@ export default async function MemberSizesPage({ searchParams }: { searchParams: 
                         <Link href={`/settings/member-sizes?edit=${s.id}#size-${s.id}`} className={buttonClasses("ghost", "sm")}>
                           <Pencil className="h-3.5 w-3.5" /> Edit
                         </Link>
-                        <ConfirmForm action={deleteMemberSize} hidden={{ id: s.id }} message={`Delete "${s.name}"? Takeoffs using it keep the name but lose its settings.`} variant="ghost">
+                        <ConfirmForm
+                          action={deleteMemberSize}
+                          hidden={{ id: s.id }}
+                          message={`Delete "${s.name}"? Takeoffs using it keep the name but lose its settings.`}
+                          variant="ghost"
+                        >
                           <span className="text-xs text-rose-600">Delete</span>
                         </ConfirmForm>
                       </div>

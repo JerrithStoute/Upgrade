@@ -31,6 +31,7 @@ import {
   inchesText,
   precutStudLength,
   wallRun,
+  wallNetworks,
   wallTakeoff,
   arcPath,
   parseArcs,
@@ -499,6 +500,31 @@ describe("walls", () => {
     near(qty(lines, "sheathing"), 576 / 32, 1e-9, "OSB sheets");
     near(qty(lines, "drywall"), 576 / 32, 1e-9, "drywall sheets");
     assert.equal(qty(lines, "base"), 64);
+  });
+
+  it("the same loop as four separate walls (Find walls) frames the same: corners where they meet", () => {
+    const walls = [0, 1, 2, 3].map((i) => ({ sheetId: "s", points: [ROOM[i], ROOM[(i + 1) % 4]] as Pt[], unitsPerFoot: UPF }));
+    const joined = wallNetworks(walls);
+    assert.equal(joined.length, 1);
+    const a = wallTakeoff(extWall, ext, joined).lines;
+    const b = wallTakeoff(extWall, ext, [wallRun(loop, UPF)]).lines;
+    assert.equal(qty(a, "studs"), qty(b, "studs"));
+    // Plates go wall by wall (a plate can't turn a corner): 20' walls take a 16' and a piece.
+    assert.ok(qty(a, "top:16") >= qty(b, "top:16"));
+    // Two walls of an L: one closing stud, one corner — like the L traced as one run.
+    const l = wallNetworks(walls.slice(0, 2));
+    assert.deepEqual(
+      wallTakeoff(extWall, ext, l).lines.find((x) => x.key === "studs")?.qty,
+      wallTakeoff(extWall, ext, [wallRun([ROOM[0], ROOM[1], ROOM[2]], UPF)]).lines.find((x) => x.key === "studs")?.qty,
+    );
+    // A wall by itself, or on another sheet, counts on its own.
+    assert.equal(wallNetworks([walls[0], { ...walls[1], sheetId: "other" }]).length, 2);
+    // A wall drawn in two straight pieces: no corner where they meet.
+    const half = [
+      { sheetId: "s", points: [ROOM[0], [(ROOM[0][0] + ROOM[1][0]) / 2, ROOM[0][1]]] as Pt[], unitsPerFoot: UPF },
+      { sheetId: "s", points: [[(ROOM[0][0] + ROOM[1][0]) / 2, ROOM[0][1]], ROOM[1]] as Pt[], unitsPerFoot: UPF },
+    ];
+    assert.equal(wallNetworks(half)[0].corners, 0);
   });
 
   it("an open interior run: closing stud, plates packed together, drywall both sides", () => {

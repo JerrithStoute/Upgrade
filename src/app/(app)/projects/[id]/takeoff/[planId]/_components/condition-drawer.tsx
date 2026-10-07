@@ -33,6 +33,7 @@ export function ConditionDrawer({
   pricesLocked,
   nextColor,
   toolbox,
+  spanTables,
   closeHref,
   stayHref,
 }: {
@@ -47,6 +48,7 @@ export function ConditionDrawer({
   pricesLocked?: boolean;
   nextColor: string;
   toolbox?: { id: string; name: string }[];
+  spanTables?: { id: string; name: string; use: string }[];
   closeHref: string; // the viewer without the panel
   stayHref: string; // the viewer with this panel open
 }) {
@@ -91,6 +93,7 @@ export function ConditionDrawer({
           itemOptions={items}
           assemblyItems={items}
           toolbox={toolbox}
+          spanTables={spanTables}
           defaultMarkup={defaultMarkup}
           values={condition ?? undefined}
           hasMeasurements={condition?.hasMeasurements}

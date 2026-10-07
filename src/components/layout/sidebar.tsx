@@ -177,7 +177,8 @@ export function AppMain({ children }: { children: React.ReactNode }) {
   const wide = isPlanViewer(usePathname());
   return (
     <main className={cn("flex-1 px-4", wide ? "pb-20 pt-4 md:px-5 md:pb-3" : "pb-20 pt-6 md:px-8 md:pb-8")}>
-      <div className={cn("mx-auto w-full", !wide && "max-w-7xl")}>{children}</div>
+      {/* No width cap on paper: a full-size (36") plan sheet uses the whole page. */}
+      <div className={cn("mx-auto w-full print:max-w-none", !wide && "max-w-7xl")}>{children}</div>
     </main>
   );
 }

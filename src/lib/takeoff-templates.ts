@@ -28,6 +28,7 @@ function conditionData(c: {
   stockLengths: string | null;
   packMode: string;
   packLength: number | null;
+  spanTableId?: string | null;
 }) {
   return {
     name: c.name,
@@ -53,6 +54,7 @@ function conditionData(c: {
     stockLengths: c.stockLengths,
     packMode: c.packMode,
     packLength: c.packLength,
+    spanTableId: c.spanTableId ?? null,
   };
 }
 
@@ -113,6 +115,8 @@ export async function applyTemplate(templateId: string, projectId: string) {
   const added: string[] = [];
   const skipped: string[] = [];
 
+  // A span table deleted since the template was saved: that takeoff goes back to its fixed size.
+  const tables = new Set((await db.spanTable.findMany({ select: { id: true } })).map((t) => t.id));
   await db.$transaction(async (tx) => {
     for (const c of template.conditions) {
       if (taken.has(itemNameKey(c.name))) {
@@ -123,6 +127,7 @@ export async function applyTemplate(templateId: string, projectId: string) {
       await tx.takeoffCondition.create({
         data: {
           ...conditionData(c),
+          spanTableId: c.spanTableId && tables.has(c.spanTableId) ? c.spanTableId : null,
           projectId,
           sortOrder: sortOrder++,
           items: {

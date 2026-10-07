@@ -16,6 +16,11 @@ import {
   polylineLength,
   withMemberSize,
   withWaste,
+  framingMembers,
+  framingLengths,
+  memberThickness,
+  shapePath,
+  type Pt,
   DEFAULT_OPENING_OPTIONS,
   DEFAULT_DOOR_OPTIONS,
   DEFAULT_WINDOW_OPTIONS,
@@ -27,7 +32,7 @@ import {
   autoMetricPrefix,
   openingTakeoff,
   parseOptions,
-  wallRun,
+  wallNetworks,
   wallTakeoff,
   wasteBoards,
   roundOncePerItem,
@@ -44,6 +49,7 @@ import {
   type MetricKey,
   type Metrics,
 } from "./takeoff";
+import { memberSizes, pickSize, spanSpec } from "./span-tables";
 
 /**
  * Conditions with their measurements (and each measurement's sheet scale) and assembly items,
@@ -51,7 +57,72 @@ import {
  */
 export async function loadConditions(projectId: string) {
   const conditions = await findConditions(projectId);
-  return withLengthPrices(conditions);
+  return withSizeBands(await withLengthPrices(conditions));
+}
+
+/** Joists of a span-table area that need another size, given to that size's takeoff: the sheet they're on and their lengths. */
+export type BandExtra = { sheet: Awaited<ReturnType<typeof findConditions>>[number]["measurements"][number]["sheet"]; angle: number; pitch: number | null; lengths: number[] };
+
+/**
+ * Joists/rafters on a span table: each joist is ordered at the size its own unsupported span
+ * calls for. A joist area sits in the takeoff of its biggest size, but where some of its joists
+ * need a smaller (or other) size — a wall holds them up partway — those joists are counted in
+ * that size's takeoff of the family instead (one takeoff per size: "Joists 2x8", "Joists 2x10").
+ * `bandSplit.own`: a shape's joists that stay (by measurement id); `bandSplit.extra`: joists
+ * given to this takeoff by shapes in the others. Shapes you sized yourself stay whole.
+ */
+function withSizeBands<T extends Awaited<ReturnType<typeof findConditions>>[number]>(conditions: T[]) {
+  const families = new Map<string, T[]>();
+  for (const c of conditions) if (c.type === "FRAMING" && c.spanTable) families.set(c.sizeGroup ?? c.id, [...(families.get(c.sizeGroup ?? c.id) ?? []), c]);
+  const empty = { own: new Map<string, number[]>(), extra: [] as BandExtra[], owners: new Map<string, string[]>() };
+  if (!families.size) return conditions.map((c) => ({ ...c, bandSplit: empty }));
+
+  // What holds joists up, sheet by sheet: the walls and beams traced on it.
+  const supports = new Map<string, [Pt, Pt][]>();
+  for (const c of conditions) {
+    if (c.type !== "WALL" && c.type !== "BEAM") continue;
+    for (const m of c.measurements) {
+      if (m.isDeduction) continue;
+      const path = arcPath(parsePoints(m.points), parseArcs(m.points), false);
+      const list = supports.get(m.sheetId) ?? [];
+      for (let i = 1; i < path.length; i++) list.push([path[i - 1], path[i]]);
+      supports.set(m.sheetId, list);
+    }
+  }
+
+  const own = new Map<string, number[]>();
+  const extra = new Map<string, BandExtra[]>();
+  // Which takeoff each joist of a split area is ordered under (in layout order) — the plan colors them so.
+  const owners = new Map<string, string[]>();
+  for (const family of families.values()) {
+    const bySize = new Map(family.filter((f) => f.memberSize).map((f) => [itemNameKey(f.memberSize!), f]));
+    for (const c of family) {
+      const calc = withMemberSize(c, c.memberSizeRef);
+      const table = spanSpec(c.spanTable!);
+      for (const m of c.measurements) {
+        const upf = m.sheet.unitsPerFoot;
+        if (!upf || m.isDeduction || m.sizeLocked) continue;
+        const shape = { points: parsePoints(m.points), arcs: parseArcs(m.points), isDeduction: false, angle: m.angle, pitch: m.pitch };
+        const members = framingMembers(shapePath(c.type, shape), m.angle, (c.spacing / 12) * upf, memberThickness(c.memberSize, upf, c.memberSizeRef?.widthIn));
+        const lengths = framingLengths(calc, shape, upf);
+        const { sizes } = memberSizes(members, supports.get(m.sheetId) ?? [], (span) => pickSize(table, span / upf, c.spacing).size, (4 / 12) * upf);
+        const mine: number[] = [];
+        const away = new Map<string, number[]>();
+        const whose: string[] = [];
+        sizes.forEach((size, i) => {
+          const to = size ? bySize.get(itemNameKey(size)) : undefined;
+          whose.push(to?.id ?? c.id);
+          if (!to || to.id === c.id) mine.push(lengths[i]);
+          else away.set(to.id, [...(away.get(to.id) ?? []), lengths[i]]);
+        });
+        if (!away.size) continue;
+        own.set(m.id, mine);
+        owners.set(m.id, whose);
+        for (const [to, ls] of away) extra.set(to, [...(extra.get(to) ?? []), { sheet: m.sheet, angle: m.angle, pitch: m.pitch, lengths: ls }]);
+      }
+    }
+  }
+  return conditions.map((c) => ({ ...c, bandSplit: { own, extra: extra.get(c.id) ?? [], owners } }));
 }
 
 /**
@@ -95,6 +166,7 @@ function findConditions(projectId: string) {
     include: {
       costCode: { select: { id: true, code: true, name: true } },
       memberSizeRef: { select: { id: true, name: true, kind: true, widthIn: true, depthIn: true, boardFeet: true, soldAs: true } },
+      spanTable: true,
       items: {
         orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
         include: {
@@ -153,10 +225,19 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
       pitch2: m.pitch2,
       height: m.height,
       door: doorSize(m.materialItem, m.cased),
+      // Span-table joists: only the ones this takeoff's size is for (the rest are in their size's takeoff).
+      memberLengths: c.bandSplit?.own.get(m.id) ?? null,
     },
     unitsPerFoot: m.sheet.unitsPerFoot,
     sheet: m.sheet,
   }));
+  // …and the joists other areas of the family hand to this size.
+  for (const x of c.bandSplit?.extra ?? [])
+    shapes.push({
+      m: { points: [], arcs: [], isDeduction: false, angle: x.angle, pitch: x.pitch, pitch2: null, height: null, door: null, memberLengths: x.lengths },
+      unitsPerFoot: x.sheet.unitsPerFoot,
+      sheet: x.sheet,
+    });
   for (const s of shapes) {
     if (!s.unitsPerFoot && !isCountType(c.type)) unscaledShapes++;
     const mm = measurementMetrics(calc, s.m, s.unitsPerFoot);
@@ -195,7 +276,8 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
   let unassignedDoors = 0;
   const scaled = c.measurements.filter((m) => m.sheet.unitsPerFoot && !m.isDeduction);
   if (c.type === "WALL") {
-    const runs = scaled.map((m) => wallRun(parsePoints(m.points), m.sheet.unitsPerFoot!, parseArcs(m.points)));
+    // One measurement per wall (Find walls) or a traced run — walls meeting at corners frame as one.
+    const runs = wallNetworks(scaled.map((m) => ({ sheetId: m.sheet.id, points: parsePoints(m.points), arcs: parseArcs(m.points), unitsPerFoot: m.sheet.unitsPerFoot! })));
     wallLines.push(...wallTakeoff({ studSize: c.memberSize ?? "", spacing: c.spacing, heightFt: c.height }, parseOptions(c.options, DEFAULT_WALL_OPTIONS), runs).lines);
   } else if (c.type === "WINDOW") {
     const windows = c.measurements.map((m) => {
@@ -225,7 +307,9 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
   const soldAs = c.memberSizeRef?.soldAs ?? "STOCK";
   const waste = c.type === "FRAMING" && soldAs !== "LF" ? wasteBoards(needed, c.wastePct) : null;
   const order: [number, number][] =
-    (c.type === "HIP_VALLEY" || c.type === "BEAM") && soldAs !== "LF" ? needed.map(([len, n]) => [len, Math.ceil(withWaste(n, c.wastePct) - 1e-9)]) : withWasteBoards(needed, waste);
+    (c.type === "HIP_VALLEY" || c.type === "BEAM") && soldAs !== "LF"
+      ? needed.map(([len, n]) => [len, Math.ceil(withWaste(n, c.wastePct) - 1e-9)])
+      : withWasteBoards(needed, waste);
   const quantity = metrics[c.metric as MetricKey] ?? 0;
   const orderLf = order.reduce((sum, [len, n]) => sum + len * n, 0);
   const neededLf = needed.reduce((sum, [len, n]) => sum + len * n, 0);

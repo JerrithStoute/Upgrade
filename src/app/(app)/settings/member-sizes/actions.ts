@@ -28,6 +28,7 @@ async function sizeFields(fd: FormData, id?: string) {
     soldAs: (SOLD_AS as readonly string[]).includes(soldAs) ? soldAs : "STOCK",
     stockLengths,
     boardFeet: boolField(fd, "boardFeet"),
+    color: /^#[0-9a-f]{6}$/i.test(str(fd, "color")) && boolField(fd, "useColor") ? str(fd, "color").toLowerCase() : null,
   };
 }
 
@@ -51,6 +52,8 @@ export async function updateMemberSize(fd: FormData) {
     // Conditions show the size by name.
     db.takeoffCondition.updateMany({ where: { memberSizeId: id }, data: { memberSize: data.name } }),
     db.takeoffTemplateCondition.updateMany({ where: { memberSizeId: id }, data: { memberSize: data.name } }),
+    // Its color: every joist / rafter takeoff of this size, on every job (walls keep their own).
+    ...(data.color ? [db.takeoffCondition.updateMany({ where: { memberSizeId: id, type: "FRAMING" }, data: { color: data.color } })] : []),
   ]);
   revalidatePath(PATH);
   redirect(`${PATH}#size-${id}`);

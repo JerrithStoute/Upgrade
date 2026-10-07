@@ -7,7 +7,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
     <div>
       <PageHeader
         title="Settings"
-        description="Company profile, team access, the cost code library, estimate divisions, parameters and templates, the takeoff Item List, member sizes and templates, and the vendors you get bids from."
+        description="Company profile, team access, the cost code library, estimate divisions, parameters and templates, the takeoff Item List, member sizes, span tables and templates, and the vendors you get bids from."
       />
       <Tabs
         className="mb-6"
@@ -20,6 +20,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           { href: "/settings/estimate-templates", label: "Estimate templates" },
           { href: "/settings/items", label: "Item list" },
           { href: "/settings/member-sizes", label: "Member sizes" },
+          { href: "/settings/span-tables", label: "Span tables" },
           { href: "/settings/vendors", label: "Vendors" },
           { href: "/settings/takeoff-templates", label: "Takeoff templates" },
         ]}

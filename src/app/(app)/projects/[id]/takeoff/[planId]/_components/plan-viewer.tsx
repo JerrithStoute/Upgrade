@@ -35,6 +35,8 @@ import {
   ScanSearch,
   ChevronDown,
   GripVertical,
+  WandSparkles,
+  Eraser,
 } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
 import { cn, money, num } from "@/lib/utils";
@@ -47,7 +49,6 @@ import {
   dist,
   feetInches,
   firstEdgeAngle,
-  framingLengths,
   framingMembers,
   hipLength,
   beamLabel,
@@ -60,7 +61,6 @@ import {
   shapePath,
   memberThickness,
   parseStockLengths,
-  stockPieces,
   measurementMetrics,
   metricUnit,
   polylineLength,
@@ -70,6 +70,9 @@ import {
 } from "@/lib/takeoff";
 import { PlanCanvas, renderSheetGray } from "./plan-canvas";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
+import { FoundWalls, WallFindPanel, type WallFind } from "./wall-find";
+import { findWalls } from "@/lib/wall-detect";
+import { areaJoists, joistGroupText } from "./joist-labels";
 import { searchSheet } from "./symbol-search";
 import { TakeoffMenu, type TakeoffMenuData } from "./takeoff-menu";
 import { RevisionOverlay, type DiffMap } from "./revision-overlay";
@@ -96,6 +99,9 @@ import {
   renameSheet,
   setSheetScale,
   updateMeasurement,
+  copyConditionForShape,
+  deleteConditionShapes,
+  restoreShapes,
   reorderConditions,
 } from "../../actions";
 
@@ -125,6 +131,11 @@ type ViewerCondition = {
   /** Measured for information only (not on the estimate). */
   referenceOnly: boolean;
   unassignedDoors: number; // Doors: markers with no door picked yet
+  /** Shapes it has on every sheet (for "Clear takeoff"). */
+  shapeCount?: number;
+  /** Joists/rafters sized by a span table (its name), and the family of takeoffs it shares (one per size). */
+  spanTable?: string | null;
+  sizeGroup?: string | null;
 };
 
 type ViewerMeasurement = {
@@ -139,10 +150,13 @@ type ViewerMeasurement = {
   arcs?: number[]; // indexes of arc points (the curve passes through them)
   materialItemId?: string | null; // Doors: which door this marker is
   cased?: boolean | null; // Windows: cased or not (null = cased)
+  sizeLocked?: boolean; // span-table joists/rafters: you picked its size yourself
+  /** Span-table joists split by size: the takeoff each joist is ordered under, in layout order. */
+  memberOwners?: string[];
   pending?: boolean;
 };
 
-type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount";
+type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount" | "findwalls";
 
 /** Windows: cased (trimmed) or not. */
 function CasedSwitch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
@@ -173,16 +187,19 @@ function CasedSwitch({ value, onChange }: { value: boolean; onChange: (v: boolea
 // Framing labels on/off, remembered per browser.
 const LABELS_KEY = "takeoff.framingLabels";
 const LABELS_EVENT = "takeoff-labels";
-function readLabels() {
+/** Labels on the plan: "joists" (what each joist area uses — the default), "all" (every takeoff), or "none". */
+type LabelMode = "joists" | "all" | "none";
+function readLabels(): LabelMode {
   try {
-    return localStorage.getItem(LABELS_KEY) !== "0";
+    const v = localStorage.getItem(LABELS_KEY);
+    return v === "0" || v === "none" ? "none" : v === "all" ? "all" : "joists";
   } catch {
-    return true;
+    return "joists";
   }
 }
-function writeLabels(on: boolean) {
+function writeLabels(mode: LabelMode) {
   try {
-    localStorage.setItem(LABELS_KEY, on ? "1" : "0");
+    localStorage.setItem(LABELS_KEY, mode);
   } catch {
     /* storage blocked — the toggle just won't be remembered */
   }
@@ -232,13 +249,17 @@ type ShapePatch = {
   arcs?: number[]; // sent with points
   materialItemId?: string | null; // Doors: which door
   cased?: boolean | null; // Windows
+  sizeLocked?: boolean; // span-table joists/rafters: false = sized by the table again
 };
 type HistoryEntry =
   | { kind: "create"; id: string; data: ShapeData }
   | { kind: "delete"; id: string; data: ShapeData }
   | { kind: "update"; id: string; before: ShapePatch; after: ShapePatch }
   // Auto-count: many markers added at once, undone together.
-  | { kind: "createMany"; ids: string[]; conditionId: string; markers: { sheetId: string; x: number; y: number }[]; materialItemId: string | null; cased: boolean | null };
+  | { kind: "createMany"; ids: string[]; conditionId: string; markers: { sheetId: string; x: number; y: number }[]; materialItemId: string | null; cased: boolean | null }
+  // Many shapes deleted (drag-selected, a cleared takeoff) or changed at once, undone together.
+  | { kind: "deleteMany"; label: string; ids: string[]; data: ShapeData[] }
+  | { kind: "updateMany"; label: string; changes: { id: string; before: ShapePatch; after: ShapePatch }[] };
 
 // Totals / Material list panel: which view is open ("" = closed), remembered per browser.
 const PANEL_KEY = "takeoff.panel";
@@ -436,6 +457,8 @@ export function PlanViewer({
     nextColor: string;
     /** Admins: takeoff templates a new takeoff can also go into. */
     toolbox?: { id: string; name: string }[];
+    /** Settings → Span tables, for joists / rafters sized by span. */
+    spanTables?: { id: string; name: string; use: string }[];
   } | null;
 }) {
   const router = useRouter();
@@ -472,6 +495,11 @@ export function PlanViewer({
   };
   const [cursor, setCursor] = useState<Pt | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Several shapes at once (drag a box, or Shift+click). One shape picked is `selectedId` (it can be edited).
+  const [multi, setMulti] = useState<string[]>([]);
+  const [boxSel, setBoxSel] = useState<{ a: Pt; b: Pt; add: boolean } | null>(null);
+  // "Clear takeoff": asking which sheets.
+  const [clearing, setClearing] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [pending, setPending] = useState<ViewerMeasurement[]>([]);
   const [removing, setRemoving] = useState<Set<string>>(new Set());
@@ -492,7 +520,10 @@ export function PlanViewer({
   // Direction hovered in the chooser (preview), and "parallel to a wall" edge picking.
   const [dirPreview, setDirPreview] = useState<number | null>(null);
   const [edgePick, setEdgePick] = useState(false);
-  const showLabels = useSyncExternalStore(subscribeLabels, readLabels, () => true);
+  const labelMode = useSyncExternalStore(subscribeLabels, readLabels, () => "joists" as LabelMode);
+  // Every takeoff's labels (lengths, counts…) only on "All"; joist areas say what they use unless "Off".
+  const showLabels = labelMode === "all";
+  const joistLabels = labelMode !== "none";
   const panel = useSyncExternalStore(subscribeLabels, readPanel, () => "" as const);
   const sheetKey = sheet?.id ?? `${plan.id}:${pageNumber}`;
   const rotation = useSyncExternalStore(
@@ -556,6 +587,12 @@ export function PlanViewer({
   const [infoOpen, setInfoOpen] = useState<Set<string>>(new Set());
   // Auto-count: the search under way / under review, and the box being dragged around a sample symbol.
   const [auto, setAuto] = useState<AutoCount | null>(null);
+  // Find walls: what one click found (on this sheet), to review before adding.
+  const [wallFind, setWallFind] = useState<WallFind | null>(null);
+  // "+ New takeoff like this…" for the selected shape: the name being typed.
+  const [newLike, setNewLike] = useState<{ id: string; name: string } | null>(null);
+  // …and for several shapes picked together: the name being typed (null = not asking).
+  const [newLikeMany, setNewLikeMany] = useState<string | null>(null);
   const [autoBox, setAutoBox] = useState<{ a: Pt; b: Pt } | null>(null);
   const autoAbort = useRef<AbortController | null>(null);
   // Revisions: comparing with the previous one, points clicked to line the sheets up, where they differ, and the bring-forward panel.
@@ -634,6 +671,18 @@ export function PlanViewer({
     [measurements, pending, removing, drag, overrides],
   );
   const selected = shapes.find((m) => m.id === selectedId) ?? null;
+  const picked = multi.length ? multi : selectedId ? [selectedId] : [];
+  /** Picks these shapes: one is selected for editing, more are a group. */
+  const selectSet = (ids: string[]) => {
+    if (ids.length === 1) {
+      setSelectedId(ids[0]);
+      setMulti([]);
+    } else {
+      setSelectedId(null);
+      setMulti(ids);
+    }
+  };
+  const multiShapes = multi.length > 1 ? shapes.filter((m) => multi.includes(m.id) && !m.pending) : [];
 
   // --- PDF page count (first open) ---------------------------------------------
   const onPageCount = useCallback(
@@ -789,8 +838,10 @@ export function PlanViewer({
     ]);
     startTransition(async () => {
       try {
-        const id = await saveShape(data);
-        if (track) record({ kind: "create", id, data });
+        const r = await createMeasurement({ projectId, ...data });
+        if (track) record({ kind: "create", id: r.id, data });
+        // Joists/rafters on a span table: say which size it got (and why).
+        if (r.sizeNote) setFlash(`${r.sizedAs ? `Sized ${r.sizedAs}` : "No size for this span"} — ${r.sizeNote}`);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not save the measurement");
       } finally {
@@ -891,13 +942,15 @@ export function PlanViewer({
         else if (k === "angle") prev.angle = shape.angle;
         else if (k === "isDeduction") prev.isDeduction = shape.isDeduction;
         else if (k === "conditionId") prev.conditionId = shape.conditionId;
+        else if (k === "sizeLocked") prev.sizeLocked = !!shape.sizeLocked;
       }
     }
     if (patch.points) setOverrides((o) => new Map(o).set(id, { points: patch.points!, arcs: patch.arcs }));
     startTransition(async () => {
       try {
-        await updateMeasurement({ projectId, id, ...patch });
+        const r = await updateMeasurement({ projectId, id, ...patch });
         record({ kind: "update", id, before: prev, after: patch });
+        if (r.sizeNote && r.conditionId !== shape?.conditionId) setFlash(`Sized again — ${r.sizeNote}`);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not update the measurement");
       } finally {
@@ -907,6 +960,83 @@ export function PlanViewer({
             n.delete(id);
             return n;
           });
+      }
+    });
+  };
+
+  /** Deletes many shapes at once (drag-selected); one Ctrl+Z brings them all back. */
+  const removeMany = (ids: string[]) => {
+    const list = shapes.filter((m) => ids.includes(m.id) && !m.pending);
+    if (!list.length) return;
+    const data = list.map(shapeData).filter((d): d is ShapeData => !!d);
+    const gone = list.map((m) => m.id);
+    setRemoving((s) => new Set([...s, ...gone]));
+    setSelectedId(null);
+    setMulti([]);
+    startTransition(async () => {
+      try {
+        await deleteMeasurements({ projectId, ids: gone });
+        record({ kind: "deleteMany", label: `deleting ${gone.length} shapes`, ids: gone, data });
+        setFlash(`Deleted ${gone.length} shapes — Ctrl+Z brings them back`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not delete the shapes");
+      } finally {
+        setRemoving((s) => new Set([...s].filter((x) => !gone.includes(x))));
+      }
+    });
+  };
+
+  /** Moves many shapes to another takeoff of the same kind; one Ctrl+Z moves them back. */
+  const moveMany = (ids: string[], conditionId: string) => {
+    const target = condById.get(conditionId);
+    const list = shapes.filter((m) => ids.includes(m.id) && !m.pending && m.conditionId !== conditionId);
+    if (!target || !list.length) return;
+    startTransition(async () => {
+      const changes: { id: string; before: ShapePatch; after: ShapePatch }[] = [];
+      try {
+        for (const m of list) {
+          await updateMeasurement({ projectId, id: m.id, conditionId });
+          changes.push({ id: m.id, before: { conditionId: m.conditionId }, after: { conditionId } });
+        }
+        setFlash(`Moved ${changes.length} shape${changes.length === 1 ? "" : "s"} to ${target.name}`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not move the shapes");
+      } finally {
+        if (changes.length) record({ kind: "updateMany", label: `moving ${changes.length} shapes`, changes });
+      }
+    });
+  };
+
+  /** "Clear takeoff": every shape of the takeoff picked — this sheet, or every sheet. Ctrl+Z puts them back. */
+  const clearTakeoff = (c: ViewerCondition, everySheet: boolean) => {
+    setClearing(false);
+    setSelectedId(null);
+    setMulti([]);
+    startTransition(async () => {
+      try {
+        const rows = await deleteConditionShapes({ projectId, conditionId: c.id, sheetId: everySheet ? null : (sheet?.id ?? null) });
+        if (!rows.length) return setFlash(`${c.name} has nothing to clear`);
+        record({
+          kind: "deleteMany",
+          label: `clearing ${c.name}`,
+          ids: rows.map((r) => r.id),
+          data: rows.map((r) => ({
+            sheetId: r.sheetId,
+            conditionId: r.conditionId,
+            points: r.points,
+            arcs: r.arcs,
+            isDeduction: r.isDeduction,
+            angle: r.angle,
+            pitch: r.pitch,
+            pitch2: r.pitch2,
+            height: r.height,
+            materialItemId: r.materialItemId,
+            cased: r.cased,
+          })),
+        });
+        setFlash(`Cleared ${rows.length} measurement${rows.length === 1 ? "" : "s"} from ${c.name} — Ctrl+Z brings them back`);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Could not clear the takeoff");
       }
     });
   };
@@ -1062,6 +1192,7 @@ export function PlanViewer({
     if (!entry) return;
     syncHistory();
     setSelectedId(null);
+    setMulti([]);
     startTransition(async () => {
       try {
         if (entry.kind === "createMany") {
@@ -1078,6 +1209,21 @@ export function PlanViewer({
           }
           (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
           setFlash(`${direction === "undo" ? "Undid" : "Redid"} an auto-count (${entry.ids.length})`);
+          return;
+        }
+        if (entry.kind === "deleteMany") {
+          if (direction === "undo") {
+            const { ids } = await restoreShapes({ projectId, shapes: entry.data });
+            entry.ids.forEach((old, i) => ids[i] && idMap.current.set(resolveId(old), ids[i]!));
+          } else await deleteMeasurements({ projectId, ids: entry.ids.map(resolveId) });
+          (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
+          setFlash(`${direction === "undo" ? "Undid" : "Redid"} ${entry.label}`);
+          return;
+        }
+        if (entry.kind === "updateMany") {
+          for (const ch of entry.changes) await updateMeasurement({ projectId, id: resolveId(ch.id), ...(direction === "undo" ? ch.before : ch.after) });
+          (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
+          setFlash(`${direction === "undo" ? "Undid" : "Redid"} ${entry.label}`);
           return;
         }
         const recreate = async (data: ShapeData) => {
@@ -1207,11 +1353,18 @@ export function PlanViewer({
           stopAuto();
           setTool("measure");
         }
+        if (tool === "findwalls") {
+          if (wallFind) setWallFind(null);
+          else setTool("measure");
+        }
         setAligning(null);
         resetDraft();
         setCalib([]);
         setRuler([]);
         setSelectedId(null);
+        setMulti([]);
+        setNewLikeMany(null);
+        setClearing(false);
       } else if (e.key === "Enter" && draft.length) {
         finishDraft(draft);
       } else if ((e.key === "Backspace" || e.key === "Delete") && draft.length) {
@@ -1219,6 +1372,9 @@ export function PlanViewer({
         setDraftArcs((a) => a.filter((i) => i < draft.length - 1));
         setArcNext(false);
         setDraft((d) => d.slice(0, -1));
+      } else if ((e.key === "Backspace" || e.key === "Delete") && multi.length > 1) {
+        e.preventDefault();
+        removeMany(multi);
       } else if ((e.key === "Backspace" || e.key === "Delete") && selectedId) {
         e.preventDefault();
         removeShape(selectedId);
@@ -1247,7 +1403,7 @@ export function PlanViewer({
     };
     // The edit helpers (runHistory, copy/paste) are recreated each render; listening with the latest is intended.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, selectedId, selected, finishDraft, removeShape, active, zoom, zoomAt, dirFor, finishDirection, tool]);
+  }, [draft, selectedId, selected, multi, finishDraft, removeShape, active, zoom, zoomAt, dirFor, finishDirection, tool]);
 
   // --- Framing direction chooser ---------------------------------------------------------
   // The outline being aimed, its default direction, and what the preview shows right now.
@@ -1318,9 +1474,21 @@ export function PlanViewer({
         return;
       }
     }
+    // Select: drag on the plan (not on a shape) to box shapes in. Shift+drag adds to the ones picked.
+    if (tool === "select" && e.button === 0 && !panning && !dirFor && e.target === svgRef.current) {
+      e.preventDefault();
+      const p = toPage(e.clientX, e.clientY);
+      setBoxSel({ a: p, b: p, add: e.shiftKey });
+      try {
+        svgRef.current?.setPointerCapture(e.pointerId);
+      } catch {
+        /* pointer already released */
+      }
+      return;
+    }
     // Right-drag pans too (a quick right-click without moving still finishes a shape / removes a point).
     const rightPan = e.button === 2 && !(e.target as Element).closest("[data-handle]");
-    const wantsPan = e.button === 1 || rightPan || panning || (tool === "select" && e.button === 0 && e.target === svgRef.current);
+    const wantsPan = e.button === 1 || rightPan || panning;
     if (!wantsPan) return;
     e.preventDefault();
     panRef.current = {
@@ -1355,6 +1523,10 @@ export function PlanViewer({
       setAutoBox({ ...autoBox, b: raw });
       return;
     }
+    if (boxSel) {
+      setBoxSel({ ...boxSel, b: raw });
+      return;
+    }
     if (drag) {
       let points: Pt[];
       if (drag.mode === "vertex") {
@@ -1384,6 +1556,22 @@ export function PlanViewer({
       const box = { x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(a[0] - b[0]), h: Math.abs(a[1] - b[1]) };
       setAutoBox(null);
       if (auto && box.w * zoom > 6 && box.h * zoom > 6) void runAuto(auto.conditionId, box, auto.allSheets, pageNumber);
+      return;
+    }
+    if (boxSel) {
+      const { a, b, add } = boxSel;
+      setBoxSel(null);
+      const [x0, x1] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])];
+      const [y0, y1] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])];
+      // Barely moved: a click on the plan (it clears the selection).
+      if ((x1 - x0) * zoom < 4 && (y1 - y0) * zoom < 4) return;
+      suppressClick.current = true;
+      // Shapes entirely inside the box, of the takeoffs showing.
+      const inside = shapes
+        .filter((m) => !m.pending && condById.has(m.conditionId) && !hidden.has(m.conditionId) && m.points.length > 0)
+        .filter((m) => m.points.every(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1))
+        .map((m) => m.id);
+      selectSet(add ? Array.from(new Set([...picked, ...inside])) : inside);
       return;
     }
     if (panRef.current?.moved) suppressClick.current = true;
@@ -1454,8 +1642,39 @@ export function PlanViewer({
       if (edgePick && dirShape && hoverEdge !== null) finishDirection(edgeAngle(dirShape.points, hoverEdge));
       return;
     }
+    if (tool === "findwalls") {
+      // One click on a wall: the wall finder follows the connected walls as thick (wall-detect).
+      if (!active || !sheet) return;
+      if (!unitsPerFoot) return setError("Set this sheet's scale before finding walls.");
+      if (!vectors || !vectors.length) return setError("This sheet has no line work to read (a scanned plan?) — walls can't be found here. Trace them with Measure.");
+      const r = findWalls(vectors, toPage(e.clientX, e.clientY), { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom });
+      if (!r.ok) {
+        setWallFind(null);
+        return setError(
+          r.reason === "no-line"
+            ? "No line there — click right on one of the wall's lines."
+            : r.reason === "no-wall"
+              ? "That line doesn't look like a wall (no open stud space beside it). Try another of the wall's lines."
+              : "Set this sheet's scale before finding walls.",
+        );
+      }
+      setError(null);
+      setWallFind({
+        conditionId: active.id,
+        thicknessIn: r.thicknessIn,
+        kind: r.kind,
+        openings: r.openings,
+        runs: r.runs,
+        lengthsFt: r.runs.map((run) => run.slice(1).reduce((sum, pt, i) => sum + dist(pt, run[i]), 0) / unitsPerFoot),
+        off: [],
+      });
+      return;
+    }
     if (tool === "select") {
-      if (e.target === svgRef.current) setSelectedId(null);
+      if (e.target === svgRef.current) {
+        setSelectedId(null);
+        setMulti([]);
+      }
       return;
     }
     const pointer = toPage(e.clientX, e.clientY);
@@ -1618,7 +1837,7 @@ export function PlanViewer({
       ? edgePick && hoverEdge !== null
         ? "cursor-pointer"
         : "cursor-default"
-      : tool === "measure" || tool === "calibrate" || tool === "ruler" || tool === "autocount"
+      : tool === "measure" || tool === "calibrate" || tool === "ruler" || tool === "autocount" || tool === "findwalls"
         ? "cursor-crosshair"
         : "cursor-default";
 
@@ -1645,66 +1864,48 @@ export function PlanViewer({
   };
 
   /**
-   * Framing-plan callout beside the direction arrow, e.g. "2x6 Rafters @ 16" o.c." over
-   * "(18) 20'". Text runs along the members and is flipped to stay readable.
+   * A joist area's labels: what it uses, to order — one per run of joists of a size, over those
+   * joists, edged in that size's color: "2x8: (10) 14' (3) 18'".
    */
-  const framingLabel = (c: ViewerCondition, m: ViewerMeasurement, upf: number) => {
-    const size = c.memberSize?.trim();
-    // Framing-plan style: the member size when the condition name doesn't already say it.
-    const name = size && !c.name.toLowerCase().includes(size.toLowerCase()) ? size : c.name;
-    // Second line: this outline's cut lengths. Boards are packed per condition (short pieces
-    // share boards), so the ordered sticks are on the Material List cut sheet, not here.
-    const lengths = framingLengths(c, m, upf);
-    let pieces = "";
-    if (c.soldAs === "EXACT_LF") {
-      const counts = new Map<number, number>();
-      for (const l of lengths) for (const piece of stockPieces(l, null, c.soldAs)) counts.set(piece, (counts.get(piece) ?? 0) + 1);
-      pieces = Array.from(counts.entries())
-        .sort((a, b) => b[0] - a[0])
-        .map(([len, n]) => `(${n}) ${feetInches(len)}`)
-        .join("  ");
-    } else if (lengths.length) {
-      const lo = Math.min(...lengths);
-      const hi = Math.max(...lengths);
-      pieces = hi - lo < 1 / 12 ? `(${lengths.length}) ${feetInches(hi)}` : `(${lengths.length}) ${feetInches(lo)} – ${feetInches(hi)}`;
-    }
+  const joistLabel = (c: ViewerCondition, m: ViewerMeasurement, upf: number) => {
+    const groups = areaJoists(c, m, upf, condById).filter((g) => !hidden.has(g.conditionId));
+    if (!groups.length) return null;
+    // Each over its own joists, running along them.
     const deg = readable((m.angle * 180) / Math.PI);
-    const [x, y] = centroid(m.points);
-    const fs = px(12);
-    const line1 = `${name} @ ${num(c.spacing, 2)}" o.c.${m.pitch != null ? ` · ${num(m.pitch, 2)}/12` : ""}`;
-    // A light plate behind each line keeps the callout readable over members and plan text.
-    const plate = (text: string, baseline: number) => {
-      const w = text.length * fs * 0.6 + px(10);
-      return (
+    return (
+      <g pointerEvents="none">
+        {groups.map((g, i) => (
+          <g key={i}>{planTag(joistGroupText(g), g.at[0], g.at[1], deg, g.color)}</g>
+        ))}
+      </g>
+    );
+  };
+
+  /**
+   * A label on the plan: dark text on a white tag with a thin edge in the takeoff's color — small,
+   * and easy to read over plan lines and colored fills. `fill` gives the tag that color instead
+   * (white text), for labels that stand for one size.
+   */
+  const planTag = (text: string, x: number, y: number, deg: number, color: string, fill = false, size = 10) => {
+    const fs = px(size);
+    const w = text.length * fs * 0.56 + px(8);
+    return (
+      <g pointerEvents="none" transform={deg ? `rotate(${deg} ${x} ${y})` : undefined}>
         <rect
           x={x - w / 2}
-          y={baseline - fs * 0.95}
+          y={y - fs * 0.92}
           width={w}
-          height={fs * 1.35}
-          rx={px(3)}
-          fill="white"
-          fillOpacity={0.88}
-          stroke={c.color}
-          strokeOpacity={0.5}
-          strokeWidth={1}
+          height={fs * 1.3}
+          rx={px(2)}
+          fill={fill ? color : "white"}
+          fillOpacity={fill ? 0.95 : 0.92}
+          stroke={color}
+          strokeWidth={1.25}
           {...stroke}
         />
-      );
-    };
-    return (
-      <g pointerEvents="none" transform={`rotate(${deg} ${x} ${y})`}>
-        {plate(line1, y - px(14))}
-        <text x={x} y={y - px(14)} textAnchor="middle" fontSize={fs} fontWeight={700} fill={c.color}>
-          {line1}
+        <text x={x} y={y} textAnchor="middle" fontSize={fs} fontWeight={600} fill={fill ? "white" : "#0f172a"}>
+          {text}
         </text>
-        {pieces ? (
-          <>
-            {plate(pieces, y + px(26))}
-            <text x={x} y={y + px(26)} textAnchor="middle" fontSize={fs} fontWeight={600} fill={c.color}>
-              {pieces}
-            </text>
-          </>
-        ) : null}
       </g>
     );
   };
@@ -1722,17 +1923,8 @@ export function PlanViewer({
     const x = (a[0] + b[0]) / 2;
     const y = (a[1] + b[1]) / 2;
     const deg = readable((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI);
-    const text = `${c.name} · ${feetInches(total / upf)}`;
-    const fs = px(11);
-    const w = text.length * fs * 0.6 + px(10);
-    return (
-      <g pointerEvents="none" transform={`rotate(${deg} ${x} ${y})`}>
-        <rect x={x - w / 2} y={y + px(9)} width={w} height={fs * 1.35} rx={px(3)} fill="white" fillOpacity={0.9} stroke={c.color} strokeOpacity={0.5} strokeWidth={1} {...stroke} />
-        <text x={x} y={y + px(9) + fs * 0.98} textAnchor="middle" fontSize={fs} fontWeight={700} fill={c.color}>
-          {text}
-        </text>
-      </g>
-    );
+    // Just the length: the takeoff is its color (and the list on the left), so the name only crowds the plan.
+    return planTag(feetInches(total / upf), x, y + px(11), deg, c.color, false, 9);
   };
 
   /** Label along a hip / valley / ridge: "2x10 · 8/12 & 12/12 · 18'-4" → 20'". */
@@ -1758,28 +1950,7 @@ export function PlanViewer({
     const x = (a[0] + b[0]) / 2;
     const y = (a[1] + b[1]) / 2;
     const deg = readable((Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI);
-    const fs = px(11);
-    const w = text.length * fs * 0.6 + px(10);
-    return (
-      <g pointerEvents="none" transform={`rotate(${deg} ${x} ${y})`}>
-        <rect
-          x={x - w / 2}
-          y={y - px(12) - fs * 0.95}
-          width={w}
-          height={fs * 1.35}
-          rx={px(3)}
-          fill="white"
-          fillOpacity={0.9}
-          stroke={c.color}
-          strokeOpacity={0.5}
-          strokeWidth={1}
-          {...stroke}
-        />
-        <text x={x} y={y - px(12)} textAnchor="middle" fontSize={fs} fontWeight={700} fill={c.color}>
-          {text}
-        </text>
-      </g>
-    );
+    return planTag(text, x, y - px(10), deg, c.color, false, 9);
   };
 
   if (dirShape && dirCond && unitsPerFoot) {
@@ -1789,14 +1960,20 @@ export function PlanViewer({
 
   const renderShape = (m: ViewerMeasurement) => {
     const c = condById.get(m.conditionId);
-    if (!c || hidden.has(c.id)) return null;
-    const isSel = m.id === selectedId;
+    if (!c) return null;
+    // A joist area whose joists are ordered under several size takeoffs shows while any of them does.
+    const ownShowing = !hidden.has(c.id);
+    if (!ownShowing && !m.memberOwners?.some((o) => !hidden.has(o))) return null;
+    const isSel = m.id === selectedId || multi.includes(m.id);
     const color = c.color;
     const common = {
       "data-shape": m.id,
       onClick: (e: React.MouseEvent) => {
         if (tool !== "select" || panning || dirFor) return;
         e.stopPropagation();
+        // Shift+click adds it to (or takes it out of) the shapes picked.
+        if (e.shiftKey) return selectSet(picked.includes(m.id) ? picked.filter((x) => x !== m.id) : [...picked, m.id]);
+        setMulti([]);
         setSelectedId(m.id);
       },
       onDoubleClick: isSel ? onDoubleClickShape : undefined,
@@ -1939,25 +2116,65 @@ export function PlanViewer({
       c.type === "FRAMING" && unitsPerFoot
         ? framingMembers(shapePath(c.type, m), m.angle, (c.spacing / 12) * unitsPerFoot, memberThickness(c.memberSize, unitsPerFoot, c.memberWidthIn))
         : [];
+    // Each joist in its size takeoff's color (when the area's joists are split by size); hidden with that takeoff.
+    const owners = m.memberOwners && m.memberOwners.length === members.length ? m.memberOwners : null;
+    // Split by size: the area isn't one size, so it isn't filled in one color — each size shades
+    // the strip its joists cover (a joist-spacing-wide band under each joist), hidden with it.
+    const band = owners && unitsPerFoot ? (c.spacing / 12) * unitsPerFoot : 0;
+    const shownOwner = (i: number) => {
+      const o = owners ? condById.get(owners[i]) : c;
+      return o && !hidden.has(o.id) ? o : null;
+    };
     return (
       <g key={m.id} {...common}>
-        <polygon
-          points={d}
-          fill={m.isDeduction ? "white" : color}
-          fillOpacity={m.isDeduction ? 0.7 : c.type === "FRAMING" ? 0.12 : 0.28}
-          stroke={color}
-          strokeWidth={isSel ? 4 : 2}
-          strokeDasharray={m.isDeduction ? "6 4" : undefined}
-          strokeLinejoin="round"
-          {...stroke}
-        />
-        {members.map(([a, b], i) => (
-          <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={color} strokeWidth={1.25} {...stroke} />
-        ))}
+        {owners ? (
+          <polygon
+            points={d}
+            fill="transparent"
+            stroke={color}
+            strokeOpacity={ownShowing ? 0.9 : 0.35}
+            strokeWidth={ownShowing ? (isSel ? 4 : 1.5) : 1}
+            strokeDasharray={ownShowing ? undefined : "4 4"}
+            strokeLinejoin="round"
+            {...stroke}
+          />
+        ) : ownShowing ? (
+          <polygon
+            points={d}
+            fill={m.isDeduction ? "white" : color}
+            fillOpacity={m.isDeduction ? 0.7 : c.type === "FRAMING" ? 0.12 : 0.28}
+            stroke={color}
+            strokeWidth={isSel ? 4 : 2}
+            strokeDasharray={m.isDeduction ? "6 4" : undefined}
+            strokeLinejoin="round"
+            {...stroke}
+          />
+        ) : (
+          // Only a size takeoff showing: a faint outline so its joists have a place.
+          <polygon points={d} fill="none" stroke={color} strokeOpacity={0.35} strokeWidth={1} strokeDasharray="4 4" {...stroke} />
+        )}
+        {band ? (
+          <>
+            <clipPath id={`area-${m.id}`}>
+              <polygon points={d} />
+            </clipPath>
+            <g clipPath={`url(#area-${m.id})`} pointerEvents="none">
+              {members.map(([a, b], i) => {
+                const owner = shownOwner(i);
+                return owner ? <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeOpacity={0.16} strokeWidth={band} strokeLinecap="butt" /> : null;
+              })}
+            </g>
+          </>
+        ) : null}
+        {members.map(([a, b], i) => {
+          const owner = shownOwner(i);
+          if (!owner) return null;
+          return <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeWidth={owners ? 2 : 1.25} {...stroke} />;
+        })}
         {c.type === "FRAMING" && m.points.length >= 3 && !(dirFor && "id" in dirFor && dirFor.id === m.id) ? (
           <>
-            {directionArrow(centroid(m.points), m.angle, color)}
-            {showLabels && unitsPerFoot ? framingLabel(c, m, unitsPerFoot) : null}
+            {ownShowing ? directionArrow(centroid(m.points), m.angle, color) : null}
+            {joistLabels && unitsPerFoot && (ownShowing || owners) ? joistLabel(c, m, unitsPerFoot) : null}
           </>
         ) : null}
       </g>
@@ -2327,23 +2544,45 @@ export function PlanViewer({
               <ScanSearch className="h-3.5 w-3.5" /> Auto-count
             </ToolButton>
           ) : null}
+          {active && (active.type === "WALL" || active.type === "LINEAR") && !superseded ? (
+            <ToolButton
+              active={tool === "findwalls"}
+              onClick={() => {
+                setWallFind(null);
+                if (tool === "findwalls") setTool("measure");
+                else {
+                  setTool("findwalls");
+                  setSelectedId(null);
+                  resetDraft();
+                  showTakeoff(active.id);
+                }
+              }}
+              title="Find walls — click one wall and it finds the walls connected to it (plans made in CAD)"
+            >
+              <WandSparkles className="h-3.5 w-3.5" /> Find walls
+            </ToolButton>
+          ) : null}
           {active && (active.type === "AREA" || active.type === "LINEAR") ? (
             <ToolButton active={deduct} onClick={() => setDeduct((d) => !d)} title="Deduction (D) — subtracts from the takeoff">
               <Minus className="h-3.5 w-3.5" /> Deduct
             </ToolButton>
           ) : null}
+          {active && !superseded ? (
+            <ToolButton active={clearing} onClick={() => setClearing((v) => !v)} title={`Delete every measurement of ${active.name} (asks first; Ctrl+Z undoes)`}>
+              <Eraser className="h-3.5 w-3.5" /> Clear takeoff
+            </ToolButton>
+          ) : null}
           <div className="mx-1 h-6 w-px bg-slate-200" />
           <button
             type="button"
-            onClick={() => writeLabels(!showLabels)}
-            title="Show or hide joist / rafter labels on the plan"
-            aria-pressed={showLabels}
+            onClick={() => writeLabels(labelMode === "joists" ? "all" : labelMode === "all" ? "none" : "joists")}
+            title="Labels on the plan — Joists: what each joist area uses · All: every takeoff's lengths too · Off. Click to switch."
             className={cn(
               "inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition-colors",
-              showLabels ? "border-blue-200 bg-blue-50 text-blue-800" : "border-slate-300 bg-white text-slate-500 hover:bg-slate-50",
+              labelMode !== "none" ? "border-blue-200 bg-blue-50 text-blue-800" : "border-slate-300 bg-white text-slate-500 hover:bg-slate-50",
             )}
           >
-            <Tag className="h-3.5 w-3.5" /> Labels {showLabels ? "on" : "off"}
+            <Tag className="h-3.5 w-3.5" /> Labels: {labelMode === "joists" ? "Joists" : labelMode === "all" ? "All" : "Off"}
           </button>
           <button
             type="button"
@@ -2369,7 +2608,7 @@ export function PlanViewer({
             <Redo2 className="h-3.5 w-3.5" /> Redo
           </ToolButton>
           <Link
-            href={`${base}/${plan.id}/print?pages=${pageNumber}`}
+            href={`${base}/${plan.id}/print?pages=${pageNumber}${hidden.size ? `&hide=${[...hidden].join(",")}` : ""}`}
             target="_blank"
             className="inline-flex h-8 items-center gap-1 rounded-md px-2 text-xs font-medium text-slate-700 hover:bg-slate-100"
             title="Print or save this sheet with the takeoff drawn on it"
@@ -2434,6 +2673,11 @@ export function PlanViewer({
             <strong className="font-medium text-slate-800">Member direction:</strong>{" "}
             {edgePick ? "click a wall of the outline — members run parallel to it." : "pick Horizontal (H), Vertical (V) or Parallel to a wall (E)."}{" "}
             {"points" in dirFor ? "Enter = the closer of horizontal / vertical" : "Enter = keep the current direction"} · Esc = cancel.
+          </span>
+        ) : tool === "findwalls" ? (
+          <span>
+            <strong className="font-medium text-slate-800">Find walls{active ? ` · ${active.name}` : ""}:</strong> click right on a line of a wall. Found walls light up — click one
+            to leave it out, then Add. Esc = {wallFind ? "clear" : "stop"}.
           </span>
         ) : tool === "autocount" ? (
           <span>
@@ -2562,7 +2806,9 @@ export function PlanViewer({
             {unitsPerFoot ? null : <strong className="mr-2 text-amber-700">This sheet has no scale — pick one or calibrate.</strong>}
             {tool === "select" && selected
               ? "Drag a point or the shape to move it · double-click an edge to add a point · double-click a point to curve or straighten it · right-click a point to remove it · Ctrl+C / Ctrl+V / Ctrl+D copy, paste, duplicate · Ctrl+Z undo."
-              : "Pick a takeoff on the left, then Measure. Scroll to zoom; right-drag (or hold Space) to pan. Right-click finishes a shape. Ctrl+Z undoes."}
+              : tool === "select"
+                ? "Click a shape to pick it · drag a box on the plan to pick every shape inside it (Shift adds more) · Delete removes them. Right-drag (or hold Space) to pan. Ctrl+Z undoes."
+                : "Pick a takeoff on the left, then Measure. Scroll to zoom; right-drag (or hold Space) to pan. Right-click finishes a shape. Ctrl+Z undoes."}
           </span>
         )}
       </div>
@@ -2748,6 +2994,8 @@ export function PlanViewer({
                       </span>
                       <span className="block text-xs text-slate-500">
                         {CONDITION_TYPE_LABELS[c.type as ConditionType] ?? c.type}
+                        {/* The span-table takeoff you draw with: its areas go to the takeoff of their size. */}
+                        {c.spanTable && !c.memberSize ? ` · draw with this — areas go to their size (${c.spanTable})` : ""}
                         {c.pitch > 0 ? ` · ${num(c.pitch, 2)}/12` : ""}
                         {c.type === "BEAM"
                           ? (() => {
@@ -3026,6 +3274,14 @@ export function PlanViewer({
                           </g>
                         ))
                       : null}
+                    {tool === "findwalls" && wallFind && active && wallFind.conditionId === active.id ? (
+                      <FoundWalls
+                        find={wallFind}
+                        color={active.color}
+                        zoom={zoom}
+                        onToggle={(i) => setWallFind((w) => w && { ...w, off: w.off.includes(i) ? w.off.filter((x) => x !== i) : [...w.off, i] })}
+                      />
+                    ) : null}
                     {autoOn && autoPlan ? (
                       <FoundMarkers
                         rows={autoPlan.pages.find((pg) => pg.page === pageNumber)?.rows ?? []}
@@ -3043,6 +3299,20 @@ export function PlanViewer({
                         fill="none"
                         stroke="#1d4ed8"
                         strokeWidth={1.5 / zoom}
+                        pointerEvents="none"
+                      />
+                    ) : null}
+                    {boxSel ? (
+                      <rect
+                        x={Math.min(boxSel.a[0], boxSel.b[0])}
+                        y={Math.min(boxSel.a[1], boxSel.b[1])}
+                        width={Math.abs(boxSel.a[0] - boxSel.b[0])}
+                        height={Math.abs(boxSel.a[1] - boxSel.b[1])}
+                        fill="#3b82f6"
+                        fillOpacity={0.06}
+                        stroke="#2563eb"
+                        strokeWidth={1 / zoom}
+                        strokeDasharray={`${5 / zoom} ${3 / zoom}`}
                         pointerEvents="none"
                       />
                     ) : null}
@@ -3300,6 +3570,7 @@ export function PlanViewer({
               pricesLocked={editor.pricesLocked}
               nextColor={editor.nextColor}
               toolbox={editor.toolbox}
+              spanTables={editor.spanTables}
               closeHref={viewerHref}
               stayHref={editor.condition ? editHref(editor.condition.id) : editHref("new")}
             />
@@ -3357,6 +3628,22 @@ export function PlanViewer({
                 }
               }}
               onClose={() => setForward(false)}
+            />
+          ) : null}
+          {tool === "findwalls" && active ? (
+            <WallFindPanel
+              find={wallFind && wallFind.conditionId === active.id ? wallFind : null}
+              conditionName={active.name}
+              studSize={active.memberSize}
+              onAdd={() => {
+                if (!wallFind) return;
+                // Each wall saved on its own, like a wall you traced (undo, materials, estimate all as usual).
+                const keep = wallFind.runs.filter((_, i) => !wallFind.off.includes(i));
+                for (const run of keep) save(active, run);
+                setFlash(`Added ${keep.length} wall${keep.length === 1 ? "" : "s"}`);
+                setWallFind(null);
+              }}
+              onClear={() => setWallFind(null)}
             />
           ) : null}
           {autoOn && autoPlan && active ? (
@@ -3474,9 +3761,155 @@ export function PlanViewer({
             </div>
           ) : null}
 
+          {/* Several shapes picked (drag a box / Shift+click) */}
+          {multiShapes.length > 1
+            ? (() => {
+                const byCond = new Map<string, number>();
+                for (const m of multiShapes) byCond.set(m.conditionId, (byCond.get(m.conditionId) ?? 0) + 1);
+                const types = new Set(multiShapes.map((m) => condById.get(m.conditionId)?.type));
+                const type = types.size === 1 ? [...types][0] : null;
+                const ids = multiShapes.map((m) => m.id);
+                return (
+                  <div className="absolute bottom-4 right-4 z-10 w-80 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg">
+                    <div className="flex items-center gap-2">
+                      <span className="flex-1 font-medium text-slate-900">{multiShapes.length} shapes picked</span>
+                      <button
+                        type="button"
+                        className="text-xs text-slate-500 hover:text-slate-800"
+                        onClick={() => {
+                          setMulti([]);
+                          setNewLikeMany(null);
+                        }}
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <ul className="mt-1 space-y-0.5 text-xs text-slate-600">
+                      {[...byCond].map(([id, n]) => (
+                        <li key={id} className="flex items-center gap-1.5">
+                          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: condById.get(id)?.color }} />
+                          <span className="truncate">{condById.get(id)?.name}</span>
+                          <span className="ml-auto tabular-nums text-slate-500">{n}</span>
+                        </li>
+                      ))}
+                    </ul>
+                    {type ? (
+                      <select
+                        aria-label="Move the picked shapes to a takeoff"
+                        className="input mt-2 !py-1 text-xs"
+                        value=""
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === "__new") setNewLikeMany("");
+                          else if (v) moveMany(ids, v);
+                        }}
+                      >
+                        <option value="">Make them all…</option>
+                        {conditions
+                          .filter((c) => c.type === type)
+                          .map((c) => (
+                            <option key={c.id} value={c.id}>
+                              {c.name}
+                            </option>
+                          ))}
+                        <option value="__new">+ New takeoff like this…</option>
+                      </select>
+                    ) : (
+                      <p className="mt-2 text-xs text-slate-500">Different kinds of takeoffs — they can be deleted together, but not moved to one takeoff.</p>
+                    )}
+                    {type && newLikeMany !== null ? (
+                      <form
+                        className="mt-2 space-y-1"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const name = newLikeMany.trim();
+                          if (!name) return;
+                          const before = multiShapes.map((m) => ({ id: m.id, conditionId: m.conditionId }));
+                          startTransition(async () => {
+                            try {
+                              const r = await copyConditionForShape({ projectId, measurementIds: ids, name });
+                              // Undo moves them back (the new takeoff stays, empty).
+                              record({
+                                kind: "updateMany",
+                                label: `moving ${before.length} shapes to ${name}`,
+                                changes: before.map((b) => ({ id: b.id, before: { conditionId: b.conditionId }, after: { conditionId: r.id } })),
+                              });
+                              setNewLikeMany(null);
+                              setMulti([]);
+                              setFlash(`Made ${name} with ${before.length} shapes — change its settings (height, size…) here`);
+                              // Its settings, to make it what it's for (a 10' wall, another size…).
+                              router.push(editHref(r.id), { scroll: false });
+                            } catch (err) {
+                              setError(err instanceof Error ? err.message : "Could not make the takeoff");
+                            }
+                          });
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            autoFocus
+                            className="input min-w-0 flex-1 !py-1 text-xs"
+                            placeholder={type === "WALL" ? "Name, e.g. 2x4 Ext Wall 10ft" : "Name, e.g. Tile"}
+                            value={newLikeMany}
+                            onChange={(e) => setNewLikeMany(e.target.value)}
+                            onKeyDown={(e) => e.key === "Escape" && setNewLikeMany(null)}
+                          />
+                          <Button type="submit" size="sm" disabled={!newLikeMany.trim()}>
+                            Make it
+                          </Button>
+                          <Button type="button" size="sm" variant="ghost" onClick={() => setNewLikeMany(null)}>
+                            Cancel
+                          </Button>
+                        </div>
+                        <p className="text-[11px] text-slate-500">
+                          A copy of {condById.get(multiShapes[0].conditionId)?.name} with its items; these {multiShapes.length} move into it, then its settings open.
+                        </p>
+                      </form>
+                    ) : null}
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <Button type="button" size="sm" variant="danger" onClick={() => removeMany(ids)}>
+                        <Trash2 className="h-3.5 w-3.5" /> Delete {multiShapes.length}
+                      </Button>
+                    </div>
+                    <p className="mt-2 text-[11px] text-slate-500">Shift+click a shape to add or drop it · Shift+drag adds a box · Esc clears · Ctrl+Z undoes</p>
+                  </div>
+                );
+              })()
+            : null}
+
+          {/* Clear takeoff: which sheets */}
+          {clearing && active
+            ? (() => {
+                const here = shapes.filter((m) => m.conditionId === active.id && !m.pending).length;
+                const everywhere = Math.max(active.shapeCount ?? here, here);
+                return (
+                  <div className="absolute left-1/2 top-3 z-20 w-96 -translate-x-1/2 rounded-xl border border-rose-200 bg-white p-3 text-sm shadow-lg">
+                    <p className="font-semibold text-slate-900">Clear {active.name}?</p>
+                    <p className="mt-1 text-xs text-slate-600">
+                      Deletes its measurements — only this takeoff&apos;s. The takeoff, its settings and items stay. Ctrl+Z puts them back.
+                    </p>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      <Button type="button" size="sm" variant="danger" disabled={!here} onClick={() => clearTakeoff(active, false)}>
+                        On this sheet ({here})
+                      </Button>
+                      {everywhere > here ? (
+                        <Button type="button" size="sm" variant="danger" onClick={() => clearTakeoff(active, true)}>
+                          On every sheet ({everywhere})
+                        </Button>
+                      ) : null}
+                      <Button type="button" size="sm" variant="ghost" onClick={() => setClearing(false)}>
+                        Cancel
+                      </Button>
+                    </div>
+                    {!here && everywhere === 0 ? <p className="mt-1 text-xs text-slate-500">Nothing measured yet.</p> : null}
+                  </div>
+                );
+              })()
+            : null}
+
           {/* Selected shape panel */}
           {sel?.c ? (
-            <div className="absolute bottom-4 right-4 z-10 w-72 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg">
+            <div className="absolute bottom-4 right-4 z-10 w-80 rounded-xl border border-slate-200 bg-white p-3 text-sm shadow-lg">
               {isUnitType(sel.c.type) && !sel.m.pending ? (
                 <div className="mb-2 border-b border-slate-100 pb-2">
                   <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Which {unitKind(sel.c.type)} is this?</p>
@@ -3498,12 +3931,74 @@ export function PlanViewer({
                 </div>
               ) : null}
               <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-sm" style={{ background: sel.c.color }} />
-                <span className="flex-1 truncate font-medium text-slate-900">{sel.c.name}</span>
+                <span className="h-3 w-3 shrink-0 rounded-sm" style={{ background: sel.c.color }} />
+                <span className="text-xs text-slate-500">This is</span>
+                {/* Change just this shape: move it to another takeoff of the same kind (Carpet → Tile,
+                    2x4 wall → 2x6 wall), or to a new one copied from this one. */}
+                <select
+                  aria-label="This shape's takeoff"
+                  className="input min-w-0 flex-1 !py-1 text-xs font-medium"
+                  value={sel.c.id}
+                  disabled={!!sel.m.pending}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    if (v === "__new") {
+                      setNewLike({ id: sel.m.id, name: "" });
+                      return;
+                    }
+                    if (v !== sel.c!.id) patchShape(sel.m.id, { conditionId: v });
+                  }}
+                >
+                  {conditions
+                    .filter((c) => c.type === sel.c!.type)
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  <option value="__new">+ New takeoff like this…</option>
+                </select>
                 <button type="button" className="text-xs text-slate-500 hover:text-slate-800" onClick={() => setSelectedId(null)}>
                   Close
                 </button>
               </div>
+              {newLike?.id === sel.m.id ? (
+                <form
+                  className="mt-2 flex items-center gap-1.5"
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const name = newLike.name.trim();
+                    if (!name) return;
+                    startTransition(async () => {
+                      try {
+                        await copyConditionForShape({ projectId, measurementId: sel.m.id, name });
+                        setNewLike(null);
+                        router.refresh();
+                      } catch (err) {
+                        setError(err instanceof Error ? err.message : "Could not make the takeoff");
+                      }
+                    });
+                  }}
+                >
+                  <input
+                    autoFocus
+                    className="input min-w-0 flex-1 !py-1 text-xs"
+                    placeholder={`Name, e.g. ${sel.c.type === "WALL" ? "2x6 Ext Walls" : sel.c.type === "AREA" ? "Tile" : "New takeoff"}`}
+                    value={newLike.name}
+                    onChange={(e) => setNewLike({ id: sel.m.id, name: e.target.value })}
+                    onKeyDown={(e) => e.key === "Escape" && setNewLike(null)}
+                  />
+                  <Button type="submit" size="sm" disabled={!newLike.name.trim()}>
+                    Make it
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => setNewLike(null)}>
+                    Cancel
+                  </Button>
+                </form>
+              ) : null}
+              {newLike?.id === sel.m.id ? (
+                <p className="mt-1 text-[11px] text-slate-500">A copy of {sel.c.name} with all its items — change its settings after. Only this shape moves to it.</p>
+              ) : null}
               {sel.q ? (
                 <p className="mt-1 tabular-nums text-slate-700">
                   {sel.m.isDeduction ? "Deduction: " : ""}
@@ -3513,6 +4008,23 @@ export function PlanViewer({
                   {sel.c.type === "BEAM" && sel.q.metrics.members
                     ? ` · ${feetInches(sel.q.metrics.member_lf / sel.q.metrics.members)} beam with bearing${sel.q.metrics.members > 1 ? ` · ×${sel.q.metrics.members} plies` : ""}`
                     : ""}
+                </p>
+              ) : null}
+              {sel.c.spanTable && !sel.m.pending ? (
+                <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+                  {sel.m.sizeLocked ? (
+                    <>
+                      Size picked by you.
+                      <button type="button" className="font-medium text-blue-700 hover:underline" onClick={() => patchShape(sel.m.id, { sizeLocked: false })}>
+                        Back to auto ({sel.c.spanTable})
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      Sized by {sel.c.spanTable} from the longest stretch a joist runs between supports (the walls and beams it crosses). Pick another size above to set it
+                      yourself.
+                    </>
+                  )}
                 </p>
               ) : null}
               {hasShapePitch(sel.c.type) && !sel.m.pending ? renderPitchEditor(sel.m, sel.c) : null}
@@ -3550,23 +4062,6 @@ export function PlanViewer({
                   <Trash2 className="h-3.5 w-3.5" /> Delete
                 </Button>
               </div>
-              {conditions.filter((c) => c.type === sel.c!.type && c.id !== sel.c!.id).length ? (
-                <select
-                  aria-label="Move to takeoff"
-                  className="input mt-2 !py-1 text-xs"
-                  value=""
-                  onChange={(e) => e.target.value && patchShape(sel.m.id, { conditionId: e.target.value })}
-                >
-                  <option value="">Move to takeoff…</option>
-                  {conditions
-                    .filter((c) => c.type === sel.c!.type && c.id !== sel.c!.id)
-                    .map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                </select>
-              ) : null}
             </div>
           ) : null}
         </div>

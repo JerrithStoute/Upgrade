@@ -166,8 +166,8 @@ export function TotalsPanel({
               <div className="mt-2 border-t border-slate-200 px-4 pt-3">
                 <p className="label">Framing cut sheet</p>
                 <div className="space-y-2">
-                  {data.materials.cutLists.map((c) => (
-                    <div key={c.condition}>
+                  {data.materials.cutLists.map((c, i) => (
+                    <div key={`${i}:${c.condition}`}>
                       <p className="text-xs font-medium text-slate-900">
                         {c.condition}
                         {c.size ? <span className="font-normal text-slate-500"> · {c.size}</span> : null}
