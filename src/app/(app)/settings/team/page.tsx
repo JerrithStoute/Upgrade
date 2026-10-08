@@ -21,7 +21,7 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
 
   const [team, clients] = await Promise.all([
     db.user.findMany({
-      where: { role: { not: "CLIENT" } },
+      where: { role: { notIn: ["CLIENT", "VENDOR"] } },
       orderBy: [{ active: "desc" }, { name: "asc" }],
       include: { _count: { select: { dailyLogs: true, messages: true } } },
     }),
@@ -133,6 +133,28 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                       </label>
                       <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
                         <input
+                          type="checkbox"
+                          name="canApproveBills"
+                          defaultChecked={u.canApproveBills || u.role === "ADMIN"}
+                          disabled={u.role === "ADMIN"}
+                          form={EDIT_FORM}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        Can approve &amp; pay bills
+                      </label>
+                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
+                        <input
+                          type="checkbox"
+                          name="canSeeReports"
+                          defaultChecked={u.canSeeReports || u.role === "ADMIN"}
+                          disabled={u.role === "ADMIN"}
+                          form={EDIT_FORM}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        Can see reports
+                      </label>
+                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
+                        <input
                           name="vacationDays"
                           type="number"
                           min={0}
@@ -190,8 +212,10 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                   </Td>
                   <Td className="text-xs text-slate-600">
                     {u.role === "ADMIN" || u.canDelay ? <span className="block">Can delay jobs</span> : null}
+                    {u.role === "ADMIN" || u.canApproveBills ? <span className="block">Can approve &amp; pay bills</span> : null}
+                    {u.role === "ADMIN" || u.canSeeReports ? <span className="block">Can see reports</span> : null}
                     {u.vacationDays != null ? <span className="block">{u.vacationDays} vacation days / yr</span> : null}
-                    {!(u.role === "ADMIN" || u.canDelay) && u.vacationDays == null ? "—" : null}
+                    {!(u.role === "ADMIN" || u.canDelay || u.canApproveBills) && u.vacationDays == null ? "—" : null}
                   </Td>
                   <Td>
                     {isSelf ? (

@@ -48,7 +48,7 @@ export default async function SchedulePage({
   const { id } = await params;
   const { task: taskId, view, delayed, insert, at, add } = await searchParams;
   const project = await getProject(id);
-  const [tasks, staff, links, delays, reasons, templates, cal] = await Promise.all([
+  const [tasks, staff, links, delays, reasons, templates, cal, vendors] = await Promise.all([
     db.scheduleTask.findMany({
       where: { projectId: project.id },
       orderBy: [{ sortOrder: "asc" }, { startDate: "asc" }],
@@ -60,6 +60,7 @@ export default async function SchedulePage({
     db.delayReason.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     scheduleTemplateOptions(),
     loadWorkCal(),
+    db.vendor.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   const today = new Date();
   const base = `/projects/${project.id}/schedule`;
@@ -137,6 +138,7 @@ export default async function SchedulePage({
               <TaskFields
                 values={{ startDate: addDates.startDate, endDate: addDates.endDate, percentComplete: 0, color: "#2563eb" }}
                 staff={staff}
+                vendors={vendors}
                 otherTasks={tasks}
                 idPrefix="new"
               />
@@ -172,6 +174,7 @@ export default async function SchedulePage({
                 key={`${near.id}:${above}`}
                 values={{ phase: near.phase, startDate: nearDates.startDate, endDate: nearDates.endDate, percentComplete: 0, color: near.color }}
                 staff={staff}
+                vendors={vendors}
                 otherTasks={tasks}
                 links={above ? [] : [{ id: near.id, lag: 0 }]}
                 idPrefix="ins"
@@ -202,7 +205,14 @@ export default async function SchedulePage({
             <form action={updateTask} className="space-y-4">
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="id" value={editing.id} />
-              <TaskFields values={editing} staff={staff} otherTasks={tasks} links={waitsOn(editing.id).map((l) => ({ id: l.predecessorId, lag: l.lagDays }))} idPrefix="edit" />
+              <TaskFields
+                values={editing}
+                staff={staff}
+                vendors={vendors}
+                otherTasks={tasks}
+                links={waitsOn(editing.id).map((l) => ({ id: l.predecessorId, lag: l.lagDays }))}
+                idPrefix="edit"
+              />
               <div className="flex flex-wrap items-center gap-2">
                 <SubmitButton>Save changes</SubmitButton>
                 <ButtonLink href={base} variant="secondary">

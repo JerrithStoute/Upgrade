@@ -5,6 +5,8 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { str } from "@/lib/utils";
+import { pickedCards } from "@/lib/dashboard-cards";
+import { canSeeReports } from "@/lib/reports";
 
 export async function completeTodo(formData: FormData) {
   const user = await requireStaff();
@@ -22,4 +24,12 @@ export async function completeTodo(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/todos");
   if (todo.projectId) revalidatePath(`/projects/${todo.projectId}`);
+}
+
+/** Saves which cards your dashboard shows and their order (null = back to the default). */
+export async function saveDashboardCards(keys: string[] | null) {
+  const user = await requireStaff();
+  const list = keys ? pickedCards(JSON.stringify(keys), canSeeReports(user)) : null;
+  await db.user.update({ where: { id: user.id }, data: { dashboardCards: list ? JSON.stringify(list) : null } });
+  revalidatePath("/dashboard");
 }

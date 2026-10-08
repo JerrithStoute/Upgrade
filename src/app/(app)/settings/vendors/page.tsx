@@ -1,11 +1,13 @@
 import Link from "next/link";
-import { Pencil, Plus, Truck, Upload } from "lucide-react";
+import { Pencil, Plus, ShieldAlert, ShieldCheck, Truck, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import { codeLabelOf } from "@/lib/takeoff-materials";
-import { Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
+import { Button, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
 import { CodePicker } from "@/components/code-picker";
 import { vendorCodes } from "@/lib/vendors";
-import { createVendor, deleteVendor, importVendors, updateVendor } from "./actions";
+import { COVERAGE_TYPES, coverageWarning, parseRequired, vendorsCoverage } from "@/lib/purchasing";
+import { fmtDate } from "@/lib/utils";
+import { createVendor, deleteVendor, importVendors, setRequiredCoverage, updateVendor } from "./actions";
 
 /** What the paste box shows before you paste. */
 const PASTE_EXAMPLE = ["Beaumont Lumber, Mike, mike@beaumontlumber.com, 409-555-0100", "BMC, bids@bmc.com"].join(String.fromCharCode(10));
@@ -51,10 +53,14 @@ function VendorForm({ action, values, codes }: { action: (fd: FormData) => Promi
 
 export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ edit?: string; added?: string; updated?: string; same?: string; error?: string }> }) {
   const { edit, added, updated, same, error } = await searchParams;
-  const [vendors, costCodes] = await Promise.all([
-    db.vendor.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { bids: true } } } }),
+  const [vendors, costCodes, coverage, company] = await Promise.all([
+    db.vendor.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { bids: true, logins: true } } } }),
     db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true } }),
+    vendorsCoverage(),
+    db.company.findFirst({ select: { requiredCoverage: true } }),
   ]);
+  const coverageOf = new Map(coverage.map((c) => [c.vendor.id, c.state]));
+  const required = parseRequired(company?.requiredCoverage);
   const codes = [...costCodes.map((c) => ({ id: c.id, label: codeLabelOf(c) })), { id: "none", label: "No cost code" }];
   const labelOf = new Map(codes.map((c) => [c.id, c.label]));
 
@@ -106,6 +112,20 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
         </Collapsible>
       </div>
 
+      <form action={setRequiredCoverage} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <span className="font-medium text-slate-800">Insurance every sub needs:</span>
+        {COVERAGE_TYPES.filter((t) => t.value !== "OTHER").map((t) => (
+          <label key={t.value} className="flex items-center gap-1.5 text-slate-700">
+            <input type="checkbox" name="type" value={t.value} defaultChecked={required.includes(t.value)} className="h-4 w-4 rounded border-slate-300" />
+            {t.label}
+          </label>
+        ))}
+        <Button type="submit" size="sm" variant="secondary">
+          Save
+        </Button>
+        <span className="text-xs text-slate-500">Open a vendor to add their certificates and portal logins.</span>
+      </form>
+
       {vendors.length === 0 ? (
         <EmptyState icon={Truck} title="No vendors yet" description="They'll show up here as you send your first bids — or add one, or paste your list, above." />
       ) : (
@@ -115,6 +135,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
               <Th>Vendor</Th>
               <Th>Contact</Th>
               <Th>Cost codes</Th>
+              <Th>Insurance</Th>
               <Th right>Bids</Th>
               <Th />
             </tr>
@@ -123,16 +144,16 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
             {vendors.map((v) =>
               edit === v.id ? (
                 <tr key={v.id} id={`vendor-${v.id}`}>
-                  <td colSpan={5} className="bg-slate-50/50 px-4 py-4">
+                  <td colSpan={6} className="bg-slate-50/50 px-4 py-4">
                     <VendorForm action={updateVendor} values={v} codes={codes} />
                   </td>
                 </tr>
               ) : (
                 <Tr key={v.id}>
                   <Td>
-                    <span id={`vendor-${v.id}`} className="scroll-mt-24 font-medium text-slate-900">
+                    <Link id={`vendor-${v.id}`} href={`/settings/vendors/${v.id}`} className="scroll-mt-24 font-medium text-slate-900 hover:text-blue-700">
                       {v.name}
-                    </span>
+                    </Link>
                     {v.notes ? <span className="block text-xs text-slate-500">{v.notes}</span> : null}
                   </Td>
                   <Td className="text-xs text-slate-600">
@@ -147,6 +168,9 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
                       .map((id) => labelOf.get(id))
                       .filter(Boolean)
                       .join(" · ") || <span className="text-slate-400">—</span>}
+                  </Td>
+                  <Td className="text-xs">
+                    <InsuranceChip href={`/settings/vendors/${v.id}`} state={coverageOf.get(v.id) ?? null} logins={v._count.logins} />
                   </Td>
                   <Td right className="text-xs text-slate-500">
                     {v._count.bids}
@@ -168,5 +192,29 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
         </Table>
       )}
     </div>
+  );
+}
+
+function InsuranceChip({ href, state, logins }: { href: string; state: Awaited<ReturnType<typeof vendorsCoverage>>[number]["state"]; logins: number }) {
+  return (
+    <Link href={href} className="block hover:underline">
+      {!state ? (
+        <span className="text-slate-400">Not tracked</span>
+      ) : state.ok ? (
+        <span className="flex items-center gap-1 text-emerald-700">
+          <ShieldCheck className="h-3.5 w-3.5" /> Covered
+        </span>
+      ) : (
+        <span className="flex items-start gap-1 text-amber-700">
+          <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0" /> {coverageWarning(state, (d) => fmtDate(d, "MMM d"))}
+        </span>
+      )}
+      {state?.unconfirmed ? <span className="block text-sky-700">{state.unconfirmed} to confirm</span> : null}
+      {logins ? (
+        <span className="block text-slate-500">
+          {logins} portal login{logins === 1 ? "" : "s"}
+        </span>
+      ) : null}
+    </Link>
   );
 }

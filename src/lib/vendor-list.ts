@@ -24,6 +24,8 @@ export async function renameVendorEverywhere(vendorId: string, oldName: string, 
   const ids = items.filter((i) => vendorKey(i.vendor ?? "") === vendorKey(oldName)).map((i) => i.id);
   if (ids.length) await db.materialItem.updateMany({ where: { id: { in: ids } }, data: { vendor: newName } });
   await db.bid.updateMany({ where: { vendorId }, data: { vendorName: newName } });
+  await db.purchaseOrder.updateMany({ where: { vendorId }, data: { vendorName: newName } });
+  await db.vendorBill.updateMany({ where: { vendorId }, data: { vendorName: newName } });
 }
 
 /** Adds vendors from a list; ones you already have get their blank details filled in, nothing overwritten. */

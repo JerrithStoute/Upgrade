@@ -64,6 +64,7 @@ function readTaskFields(fd: FormData) {
     color: /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#2563eb",
     notes: strOrNull(fd, "notes"),
     assigneeId: strOrNull(fd, "assigneeId"),
+    vendorId: strOrNull(fd, "vendorId"),
   };
 }
 

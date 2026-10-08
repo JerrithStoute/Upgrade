@@ -12,6 +12,7 @@ type TaskValues = {
   endDate?: Date | null;
   percentComplete?: number;
   assigneeId?: string | null;
+  vendorId?: string | null;
   isMilestone?: boolean;
   color?: string;
   notes?: string | null;
@@ -21,12 +22,15 @@ type TaskValues = {
 export function TaskFields({
   values,
   staff,
+  vendors = [],
   otherTasks,
   links = [],
   idPrefix,
 }: {
   values: TaskValues;
   staff: { id: string; name: string }[];
+  /** Subs and vendors: the one doing this task sees it in their portal. */
+  vendors?: { id: string; name: string }[];
   otherTasks: { id: string; name: string; phase: string }[];
   /** What this task waits on now. */
   links?: LinkValue[];
@@ -71,10 +75,20 @@ export function TaskFields({
           ))}
         </select>
       </Field>
+      <Field label="Sub / vendor" htmlFor={`${idPrefix}-vendor`} hint="They see it in their portal">
+        <select id={`${idPrefix}-vendor`} name="vendorId" className="input" defaultValue={values.vendorId ?? ""}>
+          <option value="">None</option>
+          {vendors.map((v) => (
+            <option key={v.id} value={v.id}>
+              {v.name}
+            </option>
+          ))}
+        </select>
+      </Field>
       <Field
         label="Waits on"
         htmlFor={`${idPrefix}-pred`}
-        className="md:col-span-2"
+        className="md:col-span-1"
         hint="It starts after the last of these finishes (plus any lag, in workdays) — and moves when they do"
       >
         <PredecessorsField name="links" idPrefix={idPrefix} options={otherTasks.filter((t) => t.id !== values.id)} initial={links} />

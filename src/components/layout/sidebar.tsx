@@ -3,17 +3,34 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { LayoutDashboard, FolderKanban, Users, CalendarDays, CheckSquare, Receipt, Settings, ChevronLeft, ChevronRight, Pin, PinOff, type LucideIcon } from "lucide-react";
+import {
+  LayoutDashboard,
+  FolderKanban,
+  Users,
+  CalendarDays,
+  CheckSquare,
+  Receipt,
+  BarChart3,
+  FileInput,
+  Settings,
+  ChevronLeft,
+  ChevronRight,
+  Pin,
+  PinOff,
+  type LucideIcon,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand-mark";
 
-const NAV: { href: string; label: string; icon: LucideIcon; adminOnly?: boolean }[] = [
+const NAV: { href: string; label: string; icon: LucideIcon; adminOnly?: boolean; reports?: boolean }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/schedule", label: "Schedule", icon: CalendarDays },
   { href: "/todos", label: "To-Dos", icon: CheckSquare },
   { href: "/invoices", label: "Invoices", icon: Receipt },
+  { href: "/bills", label: "Bills", icon: FileInput },
+  { href: "/reports", label: "Reports", icon: BarChart3, reports: true },
   { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
 
@@ -50,7 +67,21 @@ function subscribePinned(cb: () => void) {
   };
 }
 
-function SidebarContent({ role, companyName, logoUrl, pathname, extra }: { role: string; companyName: string; logoUrl: string | null; pathname: string; extra?: React.ReactNode }) {
+function SidebarContent({
+  role,
+  reports,
+  companyName,
+  logoUrl,
+  pathname,
+  extra,
+}: {
+  role: string;
+  reports?: boolean;
+  companyName: string;
+  logoUrl: string | null;
+  pathname: string;
+  extra?: React.ReactNode;
+}) {
   return (
     <>
       <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-4">
@@ -66,7 +97,7 @@ function SidebarContent({ role, companyName, logoUrl, pathname, extra }: { role:
         {extra}
       </div>
       <nav className="flex-1 space-y-0.5 p-3">
-        {NAV.filter((n) => !n.adminOnly || role === "ADMIN").map((item) => {
+        {NAV.filter((n) => (!n.adminOnly && !n.reports) || role === "ADMIN" || (n.reports && reports)).map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
@@ -87,7 +118,7 @@ function SidebarContent({ role, companyName, logoUrl, pathname, extra }: { role:
   );
 }
 
-export function Sidebar({ role, companyName, logoUrl }: { role: string; companyName: string; logoUrl: string | null }) {
+export function Sidebar({ role, reports, companyName, logoUrl }: { role: string; reports?: boolean; companyName: string; logoUrl: string | null }) {
   const pathname = usePathname();
   const pinned = useSyncExternalStore(subscribePinned, readPinned, () => false);
   // Open over the plan for this page only; going anywhere else closes it.
@@ -121,6 +152,7 @@ export function Sidebar({ role, companyName, logoUrl }: { role: string; companyN
             <aside className="no-print fixed inset-y-0 left-0 z-50 hidden w-60 flex-col border-r border-slate-200 bg-white shadow-2xl md:flex">
               <SidebarContent
                 role={role}
+                reports={reports}
                 companyName={companyName}
                 logoUrl={logoUrl}
                 pathname={pathname}
@@ -151,6 +183,7 @@ export function Sidebar({ role, companyName, logoUrl }: { role: string; companyN
     <aside className="no-print sticky top-0 z-20 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white md:flex">
       <SidebarContent
         role={role}
+        reports={reports}
         companyName={companyName}
         logoUrl={logoUrl}
         pathname={pathname}
@@ -183,11 +216,11 @@ export function AppMain({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function MobileNav({ role }: { role: string }) {
+export function MobileNav({ role, reports }: { role: string; reports?: boolean }) {
   const pathname = usePathname();
   return (
     <nav className="no-print fixed inset-x-0 bottom-0 z-20 flex border-t border-slate-200 bg-white md:hidden">
-      {NAV.filter((n) => !n.adminOnly || role === "ADMIN")
+      {NAV.filter((n) => (!n.adminOnly && !n.reports) || role === "ADMIN" || (n.reports && reports))
         .slice(0, 5)
         .map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");

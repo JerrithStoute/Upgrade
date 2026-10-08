@@ -231,21 +231,30 @@ export default async function BudgetPage({ params, searchParams }: { params: Pro
                       </Td>
                       <Td className="text-xs text-slate-600">{e.reference ?? "—"}</Td>
                       <Td>
-                        <span className="flex items-center justify-end gap-1">
-                          <form action={toggleExpensePaid}>
-                            <input type="hidden" name="projectId" value={project.id} />
-                            <input type="hidden" name="id" value={e.id} />
-                            <SubmitButton variant="ghost" size="sm">
-                              {e.status === "PAID" ? "Mark unpaid" : "Mark paid"}
-                            </SubmitButton>
-                          </form>
-                          <Link href={`${budgetHref}?edit=${e.id}`} className={buttonClasses("ghost", "sm")}>
-                            <Pencil className="h-3.5 w-3.5" /> Edit
-                          </Link>
-                          <ConfirmForm action={deleteExpense} hidden={{ projectId: project.id, id: e.id }} message="Delete this expense?" variant="ghost">
-                            <span className="text-rose-700">Delete</span>
-                          </ConfirmForm>
-                        </span>
+                        {e.billId ? (
+                          // From an approved vendor bill: changed (or paid) on the bill, so the two never disagree.
+                          <span className="flex justify-end">
+                            <Link href={`/projects/${project.id}/purchasing/bills/${e.billId}`} className={buttonClasses("ghost", "sm")}>
+                              Open bill
+                            </Link>
+                          </span>
+                        ) : (
+                          <span className="flex items-center justify-end gap-1">
+                            <form action={toggleExpensePaid}>
+                              <input type="hidden" name="projectId" value={project.id} />
+                              <input type="hidden" name="id" value={e.id} />
+                              <SubmitButton variant="ghost" size="sm">
+                                {e.status === "PAID" ? "Mark unpaid" : "Mark paid"}
+                              </SubmitButton>
+                            </form>
+                            <Link href={`${budgetHref}?edit=${e.id}`} className={buttonClasses("ghost", "sm")}>
+                              <Pencil className="h-3.5 w-3.5" /> Edit
+                            </Link>
+                            <ConfirmForm action={deleteExpense} hidden={{ projectId: project.id, id: e.id }} message="Delete this expense?" variant="ghost">
+                              <span className="text-rose-700">Delete</span>
+                            </ConfirmForm>
+                          </span>
+                        )}
                       </Td>
                     </Tr>
                   ),

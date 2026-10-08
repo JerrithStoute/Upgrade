@@ -43,7 +43,7 @@ export async function updateTeamMember(formData: FormData) {
   const admin = await requireAdmin();
   const id = str(formData, "id");
   const target = await db.user.findUnique({ where: { id } });
-  if (!target || target.role === "CLIENT") throw new Error("Team member not found");
+  if (!target || target.role === "CLIENT" || target.role === "VENDOR") throw new Error("Team member not found");
   const name = str(formData, "name");
   if (!name) throw new Error("Name is required");
 
@@ -61,6 +61,8 @@ export async function updateTeamMember(formData: FormData) {
       role,
       active,
       canDelay: boolField(formData, "canDelay"),
+      canApproveBills: boolField(formData, "canApproveBills"),
+      canSeeReports: boolField(formData, "canSeeReports"),
       vacationDays: str(formData, "vacationDays") ? Math.max(0, Math.min(365, Number(str(formData, "vacationDays")) || 0)) : null,
       ...(password ? { passwordHash: await hashPassword(password) } : {}),
     },
@@ -75,7 +77,7 @@ export async function toggleTeamMemberActive(formData: FormData) {
   const id = str(formData, "id");
   if (id === admin.id) throw new Error("You cannot deactivate your own account");
   const target = await db.user.findUnique({ where: { id } });
-  if (!target || target.role === "CLIENT") throw new Error("Team member not found");
+  if (!target || target.role === "CLIENT" || target.role === "VENDOR") throw new Error("Team member not found");
   await db.user.update({ where: { id }, data: { active: !target.active } });
   await logActivity({
     userId: admin.id,
@@ -93,7 +95,7 @@ export async function deleteTeamMember(formData: FormData) {
     where: { id },
     include: { _count: { select: { dailyLogs: true, messages: true } } },
   });
-  if (!target || target.role === "CLIENT") throw new Error("Team member not found");
+  if (!target || target.role === "CLIENT" || target.role === "VENDOR") throw new Error("Team member not found");
 
   if (target._count.dailyLogs > 0 || target._count.messages > 0) {
     // Has authored history — keep the record and deactivate instead.

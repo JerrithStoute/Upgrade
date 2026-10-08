@@ -21,6 +21,7 @@ function revalidate(projectId: string) {
 async function loadExpense(projectId: string, id: string) {
   const expense = await db.expense.findFirst({ where: { id, projectId } });
   if (!expense) throw new Error("Expense not found");
+  if (expense.billId) throw new Error("This cost is from a vendor bill — change it on the bill (Purchasing)");
   return expense;
 }
 

@@ -28,6 +28,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   if (user.role === "CLIENT") {
     if (file.project.clientId !== user.clientId || !file.clientVisible) return new NextResponse("Forbidden", { status: 403 });
+  } else if (user.role === "VENDOR") {
+    // A sub / vendor: only the bills they sent.
+    const theirs = user.vendorId ? await db.vendorBill.findFirst({ where: { fileId: file.id, vendorId: user.vendorId }, select: { id: true } }) : null;
+    if (!theirs) return new NextResponse("Forbidden", { status: 403 });
   } else if (!isStaff(user)) {
     return new NextResponse("Forbidden", { status: 403 });
   }

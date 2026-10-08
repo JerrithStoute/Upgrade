@@ -10,7 +10,7 @@ import { getSessionKey } from "./session-secret";
 export const SESSION_COOKIE = "upgrade_session";
 const SESSION_DAYS = 14;
 
-export type Role = "ADMIN" | "STAFF" | "CLIENT" | "SUB";
+export type Role = "ADMIN" | "STAFF" | "CLIENT" | "SUB" | "VENDOR";
 
 export type SessionUser = {
   id: string;
@@ -20,6 +20,11 @@ export type SessionUser = {
   clientId: string | null;
   /** May delay a job's schedule (admins always can). */
   canDelay: boolean;
+  /** May approve vendor bills (admins always can). */
+  canApproveBills: boolean;
+  canSeeReports: boolean;
+  /** A vendor portal login: the vendor it's for. */
+  vendorId: string | null;
 };
 
 function secretKey() {
@@ -80,6 +85,9 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     role: user.role as Role,
     clientId: user.client?.id ?? null,
     canDelay: user.canDelay,
+    canApproveBills: user.canApproveBills,
+    canSeeReports: user.canSeeReports,
+    vendorId: user.vendorId,
   };
 });
 
@@ -98,7 +106,25 @@ export async function requireUser(): Promise<SessionUser> {
 export async function requireStaff(): Promise<SessionUser> {
   const user = await requireUser();
   if (user.role === "CLIENT") redirect("/portal");
+  if (user.role === "VENDOR") redirect("/vendor");
   if (!isStaff(user)) redirect("/logout");
+  return user;
+}
+
+export type VendorUser = SessionUser & { vendorId: string };
+
+/** Require a sub / vendor portal login. Anyone else goes home. */
+export async function requireVendor(): Promise<VendorUser> {
+  const user = await requireUser();
+  if (user.role !== "VENDOR") redirect(user.role === "CLIENT" ? "/portal" : "/dashboard");
+  if (!user.vendorId) redirect("/logout");
+  return { ...user, vendorId: user.vendorId };
+}
+
+/** Require someone who may see Reports: admins, and team members allowed in Settings → Team. */
+export async function requireReports(): Promise<SessionUser> {
+  const user = await requireStaff();
+  if (user.role !== "ADMIN" && !user.canSeeReports) redirect("/dashboard");
   return user;
 }
 
@@ -141,6 +167,9 @@ export const requireClient = cache(async (): Promise<ClientUser> => {
         role: "CLIENT",
         clientId: client.id,
         canDelay: false,
+        canApproveBills: false,
+        canSeeReports: false,
+        vendorId: null,
         preview: true,
         previewProjectId: projectId || null,
       };

@@ -13,7 +13,7 @@ const MAX_FAILURES_PER_EMAIL = 5;
 const MAX_FAILURES_PER_IP = 20;
 
 /** Roles that can sign in today. SUB is excluded until there is a subcontractor portal. */
-const LOGIN_ROLES = ["ADMIN", "STAFF", "CLIENT"];
+const LOGIN_ROLES = ["ADMIN", "STAFF", "CLIENT", "VENDOR"];
 
 // Compared against when the email doesn't exist, so a miss takes as long as a wrong password.
 let dummyHash: Promise<string> | null = null;
@@ -33,7 +33,9 @@ function tooMany(seconds: number): LoginState {
 }
 
 export async function login(_prev: LoginState, formData: FormData): Promise<LoginState> {
-  const email = String(formData.get("email") ?? "").trim().toLowerCase();
+  const email = String(formData.get("email") ?? "")
+    .trim()
+    .toLowerCase();
   const password = String(formData.get("password") ?? "");
   const next = String(formData.get("next") ?? "");
 
@@ -59,5 +61,5 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   clearFailures(emailKey);
   await createSession(user.id);
   const safeNext = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : null;
-  redirect(safeNext ?? (user.role === "CLIENT" ? "/portal" : "/dashboard"));
+  redirect(safeNext ?? (user.role === "CLIENT" ? "/portal" : user.role === "VENDOR" ? "/vendor" : "/dashboard"));
 }
