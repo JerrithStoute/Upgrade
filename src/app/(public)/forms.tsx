@@ -3,6 +3,7 @@
 import { useActionState } from "react";
 import { authButton, FormNote } from "@/components/auth-card";
 import { RobotCheck } from "@/components/robot-check";
+import { PasswordInput } from "@/components/password-input";
 import { acceptInvite, confirmEmail, forgotPassword, resetPassword, type FormState } from "./actions";
 
 export function ForgotForm({ robotKey }: { robotKey: string | null }) {
@@ -83,8 +84,14 @@ export function InviteForm({ token, email, name }: { token: string; email: strin
         <label className="label" htmlFor="password">
           Choose a password
         </label>
-        <input id="password" name="password" type="password" required minLength={10} className="input" autoComplete="new-password" />
+        <PasswordInput id="password" name="password" minLength={10} />
         <p className="mt-1 text-xs text-slate-500">At least 10 characters — a short sentence works well.</p>
+      </div>
+      <div>
+        <label className="label" htmlFor="confirm">
+          Type it again
+        </label>
+        <PasswordInput id="confirm" name="confirm" />
       </div>
       <FormNote error={state?.error} />
       <button type="submit" disabled={pending} className={authButton}>

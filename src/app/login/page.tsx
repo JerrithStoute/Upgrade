@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { BrandMark } from "@/components/brand-mark";
 import { getBrand } from "@/lib/company-brand";
 import { LoginForm } from "./login-form";
@@ -25,12 +24,6 @@ export default async function LoginPage({
           <p className="mb-5 text-sm text-slate-500">Construction project management for your team and clients.</p>
           <LoginForm next={next} robotKey={robotCheckKey()} />
         </div>
-        <p className="mt-4 text-center text-sm text-slate-600">
-          New to The Builder Station?{" "}
-          <Link href="/signup" className="font-medium text-blue-700 hover:underline">
-            Start free
-          </Link>
-        </p>
       </div>
     </main>
   );

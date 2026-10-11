@@ -123,6 +123,7 @@ export async function acceptInvite(_prev: FormState, fd: FormData): Promise<Form
   const invite = token ? await systemDb.invite.findUnique({ where: { tokenHash: hashToken(token) } }) : null;
   if (!invite || invite.acceptedAt || invite.expiresAt < new Date()) return { error: "That invitation isn't valid any more — ask for a new one" };
   if (!name) return { error: "Put in your name" };
+  if (password !== String(fd.get("confirm") ?? "")) return { error: "The two passwords don't match — type them again" };
   const problem = passwordProblem(password, invite.email);
   if (problem) return { error: problem };
   if (await systemDb.user.findUnique({ where: { email: invite.email }, select: { id: true } }))
