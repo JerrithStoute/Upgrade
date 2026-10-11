@@ -85,7 +85,8 @@ export default async function EstimatePage({ params, searchParams }: { params: P
   const selectedId = estimates.some((e) => e.id === estimateParam) ? estimateParam! : estimates[0].id;
   // The sheet first: it files any loose lines (older estimates) into spec items.
   // A draft with the takeoff on it updates itself: new prices and quantities ("what changed" shows how).
-  await refreshDraftFromTakeoff(project.id, selectedId).catch(() => null);
+  // That also brings the job's lumber lines up to date — once; what follows reuses them.
+  const refreshed = await refreshDraftFromTakeoff(project.id, selectedId).catch(() => null);
   // Formula quantities follow the job's parameter values and its sales price (drafts only) — after the takeoff, so they see its totals.
   await refreshFormulaQuantities(selectedId);
   const sheet = await loadEstimateSheet(selectedId);
@@ -103,25 +104,30 @@ export default async function EstimatePage({ params, searchParams }: { params: P
     estimateValues(selectedId),
     db.company.findFirst({ select: { allowanceProfit: true, proposalOptions: true } }),
   ]);
-  // Approved, with change orders against it: the Markup, Margin & Tax table stays as the contract was priced.
-  const changeOrders = estimate?.status === "APPROVED" ? await db.changeOrder.count({ where: { projectId: project.id } }) : 0;
   if (!estimate) return null;
+  // The rest looked up together, not one after another.
+  const [changeOrders, check, bidOver, detail] = await Promise.all([
+    // Approved, with change orders against it: the Markup, Margin & Tax table stays as the contract was priced.
+    estimate.status === "APPROVED" ? db.changeOrder.count({ where: { projectId: project.id } }) : 0,
+    // Before it goes out: unpriced takeoff items, $0 lines, Item List prices that moved, pricing past its date.
+    estimate.status === "APPROVED" ? null : takeoffPriceCheck(project.id),
+    // Re-bids 10%+ over the bid taken for a cost code (only once a bid has been taken).
+    db.bidAward
+      .count({ where: { projectId: project.id } })
+      .then(async (n) => (n ? overWarnings(await bidComparison(project.id, { synced: refreshed !== null })) : [])),
+    // The takeoff items behind each takeoff line (its dropdown).
+    sheet.some((sp) => sp.lines.some((l) => l.takeoffKey)) ? takeoffDetail(project.id) : undefined,
+  ]);
 
   const isDraft = estimate.status === "DRAFT";
   const locked = !!estimate.lockedAt;
   const autoNote = isDraft ? parseAutoNote(estimate.autoNote) : null;
   const jobLocked = !!project.pricesLockedAt;
   const reviewHref = `/projects/${project.id}/takeoff/rebid`;
-  // Before it goes out: unpriced takeoff items, $0 lines, Item List prices that moved, pricing past its date.
-  const check = estimate.status === "APPROVED" ? null : await takeoffPriceCheck(project.id);
-  // Re-bids 10%+ over the bid taken for a cost code (only once a bid has been taken).
-  const bidOver = (await db.bidAward.count({ where: { projectId: project.id } })) ? overWarnings(await bidComparison(project.id)) : [];
   const zeroLines = isDraft ? zeroLineNames(estimate.items) : [];
   const validDays = parseProposalOptions(estimate.proposalOptions ?? company?.proposalOptions).validDays;
   const expiresOn = estimate.status === "SENT" && estimate.sentAt && validDays > 0 ? addDays(estimate.sentAt, validDays) : null;
   const blanks = (isDraft ? (check?.unpriced.length ?? 0) : 0) + zeroLines.length;
-  // The takeoff items behind each takeoff line (its dropdown).
-  const detail = sheet.some((sp) => sp.lines.some((l) => l.takeoffKey)) ? await takeoffDetail(project.id) : undefined;
   const nextVersion = Math.max(...estimates.map((e) => e.version)) + 1;
   const itemPrices = Object.fromEntries(estimate.items.flatMap((i) => (i.materialItem ? [[i.materialItem.id, i.materialItem.unitCost]] : [])));
 

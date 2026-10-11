@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "async_hooks";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { currentCompanyId } from "./tenant";
+import { countQuery } from "./request-stats";
 
 /**
  * The database, one company at a time.
@@ -110,7 +111,21 @@ const scoped = appDb.$extends({
   name: "company-gatekeeper",
   query: {
     $allModels: {
-      async $allOperations({ model, operation, args, query }) {
+      async $allOperations(params) {
+        // Counted for the speed alarm (request-stats.ts).
+        const t = performance.now();
+        try {
+          return await gatekeep(params);
+        } finally {
+          countQuery(performance.now() - t);
+        }
+      },
+    },
+  },
+});
+
+/** Every company query: scoped to the current company, and tagged with it when written. */
+async function gatekeep({ model, operation, args, query }: { model: string; operation: string; args: unknown; query: (args: unknown) => Prisma.PrismaPromise<unknown> }) {
         const companyId = await currentCompanyId();
         const a = { ...(args as Data) };
         if (model === "Company") {
@@ -133,10 +148,7 @@ const scoped = appDb.$extends({
           a.data = data;
         }
         return run(companyId, query(a));
-      },
-    },
-  },
-});
+}
 
 /** Runs a query as `companyId` — in its own little transaction that names the company, unless already in one. */
 async function run<T>(companyId: string, q: Prisma.PrismaPromise<T>): Promise<T> {

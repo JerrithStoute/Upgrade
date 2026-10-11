@@ -26,8 +26,8 @@ export const isLadderLine = (l: { key: string }) => l.key.startsWith(LADDER_PREF
  * The Material list lines worth bidding (something to buy), with their cost codes — less
  * what was pulled from the company's inventory for them.
  */
-export async function biddableLines(projectId: string) {
-  const [{ lines }, pulled] = await Promise.all([buildMaterialList(projectId), jobPulls(projectId)]);
+export async function biddableLines(projectId: string, opts: { synced?: boolean } = {}) {
+  const [{ lines }, pulled] = await Promise.all([buildMaterialList(projectId, null, opts), jobPulls(projectId)]);
   return lines
     .map((l) => {
       const p = pulled.get(l.key) ?? 0;
@@ -131,9 +131,9 @@ export type CodeRow = {
  * it — `priced` of `items` says how complete it is), the bid you took, and how later bids
  * compare with it.
  */
-export async function bidComparison(projectId: string) {
+export async function bidComparison(projectId: string, opts: { synced?: boolean } = {}) {
   const [lines, bids, awards] = await Promise.all([
-    biddableLines(projectId),
+    biddableLines(projectId, opts),
     db.bid.findMany({ where: { projectId }, orderBy: { number: "asc" }, include: { lines: true } }),
     db.bidAward.findMany({ where: { projectId } }),
   ]);

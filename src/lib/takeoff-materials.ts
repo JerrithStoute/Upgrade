@@ -69,8 +69,9 @@ type Acc = Omit<MaterialLine, "quantity" | "unitCost" | "extended" | "usedIn" | 
  * - other conditions without assembly items, as their own line.
  * Costs are job costs (no markup). `planId` limits it to one plan set.
  */
-export async function buildMaterialList(projectId: string, planId?: string | null) {
-  await syncAutoItems(projectId);
+export async function buildMaterialList(projectId: string, planId?: string | null, opts: { synced?: boolean } = {}) {
+  // `synced`: the caller just brought the job's lumber lines up to date (don't do it twice).
+  if (!opts.synced) await syncAutoItems(projectId);
   return materialListFrom(await loadConditions(projectId), planId);
 }
 
