@@ -1,8 +1,11 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { hashPassword, requireStaff } from "@/lib/auth";
+import { requireStaff } from "@/lib/auth";
+import { sendResetEmail } from "@/lib/account";
+import { cancelInvite, invite, resendInvite } from "@/lib/invites";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { str, strOrNull } from "@/lib/utils";
@@ -26,7 +29,7 @@ function readClientFields(fd: FormData) {
   };
 }
 
-export async function createClient(formData: FormData) {
+export const createClient = friendly(async function createClient(formData: FormData) {
   const user = await requireStaff();
   const data = readClientFields(formData);
   const client = await db.client.create({ data });
@@ -37,9 +40,9 @@ export async function createClient(formData: FormData) {
   });
   revalidatePath("/clients");
   redirect(`/clients/${client.id}`);
-}
+});
 
-export async function updateClient(formData: FormData) {
+export const updateClient = friendly(async function updateClient(formData: FormData) {
   await requireStaff();
   const id = str(formData, "id");
   const existing = await db.client.findUnique({ where: { id } });
@@ -49,9 +52,9 @@ export async function updateClient(formData: FormData) {
   revalidatePath("/clients");
   revalidatePath(`/clients/${id}`);
   redirect(`/clients/${id}`);
-}
+});
 
-export async function deleteClient(formData: FormData) {
+export const deleteClient = friendly(async function deleteClient(formData: FormData) {
   const user = await requireStaff();
   const id = str(formData, "id");
   const existing = await db.client.findUnique({ where: { id }, include: { _count: { select: { projects: true } } } });
@@ -66,51 +69,45 @@ export async function deleteClient(formData: FormData) {
   });
   revalidatePath("/clients");
   redirect("/clients");
-}
+});
 
-export async function grantPortalAccess(formData: FormData) {
+/** Invites the client to their portal: an email with a link to choose their own password. */
+export const grantPortalAccess = friendly(async function grantPortalAccess(formData: FormData) {
   const user = await requireStaff();
   const id = str(formData, "id");
-  const email = str(formData, "email").toLowerCase();
-  const password = String(formData.get("password") ?? "");
   const client = await db.client.findUnique({ where: { id } });
   if (!client) throw new Error("Client not found.");
   if (client.userId) throw new Error("This client already has portal access.");
-  if (!email || !email.includes("@")) throw new Error("A valid email address is required.");
-  if (password.length < 8) throw new Error("Password must be at least 8 characters.");
-  const taken = await db.user.findUnique({ where: { email } });
-  if (taken) throw new Error(`The email ${email} is already used by another login. Choose a different email.`);
-  const portalUser = await db.user.create({
-    data: {
-      email,
-      passwordHash: await hashPassword(password),
-      name: `${client.firstName} ${client.lastName}`,
-      role: "CLIENT",
-      phone: client.phone,
-    },
-  });
-  await db.client.update({ where: { id }, data: { userId: portalUser.id, email: client.email ?? email } });
-  await logActivity({
-    userId: user.id,
-    type: "client.portal_granted",
-    description: `Granted portal access to ${client.firstName} ${client.lastName} (${email})`,
-  });
+  const row = await invite({ kind: "CLIENT", email: str(formData, "email"), name: `${client.firstName} ${client.lastName}`.trim(), clientId: id }, user);
+  if (!client.email) await db.client.update({ where: { id }, data: { email: row.email } });
+  await logActivity({ userId: user.id, type: "client.portal_invited", description: `Invited ${client.firstName} ${client.lastName} to the client portal (${row.email})` });
   revalidatePath(`/clients/${id}`);
-  revalidatePath("/clients");
-}
+});
 
-export async function resetPortalPassword(formData: FormData) {
+export const resendPortalInvite = friendly(async function resendPortalInvite(formData: FormData) {
+  const user = await requireStaff();
+  await resendInvite(str(formData, "inviteId"), user);
+  revalidatePath(`/clients/${str(formData, "id")}`);
+});
+
+export const cancelPortalInvite = friendly(async function cancelPortalInvite(formData: FormData) {
+  await requireStaff();
+  await cancelInvite(str(formData, "inviteId"));
+  revalidatePath(`/clients/${str(formData, "id")}`);
+});
+
+/** Emails the client a link to choose a new password (nobody types one for them). */
+export const resetPortalPassword = friendly(async function resetPortalPassword(formData: FormData) {
   await requireStaff();
   const id = str(formData, "id");
-  const password = String(formData.get("password") ?? "");
-  const client = await db.client.findUnique({ where: { id } });
-  if (!client?.userId) throw new Error("This client does not have portal access.");
-  if (password.length < 8) throw new Error("Password must be at least 8 characters.");
-  await db.user.update({ where: { id: client.userId }, data: { passwordHash: await hashPassword(password) } });
+  const client = await db.client.findUnique({ where: { id }, include: { user: true } });
+  if (!client?.user) throw new Error("This client does not have portal access.");
+  await sendResetEmail(client.user);
   revalidatePath(`/clients/${id}`);
-}
+  redirect(`/clients/${id}?reset=1`);
+});
 
-export async function revokePortalAccess(formData: FormData) {
+export const revokePortalAccess = friendly(async function revokePortalAccess(formData: FormData) {
   const user = await requireStaff();
   const id = str(formData, "id");
   const client = await db.client.findUnique({ where: { id } });
@@ -123,4 +120,4 @@ export async function revokePortalAccess(formData: FormData) {
   });
   revalidatePath(`/clients/${id}`);
   revalidatePath("/clients");
-}
+});

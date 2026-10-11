@@ -31,9 +31,7 @@ export function ConfirmForm({
         if (!window.confirm(message)) e.preventDefault();
       }}
     >
-      {hidden
-        ? Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />)
-        : null}
+      {hidden ? Object.entries(hidden).map(([k, v]) => <input key={k} type="hidden" name={k} value={v} />) : null}
       <Button type="submit" variant={variant} size={size}>
         {children}
       </Button>

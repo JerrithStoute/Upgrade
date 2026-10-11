@@ -37,8 +37,8 @@ export function FileTypesNote({ className, viewOnly }: { className?: string; /**
     );
   return (
     <p className={cn("text-[11px] leading-snug text-slate-400", className)}>
-      Any file up to 25 MB. PDFs and pictures (JPG, PNG, GIF, WebP) open in the browser; Word, Excel and other files download. iPhone photos (HEIC) download too — set the iPhone to
-      Settings › Camera › Formats › Most Compatible for JPGs.
+      Up to 25 MB: PDFs, photos, Word, Excel, CSV or text, CAD drawings (DWG, DXF) or ZIP. PDFs and pictures (JPG, PNG, GIF, WebP) open in the browser; the rest download. iPhone
+      photos (HEIC) download too — set the iPhone to Settings › Camera › Formats › Most Compatible for JPGs.
     </p>
   );
 }

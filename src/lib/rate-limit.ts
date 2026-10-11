@@ -3,7 +3,7 @@ import "server-only";
 /**
  * Minimal fixed-window failure counter, kept in memory.
  *
- * Upgrade runs as a single Node process on SQLite, so an in-process map is
+ * The Builder Station runs as a single Node process, so an in-process map is
  * enough. If you ever run several instances behind a load balancer, move this
  * to a shared store (e.g. a table in the database or Redis).
  */
@@ -23,6 +23,12 @@ export function retryAfter(key: string, limit: number): number {
   const b = buckets.get(key);
   if (!b || b.resetAt <= now) return 0;
   return b.count >= limit ? Math.ceil((b.resetAt - now) / 1000) : 0;
+}
+
+/** How many failures `key` has in the current window. */
+export function failures(key: string): number {
+  const b = buckets.get(key);
+  return b && b.resetAt > Date.now() ? b.count : 0;
 }
 
 /** Record a failure for `key` in a window of `windowMs`. */

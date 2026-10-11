@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -43,7 +44,7 @@ async function draftCO(projectId: string, coId: string) {
 const err = (e: unknown): Result => ({ ok: false, error: (e as Error).message });
 
 /** New change order: title from the form; intro, closing text, terms, profit and "if declined" from your defaults. */
-export async function createChangeOrder(formData: FormData) {
+export const createChangeOrder = friendly(async function createChangeOrder(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const project = await db.project.findUnique({ where: { id: projectId } });
@@ -59,7 +60,7 @@ export async function createChangeOrder(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "change_order.created", description: `Change Order #${co.number} "${title}" created` });
   revalidate(projectId, co.id);
   redirect(coPath(projectId, co.id));
-}
+});
 
 const fields = z
   .object({
@@ -272,7 +273,7 @@ export async function removeChangeOrderLine(projectId: string, coId: string, ite
   return { ok: true };
 }
 
-export async function sendChangeOrder(formData: FormData) {
+export const sendChangeOrder = friendly(async function sendChangeOrder(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -284,10 +285,10 @@ export async function sendChangeOrder(formData: FormData) {
   await finalizeIfApproved(co.id, user);
   revalidate(projectId, id);
   redirect(coPath(projectId, id));
-}
+});
 
 /** Records the client's approval (signed on paper, by email…). Approved once every listed team member has too. */
-export async function approveChangeOrder(formData: FormData) {
+export const approveChangeOrder = friendly(async function approveChangeOrder(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -299,7 +300,7 @@ export async function approveChangeOrder(formData: FormData) {
   await finalizeIfApproved(co.id, user);
   revalidate(projectId, id);
   redirect(coPath(projectId, id));
-}
+});
 
 /** A listed team member approves. */
 export async function teamApproveChangeOrder(projectId: string, coId: string): Promise<Result> {
@@ -315,7 +316,7 @@ export async function teamApproveChangeOrder(projectId: string, coId: string): P
   return { ok: true };
 }
 
-export async function declineChangeOrder(formData: FormData) {
+export const declineChangeOrder = friendly(async function declineChangeOrder(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -327,9 +328,9 @@ export async function declineChangeOrder(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "change_order.declined", description: `Change Order #${co.number} declined by ${decidedBy}` });
   revalidate(projectId, id);
   redirect(coPath(projectId, id));
-}
+});
 
-export async function voidChangeOrder(formData: FormData) {
+export const voidChangeOrder = friendly(async function voidChangeOrder(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -339,9 +340,9 @@ export async function voidChangeOrder(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "change_order.voided", description: `Change Order #${co.number} voided` });
   revalidate(projectId, id);
   redirect(coPath(projectId, id));
-}
+});
 
-export async function deleteChangeOrder(formData: FormData) {
+export const deleteChangeOrder = friendly(async function deleteChangeOrder(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -351,7 +352,7 @@ export async function deleteChangeOrder(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "change_order.deleted", description: `Change Order #${co.number} deleted` });
   revalidate(projectId);
   redirect(coPath(projectId));
-}
+});
 
 // --- Files --------------------------------------------------------------------
 

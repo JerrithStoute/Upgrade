@@ -17,6 +17,7 @@ export default async function ReportsLayout({ children }: { children: React.Reac
             { href: "/reports/wip", label: "WIP (over / under billing)" },
             { href: "/reports/cash-flow", label: "Cash flow" },
             { href: "/reports/aging", label: "What clients owe (AR aging)" },
+            { href: "/reports/sales", label: "Sales & win rate" },
           ]}
         />
       </div>

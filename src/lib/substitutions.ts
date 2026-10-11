@@ -133,7 +133,7 @@ export async function addSubstitution(
     if (!lumber) throw new Error("Only lumber sold by the length can change length");
     if (!(length > 0) || length === lumber.length) throw new Error("Pick another length");
     const toName = lumberItemName(lumber.size, lumber.size, length);
-    const toItem = await db.materialItem.findUnique({ where: { nameKey: itemNameKey(toName) }, select: { id: true } });
+    const toItem = await db.materialItem.findFirst({ where: { nameKey: itemNameKey(toName) }, select: { id: true } });
     data = { toItemId: toItem?.id ?? null, toName, size: lumber.size, fromLen: lumber.length, toLen: length };
   } else {
     let to = pickedItem;
@@ -141,7 +141,7 @@ export async function addSubstitution(
       const name = input.with.name.trim();
       if (!name) throw new Error("Name what you'll order instead");
       to =
-        (await db.materialItem.findUnique({ where: { nameKey: itemNameKey(name) } })) ??
+        (await db.materialItem.findFirst({ where: { nameKey: itemNameKey(name) } })) ??
         (await db.materialItem.create({
           data: {
             name,

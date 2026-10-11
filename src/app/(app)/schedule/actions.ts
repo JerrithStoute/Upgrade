@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin, requireStaff } from "@/lib/auth";
@@ -28,7 +29,7 @@ function revalidateCalendar() {
  * A reminder: a To-Do for someone, due on a day — or tied to a task ("3 workdays before it
  * starts"), moving with it.
  */
-export async function addReminder(fd: FormData) {
+export const addReminder = friendly(async function addReminder(fd: FormData) {
   const user = await requireStaff();
   const title = str(fd, "title");
   if (!title) throw new Error("What's the reminder?");
@@ -59,13 +60,13 @@ export async function addReminder(fd: FormData) {
   revalidateCalendar();
   if (projectId) revalidatePath(`/projects/${projectId}/schedule`);
   redirect(back(fd));
-}
+});
 
 /**
  * A company holiday: schedules skip it. With "move work", every active job with work
  * on those days is delayed by the workdays lost (logged as a delay).
  */
-export async function addHoliday(fd: FormData) {
+export const addHoliday = friendly(async function addHoliday(fd: FormData) {
   const user = await requireAdmin();
   const title = str(fd, "title") || "Holiday";
   const startDate = parseDateInput(fd.get("start"));
@@ -96,10 +97,10 @@ export async function addHoliday(fd: FormData) {
   }
   revalidateCalendar();
   redirect(`${back(fd)}${back(fd).includes("?") ? "&" : "?"}holiday=${jobs}`);
-}
+});
 
 /** Time off for a team member (you can add your own; admins anyone's). */
-export async function addTimeOff(fd: FormData) {
+export const addTimeOff = friendly(async function addTimeOff(fd: FormData) {
   const user = await requireStaff();
   const userId = str(fd, "userId") || user.id;
   if (userId !== user.id && user.role !== "ADMIN") throw new Error("Only an admin can add time off for someone else");
@@ -123,10 +124,10 @@ export async function addTimeOff(fd: FormData) {
   });
   revalidateCalendar();
   redirect(back(fd));
-}
+});
 
 /** Removes a holiday or time off (a holiday's moved work stays where it is). */
-export async function deleteCalendarEvent(fd: FormData) {
+export const deleteCalendarEvent = friendly(async function deleteCalendarEvent(fd: FormData) {
   const user = await requireStaff();
   const ev = await db.calendarEvent.findUnique({ where: { id: str(fd, "id") } });
   if (!ev) redirect(back(fd));
@@ -134,4 +135,4 @@ export async function deleteCalendarEvent(fd: FormData) {
   await db.calendarEvent.delete({ where: { id: ev.id } });
   revalidateCalendar();
   redirect(back(fd));
-}
+});

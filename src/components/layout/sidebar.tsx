@@ -9,14 +9,20 @@ import {
   Users,
   CalendarDays,
   CheckSquare,
+  Clock,
   Receipt,
   BarChart3,
+  Boxes,
+  Target,
+  House,
   FileInput,
   Settings,
   ChevronLeft,
   ChevronRight,
   Pin,
   PinOff,
+  Menu,
+  X,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,12 +30,16 @@ import { BrandMark } from "@/components/brand-mark";
 
 const NAV: { href: string; label: string; icon: LucideIcon; adminOnly?: boolean; reports?: boolean }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/leads", label: "Leads", icon: Target },
   { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/spec", label: "Spec homes", icon: House },
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/schedule", label: "Schedule", icon: CalendarDays },
   { href: "/todos", label: "To-Dos", icon: CheckSquare },
+  { href: "/time", label: "Time clock", icon: Clock },
   { href: "/invoices", label: "Invoices", icon: Receipt },
   { href: "/bills", label: "Bills", icon: FileInput },
+  { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/reports", label: "Reports", icon: BarChart3, reports: true },
   { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
 ];
@@ -84,12 +94,13 @@ function SidebarContent({
 }) {
   return (
     <>
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-4">
-        <Link href="/dashboard" className="flex min-w-0 flex-1 items-center gap-2" title={companyName}>
-          <BrandMark logoUrl={logoUrl} />
+      {/* A logo of any shape sits centered in the corner, up to 64px tall — easy to see, not overpowering. */}
+      <div className={cn("flex shrink-0 items-center gap-2 border-b border-slate-200 px-4", logoUrl ? "h-[5.5rem]" : "h-14")}>
+        <Link href="/dashboard" className={cn("flex h-full min-w-0 flex-1 items-center gap-2", logoUrl && "justify-center py-3")} title={companyName}>
+          <BrandMark logoUrl={logoUrl} className={logoUrl ? "max-h-full max-w-full" : undefined} />
           {logoUrl ? null : (
             <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-slate-900">Upgrade</span>
+              <span className="block truncate text-sm font-semibold text-slate-900">The Builder Station</span>
               <span className="block truncate text-xs text-slate-500">{companyName}</span>
             </span>
           )}
@@ -216,21 +227,60 @@ export function AppMain({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** The phone menu bar: the field's everyday pages, and More for everything else. */
+const PHONE_BAR = ["/time", "/projects", "/schedule", "/todos"];
+
 export function MobileNav({ role, reports }: { role: string; reports?: boolean }) {
   const pathname = usePathname();
+  const [moreOn, setMoreOn] = useState<string | null>(null); // open on this page only
+  const more = moreOn === pathname;
+  const items = NAV.filter((n) => (!n.adminOnly && !n.reports) || role === "ADMIN" || (n.reports && reports));
+  const isOn = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const bar = PHONE_BAR.map((h) => items.find((n) => n.href === h)).filter((n): n is (typeof NAV)[number] => !!n);
+  const rest = items.filter((n) => !PHONE_BAR.includes(n.href));
+  const moreActive = rest.some((n) => isOn(n.href));
+  const tab = (active: boolean) =>
+    cn("flex flex-1 flex-col items-center gap-0.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 text-[11px]", active ? "text-blue-800" : "text-slate-500");
+
   return (
-    <nav className="no-print fixed inset-x-0 bottom-0 z-20 flex border-t border-slate-200 bg-white md:hidden">
-      {NAV.filter((n) => (!n.adminOnly && !n.reports) || role === "ADMIN" || (n.reports && reports))
-        .slice(0, 5)
-        .map((item) => {
-          const active = pathname === item.href || pathname.startsWith(item.href + "/");
-          return (
-            <Link key={item.href} href={item.href} className={cn("flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px]", active ? "text-blue-800" : "text-slate-500")}>
-              <item.icon className="h-5 w-5" />
-              {item.label}
-            </Link>
-          );
-        })}
-    </nav>
+    <>
+      {more ? (
+        <>
+          <div className="no-print fixed inset-0 z-30 bg-slate-900/30 md:hidden" onClick={() => setMoreOn(null)} aria-hidden />
+          <nav className="no-print fixed inset-x-0 bottom-0 z-40 rounded-t-2xl bg-white pb-[calc(4.5rem+env(safe-area-inset-bottom))] shadow-2xl md:hidden" aria-label="More pages">
+            <span className="mx-auto mt-2 block h-1 w-10 rounded-full bg-slate-300" aria-hidden />
+            <ul className="grid grid-cols-3 gap-1 p-3">
+              {rest.map((item) => (
+                <li key={item.href}>
+                  <Link
+                    href={item.href}
+                    onClick={() => setMoreOn(null)}
+                    className={cn(
+                      "flex flex-col items-center gap-1 rounded-xl px-2 py-3 text-xs font-medium",
+                      isOn(item.href) ? "bg-blue-50 text-blue-800" : "text-slate-700 active:bg-slate-100",
+                    )}
+                  >
+                    <item.icon className={cn("h-6 w-6", isOn(item.href) ? "text-blue-700" : "text-slate-500")} />
+                    {item.label}
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </>
+      ) : null}
+      <nav className="no-print fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-200 bg-white md:hidden">
+        {bar.map((item) => (
+          <Link key={item.href} href={item.href} className={tab(!more && isOn(item.href))}>
+            <item.icon className="h-5 w-5" />
+            {item.href === "/time" ? "Clock" : item.label}
+          </Link>
+        ))}
+        <button type="button" onClick={() => setMoreOn(more ? null : pathname)} className={tab(more || moreActive)} aria-expanded={more}>
+          {more ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+          More
+        </button>
+      </nav>
+    </>
   );
 }

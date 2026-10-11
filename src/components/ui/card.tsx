@@ -1,22 +1,10 @@
 import { cn } from "@/lib/utils";
 
 export function Card({ className, children }: { className?: string; children: React.ReactNode }) {
-  return (
-    <div className={cn("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>{children}</div>
-  );
+  return <div className={cn("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>{children}</div>;
 }
 
-export function CardHeader({
-  title,
-  description,
-  actions,
-  className,
-}: {
-  title: React.ReactNode;
-  description?: React.ReactNode;
-  actions?: React.ReactNode;
-  className?: string;
-}) {
+export function CardHeader({ title, description, actions, className }: { title: React.ReactNode; description?: React.ReactNode; actions?: React.ReactNode; className?: string }) {
   return (
     <div className={cn("flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 px-5 py-4", className)}>
       <div>

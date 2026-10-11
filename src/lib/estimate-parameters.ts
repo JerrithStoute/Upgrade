@@ -1,11 +1,9 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
-import { db } from "./db";
+import { db, type Tx } from "./db";
 import { formulaQty } from "./estimate-sheet-state";
 import { settleSales, usesSales } from "./sales-price";
 import { parseMarkupTable } from "./markup";
 
-type Tx = Prisma.TransactionClient;
 
 /** Your estimate parameters (Settings → Estimate parameters), in your order. */
 export function loadParameters() {

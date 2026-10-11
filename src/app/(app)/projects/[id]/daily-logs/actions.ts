@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -44,12 +45,12 @@ function photoFiles(fd: FormData) {
 
 async function savePhotos(files: File[], projectId: string, dailyLogId: string, userId: string, clientVisible: boolean) {
   for (const file of files) {
-    const meta = await saveUpload(file, projectId);
+    const meta = await saveUpload(file, projectId, undefined, "photo");
     await db.fileAsset.create({ data: { ...meta, projectId, dailyLogId, uploadedById: userId, folder: "Photos", clientVisible } });
   }
 }
 
-export async function createLog(fd: FormData) {
+export const createLog = friendly(async function createLog(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const data = readLogFields(fd);
@@ -64,9 +65,9 @@ export async function createLog(fd: FormData) {
   });
   revalidate(project.id);
   redirect(listPath(project.id));
-}
+});
 
-export async function updateLog(fd: FormData) {
+export const updateLog = friendly(async function updateLog(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -79,9 +80,9 @@ export async function updateLog(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "daily_log.updated", description: `Updated daily log for ${fmtDate(data.date)}` });
   revalidate(project.id, id);
   redirect(listPath(project.id));
-}
+});
 
-export async function deleteLog(fd: FormData) {
+export const deleteLog = friendly(async function deleteLog(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -93,9 +94,9 @@ export async function deleteLog(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "daily_log.deleted", description: `Deleted daily log for ${fmtDate(log.date)}` });
   revalidate(project.id);
   redirect(listPath(project.id));
-}
+});
 
-export async function deleteLogPhoto(fd: FormData) {
+export const deleteLogPhoto = friendly(async function deleteLogPhoto(fd: FormData) {
   await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const logId = str(fd, "logId");
@@ -106,4 +107,4 @@ export async function deleteLogPhoto(fd: FormData) {
   await db.fileAsset.delete({ where: { id: fileId } });
   revalidate(project.id, logId);
   redirect(`${listPath(project.id)}/${logId}/edit`);
-}
+});

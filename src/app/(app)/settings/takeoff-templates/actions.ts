@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
@@ -27,7 +28,7 @@ async function loadTemplateCondition(templateId: string, id: string) {
   return c;
 }
 
-export async function createTakeoffTemplate(fd: FormData) {
+export const createTakeoffTemplate = friendly(async function createTakeoffTemplate(fd: FormData) {
   const admin = await requireAdmin();
   const name = str(fd, "name");
   if (!name) throw new Error("Template name is required");
@@ -35,9 +36,9 @@ export async function createTakeoffTemplate(fd: FormData) {
   await logActivity({ userId: admin.id, type: "takeoff_template.created", description: `Created takeoff template "${name}"` });
   revalidatePath(PATH);
   redirect(detail(t.id));
-}
+});
 
-export async function updateTakeoffTemplate(fd: FormData) {
+export const updateTakeoffTemplate = friendly(async function updateTakeoffTemplate(fd: FormData) {
   await requireAdmin();
   const id = str(fd, "templateId");
   await loadTemplate(id);
@@ -46,21 +47,21 @@ export async function updateTakeoffTemplate(fd: FormData) {
   await db.takeoffTemplate.update({ where: { id }, data: { name, description: strOrNull(fd, "description") } });
   revalidatePath(PATH);
   redirect(detail(id));
-}
+});
 
 /** Jobs that used the template keep their conditions. */
-export async function deleteTakeoffTemplate(fd: FormData) {
+export const deleteTakeoffTemplate = friendly(async function deleteTakeoffTemplate(fd: FormData) {
   const admin = await requireAdmin();
   const t = await loadTemplate(str(fd, "templateId"));
   await db.takeoffTemplate.delete({ where: { id: t.id } });
   await logActivity({ userId: admin.id, type: "takeoff_template.deleted", description: `Deleted takeoff template "${t.name}"` });
   revalidatePath(PATH);
   redirect(PATH);
-}
+});
 
 // --- Conditions ------------------------------------------------------------------
 
-export async function createTemplateCondition(fd: FormData) {
+export const createTemplateCondition = friendly(async function createTemplateCondition(fd: FormData) {
   await requireAdmin();
   const templateId = str(fd, "templateId");
   await loadTemplate(templateId);
@@ -69,9 +70,9 @@ export async function createTemplateCondition(fd: FormData) {
   const c = await db.takeoffTemplateCondition.create({ data: { ...data, templateId, sortOrder: (last?.sortOrder ?? -1) + 1 } });
   revalidatePath(detail(templateId));
   redirect(detail(templateId, `#condition-${c.id}`));
-}
+});
 
-export async function updateTemplateCondition(fd: FormData) {
+export const updateTemplateCondition = friendly(async function updateTemplateCondition(fd: FormData) {
   await requireAdmin();
   const templateId = str(fd, "templateId");
   const existing = await loadTemplateCondition(templateId, str(fd, "id"));
@@ -82,16 +83,16 @@ export async function updateTemplateCondition(fd: FormData) {
   ]);
   revalidatePath(detail(templateId));
   redirect(detail(templateId, `#condition-${existing.id}`));
-}
+});
 
-export async function deleteTemplateCondition(fd: FormData) {
+export const deleteTemplateCondition = friendly(async function deleteTemplateCondition(fd: FormData) {
   await requireAdmin();
   const templateId = str(fd, "templateId");
   const c = await loadTemplateCondition(templateId, str(fd, "id"));
   await db.takeoffTemplateCondition.delete({ where: { id: c.id } });
   revalidatePath(detail(templateId));
   redirect(detail(templateId));
-}
+});
 
 // --- Assembly items ----------------------------------------------------------------
 
@@ -102,7 +103,7 @@ async function itemData(fd: FormData, conditionType: string) {
   return { ...data, description: name, materialItemId: id };
 }
 
-export async function createTemplateItem(fd: FormData) {
+export const createTemplateItem = friendly(async function createTemplateItem(fd: FormData) {
   await requireAdmin();
   const templateId = str(fd, "templateId");
   const c = await loadTemplateCondition(templateId, str(fd, "conditionId"));
@@ -112,7 +113,7 @@ export async function createTemplateItem(fd: FormData) {
   revalidatePath(detail(templateId));
   revalidatePath("/settings/items");
   redirect(detail(templateId, `#condition-${c.id}`));
-}
+});
 
 async function loadTemplateItem(templateId: string, id: string) {
   const item = await db.takeoffTemplateItem.findFirst({ where: { id, condition: { templateId } }, include: { condition: true } });
@@ -120,7 +121,7 @@ async function loadTemplateItem(templateId: string, id: string) {
   return item;
 }
 
-export async function updateTemplateItem(fd: FormData) {
+export const updateTemplateItem = friendly(async function updateTemplateItem(fd: FormData) {
   await requireAdmin();
   const templateId = str(fd, "templateId");
   const item = await loadTemplateItem(templateId, str(fd, "id"));
@@ -128,13 +129,13 @@ export async function updateTemplateItem(fd: FormData) {
   revalidatePath(detail(templateId));
   revalidatePath("/settings/items");
   redirect(detail(templateId, `#condition-${item.conditionId}`));
-}
+});
 
-export async function deleteTemplateItem(fd: FormData) {
+export const deleteTemplateItem = friendly(async function deleteTemplateItem(fd: FormData) {
   await requireAdmin();
   const templateId = str(fd, "templateId");
   const item = await loadTemplateItem(templateId, str(fd, "id"));
   await db.takeoffTemplateItem.delete({ where: { id: item.id } });
   revalidatePath(detail(templateId));
   redirect(detail(templateId, `#condition-${item.conditionId}`));
-}
+});

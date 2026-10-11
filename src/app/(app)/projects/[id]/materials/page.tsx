@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Download, Replace, Truck, Undo2 } from "lucide-react";
+import { Download, PackageOpen, Replace, Truck, Undo2 } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
@@ -12,6 +12,8 @@ import { PrintButton } from "../_components/print-button";
 import { MaterialTable } from "../takeoff/_components/material-table";
 import { getBrand } from "@/lib/company-brand";
 import { PrintLogo } from "@/components/brand-mark";
+import { jobPulls } from "@/lib/inventory";
+import { answerInventory } from "./inventory/actions";
 
 /** The job's material list: its own project tab, printable with or without prices. */
 export default async function MaterialListPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ plan?: string; prices?: string }> }) {
@@ -23,7 +25,11 @@ export default async function MaterialListPage({ params, searchParams }: { param
   const planId = plans.some((p) => p.id === planParam) ? planParam! : null;
   const showPrices = prices !== "0";
   const [{ lines, cutLists, total }, substitutions] = await Promise.all([buildMaterialList(project.id, planId), jobSubstitutions(project.id)]);
-  const brand = await getBrand();
+  const [brand, pulls, stocked] = await Promise.all([getBrand(), jobPulls(project.id), db.inventoryItem.count({ where: { onHand: { gt: 0 } } })]);
+  // In contract (sold, or prices locked) and not asked yet: offer the company's inventory before anything's ordered.
+  const inContract = !!project.pricesLockedAt || ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"].includes(project.status);
+  const askInventory = inContract && !project.inventoryAnswer && stocked > 0;
+  const pulledFor = planId ? undefined : Object.fromEntries(pulls);
 
   const base = `/projects/${project.id}/materials`;
   const href = (o: { plan?: string | null; prices?: boolean }) => {
@@ -65,6 +71,9 @@ export default async function MaterialListPage({ params, searchParams }: { param
               Hide prices
             </Link>
           </div>
+          <Link href={`${base}/inventory`} className={buttonClasses("secondary", "sm")} title="Use your stored materials on this job — the list orders that much less">
+            <PackageOpen className="h-3.5 w-3.5" /> Pull from inventory
+          </Link>
           <Link
             href={`/projects/${project.id}/bids`}
             className={buttonClasses("primary", "sm")}
@@ -103,6 +112,24 @@ export default async function MaterialListPage({ params, searchParams }: { param
         </p>
       </div>
 
+      {askInventory ? (
+        <div className="no-print flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3">
+          <PackageOpen className="h-5 w-5 shrink-0 text-blue-700" />
+          <p className="min-w-0 flex-1 text-sm text-slate-800">
+            <strong>This job is in contract.</strong> Pull anything from your inventory before you order?
+          </p>
+          <form action={answerInventory} className="flex gap-2">
+            <input type="hidden" name="projectId" value={project.id} />
+            <button type="submit" name="answer" value="YES" className={buttonClasses("primary", "sm")}>
+              Yes, show inventory
+            </button>
+            <button type="submit" name="answer" value="NO" className={buttonClasses("secondary", "sm")}>
+              No, order everything
+            </button>
+          </form>
+        </div>
+      ) : null}
+
       {substitutions.length ? (
         // What this job orders instead — each with its way back.
         <div className="no-print rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
@@ -139,6 +166,7 @@ export default async function MaterialListPage({ params, searchParams }: { param
         cutLists={cutLists}
         total={total}
         showPrices={showPrices}
+        pulled={pulledFor}
         edit={{ projectId: project.id, locked: !!project.pricesLockedAt, substitutions: substitutions.map((s) => ({ fromName: s.fromName, toName: s.toName })) }}
       />
     </div>

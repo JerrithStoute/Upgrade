@@ -22,7 +22,7 @@ export async function createPlanFromFile(opts: { file: File; projectId: string; 
   if (!kind) throw new Error(`${file.name}: plans must be a PDF or a PNG, JPG or WebP image`);
   const prev = opts.revisionOf ? await db.takeoffPlan.findFirst({ where: { id: opts.revisionOf, projectId }, select: { id: true, name: true, revision: true } }) : null;
   if (opts.revisionOf && !prev) throw new Error("The plan set this revises wasn't found");
-  const meta = await saveUpload(file, projectId, PLAN_MAX_BYTES);
+  const meta = await saveUpload(file, projectId, PLAN_MAX_BYTES, "plan");
   const name = opts.name?.trim() || prev?.name || file.name.replace(/\.[^.]+$/, "");
   try {
     const plan = await db.$transaction(async (tx) => {

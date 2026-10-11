@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -21,6 +22,9 @@ function revalidate(projectId: string) {
 async function loadExpense(projectId: string, id: string) {
   const expense = await db.expense.findFirst({ where: { id, projectId } });
   if (!expense) throw new Error("Expense not found");
+  if (expense.laborWeek) throw new Error("This is crew time from the time clock — fix the hours on Timesheets and the cost follows");
+  if (expense.carryingCostId) throw new Error("This is a carrying cost the program charges each month — change it on the job's Spec sale tab");
+  if (expense.fromInventory) throw new Error("This cost is material from your inventory — put it back or undo the return on the Material list's inventory screen");
   if (expense.billId) throw new Error("This cost is from a vendor bill — change it on the bill (Purchasing)");
   return expense;
 }
@@ -42,7 +46,7 @@ function expenseData(fd: FormData) {
   };
 }
 
-export async function createExpense(formData: FormData) {
+export const createExpense = friendly(async function createExpense(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const project = await db.project.findUnique({ where: { id: projectId } });
@@ -57,9 +61,9 @@ export async function createExpense(formData: FormData) {
   });
   revalidate(projectId);
   redirect(budgetPath(projectId));
-}
+});
 
-export async function updateExpense(formData: FormData) {
+export const updateExpense = friendly(async function updateExpense(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -67,9 +71,9 @@ export async function updateExpense(formData: FormData) {
   await db.expense.update({ where: { id }, data: expenseData(formData) });
   revalidate(projectId);
   redirect(budgetPath(projectId));
-}
+});
 
-export async function toggleExpensePaid(formData: FormData) {
+export const toggleExpensePaid = friendly(async function toggleExpensePaid(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -77,9 +81,9 @@ export async function toggleExpensePaid(formData: FormData) {
   await db.expense.update({ where: { id }, data: { status: expense.status === "PAID" ? "UNPAID" : "PAID" } });
   revalidate(projectId);
   redirect(budgetPath(projectId));
-}
+});
 
-export async function deleteExpense(formData: FormData) {
+export const deleteExpense = friendly(async function deleteExpense(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -88,4 +92,4 @@ export async function deleteExpense(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "expense.deleted", description: `Expense ${money(expense.amount)} from ${expense.vendor} deleted` });
   revalidate(projectId);
   redirect(budgetPath(projectId));
-}
+});

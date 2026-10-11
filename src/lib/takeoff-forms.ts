@@ -154,7 +154,7 @@ async function rememberItems(json: string) {
   const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   for (const w of wanted) {
     const nameKey = itemNameKey(w.name);
-    if (await db.materialItem.findUnique({ where: { nameKey }, select: { id: true } })) continue;
+    if (await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } })) continue;
     const place = await newItemPlacement(w.kind);
     await db.materialItem.create({
       data: {
@@ -178,7 +178,7 @@ async function rememberCasing(json: string) {
   const name = o.casingItem.trim();
   if (!name || o.casingSides <= 0) return;
   const nameKey = itemNameKey(name);
-  const existing = await db.materialItem.findUnique({ where: { nameKey }, select: { id: true, lengthFt: true } });
+  const existing = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, lengthFt: true } });
   if (existing) {
     if (!existing.lengthFt && o.casingStickFt > 0) await db.materialItem.update({ where: { id: existing.id }, data: { lengthFt: o.casingStickFt } });
     return;

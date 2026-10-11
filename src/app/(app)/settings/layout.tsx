@@ -24,6 +24,7 @@ export default async function SettingsLayout({ children }: { children: React.Rea
           { href: "/settings/span-tables", label: "Span tables" },
           { href: "/settings/vendors", label: "Vendors" },
           { href: "/settings/takeoff-templates", label: "Takeoff templates" },
+          { href: "/settings/lead-sources", label: "Lead sources" },
           { href: "/settings/schedule", label: "Schedule" },
           { href: "/settings/schedule-templates", label: "Schedule templates" },
         ]}

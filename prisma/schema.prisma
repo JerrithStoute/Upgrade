@@ -8,8 +8,10 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Changing tables (migrations, db push) needs the tables' owner, not the app's limited login.
+  directUrl = env("SYSTEM_DATABASE_URL")
 }
 
 // ---------------------------------------------------------------------------
@@ -51,51 +53,83 @@ model Company {
   invoiceNumbering    String   @default("AUTO")
   invoiceNextNumber   Int?
   // Insurance every sub/vendor must carry (COI tracking): "GL,WC" (GL, WC, AUTO, UMBRELLA).
+  // Spec houses: usual selling costs (JSON { listPct, buyerPct, closingPct, closingFlat, concessions }); null = built-in.
+  specDefaults        String?
   requiredCoverage    String   @default("GL,WC")
+  // Team members must use two-step sign-in (an authenticator app code).
+  requireTwoStep      Boolean  @default(false)
+  // Time clock: percent added on top of pay for payroll taxes, workers' comp and insurance.
+  laborBurden         Float    @default(0)
+  // Where backups go (a folder path, e.g. on another drive or OneDrive); null = BACKUP_DIR or ./backups.
+  backupDir           String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 }
 
 /// ADMIN: full access. STAFF: internal team. CLIENT: portal only. SUB: subcontractor (limited).
 model User {
-  id           String   @id @default(cuid())
-  email        String   @unique
-  passwordHash String
-  name         String
-  role         String   @default("STAFF") // ADMIN | STAFF | CLIENT | SUB
-  phone        String?
-  title        String?
-  active       Boolean  @default(true)
+  id                String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId         String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  email             String    @unique
+  passwordHash      String
+  name              String
+  role              String    @default("STAFF") // ADMIN | STAFF | CLIENT | SUB
+  phone             String?
+  title             String?
+  active            Boolean   @default(true)
   // May delay a job's schedule (admins always can).
-  canDelay     Boolean  @default(false)
+  canDelay          Boolean   @default(false)
   // Vacation days a year (null = not tracked).
-  vacationDays Float?
+  vacationDays      Float?
   // May approve vendor bills (admins always can).
-  canApproveBills Boolean @default(false)
+  canApproveBills   Boolean   @default(false)
   // May see Reports (admins always can).
-  canSeeReports Boolean @default(false)
+  canSeeReports     Boolean   @default(false)
+  // Sign-in security.
+  emailVerifiedAt   DateTime? // confirmed the email is theirs (sign-up / invite link)
+  sessionVersion    Int       @default(0) // bumped to sign them out everywhere (password change, deactivation)
+  passwordChangedAt DateTime?
+  lastSignInAt      DateTime?
+  totpSecret        String? // two-step sign-in: the authenticator app's secret, encrypted
+  totpEnabledAt     DateTime?
+  backupCodes       String? // JSON: hashes of unused one-time backup codes
+  // Time clock: pay per hour (null = not set) and salaried (no overtime).
+  payRate           Float?
+  salaried          Boolean   @default(false)
+  // May see and fix everyone's time (admins always can).
+  canManageTime     Boolean   @default(false)
   // Their dashboard: the cards they picked, in order (JSON ["stats", "projects", …]); null = the default.
-  dashboardCards String?
+  dashboardCards    String?
   // A vendor portal login (role VENDOR): the vendor it signs in for.
-  vendorId     String?
-  vendor       Vendor?  @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  vendorId          String?
+  vendor            Vendor?   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   client          Client?
   timeOff         CalendarEvent[] @relation("TimeOffFor")
   jobDelays       JobDelay[]
   approvedBills   VendorBill[]    @relation("BillApprover")
-  managedProjects Project[]      @relation("ProjectManager")
-  assignedTasks   ScheduleTask[] @relation("TaskAssignee")
-  assignedTodos   Todo[]         @relation("TodoAssignee")
-  createdTodos    Todo[]         @relation("TodoCreator")
+  managedProjects Project[]       @relation("ProjectManager")
+  assignedTasks   ScheduleTask[]  @relation("TaskAssignee")
+  assignedTodos   Todo[]          @relation("TodoAssignee")
+  createdTodos    Todo[]          @relation("TodoCreator")
   dailyLogs       DailyLog[]
+  leadsOwned      Lead[]          @relation("LeadOwner")
+  leadEntries     LeadEntry[]
+  inventoryMoves  InventoryMove[]
   uploadedFiles   FileAsset[]
   fileViews       FileView[]
   messages        Message[]
   activities      Activity[]
   expenses        Expense[]
+  timeEntries     TimeEntry[]     @relation("TimeEntryUser")
+  authTokens      AuthToken[]
+  invitesSent     Invite[]        @relation("InviteSender")
+  editedTime      TimeEntry[]     @relation("TimeEntryEditor")
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -104,6 +138,8 @@ model User {
 
 model Client {
   id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   firstName String
   lastName  String
   company   String?
@@ -122,6 +158,9 @@ model Client {
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   projects Project[]
+  leads    Lead[]
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +171,9 @@ model Client {
 /// type: NEW_HOME | REMODEL | ADDITION | COMMERCIAL | OTHER
 model Project {
   id             String    @id @default(cuid())
-  number         Int       @unique
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  number         Int
   name           String
   status         String    @default("LEAD")
   type           String    @default("REMODEL")
@@ -161,6 +202,10 @@ model Project {
   // Prices locked on this job (set when an estimate is marked sent, or by hand): the Item
   // List no longer changes it. null = the job follows the Item List (except pinned items).
   pricesLockedAt    DateTime?
+  // "Pull from JT&I's inventory before ordering?" — YES / NO once answered (null = not asked yet).
+  inventoryAnswer   String?
+  // A spec house: built to sell, no client (Spec homes, the job's Spec sale tab).
+  isSpec            Boolean                 @default(false)
   estimates         Estimate[]
   parameterValues   ProjectParameterValue[]
   selections        Selection[]
@@ -170,6 +215,11 @@ model Project {
   purchaseOrders    PurchaseOrder[]
   vendorBills       VendorBill[]
   expenses          Expense[]
+  spec              SpecSale?
+  carryingCosts     CarryingCost[]
+  specOffers        SpecOffer[]
+  lead              Lead?
+  inventoryMoves    InventoryMove[]
   invoices          Invoice[]
   dailyLogs         DailyLog[]
   todos             Todo[]
@@ -181,6 +231,10 @@ model Project {
   bids              Bid[]
   bidAwards         BidAward[]
   substitutions     JobSubstitution[]
+  timeEntries       TimeEntry[]
+
+  @@unique([companyId, number])
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +243,9 @@ model Project {
 
 model CostCode {
   id        String   @id @default(cuid())
-  code      String?  @unique // e.g. "03-100" — optional; some codes are name-only
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  code      String? // e.g. "03-100" — optional; some codes are name-only
   name      String // e.g. "Concrete Foundation"
   division  String // group, e.g. "03 Concrete"
   sortOrder Int      @default(0)
@@ -209,6 +265,11 @@ model CostCode {
   itemCodeRules             ItemCodeRule[]
   poLines                   PurchaseOrderLine[]
   billLines                 VendorBillLine[]
+  carryingCosts             CarryingCost[]
+  timeEntries               TimeEntry[]
+
+  @@unique([companyId, code])
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +279,8 @@ model CostCode {
 /// status: DRAFT | SENT | APPROVED | DECLINED
 model Estimate {
   id              String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId       String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId       String
   project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name            String    @default("Estimate")
@@ -247,6 +310,8 @@ model Estimate {
   items           EstimateItem[]
   specs           EstimateSpec[]
   parameterValues EstimateParameterValue[]
+
+  @@index([companyId])
 }
 
 /// A spec item: one thing the client is buying ("Hardwood flooring — main level"),
@@ -256,6 +321,8 @@ model Estimate {
 /// kind: SPECIFICATION | SELECTION
 model EstimateSpec {
   id              String     @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId       String     @default(dbgenerated("current_setting('app.company_id'::text)"))
   estimateId      String
   estimate        Estimate   @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   name            String
@@ -278,12 +345,15 @@ model EstimateSpec {
 
   items EstimateItem[]
 
+  @@index([companyId])
   @@map("EstimateAllowance")
 }
 
 /// costType: MATERIAL | LABOR | SUBCONTRACTOR | EQUIPMENT | OTHER. markupPct is the line's profit %.
 model EstimateItem {
   id             String        @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String        @default(dbgenerated("current_setting('app.company_id'::text)"))
   estimateId     String
   estimate       Estimate      @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   costCodeId     String?
@@ -324,6 +394,8 @@ model EstimateItem {
   takeoffStopped     String?
   takeoffItemId      String?
   takeoffItem        TakeoffAssemblyItem? @relation(fields: [takeoffItemId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
 }
 
 /// Your estimate categories (Settings → Estimate categories): big groups such as
@@ -331,17 +403,27 @@ model EstimateItem {
 /// files itself into its category.
 model EstimateCategory {
   id        String                     @id @default(cuid())
-  name      String                     @unique
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String                     @default(dbgenerated("current_setting('app.company_id'::text)"))
+  name      String
   sortOrder Int                        @default(0)
   divisions EstimateCategoryDivision[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 model EstimateCategoryDivision {
   id         String           @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId  String           @default(dbgenerated("current_setting('app.company_id'::text)"))
   categoryId String
   category   EstimateCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  division   String           @unique // a CostCode.division, e.g. "2100 Footing and Foundation"
+  division   String // a CostCode.division, e.g. "2100 Footing and Foundation"
   sortOrder  Int              @default(0)
+
+  @@unique([companyId, division])
+  @@index([companyId])
 }
 
 /// Your estimate parameters (Settings → Estimate parameters): named job values such
@@ -349,12 +431,17 @@ model EstimateCategoryDivision {
 /// total sq. ft.
 model EstimateParameter {
   id             String                   @id @default(cuid())
-  name           String                   @unique
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String                   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  name           String
   unit           String                   @default("")
   sortOrder      Int                      @default(0)
   isSqFt         Boolean                  @default(false)
   values         ProjectParameterValue[]
   estimateValues EstimateParameterValue[]
+
+  @@unique([companyId, name])
+  @@index([companyId])
 }
 
 /// An estimate version's value for a parameter. Each version has its own (v2 may be a
@@ -362,6 +449,8 @@ model EstimateParameter {
 /// a copy of a version starts with that version's.
 model EstimateParameterValue {
   id          String            @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String            @default(dbgenerated("current_setting('app.company_id'::text)"))
   estimateId  String
   estimate    Estimate          @relation(fields: [estimateId], references: [id], onDelete: Cascade)
   parameterId String
@@ -369,12 +458,15 @@ model EstimateParameterValue {
   value       Float
 
   @@unique([estimateId, parameterId])
+  @@index([companyId])
 }
 
 /// Old: a job's value for a parameter, shared by its versions. Replaced by
 /// EstimateParameterValue (each version its own); kept only so nothing is lost.
 model ProjectParameterValue {
   id          String            @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String            @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId   String
   project     Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
   parameterId String
@@ -382,6 +474,7 @@ model ProjectParameterValue {
   value       Float
 
   @@unique([projectId, parameterId])
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -390,6 +483,8 @@ model ProjectParameterValue {
 
 model EstimateTemplate {
   id            String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   name          String
   description   String?
   notes         String? // copied to the estimate (shown on proposal)
@@ -405,10 +500,14 @@ model EstimateTemplate {
 
   items EstimateTemplateItem[]
   specs EstimateTemplateSpec[]
+
+  @@index([companyId])
 }
 
 model EstimateTemplateSpec {
   id          String           @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String           @default(dbgenerated("current_setting('app.company_id'::text)"))
   templateId  String
   template    EstimateTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   name        String
@@ -422,11 +521,14 @@ model EstimateTemplateSpec {
 
   items EstimateTemplateItem[]
 
+  @@index([companyId])
   @@map("EstimateTemplateAllowance")
 }
 
 model EstimateTemplateItem {
   id          String                @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String                @default(dbgenerated("current_setting('app.company_id'::text)"))
   templateId  String
   template    EstimateTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
   costCodeId  String?
@@ -450,6 +552,8 @@ model EstimateTemplateItem {
   sortOrder   Int                   @default(0)
   specId      String?               @map("allowanceId")
   spec        EstimateTemplateSpec? @relation(fields: [specId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -459,6 +563,8 @@ model EstimateTemplateItem {
 /// status: PENDING | CHOSEN | APPROVED | ORDERED | INSTALLED
 model Selection {
   id             String        @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String        @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId      String
   project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
   costCodeId     String?
@@ -493,11 +599,15 @@ model Selection {
   views            SelectionView[]
   files            FileAsset[]
   changeOrderItems ChangeOrderItem[]
+
+  @@index([companyId])
 }
 
 /// A comment on a selection — the client and your team; "internal" = team only.
 model SelectionComment {
   id          String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   selectionId String
   selection   Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
   userId      String?
@@ -505,32 +615,43 @@ model SelectionComment {
   body        String
   internal    Boolean   @default(false)
   createdAt   DateTime  @default(now())
+
+  @@index([companyId])
 }
 
 /// The selection's change log: who did what, when.
 model SelectionLog {
   id          String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   selectionId String
   selection   Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
   userId      String?
   who         String
   what        String
   createdAt   DateTime  @default(now())
+
+  @@index([companyId])
 }
 
 /// When someone last looked at a selection (so it can show UPDATED after others change it).
 model SelectionView {
   id          String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   selectionId String
   selection   Selection @relation(fields: [selectionId], references: [id], onDelete: Cascade)
   userId      String
   viewedAt    DateTime  @default(now())
 
   @@unique([selectionId, userId])
+  @@index([companyId])
 }
 
 model SelectionOption {
   id            String      @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String      @default(dbgenerated("current_setting('app.company_id'::text)"))
   selectionId   String
   selection     Selection   @relation(fields: [selectionId], references: [id], onDelete: Cascade)
   name          String
@@ -543,6 +664,8 @@ model SelectionOption {
   isRecommended Boolean     @default(false)
   sortOrder     Int         @default(0)
   files         FileAsset[]
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -552,6 +675,8 @@ model SelectionOption {
 /// status: DRAFT | PENDING_APPROVAL | APPROVED | DECLINED | VOID
 model ChangeOrder {
   id                 String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId          String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId          String
   project            Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   number             Int
@@ -595,17 +720,20 @@ model ChangeOrder {
   updatedAt          DateTime  @updatedAt
 
   // Started by the app for selection overages and credits (more go on it while it's a draft).
-  autoSelections     Boolean   @default(false)
+  autoSelections Boolean @default(false)
 
   items        ChangeOrderItem[]
   files        FileAsset[]
   invoiceItems InvoiceItem[]
 
   @@unique([projectId, number])
+  @@index([companyId])
 }
 
 model ChangeOrderItem {
   id            String      @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String      @default(dbgenerated("current_setting('app.company_id'::text)"))
   changeOrderId String
   changeOrder   ChangeOrder @relation(fields: [changeOrderId], references: [id], onDelete: Cascade)
   costCodeId    String?
@@ -630,6 +758,8 @@ model ChangeOrderItem {
   choiceName    String?
   clientPrice   Float?
   allowance     Float?
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -637,30 +767,34 @@ model ChangeOrderItem {
 // ---------------------------------------------------------------------------
 
 model ScheduleTask {
-  id              String         @id @default(cuid())
+  id              String      @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId       String      @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId       String
-  project         Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project         Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name            String
-  phase           String         @default("General") // Pre-Construction, Framing, ...
+  phase           String      @default("General") // Pre-Construction, Framing, ...
   startDate       DateTime
   endDate         DateTime
-  percentComplete Int            @default(0)
-  isMilestone     Boolean        @default(false)
-  color           String         @default("#2563eb")
+  percentComplete Int         @default(0)
+  isMilestone     Boolean     @default(false)
+  color           String      @default("#2563eb")
   notes           String?
-  sortOrder       Int            @default(0)
+  sortOrder       Int         @default(0)
   assigneeId      String?
-  assignee        User?          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assignee        User?       @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   // The sub/vendor doing it (they see it in their portal).
   vendorId        String?
-  vendor          Vendor?        @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  vendor          Vendor?     @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   // What it waits on (several, each with lag days) and what waits on it.
-  waitsOn         TaskLink[]     @relation("LinkTask")
-  waitedOnBy      TaskLink[]     @relation("LinkPredecessor")
+  waitsOn         TaskLink[]  @relation("LinkTask")
+  waitedOnBy      TaskLink[]  @relation("LinkPredecessor")
   reminders       Todo[]
   selections      Selection[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -670,24 +804,36 @@ model ScheduleTask {
 /// category: MATERIAL | LABOR | SUBCONTRACTOR | EQUIPMENT | PERMIT | OTHER
 /// status: UNPAID | PAID
 model Expense {
-  id          String    @id @default(cuid())
-  projectId   String
-  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  costCodeId  String?
-  costCode    CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
-  date        DateTime  @default(now())
-  vendor      String
-  description String?
-  category    String    @default("MATERIAL")
-  amount      Float
-  status      String    @default("UNPAID")
-  reference   String? // vendor invoice #
+  id             String        @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String        @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId      String
+  project        Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costCodeId     String?
+  costCode       CostCode?     @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  date           DateTime      @default(now())
+  vendor         String
+  description    String?
+  category       String        @default("MATERIAL")
+  amount         Float
+  status         String        @default("UNPAID")
+  reference      String? // vendor invoice #
   // From an approved vendor bill (one per cost code); goes when the bill is un-approved.
-  billId      String?
-  bill        VendorBill? @relation(fields: [billId], references: [id], onDelete: Cascade)
-  enteredById String?
-  enteredBy   User?     @relation(fields: [enteredById], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now())
+  // Material pulled from (or returned to) JT&I's inventory: changed there, not on the Budget.
+  fromInventory  Boolean       @default(false)
+  // A spec house's carrying cost for one month ("2026-10", or "once"), posted by the program.
+  carryingCostId String?
+  carryingCost   CarryingCost? @relation(fields: [carryingCostId], references: [id], onDelete: Cascade)
+  carryingMonth  String?
+  // Crew labor from the time clock for one job, cost code and week (its Monday, "2026-10-05"), posted by the program.
+  laborWeek      String?
+  billId         String?
+  bill           VendorBill?   @relation(fields: [billId], references: [id], onDelete: Cascade)
+  enteredById    String?
+  enteredBy      User?         @relation(fields: [enteredById], references: [id], onDelete: SetNull)
+  createdAt      DateTime      @default(now())
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -697,9 +843,11 @@ model Expense {
 /// status: DRAFT | SENT | PARTIAL | PAID | VOID
 model Invoice {
   id        String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId String
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  number    Int       @unique
+  number    Int
   title     String    @default("Invoice")
   status    String    @default("DRAFT")
   issueDate DateTime  @default(now())
@@ -713,25 +861,34 @@ model Invoice {
 
   items    InvoiceItem[]
   payments Payment[]
+
+  @@unique([companyId, number])
+  @@index([companyId])
 }
 
 model InvoiceItem {
-  id          String  @id @default(cuid())
-  invoiceId   String
-  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  description String
-  quantity    Float   @default(1)
-  unitPrice   Float   @default(0)
-  sortOrder   Int     @default(0)
+  id            String       @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String       @default(dbgenerated("current_setting('app.company_id'::text)"))
+  invoiceId     String
+  invoice       Invoice      @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description   String
+  quantity      Float        @default(1)
+  unitPrice     Float        @default(0)
+  sortOrder     Int          @default(0)
   // The invoice's tax line (its amount follows the other lines).
   isTax         Boolean      @default(false)
   // The change order this line bills (so it's never billed twice).
   changeOrderId String?
   changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+
+  @@index([companyId])
 }
 
 model Payment {
   id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   invoiceId String
   invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   amount    Float
@@ -739,6 +896,8 @@ model Payment {
   method    String   @default("CHECK") // CHECK | ACH | CARD | CASH | OTHER
   reference String?
   createdAt DateTime @default(now())
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -747,6 +906,8 @@ model Payment {
 
 model DailyLog {
   id            String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId     String
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   authorId      String?
@@ -765,6 +926,8 @@ model DailyLog {
   updatedAt     DateTime @updatedAt
 
   files FileAsset[]
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -773,25 +936,32 @@ model DailyLog {
 
 /// priority: LOW | NORMAL | HIGH ; status: OPEN | DONE
 model Todo {
-  id          String    @id @default(cuid())
+  id          String        @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String        @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId   String?
-  project     Project?  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project?      @relation(fields: [projectId], references: [id], onDelete: Cascade)
   title       String
   description String?
   dueDate     DateTime?
-  priority    String    @default("NORMAL")
-  status      String    @default("OPEN")
+  priority    String        @default("NORMAL")
+  status      String        @default("OPEN")
   completedAt DateTime?
   assigneeId  String?
-  assignee    User?     @relation("TodoAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  assignee    User?         @relation("TodoAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
   // A reminder tied to a schedule task: due `taskOffset` workdays from its start (−3 = 3 before), moving with it.
   taskId      String?
   task        ScheduleTask? @relation(fields: [taskId], references: [id], onDelete: Cascade)
   taskOffset  Int?
+  // A lead's follow-up (or its meeting).
+  leadId      String?
+  lead        Lead?         @relation(fields: [leadId], references: [id], onDelete: Cascade)
   createdById String?
-  createdBy   User?     @relation("TodoCreator", fields: [createdById], references: [id], onDelete: SetNull)
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdBy   User?         @relation("TodoCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -800,6 +970,8 @@ model Todo {
 
 model FileAsset {
   id                String           @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId         String           @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId         String
   project           Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
   dailyLogId        String?
@@ -825,18 +997,23 @@ model FileAsset {
   views       FileView[]
   bidsSent    Bid[]        @relation("BidSentFile")
   bidsBack    Bid[]        @relation("BidReturnFile")
+
+  @@index([companyId])
 }
 
 /// A client opened a file (from its link, not a thumbnail) — proof they saw it before choosing.
 model FileView {
-  id       String    @id @default(cuid())
-  fileId   String
-  file     FileAsset @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  userId   String
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  viewedAt DateTime  @default(now())
+  id        String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  fileId    String
+  file      FileAsset @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  viewedAt  DateTime  @default(now())
 
   @@unique([fileId, userId])
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -847,6 +1024,8 @@ model FileView {
 /// kind: PDF | IMAGE
 model TakeoffPlan {
   id        String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId String
   project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
   fileId    String    @unique
@@ -866,12 +1045,16 @@ model TakeoffPlan {
   supersededAt DateTime?
 
   sheets TakeoffSheet[]
+
+  @@index([companyId])
 }
 
 /// One page of a plan set. Points are stored in page units (PDF points at 100%,
 /// or image pixels); `unitsPerFoot` converts them to real-world feet.
 model TakeoffSheet {
   id           String      @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String      @default(dbgenerated("current_setting('app.company_id'::text)"))
   planId       String
   plan         TakeoffPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
   pageNumber   Int
@@ -889,6 +1072,7 @@ model TakeoffSheet {
   measurements TakeoffMeasurement[]
 
   @@unique([planId, pageNumber])
+  @@index([companyId])
 }
 
 /// What gets measured (e.g. "LVP Flooring", "2x10 Floor Joists").
@@ -897,6 +1081,8 @@ model TakeoffSheet {
 /// pitchMode (LINEAR): COMMON (rakes, rafters) | HIP (hips & valleys)
 model TakeoffCondition {
   id            String      @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String      @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId     String
   project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
   name          String
@@ -938,12 +1124,16 @@ model TakeoffCondition {
   measurements  TakeoffMeasurement[]
   items         TakeoffAssemblyItem[]
   estimateItems EstimateItem[]
+
+  @@index([companyId])
 }
 
 /// A shape drawn on a sheet. `points` is a JSON array of [x, y] page-unit pairs.
 /// `angle` (radians) is the member direction for FRAMING areas.
 model TakeoffMeasurement {
   id             String           @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String           @default(dbgenerated("current_setting('app.company_id'::text)"))
   sheetId        String
   sheet          TakeoffSheet     @relation(fields: [sheetId], references: [id], onDelete: Cascade)
   conditionId    String
@@ -963,6 +1153,8 @@ model TakeoffMeasurement {
   // Joists/rafters on a span table: you picked this shape's size yourself — the table leaves it be.
   sizeLocked     Boolean          @default(false)
   createdAt      DateTime         @default(now())
+
+  @@index([companyId])
 }
 
 /// Assembly: an estimate line derived from a condition's quantities,
@@ -970,6 +1162,8 @@ model TakeoffMeasurement {
 /// quantity = metric value × qty ÷ per × (1 + waste%), optionally rounded up.
 model TakeoffAssemblyItem {
   id             String           @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String           @default(dbgenerated("current_setting('app.company_id'::text)"))
   conditionId    String
   condition      TakeoffCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
   description    String
@@ -992,14 +1186,18 @@ model TakeoffAssemblyItem {
   materialItem   MaterialItem?    @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
 
   estimateItems EstimateItem[]
+
+  @@index([companyId])
 }
 
 /// Company-wide Item List: materials and labor picked into takeoff assemblies.
 /// New items typed into an assembly are added here automatically.
 model MaterialItem {
   id         String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId  String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   name       String
-  nameKey    String    @unique // lower-cased, single-spaced name — keeps "Concrete" and "concrete" one item
+  nameKey    String // lower-cased, single-spaced name — keeps "Concrete" and "concrete" one item
   category   String    @default("General")
   unit       String    @default("ea")
   unitCost   Float     @default(0)
@@ -1027,6 +1225,10 @@ model MaterialItem {
   templateItems TakeoffTemplateItem[]
   measurements  TakeoffMeasurement[]
   estimateItems EstimateItem[]
+  inventory     InventoryItem?
+
+  @@unique([companyId, nameKey])
+  @@index([companyId])
 }
 
 /// The cost code for items the program creates by itself (windows, doors, lumber,
@@ -1035,12 +1237,17 @@ model MaterialItem {
 /// sameForAll false = ask for a code on each new item.
 model ItemCodeRule {
   id         String    @id @default(cuid())
-  group      String    @unique
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId  String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  group      String
   sameForAll Boolean   @default(true)
   category   String? // the Item List category new items of this kind go in (null = the built-in name)
   costCodeId String?
   costCode   CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
   updatedAt  DateTime  @updatedAt
+
+  @@unique([companyId, group])
+  @@index([companyId])
 }
 
 /// Framing member library (Settings → Member sizes).
@@ -1052,6 +1259,8 @@ model ItemCodeRule {
 /// ("up to 12' → 2x6"), or the code's (figured from species, grade and loads).
 model SpanTable {
   id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   name      String
   use       String   @default("FLOOR") // FLOOR | CEILING | RAFTER
   source    String   @default("CUSTOM") // CUSTOM (your rows) | CODE
@@ -1064,12 +1273,16 @@ model SpanTable {
   updatedAt DateTime @updatedAt
 
   conditions TakeoffCondition[]
+
+  @@index([companyId])
 }
 
 model MemberSize {
   id           String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   name         String
-  nameKey      String   @unique
+  nameKey      String
   kind         String   @default("DIMENSIONAL")
   widthIn      Float    @default(1.5) // actual thickness, inches
   depthIn      Float    @default(5.5) // actual depth, inches
@@ -1084,21 +1297,30 @@ model MemberSize {
 
   conditions         TakeoffCondition[]
   templateConditions TakeoffTemplateCondition[]
+
+  @@unique([companyId, nameKey])
+  @@index([companyId])
 }
 
 /// Reusable set of takeoff conditions (Settings → Takeoff templates), copied into jobs.
 model TakeoffTemplate {
   id          String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   name        String
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   conditions TakeoffTemplateCondition[]
+
+  @@index([companyId])
 }
 
 model TakeoffTemplateCondition {
   id            String          @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String          @default(dbgenerated("current_setting('app.company_id'::text)"))
   templateId    String
   template      TakeoffTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   name          String
@@ -1130,12 +1352,16 @@ model TakeoffTemplateCondition {
   sortOrder     Int             @default(0)
 
   items TakeoffTemplateItem[]
+
+  @@index([companyId])
 }
 
 /// A template condition's assembly / add-on item. Linked Item List entries take
 /// the Item List's current price when the template is applied to a job.
 model TakeoffTemplateItem {
   id             String                   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String                   @default(dbgenerated("current_setting('app.company_id'::text)"))
   conditionId    String
   condition      TakeoffTemplateCondition @relation(fields: [conditionId], references: [id], onDelete: Cascade)
   description    String
@@ -1152,6 +1378,8 @@ model TakeoffTemplateItem {
   unitCost       Float                    @default(0)
   markupPct      Float                    @default(20)
   sortOrder      Int                      @default(0)
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1160,6 +1388,8 @@ model TakeoffTemplateItem {
 
 model MessageThread {
   id            String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId     String
   project       Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   subject       String
@@ -1168,16 +1398,22 @@ model MessageThread {
   lastMessageAt DateTime @default(now())
 
   messages Message[]
+
+  @@index([companyId])
 }
 
 model Message {
   id        String        @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String        @default(dbgenerated("current_setting('app.company_id'::text)"))
   threadId  String
   thread    MessageThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
   authorId  String?
   author    User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
   body      String
   createdAt DateTime      @default(now())
+
+  @@index([companyId])
 }
 
 // ---------------------------------------------------------------------------
@@ -1186,6 +1422,8 @@ model Message {
 
 model Activity {
   id          String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId   String?
   project     Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
   userId      String?
@@ -1193,21 +1431,25 @@ model Activity {
   type        String // e.g. "project.created", "change_order.approved"
   description String
   createdAt   DateTime @default(now())
+
+  @@index([companyId])
 }
 
 /// A supplier you ask for prices (Settings → Vendors). `costCodeIds`: JSON array of the
 /// cost codes they usually bid — picked for them when you request bids.
 model Vendor {
-  id          String   @id @default(cuid())
-  name        String
-  contact     String?
-  email       String?
-  phone       String?
-  notes       String?
-  costCodeIds String? // JSON ["<costCodeId>", "none", …]
+  id                String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId         String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  name              String
+  contact           String?
+  email             String?
+  phone             String?
+  notes             String?
+  costCodeIds       String? // JSON ["<costCodeId>", "none", …]
   // Insurance needed? null = automatic: yes once they're on a PO for work (not a supplier's bid) or have a certificate on file.
   insuranceRequired Boolean?
-  createdAt   DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   bids           Bid[]
   purchaseOrders PurchaseOrder[]
@@ -1215,6 +1457,8 @@ model Vendor {
   insurance      VendorInsurance[]
   logins         User[]
   tasks          ScheduleTask[]
+
+  @@index([companyId])
 }
 
 /// A request for prices: one vendor, one job, the Material list items of the cost codes
@@ -1223,6 +1467,8 @@ model Vendor {
 /// status: SENT | RECEIVED. `afterLock`: sent after the job's prices were locked (a re-bid).
 model Bid {
   id           String     @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String     @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId    String
   project      Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   vendorId     String?
@@ -1241,12 +1487,16 @@ model Bid {
 
   lines  BidLine[]
   awards BidAward[]
+
+  @@index([companyId])
 }
 
 /// One item on a bid, as sent (name, quantity, unit), and the vendor's price once back.
 /// `key` is the Material list line key; `codeKey` the cost code id or "none".
 model BidLine {
   id             String  @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String  @default(dbgenerated("current_setting('app.company_id'::text)"))
   bidId          String
   bid            Bid     @relation(fields: [bidId], references: [id], onDelete: Cascade)
   key            String
@@ -1261,12 +1511,16 @@ model BidLine {
   substitute     String?
   note           String?
   sortOrder      Int     @default(0)
+
+  @@index([companyId])
 }
 
 /// The bid you took for a cost code on a job, and where its prices went:
 /// scope JOB (this job only) or COMPANY (the Item List, every job).
 model BidAward {
   id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId String
   project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   codeKey   String
@@ -1276,6 +1530,7 @@ model BidAward {
   awardedAt DateTime @default(now())
 
   @@unique([projectId, codeKey])
+  @@index([companyId])
 }
 
 /// A job's substitution: wherever the job orders `from`, it orders `to` instead (a hanger the vendor
@@ -1284,6 +1539,8 @@ model BidAward {
 /// job, so its cuts come from the other everywhere — the takeoff, labels, cut sheet and order.
 model JobSubstitution {
   id         String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId  String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId  String
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   fromItemId String
@@ -1302,11 +1559,14 @@ model JobSubstitution {
   createdAt  DateTime @default(now())
 
   @@unique([projectId, fromItemId])
+  @@index([companyId])
 }
 
 /// One task waits on another: it starts after `predecessor` finishes, plus `lagDays` workdays.
 model TaskLink {
   id            String       @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String       @default(dbgenerated("current_setting('app.company_id'::text)"))
   taskId        String
   task          ScheduleTask @relation("LinkTask", fields: [taskId], references: [id], onDelete: Cascade)
   predecessorId String
@@ -1314,19 +1574,26 @@ model TaskLink {
   lagDays       Int          @default(0)
 
   @@unique([taskId, predecessorId])
+  @@index([companyId])
 }
 
 /// Your list of reasons a job is delayed (Rain, Inspection, Material late…).
 model DelayReason {
   id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   name      String
   sortOrder Int      @default(0)
   createdAt DateTime @default(now())
+
+  @@index([companyId])
 }
 
 /// A day a job was delayed: everything not finished moved out `days` workdays from `date`.
 model JobDelay {
   id              String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId       String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId       String
   project         Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   date            DateTime
@@ -1340,12 +1607,16 @@ model JobDelay {
   userId          String?
   user            User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
   createdAt       DateTime @default(now())
+
+  @@index([companyId])
 }
 
 /// The company calendar: HOLIDAY (nobody works — schedules skip it) or TIME_OFF (one person:
 /// VACATION | SICK | PERSONAL). Reminders are To-Dos with a due date.
 model CalendarEvent {
   id          String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   kind        String
   title       String
   startDate   DateTime
@@ -1355,20 +1626,28 @@ model CalendarEvent {
   timeOffType String?
   notes       String?
   createdAt   DateTime @default(now())
+
+  @@index([companyId])
 }
 
 /// A schedule you start jobs from: tasks with lengths in workdays and what each waits on.
 model ScheduleTemplate {
   id          String                 @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String                 @default(dbgenerated("current_setting('app.company_id'::text)"))
   name        String
   description String?
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
   tasks       ScheduleTemplateTask[]
+
+  @@index([companyId])
 }
 
 model ScheduleTemplateTask {
   id          String           @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String           @default(dbgenerated("current_setting('app.company_id'::text)"))
   templateId  String
   template    ScheduleTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
   name        String
@@ -1382,18 +1661,22 @@ model ScheduleTemplateTask {
   // What it waits on: JSON [{ "id": <template task id>, "lag": <workdays> }].
   links       String?
   sortOrder   Int              @default(0)
+
+  @@index([companyId])
 }
 
 /// A purchase order to a sub or vendor for a job: what they'll do or supply, at what price.
 /// status: DRAFT | SENT | ACCEPTED | DECLINED | CLOSED | VOID. Numbered across all jobs (PO-1001).
 model PurchaseOrder {
   id           String              @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String              @default(dbgenerated("current_setting('app.company_id'::text)"))
   projectId    String
   project      Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
   vendorId     String?
   vendor       Vendor?             @relation(fields: [vendorId], references: [id], onDelete: SetNull)
   vendorName   String
-  number       Int                 @unique
+  number       Int
   title        String
   scope        String?
   status       String              @default("DRAFT")
@@ -1408,10 +1691,15 @@ model PurchaseOrder {
   updatedAt    DateTime            @updatedAt
   lines        PurchaseOrderLine[]
   bills        VendorBill[]
+
+  @@unique([companyId, number])
+  @@index([companyId])
 }
 
 model PurchaseOrderLine {
   id              String        @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId       String        @default(dbgenerated("current_setting('app.company_id'::text)"))
   purchaseOrderId String
   purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   description     String
@@ -1421,43 +1709,51 @@ model PurchaseOrderLine {
   unit            String        @default("ls")
   unitCost        Float         @default(0)
   sortOrder       Int           @default(0)
+
+  @@index([companyId])
 }
 
 /// A sub's or vendor's bill for a job, matched to a PO when there is one.
 /// status: PENDING | APPROVED | PAID | REJECTED. Approved: its lines are the job's actual cost.
 model VendorBill {
-  id                String           @id @default(cuid())
-  projectId         String
-  project           Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  vendorId          String?
-  vendor            Vendor?          @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  vendorName        String
-  purchaseOrderId   String?
-  purchaseOrder     PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
-  billNumber        String?
-  billDate          DateTime
-  dueDate           DateTime?
-  status            String           @default("PENDING")
-  notes             String?
+  id              String           @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId       String           @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId       String
+  project         Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendorId        String?
+  vendor          Vendor?          @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  vendorName      String
+  purchaseOrderId String?
+  purchaseOrder   PurchaseOrder?   @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  billNumber      String?
+  billDate        DateTime
+  dueDate         DateTime?
+  status          String           @default("PENDING")
+  notes           String?
   // The vendor's bill (a FileAsset in the job's Files, folder Bills).
-  fileId            String?
+  fileId          String?
   // Sent in by the vendor from their portal.
-  fromPortal        Boolean          @default(false)
-  approvedAt        DateTime?
-  approvedById      String?
-  approvedBy        User?            @relation("BillApprover", fields: [approvedById], references: [id], onDelete: SetNull)
-  rejectedNote      String?
-  paidAt            DateTime?
-  paidMethod        String?
-  paidReference     String?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  lines             VendorBillLine[]
-  expenses          Expense[]
+  fromPortal      Boolean          @default(false)
+  approvedAt      DateTime?
+  approvedById    String?
+  approvedBy      User?            @relation("BillApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  rejectedNote    String?
+  paidAt          DateTime?
+  paidMethod      String?
+  paidReference   String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  lines           VendorBillLine[]
+  expenses        Expense[]
+
+  @@index([companyId])
 }
 
 model VendorBillLine {
   id          String     @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String     @default(dbgenerated("current_setting('app.company_id'::text)"))
   billId      String
   bill        VendorBill @relation(fields: [billId], references: [id], onDelete: Cascade)
   description String
@@ -1465,22 +1761,329 @@ model VendorBillLine {
   costCode    CostCode?  @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
   amount      Float
   sortOrder   Int        @default(0)
+
+  @@index([companyId])
 }
 
 /// A sub's or vendor's insurance certificate (COI). type: GL | WC | AUTO | UMBRELLA | OTHER.
 /// One the vendor uploads waits for you to confirm its dates (`confirmed`).
 model VendorInsurance {
-  id           String    @id @default(cuid())
+  id           String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String   @default(dbgenerated("current_setting('app.company_id'::text)"))
   vendorId     String
-  vendor       Vendor    @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  vendor       Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
   type         String
   carrier      String?
   policyNumber String?
   expiresAt    DateTime
-  confirmed    Boolean   @default(true)
+  confirmed    Boolean  @default(true)
   // The certificate file (stored under uploads/vendors/<vendor>).
   fileName     String?
   storagePath  String?
   mimeType     String?
+  createdAt    DateTime @default(now())
+
+  @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Inventory: JT&I's stored materials
+// ---------------------------------------------------------------------------
+
+/// Something JT&I has in storage: an Item List item (or a name of its own), how many are
+/// on hand, and what they're worth each (the average of what was paid).
+model InventoryItem {
+  id             String          @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String          @default(dbgenerated("current_setting('app.company_id'::text)"))
+  materialItemId String?         @unique
+  materialItem   MaterialItem?   @relation(fields: [materialItemId], references: [id], onDelete: SetNull)
+  name           String
+  nameKey        String
+  unit           String          @default("ea")
+  onHand         Float           @default(0)
+  avgCost        Float           @default(0)
+  notes          String?
+  // Taken off the Inventory list (kept only because jobs it was pulled to still point at it).
+  removedAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  moves          InventoryMove[]
+
+  @@unique([companyId, nameKey])
+  @@index([companyId])
+}
+
+/// Every change to an inventory count. type: ADD (bought for stock) | PULL (to a job) |
+/// RETURN (left over from a job) | COUNT (a recount). `quantity` is the change (+ in, − out).
+/// A pull or return charges / credits the job with its own expense (`expenseId`).
+/// `lineKey`: the job's Material list line a pull covers (so it orders that much less).
+model InventoryMove {
+  id        String        @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String        @default(dbgenerated("current_setting('app.company_id'::text)"))
+  itemId    String
+  item      InventoryItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  type      String
+  quantity  Float
+  unitCost  Float         @default(0)
+  projectId String?
+  project   Project?      @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  lineKey   String?
+  expenseId String?
+  note      String?
+  userId    String?
+  user      User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  undone    Boolean       @default(false)
+  createdAt DateTime      @default(now())
+
+  @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Leads & sales
+// ---------------------------------------------------------------------------
+
+/// Someone who might hire you, from first call to won or lost.
+/// stage: INQUIRY | MEETING | ESTIMATE | PROPOSAL | WON | LOST. At ESTIMATE it becomes a
+/// job (client + project, `projectId`); from then on the job moves it (estimate sent →
+/// PROPOSAL, approved / contracted → WON). LOST is set by you, with a reason.
+model Lead {
+  id         String      @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId  String      @default(dbgenerated("current_setting('app.company_id'::text)"))
+  firstName  String
+  lastName   String      @default("")
+  company    String?
+  email      String?
+  phone      String?
+  address    String?
+  city       String?
+  state      String?
+  zip        String?
+  title      String? // "Kitchen remodel"
+  jobType    String      @default("REMODEL")
+  value      Float? // rough budget / what it might be worth
+  source     String?
+  stage      String      @default("INQUIRY")
+  stageAt    DateTime    @default(now())
+  meetingAt  DateTime?
+  wonAt      DateTime?
+  lostAt     DateTime?
+  lostReason String?
+  notes      String?
+  sortOrder  Int         @default(0)
+  ownerId    String?
+  owner      User?       @relation("LeadOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  clientId   String?
+  client     Client?     @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  projectId  String?     @unique
+  project    Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  entries    LeadEntry[]
+  todos      Todo[]
+
+  @@index([companyId])
+}
+
+/// A lead's log: kind CALL | EMAIL | MEETING | NOTE | STAGE (moved along — written by the program).
+model LeadEntry {
+  id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  leadId    String
+  lead      Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  kind      String   @default("NOTE")
+  text      String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+}
+
+/// Your own lead sources (the common ones are always offered too).
+model LeadSource {
+  id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  name      String
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  @@index([companyId])
+}
+
+// ---------------------------------------------------------------------------
+// Spec houses
+// ---------------------------------------------------------------------------
+
+/// A spec house's listing and what it costs to sell (percent of the price, plus flat amounts).
+model SpecSale {
+  id             String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId      String    @unique
+  project        Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  listPrice      Float?
+  listedAt       DateTime?
+  listPct        Float     @default(3) // listing agent commission %
+  buyerPct       Float     @default(2.5) // buyer's agent commission %
+  closingPct     Float     @default(1) // seller closing costs, % of price
+  closingFlat    Float     @default(0) // seller closing costs, flat (title, warranty…)
+  concessions    Float     @default(0) // usual concessions / closing-cost help
+  // The seller's closing costs, line by line (JSON [{ name, kind: "PCT" | "FLAT", value, title? }]); null = your defaults.
+  closingLines   String?
+  // Property taxes for the year (Texas: paid in arrears — at closing you credit the buyer Jan 1 → closing).
+  annualTax      Float?
+  // HOA dues paid ahead: the buyer pays back the days after closing.
+  hoaAnnual      Float?
+  hoaPaidThrough DateTime?
+  soldAt         DateTime?
+  soldPrice      Float?
+  notes          String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([companyId])
+}
+
+/// What a spec house costs to hold: kind INTEREST (loanBalance × ratePct a year) or AMOUNT
+/// (`amount` per `frequency`: MONTHLY | YEARLY | ONCE), from startDate to endDate (or sold).
+/// Charged to the job's Budget a month at a time, under its cost code.
+model CarryingCost {
+  id          String      @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String      @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId   String
+  project     Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name        String
+  kind        String      @default("AMOUNT")
+  amount      Float       @default(0)
+  frequency   String      @default("MONTHLY")
+  loanBalance Float?
+  ratePct     Float?
+  startDate   DateTime
+  endDate     DateTime?
+  costCodeId  String?
+  costCode    CostCode?   @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  sortOrder   Int         @default(0)
+  createdAt   DateTime    @default(now())
+  expenses    Expense[]
+  loanEntries LoanEntry[]
+
+  @@index([companyId])
+}
+
+/// A construction loan's history, for its interest line: DRAW (+amount), PAYDOWN (−amount),
+/// RATE (new ratePct from this date), ACTUAL (the bank's interest for `month`, "2026-10").
+model LoanEntry {
+  id             String       @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String       @default(dbgenerated("current_setting('app.company_id'::text)"))
+  carryingCostId String
+  carryingCost   CarryingCost @relation(fields: [carryingCostId], references: [id], onDelete: Cascade)
+  kind           String
+  date           DateTime
+  amount         Float        @default(0)
+  ratePct        Float?
+  month          String?
+  note           String?
+  createdAt      DateTime     @default(now())
+
+  @@index([companyId])
+}
+
+/// An offer on a spec house, as worked out when it came in.
+model SpecOffer {
+  id           String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId    String
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  buyer        String?
+  price        Float
+  closingDate  DateTime
+  concessions  Float    @default(0)
+  buyerPct     Float    @default(0)
+  repairs      Float    @default(0)
+  profit       Float    @default(0)
+  status       String   @default("OPEN") // OPEN | COUNTERED | ACCEPTED | REJECTED
+  counterPrice Float?
+  note         String?
+  userId       String?
+  createdAt    DateTime @default(now())
+
+  @@index([companyId])
+}
+
+/// One stretch on the clock: someone working on a job (and a cost code) from clockIn to clockOut.
+model TimeEntry {
+  id           String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  userId       String
+  user         User      @relation("TimeEntryUser", fields: [userId], references: [id], onDelete: Cascade)
+  projectId    String
+  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costCodeId   String?
+  costCode     CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  clockIn      DateTime
+  clockOut     DateTime? // null = still on the clock
+  breakMinutes Int       @default(0)
+  notes        String?
+  // Cost per hour when it was worked (pay + burden), so a raise later doesn't rewrite old jobs.
+  // null = no pay rate was set then; the person's current rate is used.
+  rate         Float?
+  // Changed by hand (Timesheets) — by whom.
+  editedById   String?
+  editedBy     User?     @relation("TimeEntryEditor", fields: [editedById], references: [id], onDelete: SetNull)
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId, clockIn])
+  @@index([projectId, clockIn])
+  @@index([companyId])
+}
+
+/// A one-time link emailed to someone: confirm their email, or reset their password.
+model AuthToken {
+  id        String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  purpose   String // VERIFY_EMAIL | RESET_PASSWORD
+  tokenHash String    @unique // only a hash is kept; the link holds the token itself
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([companyId])
+  @@index([userId])
+}
+
+/// An invitation to join a company: a team member, a client's portal login, or a vendor's.
+model Invite {
+  id          String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  kind        String // TEAM | CLIENT | VENDOR
+  email       String
+  name        String?
+  role        String    @default("STAFF") // the role they'll have (TEAM: ADMIN | STAFF)
+  permissions String? // TEAM: JSON { canDelay, canApproveBills, canSeeReports, canManageTime }
+  clientId    String? // CLIENT: the client the portal login is for
+  vendorId    String? // VENDOR: the vendor
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  invitedById String?
+  invitedBy   User?     @relation("InviteSender", fields: [invitedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([companyId])
+  @@index([email])
 }

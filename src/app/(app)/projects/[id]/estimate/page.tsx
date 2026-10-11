@@ -15,6 +15,7 @@ import {
   updateEstimateDetails,
   markEstimateSent,
   markEstimateApproved,
+  estimateAsBudget,
   markEstimateDeclined,
   createEstimateVersion,
   deleteEstimate,
@@ -172,7 +173,24 @@ export default async function EstimatePage({ params, searchParams }: { params: P
           }
           actions={
             <div className="flex flex-wrap items-center gap-2">
-              {estimate.status === "DRAFT" ? (
+              {project.isSpec && (estimate.status === "DRAFT" || estimate.status === "SENT") ? (
+                // A spec house has no client to send it to: one step makes it the budget.
+                <ConfirmForm
+                  action={estimateAsBudget}
+                  hidden={{ projectId: project.id, id: estimate.id }}
+                  variant="success"
+                  message={`Use "${estimate.name}" as this spec house's budget? The Budget follows it and the job's prices lock.${
+                    blanks
+                      ? `
+
+Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) have no price` : "", zeroLines.length ? `${zeroLines.length} estimate item(s) are $0` : ""].filter(Boolean).join(" and ")}.`
+                      : ""
+                  }`}
+                >
+                  Use as the budget
+                </ConfirmForm>
+              ) : null}
+              {!project.isSpec && estimate.status === "DRAFT" ? (
                 blanks ? (
                   <ConfirmForm
                     action={markEstimateSent}
@@ -195,7 +213,7 @@ export default async function EstimatePage({ params, searchParams }: { params: P
                   </form>
                 )
               ) : null}
-              {estimate.status === "SENT" ? (
+              {!project.isSpec && estimate.status === "SENT" ? (
                 <>
                   <form action={markEstimateApproved}>
                     <input type="hidden" name="projectId" value={project.id} />

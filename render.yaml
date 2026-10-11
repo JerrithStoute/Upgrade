@@ -1,0 +1,67 @@
+# The Builder Station online — a Render "Blueprint". In Render: New → Blueprint → pick this
+# repository. It makes the program (a web service) and its database, and asks once for the
+# settings marked "sync: false" (keys from Cloudflare and Resend). See GOING-ONLINE.md.
+
+services:
+  - name: builderstation
+    type: web
+    runtime: node
+    region: ohio
+    plan: 0.5c-512mb # raise to 1c-2g in Render if it runs short of memory
+    buildCommand: npm ci --include=dev && npm run build
+    # Database changes and the company-separation rules, before the new version starts.
+    preDeployCommand: node scripts/online.mjs npm run db:deploy
+    startCommand: node scripts/online.mjs npm start
+    healthCheckPath: /api/health
+    # A push to GitHub doesn't go live by itself — deploy from Render when it's ready.
+    autoDeployTrigger: "off"
+    domains:
+      - app.thebuilderstation.com
+    envVars:
+      # The database owner's address; the app's own limited login is built from it (scripts/online.mjs).
+      - key: SYSTEM_DATABASE_URL
+        fromDatabase:
+          name: builderstation-db
+          property: connectionString
+      - key: APP_DB_PASSWORD
+        generateValue: true
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        generateValue: true
+      # Dates and times show in Central time.
+      - key: TZ
+        value: America/Chicago
+      - key: APP_URL
+        value: https://app.thebuilderstation.com
+      # Files and backups: Cloudflare R2.
+      - key: STORAGE
+        value: cloud
+      - key: S3_BUCKET
+        value: builderstation-files
+      - key: S3_ENDPOINT
+        sync: false
+      - key: S3_ACCESS_KEY_ID
+        sync: false
+      - key: S3_SECRET_ACCESS_KEY
+        sync: false
+      # Email: Resend.
+      - key: MAIL
+        value: resend
+      - key: MAIL_FROM
+        value: The Builder Station <no-reply@thebuilderstation.com>
+      - key: RESEND_API_KEY
+        sync: false
+      # Robot check: Cloudflare Turnstile.
+      - key: TURNSTILE_SITE_KEY
+        sync: false
+      - key: TURNSTILE_SECRET_KEY
+        sync: false
+
+databases:
+  - name: builderstation-db
+    plan: 0.1c-256mb
+    region: ohio
+    postgresMajorVersion: "17"
+    databaseName: builderstation
+    user: builder

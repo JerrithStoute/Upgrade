@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { syncSelectionChangeOrder } from "@/lib/billing-flow";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
@@ -47,7 +48,7 @@ function readSelectionFields(fd: FormData) {
   };
 }
 
-export async function createSelection(fd: FormData) {
+export const createSelection = friendly(async function createSelection(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const data = readSelectionFields(fd);
@@ -55,9 +56,9 @@ export async function createSelection(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "selection.created", description: `Added selection "${sel.title}"` });
   revalidate(project.id);
   redirect(detailPath(project.id, sel.id));
-}
+});
 
-export async function updateSelection(fd: FormData) {
+export const updateSelection = friendly(async function updateSelection(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "id"));
@@ -68,9 +69,9 @@ export async function updateSelection(fd: FormData) {
   await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
-}
+});
 
-export async function deleteSelection(fd: FormData) {
+export const deleteSelection = friendly(async function deleteSelection(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "id"));
@@ -78,7 +79,7 @@ export async function deleteSelection(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "selection.deleted", description: `Deleted selection "${sel.title}"` });
   revalidate(project.id);
   redirect(listPath(project.id));
-}
+});
 
 function readOptionFields(fd: FormData) {
   const name = str(fd, "name");
@@ -94,7 +95,7 @@ function readOptionFields(fd: FormData) {
   };
 }
 
-export async function addOption(fd: FormData) {
+export const addOption = friendly(async function addOption(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
@@ -104,9 +105,9 @@ export async function addOption(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "selection.option_added", description: `Added option "${data.name}" to "${sel.title}"` });
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
-}
+});
 
-export async function updateOption(fd: FormData) {
+export const updateOption = friendly(async function updateOption(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
@@ -116,9 +117,9 @@ export async function updateOption(fd: FormData) {
   if (sel.chosenOptionId === id) await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
-}
+});
 
-export async function deleteOption(fd: FormData) {
+export const deleteOption = friendly(async function deleteOption(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
@@ -131,9 +132,9 @@ export async function deleteOption(fd: FormData) {
   }
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
-}
+});
 
-export async function chooseOption(fd: FormData) {
+export const chooseOption = friendly(async function chooseOption(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
@@ -153,10 +154,10 @@ export async function chooseOption(fd: FormData) {
   await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
-}
+});
 
 /** Status transitions: APPROVED (from CHOSEN), ORDERED (from APPROVED), INSTALLED (from ORDERED), PENDING (reset from any). */
-export async function setSelectionStatus(fd: FormData) {
+export const setSelectionStatus = friendly(async function setSelectionStatus(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "id"));
@@ -181,7 +182,7 @@ export async function setSelectionStatus(fd: FormData) {
   if (status === "PENDING") await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
-}
+});
 
 // --- The selections board (selections that come from the estimate) -----------------
 

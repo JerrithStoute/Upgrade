@@ -2,11 +2,13 @@
  * Seed the database with a demo company, users, cost codes and sample projects.
  * Run with: npm run db:seed
  */
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import { addDays, subDays } from "date-fns";
+import { db, systemDb } from "../src/lib/db";
+import { connectPg, replaceCompany } from "../src/lib/db-copy";
+import { runAsCompany } from "../src/lib/tenant";
 
-const db = new PrismaClient();
+const DEMO_COMPANY = "Upgrade Builders";
 
 const COST_CODES: [string, string, string][] = [
   // code, name, division
@@ -93,34 +95,17 @@ async function createBuiltAllowance(
 async function main() {
   console.log("Seeding…");
 
-  // Wipe in dependency order (SQLite: cascade handles most).
-  await db.activity.deleteMany();
-  await db.message.deleteMany();
-  await db.messageThread.deleteMany();
-  await db.fileAsset.deleteMany();
-  await db.todo.deleteMany();
-  await db.dailyLog.deleteMany();
-  await db.payment.deleteMany();
-  await db.invoiceItem.deleteMany();
-  await db.invoice.deleteMany();
-  await db.expense.deleteMany();
-  await db.scheduleTask.deleteMany();
-  await db.changeOrderItem.deleteMany();
-  await db.changeOrder.deleteMany();
-  await db.selectionOption.deleteMany();
-  await db.selection.deleteMany();
-  await db.estimateItem.deleteMany();
-  await db.estimate.deleteMany();
-  await db.project.deleteMany();
-  await db.client.deleteMany();
-  await db.user.deleteMany();
-  await db.estimateTemplate.deleteMany();
-  await db.costCode.deleteMany();
-  await db.company.deleteMany();
+  // The demo company starts fresh each time — only it; any other company is never touched.
+  const old = await systemDb.company.findFirst({ where: { name: DEMO_COMPANY } });
+  if (old) {
+    const client = await connectPg(process.env.SYSTEM_DATABASE_URL ?? process.env.DATABASE_URL);
+    await replaceCompany(client, old.id, { name: "nothing", tables: new Set(), columns: () => [], rows: () => [] });
+    await client.end();
+  }
 
-  await db.company.create({
+  const company = await systemDb.company.create({
     data: {
-      name: "Upgrade Builders",
+      name: DEMO_COMPANY,
       address: "1200 Industrial Pkwy",
       city: "Austin",
       state: "TX",
@@ -132,6 +117,11 @@ async function main() {
       defaultMarkup: 20,
     },
   });
+  await runAsCompany(company.id, () => seedCompany());
+}
+
+/** Everything inside the demo company (the gatekeeper tags it all with the company). */
+async function seedCompany() {
 
   const passwordHash = await bcrypt.hash("password", 10);
   const owner = await db.user.create({
@@ -958,13 +948,15 @@ async function main() {
     ],
   });
 
-  console.log("Seed complete.");
-  console.log("Sign in with owner@upgradebuilders.com / password");
 }
 
 main()
+  .then(() => {
+    console.log("Seed complete.");
+    console.log("Sign in with owner@upgradebuilders.com / password");
+  })
   .catch((e) => {
     console.error(e);
     process.exit(1);
   })
-  .finally(() => db.$disconnect());
+  .finally(() => systemDb.$disconnect());

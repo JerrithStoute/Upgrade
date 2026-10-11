@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "./db";
+import { currentCompanyId } from "./tenant";
 import type { EstimateItem, EstimateSpec } from "@prisma/client";
 import { withLengthSubstitutions } from "./substitutions";
 import { parseMarkupTable, tableTaxPct } from "./markup";
@@ -604,7 +605,7 @@ export async function syncTakeoffToEstimate(projectId: string, estimateId: strin
         // Written without touching the estimate's "updated" time: the open sheet is keyed on it,
         // and a new key would throw away edits you haven't saved yet.
         const json = merged ? JSON.stringify(merged) : null;
-        await tx.$executeRaw`UPDATE "Estimate" SET "autoNote" = ${json}, "autoBase" = ${base} WHERE "id" = ${est.id}`;
+        await tx.$executeRaw`UPDATE "Estimate" SET "autoNote" = ${json}, "autoBase" = ${base} WHERE "id" = ${est.id} AND "companyId" = ${await currentCompanyId()}`;
       }
     },
     { timeout: 30000 },

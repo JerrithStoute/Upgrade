@@ -1,16 +1,20 @@
 "use server";
 
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import { db } from "@/lib/db";
-import { createSession, hashPassword, verifyPassword } from "@/lib/auth";
-import { clearFailures, recordFailure, retryAfter } from "@/lib/rate-limit";
+import { systemDb } from "@/lib/db";
+import { hashPassword, upgradePasswordHash, verifyPassword } from "@/lib/auth";
+import { afterFirstStep } from "@/lib/two-step";
+import { clearFailures, failures, recordFailure, retryAfter } from "@/lib/rate-limit";
+import { passedRobotCheck, robotCheckKey, ROBOT_CHECK_FAILED } from "@/lib/turnstile";
+import { clientIp, logSecurity } from "@/lib/security-log";
 
-export type LoginState = { error?: string } | undefined;
+export type LoginState = { error?: string; unconfirmed?: string; check?: boolean } | undefined;
 
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_FAILURES_PER_EMAIL = 5;
 const MAX_FAILURES_PER_IP = 20;
+/** After this many wrong tries, the "I'm not a robot" check is added. */
+const CHECK_AFTER = 2;
 
 /** Roles that can sign in today. SUB is excluded until there is a subcontractor portal. */
 const LOGIN_ROLES = ["ADMIN", "STAFF", "CLIENT", "VENDOR"];
@@ -20,11 +24,6 @@ let dummyHash: Promise<string> | null = null;
 function getDummyHash() {
   dummyHash ??= hashPassword("not-a-real-password");
   return dummyHash;
-}
-
-async function clientIp() {
-  const h = await headers();
-  return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
 }
 
 function tooMany(seconds: number): LoginState {
@@ -45,13 +44,17 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   const ipKey = `login:ip:${await clientIp()}`;
   const wait = Math.max(retryAfter(emailKey, MAX_FAILURES_PER_EMAIL), retryAfter(ipKey, MAX_FAILURES_PER_IP));
   if (wait > 0) return tooMany(wait);
+  const needsCheck = () => !!robotCheckKey() && Math.max(failures(emailKey), failures(ipKey)) >= CHECK_AFTER;
+  if (needsCheck() && !(await passedRobotCheck(formData))) return { error: ROBOT_CHECK_FAILED, check: true };
 
-  const user = await db.user.findUnique({ where: { email } });
+  // Emails are unique across all companies; signing in comes before knowing the company.
+  const user = await systemDb.user.findUnique({ where: { email } });
   const passwordOk = await verifyPassword(password, user?.passwordHash ?? (await getDummyHash()));
   if (!user || !user.active || !passwordOk) {
     recordFailure(emailKey, WINDOW_MS);
     recordFailure(ipKey, WINDOW_MS);
-    return { error: "Invalid email or password." };
+    if (user && user.active) await logSecurity(user, "failed", "entered a wrong password");
+    return { error: "Invalid email or password.", check: needsCheck() };
   }
 
   if (!LOGIN_ROLES.includes(user.role)) {
@@ -59,7 +62,8 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   }
 
   clearFailures(emailKey);
-  await createSession(user.id);
-  const safeNext = next.startsWith("/") && !next.startsWith("//") && !next.startsWith("/\\") ? next : null;
-  redirect(safeNext ?? (user.role === "CLIENT" ? "/portal" : user.role === "VENDOR" ? "/vendor" : "/dashboard"));
+  await upgradePasswordHash(user.id, password, user.passwordHash);
+  if (!user.emailVerifiedAt) return { error: `Confirm your email first — we sent a link to ${user.email} when you signed up.`, unconfirmed: user.email };
+  // Signed in now — or on to the authenticator code, when they use one.
+  redirect(await afterFirstStep(user.id, next));
 }

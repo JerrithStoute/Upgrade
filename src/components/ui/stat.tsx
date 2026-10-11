@@ -20,9 +20,9 @@ export function Stat({
     warn: "text-amber-700",
   };
   return (
-    <div className={cn("rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm", className)}>
+    <div className={cn("rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm md:px-5 md:py-4", className)}>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={cn("mt-1 text-2xl font-semibold tabular-nums tracking-tight", tones[tone])}>{value}</p>
+      <p className={cn("mt-1 text-xl font-semibold md:text-2xl tabular-nums tracking-tight", tones[tone])}>{value}</p>
       {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
     </div>
   );

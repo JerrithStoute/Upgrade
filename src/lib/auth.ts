@@ -4,10 +4,11 @@ import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
 import { cache } from "react";
-import { db } from "./db";
+import { db, systemDb } from "./db";
 import { getSessionKey } from "./session-secret";
 
-export const SESSION_COOKIE = "upgrade_session";
+// Online the cookie name starts with __Host-: browsers then only accept it over HTTPS, from this exact site.
+export const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-bs_session" : "upgrade_session";
 const SESSION_DAYS = 14;
 
 export type Role = "ADMIN" | "STAFF" | "CLIENT" | "SUB" | "VENDOR";
@@ -17,12 +18,16 @@ export type SessionUser = {
   email: string;
   name: string;
   role: Role;
+  /** The company they belong to — everything they see and change is that company's. */
+  companyId: string;
   clientId: string | null;
   /** May delay a job's schedule (admins always can). */
   canDelay: boolean;
   /** May approve vendor bills (admins always can). */
   canApproveBills: boolean;
   canSeeReports: boolean;
+  /** May see and fix everyone's time on the time clock (admins always can). */
+  canManageTime: boolean;
   /** A vendor portal login: the vendor it's for. */
   vendorId: string | null;
 };
@@ -31,16 +36,34 @@ function secretKey() {
   return getSessionKey();
 }
 
+/** How much work scrambling a password takes (each +1 doubles it). Older, weaker hashes are redone at sign-in. */
+export const PASSWORD_ROUNDS = 12;
+
 export async function hashPassword(password: string) {
-  return bcrypt.hash(password, 10);
+  return bcrypt.hash(password, PASSWORD_ROUNDS);
+}
+
+/** After a successful sign-in: redo an older, weaker password hash at today's strength. */
+export async function upgradePasswordHash(userId: string, password: string, hash: string) {
+  if (bcrypt.getRounds(hash) >= PASSWORD_ROUNDS) return;
+  await systemDb.user.update({ where: { id: userId }, data: { passwordHash: await hashPassword(password) } });
 }
 
 export async function verifyPassword(password: string, hash: string) {
   return bcrypt.compare(password, hash);
 }
 
+/**
+ * Signs someone in on this browser. The sign-in carries their session "version": bumping
+ * it (signOutEverywhere) ends every sign-in they have, on every device.
+ */
 export async function createSession(userId: string) {
-  const token = await new SignJWT({ sub: userId }).setProtectedHeader({ alg: "HS256" }).setIssuedAt().setExpirationTime(`${SESSION_DAYS}d`).sign(secretKey());
+  const user = await systemDb.user.update({ where: { id: userId }, data: { lastSignInAt: new Date() }, select: { sessionVersion: true } });
+  const token = await new SignJWT({ sub: userId, v: user.sessionVersion })
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime(`${SESSION_DAYS}d`)
+    .sign(secretKey());
   const store = await cookies();
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
@@ -56,11 +79,16 @@ export async function destroySession() {
   store.delete(SESSION_COOKIE);
 }
 
-/** Verifies a raw session token. Safe to call from the edge proxy. */
-export async function verifySessionToken(token: string): Promise<string | null> {
+/** Ends every sign-in this person has, everywhere (password changed, deactivated, "sign out everywhere"). */
+export async function signOutEverywhere(userId: string) {
+  await systemDb.user.update({ where: { id: userId }, data: { sessionVersion: { increment: 1 } } });
+}
+
+/** Verifies a raw session token: who, and which session version. */
+export async function verifySessionToken(token: string): Promise<{ userId: string; version: number } | null> {
   try {
     const { payload } = await jwtVerify(token, secretKey());
-    return typeof payload.sub === "string" ? payload.sub : null;
+    return typeof payload.sub === "string" ? { userId: payload.sub, version: typeof payload.v === "number" ? payload.v : 0 } : null;
   } catch {
     return null;
   }
@@ -71,22 +99,27 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   const store = await cookies();
   const token = store.get(SESSION_COOKIE)?.value;
   if (!token) return null;
-  const userId = await verifySessionToken(token);
-  if (!userId) return null;
-  const user = await db.user.findUnique({
+  const session = await verifySessionToken(token);
+  if (!session) return null;
+  const userId = session.userId;
+  // Before the company is known, so past the gatekeeper (it's how the gatekeeper learns the company).
+  const user = await systemDb.user.findUnique({
     where: { id: userId },
     include: { client: { select: { id: true } } },
   });
-  if (!user || !user.active) return null;
+  // Signed out everywhere since this sign-in (or deactivated): no longer valid.
+  if (!user || !user.active || user.sessionVersion !== session.version) return null;
   return {
     id: user.id,
     email: user.email,
     name: user.name,
     role: user.role as Role,
+    companyId: user.companyId,
     clientId: user.client?.id ?? null,
     canDelay: user.canDelay,
     canApproveBills: user.canApproveBills,
     canSeeReports: user.canSeeReports,
+    canManageTime: user.canManageTime,
     vendorId: user.vendorId,
   };
 });
@@ -94,7 +127,12 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
 /** Require any logged-in user. Redirects to /login otherwise. */
 export async function requireUser(): Promise<SessionUser> {
   const user = await getCurrentUser();
-  if (!user) redirect("/login");
+  if (!user) {
+    // A sign-in that's no longer good (signed out everywhere, deactivated) is cleared first,
+    // so the sign-in page doesn't bounce them straight back.
+    if ((await cookies()).get(SESSION_COOKIE)) redirect("/logout");
+    redirect("/login");
+  }
   return user;
 }
 
@@ -165,10 +203,12 @@ export const requireClient = cache(async (): Promise<ClientUser> => {
         email: client.user?.email ?? client.email ?? user.email,
         name: client.user?.name ?? `${client.firstName} ${client.lastName}`.trim(),
         role: "CLIENT",
+        companyId: user.companyId,
         clientId: client.id,
         canDelay: false,
         canApproveBills: false,
         canSeeReports: false,
+        canManageTime: false,
         vendorId: null,
         preview: true,
         previewProjectId: projectId || null,

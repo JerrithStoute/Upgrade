@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -38,7 +39,7 @@ async function budgetEstimate(projectId: string) {
  * A new PO: blank, from the budget (the estimate's lines of the cost codes you pick, at
  * cost), or from a bid you took (that vendor's quoted lines and prices for its cost code).
  */
-export async function createPurchaseOrder(fd: FormData) {
+export const createPurchaseOrder = friendly(async function createPurchaseOrder(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const source = str(fd, "source");
@@ -89,7 +90,7 @@ export async function createPurchaseOrder(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "po.created", description: `PO-${po.number} to ${vendorName} created (${money(poTotal(lines))})` });
   revalidate(project.id);
   redirect(`${base(project.id)}/po/${po.id}`);
-}
+});
 
 const poInput = z.object({
   title: z.string().trim().min(1, "Give it a title").max(200),
@@ -153,7 +154,7 @@ const NEXT: Record<string, string[]> = {
 const VERB: Record<string, string> = { SENT: "sent", ACCEPTED: "marked accepted", DECLINED: "marked declined", CLOSED: "closed", VOID: "voided", DRAFT: "reopened" };
 
 /** Sent / accepted (for them) / declined / closed / void / reopened. */
-export async function setPurchaseOrderStatus(fd: FormData) {
+export const setPurchaseOrderStatus = friendly(async function setPurchaseOrderStatus(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const status = str(fd, "status");
@@ -171,9 +172,9 @@ export async function setPurchaseOrderStatus(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "po.status", description: `PO-${po.number} ${VERB[status]}` });
   revalidate(project.id);
   redirect(`${base(project.id)}/po/${po.id}`);
-}
+});
 
-export async function deletePurchaseOrder(fd: FormData) {
+export const deletePurchaseOrder = friendly(async function deletePurchaseOrder(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const po = await db.purchaseOrder.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { _count: { select: { bills: true } } } });
@@ -183,7 +184,7 @@ export async function deletePurchaseOrder(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "po.deleted", description: `PO-${po.number} deleted` });
   revalidate(project.id);
   redirect(base(project.id));
-}
+});
 
 // --- Bills -----------------------------------------------------------------------------
 
@@ -215,7 +216,7 @@ async function saveBillFile(fd: FormData, projectId: string, userId: string | nu
 }
 
 /** A bill from a sub or vendor, matched to one of their POs when picked. Waits for approval. */
-export async function createBill(fd: FormData) {
+export const createBill = friendly(async function createBill(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const lines = readBillLines(fd);
@@ -248,10 +249,10 @@ export async function createBill(fd: FormData) {
   });
   revalidate(project.id);
   redirect(`${base(project.id)}/bills/${bill.id}`);
-}
+});
 
 /** Changes a bill that's still waiting for approval (or was rejected). */
-export async function updateBill(fd: FormData) {
+export const updateBill = friendly(async function updateBill(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id } });
@@ -276,10 +277,10 @@ export async function updateBill(fd: FormData) {
   ]);
   revalidate(project.id);
   redirect(`${base(project.id)}/bills/${bill.id}`);
-}
+});
 
 /** Approve / reject / un-approve / paid — approve and pay by those allowed (Settings → Team). */
-export async function decideBill(fd: FormData) {
+export const decideBill = friendly(async function decideBill(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { lines: true } });
@@ -298,9 +299,9 @@ export async function decideBill(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: `bill.${what}`, description: `Bill from ${bill.vendorName} (${money(billTotal(bill.lines))}) ${verb}` });
   revalidate(project.id);
   redirect(str(fd, "back").startsWith("/") ? str(fd, "back") : `${base(project.id)}/bills/${bill.id}`);
-}
+});
 
-export async function deleteBill(fd: FormData) {
+export const deleteBill = friendly(async function deleteBill(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { lines: true } });
@@ -310,4 +311,4 @@ export async function deleteBill(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "bill.deleted", description: `Bill from ${bill.vendorName} (${money(billTotal(bill.lines))}) deleted` });
   revalidate(project.id);
   redirect(base(project.id));
-}
+});

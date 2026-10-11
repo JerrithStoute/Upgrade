@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
@@ -7,7 +8,7 @@ import { db } from "@/lib/db";
 import { boolField, str } from "@/lib/utils";
 
 /** Settings → Billing: what flows on by itself, and how invoices are numbered. */
-export async function saveBilling(fd: FormData) {
+export const saveBilling = friendly(async function saveBilling(fd: FormData) {
   await requireAdmin();
   const company = await db.company.findFirst({ select: { id: true } });
   if (!company) throw new Error("Set up your company first");
@@ -25,4 +26,4 @@ export async function saveBilling(fd: FormData) {
   });
   revalidatePath("/settings/billing");
   redirect("/settings/billing?saved=1");
-}
+});

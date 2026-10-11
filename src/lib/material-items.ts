@@ -1,9 +1,8 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
-import { db } from "./db";
+import { db, type Tx } from "./db";
 import { itemNameKey } from "./takeoff";
 
-type Client = Prisma.TransactionClient | typeof db;
+type Client = Tx | typeof db;
 
 /** Item List entries for pickers (assembly item search). */
 export function materialItemOptions() {
@@ -42,7 +41,7 @@ export async function resolveMaterialItem(
   fields: { description: string; unit: string; unitCost: number; markupPct: number; wastePct: number; roundUp: boolean; costCodeId: string | null },
 ) {
   const nameKey = itemNameKey(fields.description);
-  const existing = await client.materialItem.findUnique({ where: { nameKey }, select: { id: true, name: true } });
+  const existing = await client.materialItem.findFirst({ where: { nameKey }, select: { id: true, name: true } });
   if (existing) return { id: existing.id, name: existing.name, created: false };
   const costCode = fields.costCodeId ? await client.costCode.findUnique({ where: { id: fields.costCodeId }, select: { division: true } }) : null;
   const item = await client.materialItem.create({

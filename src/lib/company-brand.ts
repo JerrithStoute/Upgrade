@@ -1,14 +1,14 @@
 import "server-only";
-import path from "path";
-import { promises as fs } from "fs";
 import { randomUUID } from "crypto";
 import { cache } from "react";
 import { db } from "./db";
-import { deleteUpload, uploadDir } from "./uploads";
+import { tryCompanyId } from "./tenant";
+import { deleteUpload, writeUpload } from "./uploads";
 
 /** The company's branding for this request: name, main color, logo address (or null). */
 export const getBrand = cache(async () => {
-  const c = await db.company.findFirst({ select: { name: true, brandColor: true, logoPath: true, updatedAt: true } });
+  // Before sign-in (the sign-in page) there's no company yet: The Builder Station's own look.
+  const c = (await tryCompanyId()) ? await db.company.findFirst({ select: { name: true, brandColor: true, logoPath: true, updatedAt: true } }) : null;
   return {
     name: c?.name ?? "Your Company",
     color: c?.brandColor ?? null,
@@ -33,9 +33,7 @@ export async function saveLogo(file: File, oldPath: string | null) {
   const bytes = Buffer.from(await file.arrayBuffer());
   const kind = imageType(bytes);
   if (!kind) throw new Error("The logo must be a PNG, JPG or WebP image");
-  const rel = path.join("company", `logo-${randomUUID()}${kind.ext}`);
-  await fs.mkdir(path.join(uploadDir(), "company"), { recursive: true });
-  await fs.writeFile(path.join(uploadDir(), rel), bytes);
+  const rel = await writeUpload(`company/logo-${randomUUID()}${kind.ext}`, bytes, kind.type);
   if (oldPath) await deleteUpload(oldPath);
   return { logoPath: rel, logoType: kind.type };
 }

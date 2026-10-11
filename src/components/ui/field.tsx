@@ -1,18 +1,6 @@
 import { cn } from "@/lib/utils";
 
-export function Field({
-  label,
-  htmlFor,
-  hint,
-  className,
-  children,
-}: {
-  label: string;
-  htmlFor?: string;
-  hint?: React.ReactNode;
-  className?: string;
-  children: React.ReactNode;
-}) {
+export function Field({ label, htmlFor, hint, className, children }: { label: string; htmlFor?: string; hint?: React.ReactNode; className?: string; children: React.ReactNode }) {
   return (
     <div className={cn(className)}>
       <label className="label" htmlFor={htmlFor}>

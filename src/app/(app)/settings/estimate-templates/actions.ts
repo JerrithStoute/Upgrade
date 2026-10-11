@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -26,7 +27,7 @@ function revalidate(id?: string) {
 
 // --- Templates ----------------------------------------------------------------
 
-export async function createTemplate(formData: FormData) {
+export const createTemplate = friendly(async function createTemplate(formData: FormData) {
   const admin = await requireAdmin();
   const name = str(formData, "name");
   if (!name) throw new Error("Template name is required");
@@ -37,9 +38,9 @@ export async function createTemplate(formData: FormData) {
   await logActivity({ userId: admin.id, type: "estimate_template.created", description: `Created estimate template "${name}"` });
   revalidate();
   redirect(templatePath(template.id));
-}
+});
 
-export async function updateTemplateDetails(formData: FormData) {
+export const updateTemplateDetails = friendly(async function updateTemplateDetails(formData: FormData) {
   await requireAdmin();
   const id = str(formData, "templateId");
   await loadTemplate(id);
@@ -52,9 +53,9 @@ export async function updateTemplateDetails(formData: FormData) {
   await db.estimateTemplate.update({ where: { id }, data });
   revalidate(id);
   redirect(templatePath(id));
-}
+});
 
-export async function duplicateTemplate(formData: FormData) {
+export const duplicateTemplate = friendly(async function duplicateTemplate(formData: FormData) {
   const admin = await requireAdmin();
   const source = await loadTemplate(str(formData, "templateId"));
   const copy = await db.$transaction(async (tx) => {
@@ -74,16 +75,16 @@ export async function duplicateTemplate(formData: FormData) {
   await logActivity({ userId: admin.id, type: "estimate_template.created", description: `Duplicated estimate template "${source.name}"` });
   revalidate();
   redirect(templatePath(copy.id));
-}
+});
 
-export async function deleteTemplate(formData: FormData) {
+export const deleteTemplate = friendly(async function deleteTemplate(formData: FormData) {
   const admin = await requireAdmin();
   const template = await loadTemplate(str(formData, "templateId"));
   await db.estimateTemplate.delete({ where: { id: template.id } });
   await logActivity({ userId: admin.id, type: "estimate_template.deleted", description: `Deleted estimate template "${template.name}"` });
   revalidate();
   redirect(LIST);
-}
+});
 
 // --- The sheet -------------------------------------------------------------------
 

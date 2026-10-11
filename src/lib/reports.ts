@@ -6,6 +6,7 @@ import { changeOrderTotals } from "./change-orders";
 import { parseMarkupTable, tableExtras } from "./markup";
 import { invoiceTotal, paymentsTotal } from "./finance";
 import { billTotal } from "./purchasing";
+import { syncCarrying } from "./spec";
 import { agingBucket, daysLate, jobNumbers, periodOf, periods, type AgingKey, type JobNumbers } from "./report-math";
 
 /** Jobs that have a contract: sold, building, on hold, or finished. */
@@ -31,14 +32,17 @@ export type JobRow = JobNumbers & {
  * and from those its projected profit and WIP (see report-math).
  */
 export async function jobRows(statuses: string[] = SOLD, asOf = new Date()) {
+  await syncCarrying();
   const projects = await db.project.findMany({
     where: { status: { in: statuses } },
     orderBy: [{ number: "asc" }],
     include: {
       client: { select: { firstName: true, lastName: true } },
+      spec: { select: { listPrice: true, soldPrice: true } },
       estimates: { where: { status: "APPROVED" }, orderBy: { version: "desc" }, take: 1, include: { items: true } },
       changeOrders: { where: { status: "APPROVED" }, include: { items: true } },
-      expenses: { where: { date: { lte: asOf } }, select: { amount: true } },
+      expenses: { where: { date: { lte: asOf } }, select: { amount: true, costCodeId: true, carryingCostId: true, vendor: true } },
+      carryingCosts: { select: { costCodeId: true } },
       invoices: { where: { status: { notIn: ["DRAFT", "VOID"] }, issueDate: { lte: asOf } }, include: { items: true, payments: { where: { date: { lte: asOf } } } } },
     },
   });
@@ -51,9 +55,28 @@ export async function jobRows(statuses: string[] = SOLD, asOf = new Date()) {
     const cos = p.changeOrders.filter((c) => !c.decidedAt || c.decidedAt <= asOf);
     const coPrice = cos.reduce((n, c) => n + changeOrderTotals(c, c.items).total, 0);
     const coCost = cos.reduce((n, c) => n + c.items.reduce((t, i) => t + lineCost(i), 0), 0);
-    const budgetCost = estItems.reduce((n, i) => n + lineCost(i), 0) + coCost;
+    let budgetCost = estItems.reduce((n, i) => n + lineCost(i), 0) + coCost;
+    if (p.isSpec && budgetCost > 0) {
+      // A spec house's expected cost, as the offer calculator works it out: each cost code's
+      // estimate, or what's been spent once that's more — plus carrying and selling costs on top
+      // (carrying-cost codes count only what was spent there by hand).
+      const carryCodes = new Set(p.carryingCosts.map((c) => c.costCodeId).filter(Boolean));
+      const byCode = new Map<string, number>();
+      for (const i of estItems) byCode.set(i.costCodeId ?? "", (byCode.get(i.costCodeId ?? "") ?? 0) + lineCost(i));
+      for (const c of cos) for (const i of c.items) byCode.set(i.costCodeId ?? "", (byCode.get(i.costCodeId ?? "") ?? 0) + lineCost(i));
+      const spent = new Map<string, number>();
+      let onTop = 0;
+      for (const e of p.expenses) {
+        if (e.carryingCostId || e.vendor === "Sale of home") onTop += e.amount;
+        else spent.set(e.costCodeId ?? "", (spent.get(e.costCodeId ?? "") ?? 0) + e.amount);
+      }
+      budgetCost =
+        onTop +
+        [...new Set([...byCode.keys(), ...spent.keys()])].reduce((n, k) => n + (carryCodes.has(k) ? (spent.get(k) ?? 0) : Math.max(byCode.get(k) ?? 0, spent.get(k) ?? 0)), 0);
+    }
     const nums = jobNumbers({
-      contract: (est ? estPrice : p.contractAmount) + coPrice,
+      // A spec house's "contract" is what it sells for (its list price until it does).
+      contract: p.isSpec && (p.spec?.soldPrice ?? p.spec?.listPrice) ? (p.spec!.soldPrice ?? p.spec!.listPrice)! : (est ? estPrice : p.contractAmount) + coPrice,
       budgetCost,
       actualCost: p.expenses.reduce((n, e) => n + e.amount, 0),
       billed: p.invoices.reduce((n, i) => n + invoiceTotal(i.items), 0),

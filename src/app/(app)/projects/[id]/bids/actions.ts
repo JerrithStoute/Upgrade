@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -29,7 +30,7 @@ function revalidateBids(projectId: string) {
  * Makes a bid for each vendor picked: the Material list items picked, as they are now.
  * You download its Excel file (or PDF) to send; only the vendor's returned file goes in the job's Files.
  */
-export async function requestBids(fd: FormData) {
+export const requestBids = friendly(async function requestBids(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const itemKeys = new Set(fd.getAll("item").map(String));
@@ -85,7 +86,7 @@ export async function requestBids(fd: FormData) {
   });
   revalidateBids(project.id);
   redirect(`${bidsPath(project.id)}?made=${made.length}#bids`);
-}
+});
 
 /**
  * A vendor added while sending (no trip to Settings): saved to the vendor list with the
@@ -127,7 +128,7 @@ export async function quickAddVendor(input: { name: string; contact: string; ema
  * A vendor's returned Excel file: matched to its bid by the hidden id inside (or the row you
  * uploaded it on), each line's price filled in, and the file kept in the job's Files.
  */
-export async function importBid(fd: FormData) {
+export const importBid = friendly(async function importBid(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const back = (q: string) => redirect(`${bidsPath(project.id)}?${q}#bids`);
@@ -176,10 +177,10 @@ export async function importBid(fd: FormData) {
   });
   revalidateBids(project.id);
   back(`imported=${b.id}&priced=${priced}&blank=${items - priced}&ladder=${ladderPriced}`);
-}
+});
 
 /** Prices typed in by hand (a bid phoned in or written on the printout). */
-export async function saveBidPrices(fd: FormData) {
+export const saveBidPrices = friendly(async function saveBidPrices(fd: FormData) {
   await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const bid = await db.bid.findFirst({ where: { id: str(fd, "bidId"), projectId: project.id }, include: { lines: true } });
@@ -197,10 +198,10 @@ export async function saveBidPrices(fd: FormData) {
   });
   revalidateBids(project.id);
   redirect(`${bidsPath(project.id)}/${bid.id}?saved=1`);
-}
+});
 
 /** Removes a bid (its files stay in the job's Files). Prices already taken from it stay. */
-export async function deleteBid(fd: FormData) {
+export const deleteBid = friendly(async function deleteBid(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const bid = await db.bid.findFirst({ where: { id: str(fd, "bidId"), projectId: project.id }, select: { id: true, number: true, vendorName: true } });
@@ -210,12 +211,12 @@ export async function deleteBid(fd: FormData) {
   }
   revalidateBids(project.id);
   redirect(`${bidsPath(project.id)}#bids`);
-}
+});
 
 /** The Item List entry for a lumber length ("2x6 × 18'"), added the way the takeoff adds lumber when it's new. */
 async function lumberItemFor(name: string) {
   const nameKey = itemNameKey(name);
-  const had = await db.materialItem.findUnique({ where: { nameKey }, select: { id: true } });
+  const had = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } });
   if (had) return had.id;
   const [place, company] = await Promise.all([newItemPlacement("framing lumber"), db.company.findFirst({ select: { defaultMarkup: true } })]);
   const item = await db.materialItem.create({
@@ -243,7 +244,7 @@ async function lumberItemFor(name: string) {
  * choose first (the page asks) — "use theirs" substitutes it on this job at their price
  * (substitutions.ts), "keep mine" leaves that line's price out.
  */
-export async function takeBids(fd: FormData) {
+export const takeBids = friendly(async function takeBids(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const scope = str(fd, "scope") === "COMPANY" ? "COMPANY" : "JOB";
@@ -331,4 +332,4 @@ export async function takeBids(fd: FormData) {
   if (scope === "COMPANY") revalidatePath("/settings/items");
   revalidateBids(project.id);
   redirect(`${bidsPath(project.id)}?taken=${done.length}&items=${items}&skipped=${skipped}&subbed=${subbed}&kept=${keptOut}&scope=${scope}#compare`);
-}
+});

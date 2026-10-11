@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -23,7 +24,7 @@ function returnTo(fd: FormData, projectId: string) {
   return r.startsWith(filesPath(projectId)) ? r : filesPath(projectId);
 }
 
-export async function uploadFiles(fd: FormData) {
+export const uploadFiles = friendly(async function uploadFiles(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const folderRaw = str(fd, "folder");
@@ -43,9 +44,9 @@ export async function uploadFiles(fd: FormData) {
   });
   revalidate(project.id);
   redirect(returnTo(fd, project.id));
-}
+});
 
-export async function toggleFileVisibility(fd: FormData) {
+export const toggleFileVisibility = friendly(async function toggleFileVisibility(fd: FormData) {
   await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -54,9 +55,9 @@ export async function toggleFileVisibility(fd: FormData) {
   await db.fileAsset.update({ where: { id }, data: { clientVisible: !file.clientVisible } });
   revalidate(project.id);
   redirect(returnTo(fd, project.id));
-}
+});
 
-export async function deleteFile(fd: FormData) {
+export const deleteFile = friendly(async function deleteFile(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -67,4 +68,4 @@ export async function deleteFile(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "file.deleted", description: `Deleted file "${file.name}"` });
   revalidate(project.id);
   redirect(returnTo(fd, project.id));
-}
+});

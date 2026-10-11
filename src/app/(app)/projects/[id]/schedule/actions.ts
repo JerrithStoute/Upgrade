@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -82,7 +83,7 @@ async function setLinks(projectId: string, taskId: string, wanted: { id: string;
   await db.$transaction([db.taskLink.deleteMany({ where: { taskId } }), ...keep.map((k) => db.taskLink.create({ data: { taskId, predecessorId: k.id, lagDays: k.lag } }))]);
 }
 
-export async function createTask(fd: FormData) {
+export const createTask = friendly(async function createTask(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const data = readTaskFields(fd);
@@ -96,9 +97,9 @@ export async function createTask(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.task_created", description: `Added task "${data.name}"` });
   await revalidate(project.id);
   redirect(`${schedulePath(project.id)}${str(fd, "view") === "list" ? "?view=list" : ""}`);
-}
+});
 
-export async function updateTask(fd: FormData) {
+export const updateTask = friendly(async function updateTask(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -115,9 +116,9 @@ export async function updateTask(fd: FormData) {
   if (existing.percentComplete < 100 && data.percentComplete >= 100) await logCompleted(project.id, data.name, user.id);
   await revalidate(project.id);
   redirect(schedulePath(project.id));
-}
+});
 
-export async function deleteTask(fd: FormData) {
+export const deleteTask = friendly(async function deleteTask(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -127,10 +128,10 @@ export async function deleteTask(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.task_deleted", description: `Deleted task "${task.name}"` });
   await revalidate(project.id);
   redirect(`${schedulePath(project.id)}${str(fd, "view") === "list" ? "?view=list" : ""}`);
-}
+});
 
 /** Moves a task N workdays (keeping its length); what waits on it is pushed to fit. */
-export async function shiftTask(fd: FormData) {
+export const shiftTask = friendly(async function shiftTask(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -150,9 +151,9 @@ export async function shiftTask(fd: FormData) {
   });
   await revalidate(project.id);
   redirect(`${schedulePath(project.id)}?task=${id}`);
-}
+});
 
-export async function completeTask(fd: FormData) {
+export const completeTask = friendly(async function completeTask(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -163,13 +164,13 @@ export async function completeTask(fd: FormData) {
   if (task.percentComplete < 100) await logCompleted(project.id, task.name, user.id);
   await revalidate(project.id);
   redirect(schedulePath(project.id));
-}
+});
 
 /**
  * Delays the job: from that day, everything not finished moves out (1 workday by default),
  * logged with the reason. Admins, and team members allowed to (Settings → Team).
  */
-export async function delayJob(fd: FormData) {
+export const delayJob = friendly(async function delayJob(fd: FormData) {
   const user = await requireStaff();
   if (!canDelay(user)) throw new Error("You don't have permission to delay jobs — an admin can allow it in Settings → Team");
   const project = await getProject(str(fd, "projectId"));
@@ -201,10 +202,10 @@ export async function delayJob(fd: FormData) {
   });
   await revalidate(project.id);
   redirect(`${schedulePath(project.id)}?delayed=${updates.length}`);
-}
+});
 
 /** Lays a schedule template onto the job from a start date. */
-export async function startFromTemplate(fd: FormData) {
+export const startFromTemplate = friendly(async function startFromTemplate(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const start = parseDateInput(fd.get("start"));
@@ -213,10 +214,10 @@ export async function startFromTemplate(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.template_applied", description: `Added ${count} tasks from schedule template "${template.name}"` });
   await revalidate(project.id);
   redirect(schedulePath(project.id));
-}
+});
 
 /** This job's schedule as a new template. */
-export async function saveAsScheduleTemplate(fd: FormData) {
+export const saveAsScheduleTemplate = friendly(async function saveAsScheduleTemplate(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const name = str(fd, "name");
@@ -225,7 +226,7 @@ export async function saveAsScheduleTemplate(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.template_saved", description: `Saved the schedule as template "${name}" (${count} tasks)` });
   revalidatePath("/settings/schedule-templates");
   redirect(`/settings/schedule-templates?edit=${template.id}`);
-}
+});
 
 /**
  * Drag and drop: puts a task just before or after another, as the schedule shows them
@@ -268,14 +269,14 @@ async function placeNear(projectId: string, id: string, targetId: string, after:
  * Starts the job's schedule over: every task goes (with what waits on what and the reminders
  * tied to them). Selections tied to a task keep the deadline they had. The delay log stays.
  */
-export async function deleteSchedule(fd: FormData) {
+export const deleteSchedule = friendly(async function deleteSchedule(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const { count } = await db.scheduleTask.deleteMany({ where: { projectId: project.id } });
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.deleted", description: `Deleted the schedule (${count} task${count === 1 ? "" : "s"})` });
   await revalidate(project.id);
   redirect(schedulePath(project.id));
-}
+});
 
 /** A task under way: "Started: Framing & header" in today's daily log, under Work completed. */
 async function logStarted(projectId: string, name: string, userId: string) {
@@ -283,7 +284,7 @@ async function logStarted(projectId: string, name: string, userId: string) {
 }
 
 /** "Mark started": a task not started yet is under way (1%), and today's daily log says so. */
-export async function startTask(fd: FormData) {
+export const startTask = friendly(async function startTask(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -296,7 +297,7 @@ export async function startTask(fd: FormData) {
   }
   await revalidate(project.id);
   redirect(`${schedulePath(project.id)}?task=${id}`);
-}
+});
 
 /** A task finished: "Completed: Framing & header" in today's daily log, under Work completed. */
 async function logCompleted(projectId: string, name: string, userId: string) {

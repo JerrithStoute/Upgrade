@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
@@ -29,17 +30,17 @@ async function tableFields(fd: FormData) {
   return { name, use, source, species: source === "CODE" ? species : "", load: source === "CODE" ? load : "", rows: JSON.stringify(source === "CUSTOM" ? rows : []), overSize };
 }
 
-export async function createSpanTable(fd: FormData) {
+export const createSpanTable = friendly(async function createSpanTable(fd: FormData) {
   await requireAdmin();
   const data = await tableFields(fd);
   const last = await db.spanTable.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
   const t = await db.spanTable.create({ data: { ...data, sortOrder: (last?.sortOrder ?? -1) + 1 } });
   revalidatePath(PATH);
   redirect(`${PATH}#table-${t.id}`);
-}
+});
 
 /** Takeoffs sizing by it are sized again (shapes you sized yourself stay). */
-export async function updateSpanTable(fd: FormData) {
+export const updateSpanTable = friendly(async function updateSpanTable(fd: FormData) {
   await requireAdmin();
   const id = str(fd, "id");
   if (!(await db.spanTable.findUnique({ where: { id }, select: { id: true } }))) throw new Error("Span table not found");
@@ -54,12 +55,12 @@ export async function updateSpanTable(fd: FormData) {
   }
   revalidatePath(PATH);
   redirect(`${PATH}#table-${id}`);
-}
+});
 
 /** Takeoffs using it keep the sizes they have; new shapes take the takeoff's own size. */
-export async function deleteSpanTable(fd: FormData) {
+export const deleteSpanTable = friendly(async function deleteSpanTable(fd: FormData) {
   await requireAdmin();
   await db.spanTable.delete({ where: { id: str(fd, "id") } });
   revalidatePath(PATH);
   redirect(PATH);
-}
+});

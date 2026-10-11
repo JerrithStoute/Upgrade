@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -42,16 +43,16 @@ async function readFields(fd: FormData) {
   };
 }
 
-export async function createTodo(fd: FormData) {
+export const createTodo = friendly(async function createTodo(fd: FormData) {
   const user = await requireStaff();
   const data = await readFields(fd);
   await db.todo.create({ data: { ...data, createdById: user.id } });
   await logActivity({ projectId: data.projectId, userId: user.id, type: "todo.created", description: `Added to-do "${data.title}"` });
   revalidate(data.projectId);
   redirect(returnTo(fd));
-}
+});
 
-export async function updateTodo(fd: FormData) {
+export const updateTodo = friendly(async function updateTodo(fd: FormData) {
   await requireStaff();
   const id = str(fd, "id");
   const existing = await db.todo.findUnique({ where: { id } });
@@ -63,9 +64,9 @@ export async function updateTodo(fd: FormData) {
   if (existing.projectId !== data.projectId) revalidate(existing.projectId);
   revalidate(data.projectId);
   redirect(returnTo(fd));
-}
+});
 
-export async function toggleTodo(fd: FormData) {
+export const toggleTodo = friendly(async function toggleTodo(fd: FormData) {
   const user = await requireStaff();
   const id = str(fd, "id");
   const existing = await db.todo.findUnique({ where: { id } });
@@ -75,9 +76,9 @@ export async function toggleTodo(fd: FormData) {
   if (done) await logActivity({ projectId: existing.projectId, userId: user.id, type: "todo.completed", description: `Completed to-do "${existing.title}"` });
   revalidate(existing.projectId);
   redirect(returnTo(fd));
-}
+});
 
-export async function deleteTodo(fd: FormData) {
+export const deleteTodo = friendly(async function deleteTodo(fd: FormData) {
   await requireStaff();
   const id = str(fd, "id");
   const existing = await db.todo.findUnique({ where: { id } });
@@ -85,4 +86,4 @@ export async function deleteTodo(fd: FormData) {
   await db.todo.delete({ where: { id } });
   revalidate(existing.projectId);
   redirect(returnTo(fd));
-}
+});

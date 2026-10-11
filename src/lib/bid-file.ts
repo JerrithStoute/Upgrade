@@ -34,7 +34,7 @@ export async function bidWorkbook(
   company: Parameters<typeof companyLines>[0],
 ) {
   const wb = new ExcelJS.Workbook();
-  wb.creator = company?.name ?? "Upgrade";
+  wb.creator = company?.name ?? "The Builder Station";
   wb.created = new Date();
   const ws = wb.addWorksheet("Bid", { views: [{ state: "frozen", ySplit: 9 }], pageSetup: { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
   ws.columns = [

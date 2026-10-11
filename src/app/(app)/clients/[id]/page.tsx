@@ -17,11 +17,14 @@ import {
   PageHeader,
   SubmitButton,
 } from "@/components/ui";
-import { grantPortalAccess, resetPortalPassword, revokePortalAccess } from "../actions";
+import { cancelPortalInvite, grantPortalAccess, resendPortalInvite, resetPortalPassword, revokePortalAccess } from "../actions";
+import { openInvites } from "@/lib/invites";
 
-export default async function ClientDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ClientDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ reset?: string }> }) {
   await requireStaff();
   const { id } = await params;
+  const resetSent = (await searchParams).reset === "1";
+  const [waiting] = await openInvites({ clientId: id });
   const client = await db.client.findUnique({
     where: { id },
     include: {
@@ -151,13 +154,11 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                       </p>
                     </div>
                   </div>
-                  <form action={resetPortalPassword} className="space-y-3">
+                  {resetSent ? <p className="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800">A link to choose a new password was emailed to {client.user.email}.</p> : null}
+                  <form action={resetPortalPassword}>
                     <input type="hidden" name="id" value={client.id} />
-                    <Field label="New password" htmlFor="reset-password" hint="At least 8 characters.">
-                      <input id="reset-password" name="password" type="password" minLength={8} required className="input" autoComplete="new-password" />
-                    </Field>
-                    <SubmitButton variant="secondary" size="sm">
-                      Reset password
+                    <SubmitButton variant="secondary" size="sm" pendingText="Sending…">
+                      Email a password reset link
                     </SubmitButton>
                   </form>
                   <div className="border-t border-slate-100 pt-4">
@@ -171,18 +172,36 @@ export default async function ClientDetailPage({ params }: { params: Promise<{ i
                   </div>
                 </>
               ) : (
-                <form action={grantPortalAccess} className="space-y-3">
-                  <input type="hidden" name="id" value={client.id} />
-                  <FormGrid className="md:grid-cols-1">
-                    <Field label="Login email" htmlFor="portal-email">
-                      <input id="portal-email" name="email" type="email" required className="input" defaultValue={client.email ?? ""} />
-                    </Field>
-                    <Field label="Password" htmlFor="portal-password" hint="At least 8 characters. Share it with the client.">
-                      <input id="portal-password" name="password" type="password" minLength={8} required className="input" autoComplete="new-password" />
-                    </Field>
-                  </FormGrid>
-                  <SubmitButton size="sm">Grant portal access</SubmitButton>
-                </form>
+                <>
+                  {waiting ? (
+                    <div className="flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      <span className="min-w-0 flex-1">
+                        Invitation sent to <strong>{waiting.email}</strong> — {waiting.expiresAt < new Date() ? "expired, send it again" : `waiting for them (good until ${fmtDate(waiting.expiresAt)})`}.
+                      </span>
+                      <form action={resendPortalInvite}>
+                        <input type="hidden" name="id" value={client.id} />
+                        <input type="hidden" name="inviteId" value={waiting.id} />
+                        <SubmitButton size="sm" variant="ghost" pendingText="Sending…">
+                          Resend
+                        </SubmitButton>
+                      </form>
+                      <ConfirmForm action={cancelPortalInvite} hidden={{ id: client.id, inviteId: waiting.id }} variant="ghost" message="Cancel the invitation? The link in their email stops working.">
+                        <span className="text-rose-600">Cancel</span>
+                      </ConfirmForm>
+                    </div>
+                  ) : null}
+                  <form action={grantPortalAccess} className="space-y-3">
+                    <input type="hidden" name="id" value={client.id} />
+                    <FormGrid className="md:grid-cols-1">
+                      <Field label="Their email" htmlFor="portal-email" hint="They get an email with a link to choose their own password.">
+                        <input id="portal-email" name="email" type="email" required className="input" defaultValue={waiting?.email ?? client.email ?? ""} />
+                      </Field>
+                    </FormGrid>
+                    <SubmitButton size="sm" pendingText="Sending…">
+                      {waiting ? "Send a new invitation" : "Invite to the client portal"}
+                    </SubmitButton>
+                  </form>
+                </>
               )}
             </CardBody>
           </Card>

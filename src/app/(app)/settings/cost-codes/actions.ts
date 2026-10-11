@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
@@ -14,21 +15,21 @@ function done() {
   revalidatePath("/projects", "layout");
 }
 
-export async function createCostCode(formData: FormData) {
+export const createCostCode = friendly(async function createCostCode(formData: FormData) {
   const admin = await requireAdmin();
   const code = strOrNull(formData, "code");
   const name = str(formData, "name");
   const division = str(formData, "division") || "General";
   if (!name) throw new Error("Name is required");
-  if (code && (await db.costCode.findUnique({ where: { code } }))) throw new Error(`Cost code ${code} already exists`);
+  if (code && (await db.costCode.findFirst({ where: { code } }))) throw new Error(`Cost code ${code} already exists`);
 
   await db.costCode.create({ data: { code, name, division, sortOrder: intField(formData, "sortOrder", 0), active: true } });
   await logActivity({ userId: admin.id, type: "cost_code.created", description: `Added cost code ${costCodeLabel({ code, name }, " ")}` });
   done();
   redirect("/settings/cost-codes");
-}
+});
 
-export async function updateCostCode(formData: FormData) {
+export const updateCostCode = friendly(async function updateCostCode(formData: FormData) {
   const admin = await requireAdmin();
   const id = str(formData, "id");
   const code = strOrNull(formData, "code");
@@ -38,7 +39,7 @@ export async function updateCostCode(formData: FormData) {
   const current = await db.costCode.findUnique({ where: { id } });
   if (!current) throw new Error("Cost code not found");
   if (code && code !== current.code) {
-    const clash = await db.costCode.findUnique({ where: { code } });
+    const clash = await db.costCode.findFirst({ where: { code } });
     if (clash) throw new Error(`Cost code ${code} already exists`);
   }
 
@@ -46,18 +47,18 @@ export async function updateCostCode(formData: FormData) {
   await logActivity({ userId: admin.id, type: "cost_code.updated", description: `Updated cost code ${costCodeLabel({ code, name }, " ")}` });
   done();
   redirect("/settings/cost-codes");
-}
+});
 
-export async function toggleCostCodeActive(formData: FormData) {
+export const toggleCostCodeActive = friendly(async function toggleCostCodeActive(formData: FormData) {
   await requireAdmin();
   const id = str(formData, "id");
   const current = await db.costCode.findUnique({ where: { id } });
   if (!current) throw new Error("Cost code not found");
   await db.costCode.update({ where: { id }, data: { active: !current.active } });
   done();
-}
+});
 
-export async function deleteCostCode(formData: FormData) {
+export const deleteCostCode = friendly(async function deleteCostCode(formData: FormData) {
   const admin = await requireAdmin();
   const id = str(formData, "id");
   const current = await db.costCode.findUnique({
@@ -76,7 +77,7 @@ export async function deleteCostCode(formData: FormData) {
   }
   done();
   redirect("/settings/cost-codes");
-}
+});
 
 /**
  * Replaces the whole cost code library with the uploaded CSV (column A = group,
@@ -85,7 +86,7 @@ export async function deleteCostCode(formData: FormData) {
  * file's group, number and order; every other existing code is deleted and any
  * records using it lose their cost code. All-or-nothing.
  */
-export async function replaceCostCodesFromCsv(formData: FormData) {
+export const replaceCostCodesFromCsv = friendly(async function replaceCostCodesFromCsv(formData: FormData) {
   const admin = await requireAdmin();
   const csv = String(formData.get("csv") ?? "");
   const parsed = parseCostCodeCsv(csv);
@@ -122,13 +123,13 @@ export async function replaceCostCodesFromCsv(formData: FormData) {
   });
   done();
   redirect("/settings/cost-codes?imported=1");
-}
+});
 
 /**
  * The NAHB-style starter list: adds the codes you tick (or every one you don't have yet).
  * Codes you already have — by number — are never changed or doubled.
  */
-export async function addStarterCostCodes(formData: FormData) {
+export const addStarterCostCodes = friendly(async function addStarterCostCodes(formData: FormData) {
   const admin = await requireAdmin();
   const have = new Set((await db.costCode.findMany({ where: { code: { not: null } }, select: { code: true } })).map((c) => c.code!));
   const missing = STARTER_COST_CODES.filter((c) => !have.has(c.code));
@@ -147,4 +148,4 @@ export async function addStarterCostCodes(formData: FormData) {
   });
   done();
   redirect(`/settings/cost-codes?starter=${picked.length}`);
-}
+});

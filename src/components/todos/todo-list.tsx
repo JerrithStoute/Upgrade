@@ -115,7 +115,10 @@ export function TodoList({
   const returnTo = qs({});
   const isGlobal = !!projects;
   const chip = (active: boolean) =>
-    cn("rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset", active ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50");
+    cn(
+      "rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
+      active ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
+    );
 
   return (
     <div className="space-y-4">
@@ -143,7 +146,11 @@ export function TodoList({
       </div>
 
       {todos.length === 0 ? (
-        <EmptyState icon={CheckSquare} title={show === "done" ? "Nothing completed yet" : "All clear"} description={show === "open" ? "No open to-dos match these filters." : "No to-dos match these filters."} />
+        <EmptyState
+          icon={CheckSquare}
+          title={show === "done" ? "Nothing completed yet" : "All clear"}
+          description={show === "open" ? "No open to-dos match these filters." : "No to-dos match these filters."}
+        />
       ) : (
         <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200 bg-white shadow-sm">
           {todos.map((t) => {
@@ -190,6 +197,11 @@ export function TodoList({
                     {isGlobal && t.project ? (
                       <Link href={`/projects/${t.project.id}/todos`} className="text-xs text-blue-700 hover:underline">
                         #{t.project.number} {t.project.name}
+                      </Link>
+                    ) : null}
+                    {t.leadId ? (
+                      <Link href={`/leads/${t.leadId}`} className="text-xs font-medium text-blue-700 hover:underline">
+                        Open lead
                       </Link>
                     ) : null}
                   </div>

@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "./db";
+import { currentCompanyId } from "./tenant";
 import { CODE_GROUPS, CODE_GROUP_KEYS, ITEM_KINDS, groupCategory, groupOf, type CodeGroup, type CodeRules, type ItemKind } from "./code-groups";
 
 /**
@@ -40,7 +41,7 @@ export async function loadCodeRules(): Promise<CodeRules> {
  */
 export async function newItemPlacement(kind: ItemKind, exterior?: boolean | null) {
   const group = groupOf(kind, exterior)!;
-  const rule = await db.itemCodeRule.findUnique({ where: { group } });
+  const rule = await db.itemCodeRule.findFirst({ where: { group } });
   const rules: CodeRules = rule ? { [group]: { sameForAll: rule.sameForAll, costCodeId: rule.costCodeId, category: rule.category } } : {};
   return { kind, category: groupCategory(group, rules), costCodeId: rule?.sameForAll ? rule.costCodeId : null };
 }
@@ -83,7 +84,7 @@ async function groupItems(group: CodeGroup) {
 export async function saveCodeRule(group: CodeGroup, sameForAll: boolean, costCodeId: string | null) {
   const code = sameForAll && costCodeId ? await validCostCode(costCodeId) : null;
   await db.itemCodeRule.upsert({
-    where: { group },
+    where: { companyId_group: { companyId: await currentCompanyId(), group } },
     create: { group, sameForAll, costCodeId: code },
     update: { sameForAll, costCodeId: code },
   });
@@ -112,7 +113,7 @@ export async function saveCategoryRule(group: CodeGroup, category: string | null
   const rules = await loadCodeRules();
   const from = new Set([CODE_GROUPS[group].category.toLowerCase(), groupCategory(group, rules).toLowerCase()]);
   await db.itemCodeRule.upsert({
-    where: { group },
+    where: { companyId_group: { companyId: await currentCompanyId(), group } },
     // A category answer alone leaves the cost code "not set" (asked later).
     create: { group, category: to, sameForAll: true, costCodeId: null },
     update: { category: to },
@@ -150,7 +151,7 @@ export async function renameCategory(from: string, to: string) {
   const rules = await loadCodeRules();
   for (const g of CODE_GROUP_KEYS)
     if (groupCategory(g, rules).toLowerCase() === from.trim().toLowerCase())
-      await db.itemCodeRule.upsert({ where: { group: g }, create: { group: g, category: name, sameForAll: true, costCodeId: null }, update: { category: name } });
+      await db.itemCodeRule.upsert({ where: { companyId_group: { companyId: await currentCompanyId(), group: g } }, create: { group: g, category: name, sameForAll: true, costCodeId: null }, update: { category: name } });
   return count;
 }
 

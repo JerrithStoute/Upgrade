@@ -3,32 +3,43 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "tsx scripts/dev.ts",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test \"src/**/*.test.ts\"",
-    "backup": "tsx scripts/backup.ts",
-    "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma db push --force-reset && tsx prisma/seed.ts",
+    "backup": "tsx --env-file-if-exists=.env scripts/backup.ts",
+    "db:seed": "tsx --env-file-if-exists=.env prisma/seed.ts",
+    "db:reset": "prisma migrate reset --force --skip-seed && npm run db:rules && tsx --env-file-if-exists=.env prisma/seed.ts",
     "db:studio": "prisma studio",
-    "setup": "npm install && prisma db push && tsx prisma/seed.ts",
+    "setup": "npm install && npm run db:deploy && npm run db:seed",
     "postinstall": "prisma generate",
-    "create-admin": "tsx scripts/create-admin.ts"
+    "create-admin": "tsx --env-file-if-exists=.env scripts/create-admin.ts",
+    "dev:app-only": "next dev",
+    "db:up": "tsx scripts/db-up.ts",
+    "db:copy-from-sqlite": "tsx --env-file-if-exists=.env scripts/copy-from-sqlite.ts",
+    "db:rules": "tsx --env-file-if-exists=.env scripts/tenant-rules.ts",
+    "test:isolation": "tsx --env-file-if-exists=.env scripts/isolation-test.ts",
+    "db:migration": "tsx --env-file-if-exists=.env scripts/new-migration.ts",
+    "db:deploy": "prisma migrate deploy && npm run db:rules",
+    "go-online:copy": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.online scripts/move-online.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "archiver": "^7.0.1",
+    "aws4fetch": "^1.0.20",
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "date-fns": "^4.4.0",
     "exceljs": "^4.4.0",
     "jose": "^6.2.12",
     "lucide-react": "^1.48.0",
-    "next": "16.3.7",
+    "next": "^16.4.0",
     "pdfjs-dist": "^6.3.289",
+    "pg": "^8.23.1",
     "prisma": "^6.19.3",
+    "qrcode": "^1.5.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "tailwind-merge": "^3.7.0",
@@ -36,16 +47,27 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/archiver": "^6.0.4",
     "@types/node": "^20",
+    "@types/pg": "^8.23.1",
+    "@types/qrcode": "^1.5.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "embedded-postgres": "^17.10.0-beta.17",
     "eslint": "^9",
-    "eslint-config-next": "16.3.7",
+    "eslint-config-next": "^16.4.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
     "typescript": "^5"
   },
+  "engines": {
+    "node": "24.x"
+  },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
+  },
+  "overrides": {
+    "deepmerge-ts": "^8.0.0",
+    "uuid": "^11.1.1"
   }
 }

@@ -231,7 +231,28 @@ export default async function BudgetPage({ params, searchParams }: { params: Pro
                       </Td>
                       <Td className="text-xs text-slate-600">{e.reference ?? "—"}</Td>
                       <Td>
-                        {e.billId ? (
+                        {e.laborWeek ? (
+                          // Crew time from the time clock: fixed on Timesheets, worked out here again by itself.
+                          <span className="flex justify-end">
+                            <Link href={`/time/sheets?week=${e.laborWeek}`} className={buttonClasses("ghost", "sm")}>
+                              Timesheets
+                            </Link>
+                          </span>
+                        ) : e.carryingCostId ? (
+                          // A spec house's carrying cost: set on the Spec sale tab, charged here each month.
+                          <span className="flex justify-end">
+                            <Link href={`/projects/${project.id}/spec#carrying`} className={buttonClasses("ghost", "sm")}>
+                              Spec sale
+                            </Link>
+                          </span>
+                        ) : e.fromInventory ? (
+                          // Pulled from / returned to the company's inventory: undone there, so stock and the job agree.
+                          <span className="flex justify-end">
+                            <Link href={`/projects/${project.id}/materials/inventory`} className={buttonClasses("ghost", "sm")}>
+                              Inventory
+                            </Link>
+                          </span>
+                        ) : e.billId ? (
                           // From an approved vendor bill: changed (or paid) on the bill, so the two never disagree.
                           <span className="flex justify-end">
                             <Link href={`/projects/${project.id}/purchasing/bills/${e.billId}`} className={buttonClasses("ghost", "sm")}>

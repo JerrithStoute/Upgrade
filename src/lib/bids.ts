@@ -3,6 +3,8 @@ import { db } from "./db";
 import { buildMaterialList, type MaterialLine } from "./takeoff-materials";
 import { DEFAULT_STOCK_LENGTHS, itemNameKey, lumberItemName, parseStockLengths } from "./takeoff";
 import { loadConditions } from "./takeoff-data";
+import { jobPulls } from "./inventory";
+import { toOrder } from "./inventory-math";
 export { bidLineFor, bidWorkbook, parsePrice, readBidWorkbook, type ReturnedLine } from "./bid-file";
 import { bidLineFor } from "./bid-file";
 
@@ -20,10 +22,20 @@ export const OVER_WARNING = 0.1;
 export const LADDER_PREFIX = "ladder:";
 export const isLadderLine = (l: { key: string }) => l.key.startsWith(LADDER_PREFIX);
 
-/** The Material list lines worth bidding (something to buy), with their cost codes. */
+/**
+ * The Material list lines worth bidding (something to buy), with their cost codes — less
+ * what was pulled from the company's inventory for them.
+ */
 export async function biddableLines(projectId: string) {
-  const { lines } = await buildMaterialList(projectId);
-  return lines.filter((l) => l.quantity > 0);
+  const [{ lines }, pulled] = await Promise.all([buildMaterialList(projectId), jobPulls(projectId)]);
+  return lines
+    .map((l) => {
+      const p = pulled.get(l.key) ?? 0;
+      if (!p) return l;
+      const quantity = toOrder(l.quantity, p);
+      return { ...l, quantity, extended: quantity * l.unitCost };
+    })
+    .filter((l) => l.quantity > 0);
 }
 
 /** Cost codes on the Material list: how many items each, and what they cost the job now. */

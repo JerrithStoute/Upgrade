@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
 import { db } from "@/lib/db";
 import { getCurrentUser, isStaff } from "@/lib/auth";
-import { uploadDir } from "@/lib/uploads";
+import { readUpload } from "@/lib/uploads";
 import { recordClientView } from "@/lib/file-views";
 
 /**
@@ -44,7 +42,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const inline = INLINE_TYPES.has(file.mimeType) && search.get("download") !== "1";
 
   try {
-    const data = await fs.readFile(path.join(uploadDir(), file.storagePath));
+    const data = await readUpload(file.storagePath);
     return new NextResponse(new Uint8Array(data), {
       headers: {
         "Content-Type": inline ? file.mimeType : "application/octet-stream",

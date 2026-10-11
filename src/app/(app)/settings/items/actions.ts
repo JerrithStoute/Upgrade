@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
@@ -29,7 +30,7 @@ async function itemFields(fd: FormData, id?: string) {
   const name = str(fd, "name").replace(/\s+/g, " ");
   if (!name) throw new Error("Item name is required");
   const nameKey = itemNameKey(name);
-  const clash = await db.materialItem.findUnique({ where: { nameKey }, select: { id: true } });
+  const clash = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } });
   if (clash && clash.id !== id) throw new Error(`"${name}" is already on the Item List`);
   const unit = str(fd, "unit");
   const costCodeId = strOrNull(fd, "costCodeId");
@@ -56,7 +57,7 @@ async function itemFields(fd: FormData, id?: string) {
   };
 }
 
-export async function createMaterialItem(fd: FormData) {
+export const createMaterialItem = friendly(async function createMaterialItem(fd: FormData) {
   const admin = await requireAdmin();
   const data = await itemFields(fd);
   // Filed under a kind's category (your windows category, "Trim"…): it's that kind, so pickers find it,
@@ -67,17 +68,17 @@ export async function createMaterialItem(fd: FormData) {
   await logActivity({ userId: admin.id, type: "item_list.added", description: `Added "${item.name}" to the Item List` });
   revalidatePath(PATH);
   redirect(back(fd, `#item-${item.id}`));
-}
+});
 
 /** Changes the master entry: unlocked jobs follow its price (job-prices.ts); locked jobs and pinned items keep theirs. */
-export async function updateMaterialItem(fd: FormData) {
+export const updateMaterialItem = friendly(async function updateMaterialItem(fd: FormData) {
   await requireAdmin();
   const id = str(fd, "id");
   if (!(await db.materialItem.findUnique({ where: { id }, select: { id: true } }))) throw new Error("Item not found");
   await db.materialItem.update({ where: { id }, data: await itemFields(fd, id) });
   revalidatePath(PATH);
   redirect(back(fd, `#item-${id}`));
-}
+});
 
 /** Fields that can be changed right in the Item List table. */
 export type ItemCell = "category" | "costCodeId" | "unit" | "unitCost" | "markupPct" | "wastePct" | "roundUp" | "sku" | "vendor";
@@ -198,7 +199,7 @@ export async function saveKindCategory(group: string, category: string, move: bo
 }
 
 /** Renames a category, or merges it into another (every item in it, and any kind filed there). */
-export async function renameItemCategory(fd: FormData) {
+export const renameItemCategory = friendly(async function renameItemCategory(fd: FormData) {
   await requireAdmin();
   const from = str(fd, "from");
   const to = str(fd, "to");
@@ -207,10 +208,10 @@ export async function renameItemCategory(fd: FormData) {
   revalidatePath(PATH);
   const name = to.trim().replace(/\s+/g, " ");
   redirect(`${PATH}?category=${encodeURIComponent(name)}`);
-}
+});
 
 /** Removes the entry from the list. Assemblies that used it keep their lines (just unlinked). */
-export async function deleteMaterialItem(fd: FormData) {
+export const deleteMaterialItem = friendly(async function deleteMaterialItem(fd: FormData) {
   const admin = await requireAdmin();
   const id = str(fd, "id");
   const item = await db.materialItem.findUnique({ where: { id } });
@@ -219,4 +220,4 @@ export async function deleteMaterialItem(fd: FormData) {
   await logActivity({ userId: admin.id, type: "item_list.deleted", description: `Removed "${item.name}" from the Item List` });
   revalidatePath(PATH);
   redirect(back(fd));
-}
+});

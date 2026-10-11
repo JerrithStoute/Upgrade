@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireVendor } from "@/lib/auth";
@@ -18,7 +19,7 @@ function revalidateAll(projectId?: string) {
 }
 
 /** They accept or decline a PO you sent them. */
-export async function respondToPo(fd: FormData) {
+export const respondToPo = friendly(async function respondToPo(fd: FormData) {
   const user = await requireVendor();
   const po = await db.purchaseOrder.findFirst({ where: { id: str(fd, "id"), vendorId: user.vendorId } });
   if (!po) throw new Error("PO not found");
@@ -34,13 +35,13 @@ export async function respondToPo(fd: FormData) {
   });
   revalidateAll(po.projectId);
   redirect(`/vendor/pos/${po.id}`);
-}
+});
 
 /**
  * They upload a bill for one of their POs: their file, bill #, date and amount. It waits for
  * your approval; its cost code is the PO's (the one most of the PO is in) — change it before approving.
  */
-export async function uploadVendorBill(fd: FormData) {
+export const uploadVendorBill = friendly(async function uploadVendorBill(fd: FormData) {
   const user = await requireVendor();
   const po = await db.purchaseOrder.findFirst({
     where: { id: str(fd, "purchaseOrderId"), vendorId: user.vendorId, status: { in: ["SENT", "ACCEPTED"] } },
@@ -79,10 +80,10 @@ export async function uploadVendorBill(fd: FormData) {
   });
   revalidateAll(po.projectId);
   redirect("/vendor/bills?sent=1");
-}
+});
 
 /** They upload a certificate of insurance — it counts once you confirm it. */
-export async function uploadVendorInsurance(fd: FormData) {
+export const uploadVendorInsurance = friendly(async function uploadVendorInsurance(fd: FormData) {
   const user = await requireVendor();
   const type = str(fd, "type");
   if (!COVERAGE_TYPES.some((c) => c.value === type)) throw new Error("Pick the kind of coverage");
@@ -107,4 +108,4 @@ export async function uploadVendorInsurance(fd: FormData) {
   await logActivity({ userId: user.id, type: "vendor.insurance", description: `${user.name} uploaded a ${coverageLabel(type)} certificate in their portal` });
   revalidateAll();
   redirect("/vendor/insurance?sent=1");
-}
+});

@@ -14,12 +14,12 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
     where: q
       ? {
           OR: [
-            { firstName: { contains: q } },
-            { lastName: { contains: q } },
-            { company: { contains: q } },
-            { email: { contains: q } },
-            { phone: { contains: q } },
-            { city: { contains: q } },
+            { firstName: { contains: q, mode: "insensitive" } },
+            { lastName: { contains: q, mode: "insensitive" } },
+            { company: { contains: q, mode: "insensitive" } },
+            { email: { contains: q, mode: "insensitive" } },
+            { phone: { contains: q, mode: "insensitive" } },
+            { city: { contains: q, mode: "insensitive" } },
           ],
         }
       : undefined,

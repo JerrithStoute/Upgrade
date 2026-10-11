@@ -1,6 +1,5 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
-import { db } from "./db";
+import { db, type Tx } from "./db";
 import { resolveMaterialItem } from "./material-items";
 import { groupLooseLines, type SaveSheetInput, type SheetSpec } from "./estimate-sheet";
 import { NO_VIEW, parseSpecView, specViewJson } from "./proposal-options";
@@ -14,7 +13,6 @@ import { saveEstimateValues, templateValues } from "./estimate-parameters";
  * saving the sheet, and copying one set into another.
  */
 
-type Tx = Prisma.TransactionClient;
 
 export type SourceSpec = {
   id: string;

@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff, requireAdmin } from "@/lib/auth";
@@ -17,7 +18,7 @@ function revalidate(projectId: string) {
   revalidatePath("/portal");
 }
 
-export async function createThread(fd: FormData) {
+export const createThread = friendly(async function createThread(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const subject = str(fd, "subject");
@@ -36,9 +37,9 @@ export async function createThread(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "message.thread_created", description: `Started conversation "${subject}"` });
   revalidate(project.id);
   redirect(`${messagesPath(project.id)}?thread=${thread.id}`);
-}
+});
 
-export async function replyToThread(fd: FormData) {
+export const replyToThread = friendly(async function replyToThread(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const threadId = str(fd, "threadId");
@@ -52,9 +53,9 @@ export async function replyToThread(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "message.sent", description: `Replied in "${thread.subject}"` });
   revalidate(project.id);
   redirect(`${messagesPath(project.id)}?thread=${thread.id}`);
-}
+});
 
-export async function deleteThread(fd: FormData) {
+export const deleteThread = friendly(async function deleteThread(fd: FormData) {
   const user = await requireAdmin();
   const project = await getProject(str(fd, "projectId"));
   const threadId = str(fd, "id");
@@ -64,4 +65,4 @@ export async function deleteThread(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "message.thread_deleted", description: `Deleted conversation "${thread.subject}"` });
   revalidate(project.id);
   redirect(messagesPath(project.id));
-}
+});

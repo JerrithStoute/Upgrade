@@ -45,56 +45,89 @@ export default async function GlobalSchedulePage() {
               <p className="text-sm text-slate-500">Nothing scheduled this week.</p>
             </CardBody>
           ) : (
-            <Table className="rounded-t-none border-0 shadow-none">
-              <THead>
-                <tr>
-                  <Th>Project</Th>
-                  <Th>Task</Th>
-                  <Th>Dates</Th>
-                  <Th>Assignee</Th>
-                  <Th>Progress</Th>
-                </tr>
-              </THead>
-              <TBody>
+            <>
+              {/* Phones: one card per task instead of the wide table. */}
+              <ul className="divide-y divide-slate-100 md:hidden">
                 {thisWeek.map((t) => {
                   const od = isTaskOverdue(t, today);
                   return (
-                    <Tr key={t.id}>
-                      <Td>
-                        <Link href={`/projects/${t.project.id}`} className="font-medium text-slate-900 hover:underline">
-                          #{t.project.number} {t.project.name}
-                        </Link>
-                      </Td>
-                      <Td>
-                        <Link href={`/projects/${t.project.id}/schedule?task=${t.id}`} className="hover:underline">
-                          {t.isMilestone ? <span className="mr-1 text-violet-600">◆</span> : null}
-                          {t.name}
-                        </Link>
-                        <span className="ml-2 text-xs text-slate-400">{t.phase}</span>
-                      </Td>
-                      <Td className={cn("whitespace-nowrap", od && "font-medium text-rose-600")}>
-                        {t.isMilestone ? fmtDate(t.startDate, "MMM d") : `${fmtDate(t.startDate, "MMM d")} – ${fmtDate(t.endDate, "MMM d")}`}
-                      </Td>
-                      <Td>
-                        {t.assignee ? (
-                          <span className="flex items-center gap-1.5">
-                            <Avatar name={t.assignee.name} className="h-6 w-6 text-[10px]" /> {t.assignee.name}
+                    <li key={t.id}>
+                      <Link href={`/projects/${t.project.id}/schedule?task=${t.id}`} className="block px-4 py-3 active:bg-slate-50">
+                        <span className="flex items-baseline justify-between gap-3">
+                          <span className="min-w-0 font-medium text-slate-900">
+                            {t.isMilestone ? <span className="mr-1 text-violet-600">◆</span> : null}
+                            {t.name}
                           </span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                      </Td>
-                      <Td>
-                        <div className="flex items-center gap-2">
-                          <Progress value={t.percentComplete} color={t.color} className="w-20" />
-                          <span className="text-xs tabular-nums text-slate-600">{t.percentComplete}%</span>
-                        </div>
-                      </Td>
-                    </Tr>
+                          <span className={cn("shrink-0 text-xs", od ? "font-medium text-rose-600" : "text-slate-500")}>
+                            {t.isMilestone ? fmtDate(t.startDate, "MMM d") : `${fmtDate(t.startDate, "MMM d")} – ${fmtDate(t.endDate, "MMM d")}`}
+                          </span>
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-slate-500">
+                          #{t.project.number} {t.project.name}
+                          {t.assignee ? ` · ${t.assignee.name}` : ""}
+                        </span>
+                        <span className="mt-1.5 flex items-center gap-2">
+                          <Progress value={t.percentComplete} color={t.color} className="flex-1" />
+                          <span className="w-9 text-right text-xs tabular-nums text-slate-600">{t.percentComplete}%</span>
+                        </span>
+                      </Link>
+                    </li>
                   );
                 })}
-              </TBody>
-            </Table>
+              </ul>
+              <div className="hidden md:block">
+                <Table className="rounded-t-none border-0 shadow-none">
+                  <THead>
+                    <tr>
+                      <Th>Project</Th>
+                      <Th>Task</Th>
+                      <Th>Dates</Th>
+                      <Th>Assignee</Th>
+                      <Th>Progress</Th>
+                    </tr>
+                  </THead>
+                  <TBody>
+                    {thisWeek.map((t) => {
+                      const od = isTaskOverdue(t, today);
+                      return (
+                        <Tr key={t.id}>
+                          <Td>
+                            <Link href={`/projects/${t.project.id}`} className="font-medium text-slate-900 hover:underline">
+                              #{t.project.number} {t.project.name}
+                            </Link>
+                          </Td>
+                          <Td>
+                            <Link href={`/projects/${t.project.id}/schedule?task=${t.id}`} className="hover:underline">
+                              {t.isMilestone ? <span className="mr-1 text-violet-600">◆</span> : null}
+                              {t.name}
+                            </Link>
+                            <span className="ml-2 text-xs text-slate-400">{t.phase}</span>
+                          </Td>
+                          <Td className={cn("whitespace-nowrap", od && "font-medium text-rose-600")}>
+                            {t.isMilestone ? fmtDate(t.startDate, "MMM d") : `${fmtDate(t.startDate, "MMM d")} – ${fmtDate(t.endDate, "MMM d")}`}
+                          </Td>
+                          <Td>
+                            {t.assignee ? (
+                              <span className="flex items-center gap-1.5">
+                                <Avatar name={t.assignee.name} className="h-6 w-6 text-[10px]" /> {t.assignee.name}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </Td>
+                          <Td>
+                            <div className="flex items-center gap-2">
+                              <Progress value={t.percentComplete} color={t.color} className="w-20" />
+                              <span className="text-xs tabular-nums text-slate-600">{t.percentComplete}%</span>
+                            </div>
+                          </Td>
+                        </Tr>
+                      );
+                    })}
+                  </TBody>
+                </Table>
+              </div>
+            </>
           )}
         </Card>
 

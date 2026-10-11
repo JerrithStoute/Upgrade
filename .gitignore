@@ -46,3 +46,9 @@ next-env.d.ts
 /prisma/*.db-journal
 /uploads
 /backups
+
+# local Postgres data (npm run dev starts it)
+/.pgdata
+
+# test inbox (emails saved instead of sent on this PC)
+/.outbox

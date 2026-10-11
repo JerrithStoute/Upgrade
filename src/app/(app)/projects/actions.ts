@@ -1,8 +1,9 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireAdmin, requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { nextProjectNumber } from "@/lib/projects";
@@ -15,6 +16,7 @@ function readProjectFields(fd: FormData) {
   if (!name) throw new Error("Project name is required.");
   const type = str(fd, "type");
   const status = str(fd, "status");
+  if (!type) throw new Error("Pick what kind of job it is — Spec home, Custom home or Remodel (at the top).");
   if (!(PROJECT_TYPES as readonly string[]).includes(type)) throw new Error("Invalid project type.");
   if (!(PROJECT_STATUSES as readonly string[]).includes(status)) throw new Error("Invalid project status.");
   // Square feet, target end date and contract amount are no longer entered here;
@@ -31,10 +33,11 @@ function readProjectFields(fd: FormData) {
     zip: strOrNull(fd, "zip"),
     startDate: parseDateInput(fd.get("startDate")),
     description: strOrNull(fd, "description"),
+    isSpec: fd.get("isSpec") === "on",
   };
 }
 
-export async function createProject(formData: FormData) {
+export const createProject = friendly(async function createProject(formData: FormData) {
   const user = await requireStaff();
   const data = readProjectFields(formData);
   const number = await nextProjectNumber();
@@ -59,9 +62,9 @@ export async function createProject(formData: FormData) {
   revalidatePath("/projects");
   revalidatePath("/dashboard");
   redirect(templateId ? `/projects/${project.id}/estimate` : `/projects/${project.id}`);
-}
+});
 
-export async function updateProject(formData: FormData) {
+export const updateProject = friendly(async function updateProject(formData: FormData) {
   const user = await requireStaff();
   const id = str(formData, "id");
   const existing = await db.project.findUnique({ where: { id } });
@@ -88,10 +91,10 @@ export async function updateProject(formData: FormData) {
   revalidatePath(`/projects/${id}`);
   revalidatePath("/dashboard");
   redirect(`/projects/${id}`);
-}
+});
 
-export async function deleteProject(formData: FormData) {
-  const user = await requireStaff();
+export const deleteProject = friendly(async function deleteProject(formData: FormData) {
+  const user = await requireAdmin(); // wipes a whole job — administrators only
   const id = str(formData, "id");
   const existing = await db.project.findUnique({ where: { id } });
   if (!existing) throw new Error("Project not found.");
@@ -104,4 +107,4 @@ export async function deleteProject(formData: FormData) {
   revalidatePath("/projects");
   revalidatePath("/dashboard");
   redirect("/projects");
-}
+});

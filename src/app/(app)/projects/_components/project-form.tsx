@@ -1,8 +1,9 @@
 import Link from "next/link";
 import type { Project } from "@prisma/client";
-import { PROJECT_STATUSES, PROJECT_TYPES } from "@/lib/constants";
+import { PROJECT_STATUSES } from "@/lib/constants";
 import { dateInput, titleCase } from "@/lib/utils";
 import { ButtonLink, Card, CardBody, CardHeader, Field, FormGrid, SubmitButton } from "@/components/ui";
+import { JobKindPicker } from "./job-kind-picker";
 
 type ClientOption = { id: string; firstName: string; lastName: string; company: string | null };
 type ManagerOption = { id: string; name: string };
@@ -15,6 +16,7 @@ export function ProjectForm({
   managers,
   defaultManagerId,
   templates,
+  kind,
 }: {
   action: (formData: FormData) => Promise<void>;
   project?: Project;
@@ -23,6 +25,8 @@ export function ProjectForm({
   defaultManagerId?: string;
   /** Estimate templates offered when creating a project (omit when editing). */
   templates?: TemplateOption[];
+  /** A new job's kind, already picked: "spec" | "custom" | "remodel". */
+  kind?: string;
 }) {
   const editing = Boolean(project);
   return (
@@ -30,20 +34,18 @@ export function ProjectForm({
       {project ? <input type="hidden" name="id" value={project.id} /> : null}
 
       <Card>
+        <CardHeader title="What kind of job?" />
+        <CardBody>
+          <JobKindPicker isSpec={project?.isSpec} type={project?.type} preset={kind} />
+        </CardBody>
+      </Card>
+
+      <Card>
         <CardHeader title="Project" description="Basic details used across estimates, schedule and invoices." />
         <CardBody>
           <FormGrid>
             <Field label="Project name" htmlFor="name" className="md:col-span-2">
               <input id="name" name="name" required className="input" defaultValue={project?.name ?? ""} placeholder="e.g. Smith Kitchen Remodel" />
-            </Field>
-            <Field label="Type" htmlFor="type">
-              <select id="type" name="type" className="input" defaultValue={project?.type ?? "REMODEL"}>
-                {PROJECT_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {titleCase(t)}
-                  </option>
-                ))}
-              </select>
             </Field>
             <Field label="Status" htmlFor="status">
               <select id="status" name="status" className="input" defaultValue={project?.status ?? "LEAD"}>
@@ -65,8 +67,9 @@ export function ProjectForm({
                 ))}
               </select>
               <p className="mt-1 text-xs text-slate-500">
+                A spec home needs no client.{" "}
                 <Link href="/clients/new" className="text-blue-700 hover:underline">
-                  or add a client
+                  Add a client
                 </Link>
               </p>
             </Field>
@@ -130,7 +133,11 @@ export function ProjectForm({
           <CardHeader title="Estimate" description="Start this job's estimate from one of your templates. You can adjust every line afterwards." />
           <CardBody>
             <FormGrid>
-              <Field label="Estimate template" htmlFor="templateId" hint={templates.length ? undefined : "No templates yet — an admin can create them in Settings → Estimate templates."}>
+              <Field
+                label="Estimate template"
+                htmlFor="templateId"
+                hint={templates.length ? undefined : "No templates yet — an admin can create them in Settings → Estimate templates."}
+              >
                 <select id="templateId" name="templateId" className="input" defaultValue="" disabled={templates.length === 0}>
                   <option value="">None — I&apos;ll build the estimate later</option>
                   {templates.map((t) => (

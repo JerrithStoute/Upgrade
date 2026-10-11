@@ -58,14 +58,14 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
     const existing = c.items.filter((i) => isLumberMetric(i.metric));
 
     for (const item of existing) {
-      if (!wanted.has(item.metric)) await db.takeoffAssemblyItem.delete({ where: { id: item.id } });
+      if (!wanted.has(item.metric)) await db.takeoffAssemblyItem.deleteMany({ where: { id: item.id } });
     }
 
     let sortOrder = Math.min(0, ...c.items.map((i) => i.sortOrder)) - lines.length - 1;
     for (const line of lines) {
       const nameKey = itemNameKey(line.listName);
       const board =
-        (await db.materialItem.findUnique({ where: { nameKey } })) ??
+        (await db.materialItem.findFirst({ where: { nameKey } })) ??
         (await db.materialItem.create({
           data: {
             name: line.listName,

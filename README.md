@@ -30,10 +30,10 @@ approve change orders, see the schedule and pay attention to what matters.
 ## Tech stack
 
 - [Next.js 16](https://nextjs.org) (App Router, Server Components, Server Actions), React 19, TypeScript
-- [Prisma 6](https://www.prisma.io) with **SQLite** — a single file database, no server to run
+- [Prisma 6](https://www.prisma.io) with **PostgreSQL 17** — on your PC it runs from the project folder (`npm run dev` starts it; data in `.pgdata/`), nothing to install
 - Tailwind CSS v4, lucide icons
 - Cookie-based sessions (signed JWT), bcrypt password hashing, role-based access (Admin, Staff, Client, Subcontractor)
-- File uploads stored on local disk (`UPLOAD_DIR`)
+- File uploads go through one storage switch (`STORAGE`): a local folder (`UPLOAD_DIR`) now, cloud storage once hosted
 
 ## Getting started
 
@@ -42,8 +42,10 @@ Requires Node.js 20+ (22 recommended).
 ```bash
 git clone <this repo> upgrade && cd upgrade
 cp .env.example .env        # then set SESSION_SECRET (openssl rand -base64 48)
-npm run setup               # installs deps, creates the SQLite DB, loads demo data
-npm run dev                 # http://localhost:3000
+npm install
+npm run db:up               # first time only, in a second window: starts the local database
+npm run db:deploy && npm run db:seed   # creates the tables + company lock, loads a demo company (then Ctrl+C the db:up window)
+npm run dev                 # starts the database and the app — http://localhost:3000
 ```
 
 Demo accounts (password is `password` for all):
@@ -67,10 +69,15 @@ npm run create-admin -- "Your Name" you@company.com "a-strong-password" "Your Co
 
 | Command | Purpose |
 | --- | --- |
-| `npm run dev` | Development server with hot reload |
+| `npm run dev` | Starts the local database, then the development server (Ctrl+C stops both) |
+| `npm run db:up` | Just the local database (for scripts or Prisma Studio) |
+| `npm run db:copy-from-sqlite` | Copies an old SQLite database file (or old backup) into Postgres, checking every count |
 | `npm run build` / `npm start` | Production build and server |
-| `npm run db:push` | Apply schema changes to the SQLite database |
-| `npm run db:seed` | Load demo data (wipes existing data) |
+| `npm run db:migration -- <name>` | After editing `prisma/schema.prisma`: writes the change as a migration, applies it, re-applies the company lock |
+| `npm run db:deploy` | Applies migrations + the company lock (what the online server runs) |
+| `npm run db:rules` | Re-applies the company lock (Row-Level Security + same-company link checks) |
+| `npm run test:isolation` | Break-in test: a throwaway company tries to reach another company's data every way (app must be running) |
+| `npm run db:seed` | Loads (or refreshes) the demo company — other companies are never touched |
 | `npm run db:reset` | Recreate the database and reseed |
 | `npm run db:studio` | Open Prisma Studio to browse the database |
 | `npm run create-admin` | Create an admin login without demo data |
@@ -82,22 +89,30 @@ npm run create-admin -- "Your Name" you@company.com "a-strong-password" "Your Co
 
 | Variable | Description |
 | --- | --- |
-| `DATABASE_URL` | SQLite file, default `file:./dev.db` (relative to `prisma/`) |
+| `DATABASE_URL` | The app's own database login — the database only lets it see one company at a time. Locally: `postgresql://app_user:local-app@localhost:5433/builderstation` |
+| `SYSTEM_DATABASE_URL` | The tables' owner: sign-in, backups, migrations. Locally: `postgresql://builder:local@localhost:5433/builderstation` |
+| `STORAGE` | Where uploads (and, online, backups) live: `local` (default, `UPLOAD_DIR`) or `cloud` (required online). |
+| `S3_ENDPOINT` / `S3_BUCKET` / `S3_ACCESS_KEY_ID` / `S3_SECRET_ACCESS_KEY` | For `STORAGE=cloud`: Cloudflare R2 (or any S3-compatible storage). |
+| `APP_DB_PASSWORD` | Online: the app's own database login password. `scripts/online.mjs` builds `DATABASE_URL` from `SYSTEM_DATABASE_URL` with it. |
+| `TURNSTILE_SITE_KEY` / `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile, the "I'm not a robot" check on sign-up, forgot-password, and sign-in after wrong tries. Off when unset; required online. |
+| `TZ` | The time zone dates and times are shown in (online: `America/Chicago`). |
 | `SESSION_SECRET` | Random string of at least 32 characters used to sign login cookies. **Required in production** — the server won't start without it. Generate one with `openssl rand -base64 48`. |
+| `ENCRYPTION_KEY` | A *different* random string (32+ characters) that locks secrets kept in the database (authenticator-app keys). **Required in production.** Keep it safe — losing it means everyone has to set up two-step sign-in again. |
 | `UPLOAD_DIR` | Where uploaded files/photos are stored. Default `./uploads`. |
+| `APP_URL` | The program's address, for links in emails (e.g. `https://thebuilderstation.com`). Default `http://localhost:3000`. |
+| `MAIL` | `outbox` (default on a PC — emails are saved and shown at `/dev/outbox`, nothing is sent) or `resend` (online). |
+| `RESEND_API_KEY` / `MAIL_FROM` | For `MAIL=resend`: the Resend key, and the From address (default `The Builder Station <no-reply@thebuilderstation.com>`). |
 | `BACKUP_DIR` | Where backups go. Default `./backups` — point it at another drive or a synced cloud folder. |
 | `BACKUP_KEEP` | How many database backups to keep. Default `30`. `BACKUP_AUTO="off"` turns off the nightly backup. |
 
 ## Deploying
 
-Upgrade is a standard Next.js app. Run `npm run build && npm start` on any
-Node host (a small VPS, Railway, Render, Fly.io, a Docker container). Persist
-two paths between deploys: the SQLite database file and `UPLOAD_DIR`. Set `SESSION_SECRET`, and put it
-behind HTTPS (the session cookie is marked `secure` in production). Failed logins are
-rate-limited in memory, which assumes a single app process; if you run it behind a
-reverse proxy, make sure it sets `X-Forwarded-For`. The server backs up the
-database and uploads once a day (see Settings → Company → Backups, or run `npm run backup`);
-set `BACKUP_DIR` to a different drive or cloud folder — the database is the whole system of record.
+Online it runs on Render, from `render.yaml`: the program, a Postgres database, files and
+backups in Cloudflare R2, and email through Resend. The step-by-step is in
+[GOING-ONLINE.md](GOING-ONLINE.md). Each deploy runs `npm run db:deploy` (database changes +
+company rules) before the new version starts. The server refuses to start if a required
+setting is missing (`src/lib/startup-checks.ts`). Failed sign-ins are rate-limited in memory,
+which assumes one app process. Moving this PC's companies up: `npm run go-online:copy`.
 
 ## Project layout
 

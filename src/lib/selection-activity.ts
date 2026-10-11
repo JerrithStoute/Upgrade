@@ -1,10 +1,9 @@
 import "server-only";
 import path from "path";
-import type { Prisma } from "@prisma/client";
-import { db } from "./db";
+import { db, type Tx } from "./db";
 import { saveUpload } from "./uploads";
 
-type Client = Prisma.TransactionClient | typeof db;
+type Client = Tx | typeof db;
 type Who = { id: string | null; name: string };
 
 /**

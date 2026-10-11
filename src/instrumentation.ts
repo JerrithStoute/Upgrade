@@ -9,10 +9,16 @@ export async function register() {
   if (process.env.NEXT_PHASE === PHASE_PRODUCTION_BUILD) return; // `next build` doesn't need the secret
   const { getSessionSecret } = await import("./lib/session-secret");
   getSessionSecret();
+  // Online, start only when everything it needs is set — never half-configured.
+  if (process.env.NODE_ENV === "production") {
+    const { productionProblems } = await import("./lib/startup-checks");
+    const problems = productionProblems(process.env);
+    if (problems.length) throw new Error(`The server can't start:\n- ${problems.join("\n- ")}`);
+  }
 
   // Nightly backup of the database and uploads (BACKUP_AUTO=off to disable).
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.BACKUP_AUTO !== "off") {
-    const [{ db }, { startNightlyBackups }] = await Promise.all([import("./lib/db"), import("./lib/backup")]);
-    startNightlyBackups(db);
+    const { startNightlyBackups } = await import("./lib/backup");
+    startNightlyBackups();
   }
 }

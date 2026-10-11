@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -11,21 +12,21 @@ import { SAMPLE_NEW_HOME, SAMPLE_NEW_HOME_NAME, phaseColor } from "@/lib/sample-
 
 const path = "/settings/schedule-templates";
 
-export async function createScheduleTemplate(fd: FormData) {
+export const createScheduleTemplate = friendly(async function createScheduleTemplate(fd: FormData) {
   await requireAdmin();
   const name = str(fd, "name");
   if (!name) throw new Error("Give it a name");
   const t = await db.scheduleTemplate.create({ data: { name } });
   revalidatePath(path);
   redirect(`${path}?edit=${t.id}`);
-}
+});
 
-export async function deleteScheduleTemplate(fd: FormData) {
+export const deleteScheduleTemplate = friendly(async function deleteScheduleTemplate(fd: FormData) {
   await requireAdmin();
   await db.scheduleTemplate.delete({ where: { id: str(fd, "id") } }).catch(() => null);
   revalidatePath(path);
   redirect(path);
-}
+});
 
 const taskInput = z.object({
   key: z.string().max(60),

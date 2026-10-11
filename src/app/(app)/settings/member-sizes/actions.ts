@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin } from "@/lib/auth";
@@ -13,7 +14,7 @@ async function sizeFields(fd: FormData, id?: string) {
   const name = str(fd, "name").replace(/\s+/g, " ");
   if (!name) throw new Error("Name is required");
   const nameKey = itemNameKey(name);
-  const clash = await db.memberSize.findUnique({ where: { nameKey }, select: { id: true } });
+  const clash = await db.memberSize.findFirst({ where: { nameKey }, select: { id: true } });
   if (clash && clash.id !== id) throw new Error(`"${name}" is already a member size`);
   const kind = str(fd, "kind");
   const soldAs = str(fd, "soldAs");
@@ -32,17 +33,17 @@ async function sizeFields(fd: FormData, id?: string) {
   };
 }
 
-export async function createMemberSize(fd: FormData) {
+export const createMemberSize = friendly(async function createMemberSize(fd: FormData) {
   await requireAdmin();
   const data = await sizeFields(fd);
   const last = await db.memberSize.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
   const size = await db.memberSize.create({ data: { ...data, sortOrder: (last?.sortOrder ?? -1) + 1 } });
   revalidatePath(PATH);
   redirect(`${PATH}#size-${size.id}`);
-}
+});
 
 /** Conditions using the size keep using it; their lumber lines update the next time the takeoff is opened. */
-export async function updateMemberSize(fd: FormData) {
+export const updateMemberSize = friendly(async function updateMemberSize(fd: FormData) {
   await requireAdmin();
   const id = str(fd, "id");
   if (!(await db.memberSize.findUnique({ where: { id }, select: { id: true } }))) throw new Error("Member size not found");
@@ -57,13 +58,13 @@ export async function updateMemberSize(fd: FormData) {
   ]);
   revalidatePath(PATH);
   redirect(`${PATH}#size-${id}`);
-}
+});
 
 /** Conditions that used it keep the size name but lose the link. */
-export async function deleteMemberSize(fd: FormData) {
+export const deleteMemberSize = friendly(async function deleteMemberSize(fd: FormData) {
   await requireAdmin();
   const id = str(fd, "id");
   await db.memberSize.delete({ where: { id } });
   revalidatePath(PATH);
   redirect(PATH);
-}
+});

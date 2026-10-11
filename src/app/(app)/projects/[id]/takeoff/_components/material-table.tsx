@@ -14,6 +14,7 @@ export function MaterialTable({
   total,
   showPrices,
   edit,
+  pulled,
 }: {
   lines: MaterialLine[];
   cutLists: CutList[];
@@ -21,6 +22,8 @@ export function MaterialTable({
   showPrices: boolean;
   /** The job's Material list: prices of Item List items can be changed right here, and items substituted. */
   edit?: { projectId: string; locked: boolean; substitutions?: { fromName: string; toName: string }[] };
+  /** Pulled from the company's inventory, by line key: shown under the quantity with what's left to order. */
+  pulled?: Record<string, number>;
 }) {
   const groups = groupBy(lines, (l) => l.category);
   // "Instead of 2x6 × 26'" under a line that's a substitute on this job.
@@ -69,7 +72,14 @@ export function MaterialTable({
                   </Td>
                   <Td className="text-xs text-slate-500">{[l.sku, l.vendor].filter(Boolean).join(" · ") || "—"}</Td>
                   <Td className="text-xs text-slate-500">{l.usedIn.join(", ")}</Td>
-                  <Td right>{num(l.quantity)}</Td>
+                  <Td right>
+                    {num(l.quantity)}
+                    {pulled?.[l.key] ? (
+                      <span className="block whitespace-nowrap text-xs text-emerald-700">
+                        {num(pulled[l.key])} from inventory · order {num(Math.max(0, l.quantity - pulled[l.key]))}
+                      </span>
+                    ) : null}
+                  </Td>
                   <Td>{l.unit}</Td>
                   {showPrices ? (
                     <>

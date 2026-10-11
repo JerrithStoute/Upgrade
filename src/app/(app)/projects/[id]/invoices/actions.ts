@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
@@ -46,7 +47,7 @@ function itemData(fd: FormData) {
   return { description, quantity: numField(fd, "quantity", 1), unitPrice: numField(fd, "unitPrice", 0) };
 }
 
-export async function createInvoice(formData: FormData) {
+export const createInvoice = friendly(async function createInvoice(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const project = await db.project.findUnique({ where: { id: projectId } });
@@ -102,9 +103,9 @@ export async function createInvoice(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "invoice.created", description: `Invoice #${number} "${title}" created (${money(invoiceTotal(items))})` });
   revalidate(projectId, inv.id);
   redirect(invoicePath(projectId, inv.id));
-}
+});
 
-export async function updateInvoice(formData: FormData) {
+export const updateInvoice = friendly(async function updateInvoice(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -127,9 +128,9 @@ export async function updateInvoice(formData: FormData) {
   });
   revalidate(projectId, id);
   redirect(invoicePath(projectId, id));
-}
+});
 
-export async function markInvoiceSent(formData: FormData) {
+export const markInvoiceSent = friendly(async function markInvoiceSent(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -140,9 +141,9 @@ export async function markInvoiceSent(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "invoice.sent", description: `Invoice #${inv.number} sent (${money(invoiceTotal(inv.items))})` });
   revalidate(projectId, id);
   redirect(invoicePath(projectId, id));
-}
+});
 
-export async function voidInvoice(formData: FormData) {
+export const voidInvoice = friendly(async function voidInvoice(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -152,9 +153,9 @@ export async function voidInvoice(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "invoice.voided", description: `Invoice #${inv.number} voided` });
   revalidate(projectId, id);
   redirect(invoicePath(projectId, id));
-}
+});
 
-export async function deleteInvoice(formData: FormData) {
+export const deleteInvoice = friendly(async function deleteInvoice(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -164,11 +165,11 @@ export async function deleteInvoice(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "invoice.deleted", description: `Invoice #${inv.number} deleted` });
   revalidate(projectId);
   redirect(invoicePath(projectId));
-}
+});
 
 // --- Items --------------------------------------------------------------------
 
-export async function createInvoiceItem(formData: FormData) {
+export const createInvoiceItem = friendly(async function createInvoiceItem(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
@@ -179,9 +180,9 @@ export async function createInvoiceItem(formData: FormData) {
   await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
-}
+});
 
-export async function updateInvoiceItem(formData: FormData) {
+export const updateInvoiceItem = friendly(async function updateInvoiceItem(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
@@ -193,9 +194,9 @@ export async function updateInvoiceItem(formData: FormData) {
   await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
-}
+});
 
-export async function deleteInvoiceItem(formData: FormData) {
+export const deleteInvoiceItem = friendly(async function deleteInvoiceItem(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
@@ -207,10 +208,10 @@ export async function deleteInvoiceItem(formData: FormData) {
   await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
-}
+});
 
 /** "Add tax": on or off for this invoice, at the rate you pick. */
-export async function setInvoiceTax(formData: FormData) {
+export const setInvoiceTax = friendly(async function setInvoiceTax(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
@@ -223,11 +224,11 @@ export async function setInvoiceTax(formData: FormData) {
   await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
-}
+});
 
 // --- Payments -----------------------------------------------------------------
 
-export async function recordPayment(formData: FormData) {
+export const recordPayment = friendly(async function recordPayment(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
@@ -249,9 +250,9 @@ export async function recordPayment(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "invoice.payment", description: `Payment of ${money(amount)} recorded on Invoice #${inv.number}` });
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
-}
+});
 
-export async function deletePayment(formData: FormData) {
+export const deletePayment = friendly(async function deletePayment(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
@@ -270,12 +271,12 @@ export async function deletePayment(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "invoice.payment_removed", description: `Payment of ${money(payment.amount)} removed from Invoice #${inv.number}` });
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
-}
+});
 
 /** No two invoices share a number. */
 async function assertNumberFree(number: number) {
   if (!(Number.isInteger(number) && number > 0)) throw new Error("Invoice numbers are whole numbers above 0");
-  const used = await db.invoice.findUnique({ where: { number }, select: { id: true } });
+  const used = await db.invoice.findFirst({ where: { number }, select: { id: true } });
   if (used) throw new Error(`Invoice #${number} is already used — pick another number`);
 }
 

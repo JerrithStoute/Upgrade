@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { requireClient } from "@/lib/auth";
@@ -46,7 +47,7 @@ async function stopIfPreview(user: { preview: boolean }) {
   redirect(back);
 }
 
-export async function chooseOption(formData: FormData) {
+export const chooseOption = friendly(async function chooseOption(formData: FormData) {
   const user = await requireClient();
   await stopIfPreview(user);
   const selectionId = str(formData, "selectionId");
@@ -77,9 +78,9 @@ export async function chooseOption(formData: FormData) {
   await syncSelectionChangeOrder(selection.id, user);
   revalidatePortal(selection.projectId);
   redirect(`/portal/selections/${selection.id}`);
-}
+});
 
-export async function approveSelection(formData: FormData) {
+export const approveSelection = friendly(async function approveSelection(formData: FormData) {
   const user = await requireClient();
   await stopIfPreview(user);
   const selectionId = str(formData, "selectionId");
@@ -99,7 +100,7 @@ export async function approveSelection(formData: FormData) {
   });
   revalidatePortal(selection.projectId);
   redirect(`/portal/selections/${selection.id}`);
-}
+});
 
 // --- The selections cards (choose, comment, files) -------------------------------
 
@@ -192,7 +193,7 @@ async function ownedPendingChangeOrder(clientId: string, id: string) {
   return co;
 }
 
-export async function approveChangeOrder(formData: FormData) {
+export const approveChangeOrder = friendly(async function approveChangeOrder(formData: FormData) {
   const user = await requireClient();
   await stopIfPreview(user);
   const id = str(formData, "id");
@@ -215,9 +216,9 @@ export async function approveChangeOrder(formData: FormData) {
   });
   revalidatePortal(co.projectId);
   redirect(`/portal/change-orders/${co.id}`);
-}
+});
 
-export async function declineChangeOrder(formData: FormData) {
+export const declineChangeOrder = friendly(async function declineChangeOrder(formData: FormData) {
   const user = await requireClient();
   await stopIfPreview(user);
   const id = str(formData, "id");
@@ -237,13 +238,13 @@ export async function declineChangeOrder(formData: FormData) {
   });
   revalidatePortal(co.projectId);
   redirect(`/portal/change-orders/${co.id}`);
-}
+});
 
 // ---------------------------------------------------------------------------
 // Messages
 // ---------------------------------------------------------------------------
 
-export async function replyToThread(formData: FormData) {
+export const replyToThread = friendly(async function replyToThread(formData: FormData) {
   const user = await requireClient();
   await stopIfPreview(user);
   const threadId = str(formData, "threadId");
@@ -265,9 +266,9 @@ export async function replyToThread(formData: FormData) {
   });
   revalidatePortal(thread.projectId);
   redirect(`/portal/messages?project=${thread.projectId}&thread=${thread.id}`);
-}
+});
 
-export async function createThread(formData: FormData) {
+export const createThread = friendly(async function createThread(formData: FormData) {
   const user = await requireClient();
   await stopIfPreview(user);
   const projectId = str(formData, "projectId");
@@ -294,4 +295,4 @@ export async function createThread(formData: FormData) {
   });
   revalidatePortal(project.id);
   redirect(`/portal/messages?project=${project.id}&thread=${thread.id}`);
-}
+});

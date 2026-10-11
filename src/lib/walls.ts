@@ -28,7 +28,7 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
     const prefix = autoMetricPrefix(c.type);
     const wanted = new Map(wallLines.map((l) => [`${prefix}${l.key}`, l]));
     const existing = c.items.filter((i) => i.metric.startsWith(prefix));
-    for (const item of existing) if (!wanted.has(item.metric)) await db.takeoffAssemblyItem.delete({ where: { id: item.id } });
+    for (const item of existing) if (!wanted.has(item.metric)) await db.takeoffAssemblyItem.deleteMany({ where: { id: item.id } });
 
     let sortOrder = Math.min(0, ...c.items.map((i) => i.sortOrder)) - wanted.size - 1;
     for (const [metric, line] of wanted) {
@@ -37,7 +37,7 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
       const kind = kindOfLegacyCategory(line.category);
       const place = kind ? await newItemPlacement(kind) : { kind: null, category: line.category, costCodeId: null };
       const listItem =
-        (await db.materialItem.findUnique({ where: { nameKey } })) ??
+        (await db.materialItem.findFirst({ where: { nameKey } })) ??
         (await db.materialItem.create({
           data: {
             name: line.name,
@@ -105,7 +105,24 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
 }
 
 /** Lumber, wall and opening lines together — what every "the takeoff changed" path calls. */
+/**
+ * One job's automatic lines are brought up to date one at a time: two pages loading at once
+ * (two tabs, a reload mid-load) would otherwise both add and remove the same lines.
+ */
+const running = new Map<string, Promise<void>>();
+
 export async function syncAutoItems(projectId: string, conditionId?: string) {
+  const before = running.get(projectId) ?? Promise.resolve();
+  const mine = before.catch(() => {}).then(() => syncAutoItemsNow(projectId, conditionId));
+  running.set(projectId, mine);
+  try {
+    await mine;
+  } finally {
+    if (running.get(projectId) === mine) running.delete(projectId);
+  }
+}
+
+async function syncAutoItemsNow(projectId: string, conditionId?: string) {
   const { syncLumberItems } = await import("./lumber");
   await syncLumberItems(projectId, conditionId);
   await syncWallItems(projectId, conditionId);

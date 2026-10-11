@@ -49,7 +49,7 @@ const ACTUAL_DEPTH: Record<number, number> = { 4: 3.5, 6: 5.5, 8: 7.25, 10: 9.25
 /** The Member sizes entry for a name — made when a code table picks a size you haven't set up (2x10 …). */
 export async function memberSizeFor(name: string) {
   const nameKey = itemNameKey(name);
-  const found = await db.memberSize.findUnique({ where: { nameKey } });
+  const found = await db.memberSize.findFirst({ where: { nameKey } });
   if (found) return found;
   const nominal = parseMemberSize(name);
   const last = await db.memberSize.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });

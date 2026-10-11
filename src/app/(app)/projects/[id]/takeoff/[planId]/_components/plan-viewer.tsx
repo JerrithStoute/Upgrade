@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -820,56 +820,177 @@ export function PlanViewer({
   );
 
   // --- Zoom ------------------------------------------------------------------------
+  /*
+   * Smooth zoom that stays on the spot under the mouse. Every zoom (wheel, buttons, keys) sets
+   * a target and the view glides there over a few frames. Right after each frame is laid out
+   * (before it's drawn), the plan is scrolled so the spot under the mouse is still under it.
+   * Near the plan's edges, or when it's smaller than the window, there isn't enough to scroll —
+   * so gray room is added past that edge as needed, and taken away again once it's out of view.
+   */
+  const shownZoomRef = useRef(zoom); // the zoom on screen right now
+  const glideRef = useRef(zoom); // where the glide is this frame
+  const targetRef = useRef(zoom); // where the glide is heading
+  const animRef = useRef<number | null>(null);
+  // The spot to hold: page point (px, py), in plan pixels at zoom 1, kept at screen point (cx, cy).
+  const anchorRef = useRef<{ px: number; py: number; cx: number; cy: number } | null>(null);
+  const roomRef = useRef<HTMLDivElement>(null);
+  const room = useRef({ l: 0, t: 0, r: 0, b: 0 });
+
+  const showRoom = () => {
+    const r = room.current;
+    if (roomRef.current) roomRef.current.style.padding = `${r.t}px ${r.r}px ${r.b}px ${r.l}px`;
+  };
+
+  /** Stop any glide and clear the extra room (fitting the sheet, turning it, a new sheet). */
+  const resetView = () => {
+    if (animRef.current !== null) cancelAnimationFrame(animRef.current);
+    animRef.current = null;
+    anchorRef.current = null;
+    room.current = { l: 0, t: 0, r: 0, b: 0 };
+    showRoom();
+  };
+
+  /** Take away extra room that's out of view — the plan doesn't move on screen. */
+  const trimRoom = () => {
+    const el = scrollRef.current;
+    const r = room.current;
+    if (!el || animRef.current !== null || panRef.current) return;
+    const x = el.scrollLeft;
+    const y = el.scrollTop;
+    const l = Math.min(r.l, Math.floor(x));
+    const t = Math.min(r.t, Math.floor(y));
+    const rr = Math.min(r.r, Math.floor(el.scrollWidth - el.clientWidth - x));
+    const bb = Math.min(r.b, Math.floor(el.scrollHeight - el.clientHeight - y));
+    if (l <= 0 && t <= 0 && rr <= 0 && bb <= 0) return;
+    r.l -= Math.max(0, l);
+    r.t -= Math.max(0, t);
+    r.r -= Math.max(0, rr);
+    r.b -= Math.max(0, bb);
+    showRoom();
+    el.scrollLeft = x - Math.max(0, l);
+    el.scrollTop = y - Math.max(0, t);
+  };
+
   const fitWidth = useCallback(() => {
     const el = scrollRef.current;
     if (!el || !size) return;
+    resetView();
     setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (el.clientWidth - 32) / (sideways ? size.h : size.w))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- resetView only touches refs
   }, [size, sideways]);
 
   /** Page size reported by the canvas; each newly shown sheet starts fitted to the width. */
   const onSize = (w: number, h: number) => {
     setSize((s) => (s && s.w === w && s.h === h ? s : { w, h }));
     if (!fitted && scrollRef.current) {
+      resetView();
       setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (scrollRef.current.clientWidth - 32) / (sideways ? h : w))));
       setFitted(true);
     }
   };
 
-  /** Zoom keeping the page point under (clientX, clientY) fixed on screen. */
-  const zoomAt = useCallback(
-    (next: number, clientX?: number, clientY?: number) => {
-      const el = scrollRef.current;
-      const svg = svgRef.current;
-      const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
-      if (!el || !svg) return setZoom(z);
-      const box = el.getBoundingClientRect();
-      const cx = clientX ?? box.left + box.width / 2;
-      const cy = clientY ?? box.top + box.height / 2;
-      const r = svg.getBoundingClientRect();
-      const px = (cx - r.left) / zoom;
-      const py = (cy - r.top) / zoom;
-      setZoom(z);
-      requestAnimationFrame(() => {
-        const r2 = svg.getBoundingClientRect();
-        el.scrollLeft += r2.left + px * z - cx;
-        el.scrollTop += r2.top + py * z - cy;
-      });
+  useLayoutEffect(() => {
+    shownZoomRef.current = zoom;
+    if (animRef.current === null) targetRef.current = glideRef.current = zoom; // fit to width, a new sheet…
+    const a = anchorRef.current;
+    const el = scrollRef.current;
+    const svg = svgRef.current;
+    if (!a || !el || !svg) return;
+    const box = svg.getBoundingClientRect();
+    let x = el.scrollLeft + box.left + a.px * zoom - a.cx;
+    let y = el.scrollTop + box.top + a.py * zoom - a.cy;
+    // Not enough to scroll? Add room past that edge.
+    const r = room.current;
+    let grew = false;
+    if (x < 0) {
+      const add = Math.ceil(-x);
+      r.l += add;
+      x += add;
+      grew = true;
+    }
+    if (y < 0) {
+      const add = Math.ceil(-y);
+      r.t += add;
+      y += add;
+      grew = true;
+    }
+    if (grew) showRoom();
+    const maxX = el.scrollWidth - el.clientWidth;
+    const maxY = el.scrollHeight - el.clientHeight;
+    if (x > maxX || y > maxY) {
+      if (x > maxX) r.r += Math.ceil(x - maxX);
+      if (y > maxY) r.b += Math.ceil(y - maxY);
+      showRoom();
+    }
+    el.scrollLeft = x;
+    el.scrollTop = y;
+  }, [zoom]);
+
+  const zoomAt = useCallback((next: number, clientX?: number, clientY?: number) => {
+    const el = scrollRef.current;
+    const svg = svgRef.current;
+    const goal = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, next));
+    if (!el || !svg) return setZoom(goal);
+    const view = el.getBoundingClientRect();
+    const cx = clientX ?? view.left + view.width / 2;
+    const cy = clientY ?? view.top + view.height / 2;
+    // Measured against what's on screen now (not where the glide is headed).
+    const box = svg.getBoundingClientRect();
+    const z = shownZoomRef.current;
+    anchorRef.current = { px: (cx - box.left) / z, py: (cy - box.top) / z, cx, cy };
+    targetRef.current = goal;
+    if (animRef.current !== null) return; // already gliding — it heads for the new target
+    glideRef.current = z;
+    const step = () => {
+      const cur = glideRef.current;
+      const target = targetRef.current;
+      // A third of the way each frame: quick, but no snap.
+      const done = Math.abs(target - cur) / target < 0.003;
+      const z2 = done ? target : cur + (target - cur) * 0.35;
+      glideRef.current = z2;
+      setZoom(z2);
+      if (done) {
+        animRef.current = null;
+        // Once the last frame is on screen, forget the spot and tidy away unseen room.
+        requestAnimationFrame(() => {
+          if (animRef.current !== null) return;
+          anchorRef.current = null;
+          trimRoom();
+        });
+      } else animRef.current = requestAnimationFrame(step);
+    };
+    animRef.current = requestAnimationFrame(step);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (animRef.current !== null) cancelAnimationFrame(animRef.current);
     },
-    [zoom],
+    [],
   );
 
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    // The scroll wheel zooms at the pointer (Shift + wheel still scrolls sideways).
+    // The scroll wheel zooms at the pointer (Shift + wheel still scrolls sideways). Quick turns
+    // add up (each from where the last was heading), and a trackpad's small steps stay small.
     const onWheel = (e: WheelEvent) => {
       if (e.shiftKey) return;
       e.preventDefault();
-      zoomAt(zoom * Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY);
+      const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const from = animRef.current !== null ? targetRef.current : shownZoomRef.current;
+      zoomAt(from * Math.exp(-dy * 0.0015), e.clientX, e.clientY);
     };
+    const onScroll = () => trimRoom();
     el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, [zoom, zoomAt]);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      el.removeEventListener("wheel", onWheel);
+      el.removeEventListener("scroll", onScroll);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [zoomAt, !!size]); // the plan area shows once the sheet has loaded
 
   // --- Pointer -> page coordinates ---------------------------------------------------
   const toPage = useCallback(
@@ -1509,9 +1630,9 @@ export function PlanViewer({
       } else if (e.key === "d" || e.key === "D") {
         setDeduct((d) => !d);
       } else if (e.key === "+" || e.key === "=") {
-        zoomAt(zoom * 1.25);
+        zoomAt(targetRef.current * 1.25);
       } else if (e.key === "-") {
-        zoomAt(zoom / 1.25);
+        zoomAt(targetRef.current / 1.25);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -1702,7 +1823,9 @@ export function PlanViewer({
     if (panRef.current?.moved) suppressClick.current = true;
     // A right-drag pan shouldn't also finish the shape on release.
     if (panRef.current?.moved && panRef.current.right) suppressContext.current = true;
+    const wasPanning = !!panRef.current;
     panRef.current = null;
+    if (wasPanning) trimRoom();
     if (drag) {
       if (drag.moved) {
         suppressClick.current = true;
@@ -2762,13 +2885,13 @@ export function PlanViewer({
         </div>
 
         <div className="ml-auto flex items-center gap-1">
-          <ToolButton onClick={() => zoomAt(zoom / 1.25)} title="Zoom out (−)">
+          <ToolButton onClick={() => zoomAt(targetRef.current / 1.25)} title="Zoom out (−)">
             <ZoomOut className="h-3.5 w-3.5" />
           </ToolButton>
           <button type="button" className="w-12 text-center text-xs tabular-nums text-slate-600 hover:text-slate-900" onClick={() => zoomAt(1)} title="100%">
             {Math.round(zoom * 100)}%
           </button>
-          <ToolButton onClick={() => zoomAt(zoom * 1.25)} title="Zoom in (+)">
+          <ToolButton onClick={() => zoomAt(targetRef.current * 1.25)} title="Zoom in (+)">
             <ZoomIn className="h-3.5 w-3.5" />
           </ToolButton>
           <Button type="button" variant="ghost" size="sm" onClick={fitWidth}>
@@ -2780,6 +2903,7 @@ export function PlanViewer({
               writeRotation(sheetKey, next);
               // Fit the turned sheet to the width.
               const el = scrollRef.current;
+              resetView();
               if (el && size) setZoom(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, (el.clientWidth - 32) / (next % 180 ? size.h : size.w))));
             }}
             title={`Rotate the plan 90° (now ${rotation}°) — only how it's shown; your takeoffs stay put`}
@@ -3309,389 +3433,406 @@ export function PlanViewer({
               {readout}
             </span>
           ) : null}
-          <div ref={scrollRef} className="absolute inset-0 overflow-auto bg-slate-200/70 p-4">
-            <div className="relative inline-block shadow-md" style={size ? { width: (sideways ? size.h : size.w) * zoom, height: (sideways ? size.w : size.h) * zoom } : undefined}>
-              {/* The sheet and its takeoff, turned together (rotation is view-only). */}
+          <div ref={scrollRef} className="absolute inset-0 overflow-auto bg-slate-200/70 p-4 [overflow-anchor:none]">
+            {/* Extra room past the plan's edges, only while a zoom needs it (see trimRoom). */}
+            <div ref={roomRef} className="w-max">
               <div
-                className="absolute left-0 top-0 origin-top-left"
-                style={
-                  size
-                    ? {
-                        width: size.w * zoom,
-                        height: size.h * zoom,
-                        transform:
-                          rotation === 90
-                            ? `translate(${size.h * zoom}px, 0) rotate(90deg)`
-                            : rotation === 180
-                              ? `translate(${size.w * zoom}px, ${size.h * zoom}px) rotate(180deg)`
-                              : rotation === 270
-                                ? `translate(0, ${size.w * zoom}px) rotate(270deg)`
-                                : undefined,
-                      }
-                    : undefined
-                }
+                className="relative inline-block shadow-md"
+                style={size ? { width: (sideways ? size.h : size.w) * zoom, height: (sideways ? size.w : size.h) * zoom } : undefined}
               >
-                <PlanCanvas
-                  url={plan.fileUrl}
-                  kind={plan.kind}
-                  pageNumber={pageNumber}
-                  zoom={zoom}
-                  onSize={onSize}
-                  onPageCount={plan.kind === "PDF" ? onPageCount : undefined}
-                  onVectors={setVectors}
-                />
-                {compare && prevRev && pairSheet && size ? (
-                  <RevisionOverlay
-                    oldSrc={{ url: prevRev.fileUrl, kind: prevRev.kind, page: pairSheet.pageNumber }}
-                    newSrc={{ url: plan.fileUrl, kind: plan.kind, page: pageNumber }}
-                    align={sheetAlign}
+                {/* The sheet and its takeoff, turned together (rotation is view-only). */}
+                <div
+                  className="absolute left-0 top-0 origin-top-left"
+                  style={
+                    size
+                      ? {
+                          width: size.w * zoom,
+                          height: size.h * zoom,
+                          transform:
+                            rotation === 90
+                              ? `translate(${size.h * zoom}px, 0) rotate(90deg)`
+                              : rotation === 180
+                                ? `translate(${size.w * zoom}px, ${size.h * zoom}px) rotate(180deg)`
+                                : rotation === 270
+                                  ? `translate(0, ${size.w * zoom}px) rotate(270deg)`
+                                  : undefined,
+                        }
+                      : undefined
+                  }
+                >
+                  <PlanCanvas
+                    url={plan.fileUrl}
+                    kind={plan.kind}
+                    pageNumber={pageNumber}
                     zoom={zoom}
-                    size={size}
-                    fade={compare.fade}
-                    onDiff={setDiff}
+                    onSize={onSize}
+                    onPageCount={plan.kind === "PDF" ? onPageCount : undefined}
+                    onVectors={setVectors}
                   />
-                ) : null}
-                {size ? (
-                  <svg
-                    ref={svgRef}
-                    className={cn("absolute inset-0 touch-none select-none", cursorClass)}
-                    width={size.w * zoom}
-                    height={size.h * zoom}
-                    viewBox={`0 0 ${size.w} ${size.h}`}
-                    onPointerDown={onPointerDown}
-                    onPointerMove={onPointerMove}
-                    onPointerUp={onPointerUp}
-                    onPointerLeave={() => {
-                      setCursor(null);
-                      if (!drag) setSnapHit(null);
-                    }}
-                    onClick={onClick}
-                    onContextMenu={(e) => {
-                      if (suppressContext.current) {
-                        suppressContext.current = false;
-                        e.preventDefault();
-                        return;
-                      }
-                      if (draft.length) {
-                        e.preventDefault();
-                        finishDraft(draft);
-                      }
-                    }}
-                  >
-                    {shapes.map(renderShape)}
-                    {changedShapes.map(({ m, box }) => (
-                      <rect
-                        key={`chg-${m.id}`}
-                        x={box.x}
-                        y={box.y}
-                        width={box.w}
-                        height={box.h}
-                        fill="none"
-                        stroke="#f59e0b"
-                        strokeWidth={2.5 / zoom}
-                        strokeDasharray={`${6 / zoom} ${4 / zoom}`}
-                        pointerEvents="none"
-                      />
-                    ))}
-                    {aligning
-                      ? [...aligning.old.map((q, i) => ({ q, c: "#dc2626", n: i + 1 })), ...aligning.now.map((q, i) => ({ q, c: "#1d4ed8", n: i + 1 }))].map(({ q, c, n }) => (
-                          <g key={`${c}${n}`} pointerEvents="none">
-                            <circle cx={q[0]} cy={q[1]} r={7 / zoom} fill="none" stroke={c} strokeWidth={2 / zoom} />
-                            <path d={`M${q[0] - 11 / zoom} ${q[1]} H${q[0] + 11 / zoom} M${q[0]} ${q[1] - 11 / zoom} V${q[1] + 11 / zoom}`} stroke={c} strokeWidth={1.5 / zoom} />
-                            <text x={q[0] + 10 / zoom} y={q[1] - 10 / zoom} fontSize={12 / zoom} fontWeight={700} fill={c}>
-                              {n}
-                            </text>
-                          </g>
-                        ))
-                      : null}
-                    {tool === "findwalls" && wallFind && active && wallFind.conditionId === active.id ? (
-                      <FoundWalls
-                        find={wallFind}
-                        color={active.color}
-                        zoom={zoom}
-                        onToggle={(i) => setWallFind((w) => w && { ...w, off: w.off.includes(i) ? w.off.filter((x) => x !== i) : [...w.off, i] })}
-                      />
-                    ) : null}
-                    {autoOn && autoPlan ? (
-                      <FoundMarkers
-                        rows={autoPlan.pages.find((pg) => pg.page === pageNumber)?.rows ?? []}
-                        color={active!.color}
-                        zoom={zoom}
-                        onToggle={(key) => setAuto((a) => a && { ...a, rejected: a.rejected.includes(key) ? a.rejected.filter((k) => k !== key) : [...a.rejected, key] })}
-                      />
-                    ) : null}
-                    {autoOn && auto.sample && auto.sample.pageNumber === pageNumber ? (
-                      <rect
-                        x={auto.sample.box.x}
-                        y={auto.sample.box.y}
-                        width={auto.sample.box.w}
-                        height={auto.sample.box.h}
-                        fill="none"
-                        stroke="#1d4ed8"
-                        strokeWidth={1.5 / zoom}
-                        pointerEvents="none"
-                      />
-                    ) : null}
-                    {boxSel ? (
-                      <rect
-                        x={Math.min(boxSel.a[0], boxSel.b[0])}
-                        y={Math.min(boxSel.a[1], boxSel.b[1])}
-                        width={Math.abs(boxSel.a[0] - boxSel.b[0])}
-                        height={Math.abs(boxSel.a[1] - boxSel.b[1])}
-                        fill="#3b82f6"
-                        fillOpacity={0.06}
-                        stroke="#2563eb"
-                        strokeWidth={1 / zoom}
-                        strokeDasharray={`${5 / zoom} ${3 / zoom}`}
-                        pointerEvents="none"
-                      />
-                    ) : null}
-                    {autoBox ? (
-                      <rect
-                        x={Math.min(autoBox.a[0], autoBox.b[0])}
-                        y={Math.min(autoBox.a[1], autoBox.b[1])}
-                        width={Math.abs(autoBox.a[0] - autoBox.b[0])}
-                        height={Math.abs(autoBox.a[1] - autoBox.b[1])}
-                        fill="#3b82f6"
-                        fillOpacity={0.08}
-                        stroke="#1d4ed8"
-                        strokeWidth={1.5 / zoom}
-                        strokeDasharray={`${4 / zoom} ${3 / zoom}`}
-                        pointerEvents="none"
-                      />
-                    ) : null}
+                  {compare && prevRev && pairSheet && size ? (
+                    <RevisionOverlay
+                      oldSrc={{ url: prevRev.fileUrl, kind: prevRev.kind, page: pairSheet.pageNumber }}
+                      newSrc={{ url: plan.fileUrl, kind: plan.kind, page: pageNumber }}
+                      align={sheetAlign}
+                      zoom={zoom}
+                      size={size}
+                      fade={compare.fade}
+                      onDiff={setDiff}
+                    />
+                  ) : null}
+                  {size ? (
+                    <svg
+                      ref={svgRef}
+                      className={cn("absolute inset-0 touch-none select-none", cursorClass)}
+                      width={size.w * zoom}
+                      height={size.h * zoom}
+                      viewBox={`0 0 ${size.w} ${size.h}`}
+                      onPointerDown={onPointerDown}
+                      onPointerMove={onPointerMove}
+                      onPointerUp={onPointerUp}
+                      onPointerLeave={() => {
+                        setCursor(null);
+                        if (!drag) setSnapHit(null);
+                      }}
+                      onClick={onClick}
+                      onContextMenu={(e) => {
+                        if (suppressContext.current) {
+                          suppressContext.current = false;
+                          e.preventDefault();
+                          return;
+                        }
+                        if (draft.length) {
+                          e.preventDefault();
+                          finishDraft(draft);
+                        }
+                      }}
+                    >
+                      {shapes.map(renderShape)}
+                      {changedShapes.map(({ m, box }) => (
+                        <rect
+                          key={`chg-${m.id}`}
+                          x={box.x}
+                          y={box.y}
+                          width={box.w}
+                          height={box.h}
+                          fill="none"
+                          stroke="#f59e0b"
+                          strokeWidth={2.5 / zoom}
+                          strokeDasharray={`${6 / zoom} ${4 / zoom}`}
+                          pointerEvents="none"
+                        />
+                      ))}
+                      {aligning
+                        ? [...aligning.old.map((q, i) => ({ q, c: "#dc2626", n: i + 1 })), ...aligning.now.map((q, i) => ({ q, c: "#1d4ed8", n: i + 1 }))].map(({ q, c, n }) => (
+                            <g key={`${c}${n}`} pointerEvents="none">
+                              <circle cx={q[0]} cy={q[1]} r={7 / zoom} fill="none" stroke={c} strokeWidth={2 / zoom} />
+                              <path d={`M${q[0] - 11 / zoom} ${q[1]} H${q[0] + 11 / zoom} M${q[0]} ${q[1] - 11 / zoom} V${q[1] + 11 / zoom}`} stroke={c} strokeWidth={1.5 / zoom} />
+                              <text x={q[0] + 10 / zoom} y={q[1] - 10 / zoom} fontSize={12 / zoom} fontWeight={700} fill={c}>
+                                {n}
+                              </text>
+                            </g>
+                          ))
+                        : null}
+                      {tool === "findwalls" && wallFind && active && wallFind.conditionId === active.id ? (
+                        <FoundWalls
+                          find={wallFind}
+                          color={active.color}
+                          zoom={zoom}
+                          onToggle={(i) => setWallFind((w) => w && { ...w, off: w.off.includes(i) ? w.off.filter((x) => x !== i) : [...w.off, i] })}
+                        />
+                      ) : null}
+                      {autoOn && autoPlan ? (
+                        <FoundMarkers
+                          rows={autoPlan.pages.find((pg) => pg.page === pageNumber)?.rows ?? []}
+                          color={active!.color}
+                          zoom={zoom}
+                          onToggle={(key) => setAuto((a) => a && { ...a, rejected: a.rejected.includes(key) ? a.rejected.filter((k) => k !== key) : [...a.rejected, key] })}
+                        />
+                      ) : null}
+                      {autoOn && auto.sample && auto.sample.pageNumber === pageNumber ? (
+                        <rect
+                          x={auto.sample.box.x}
+                          y={auto.sample.box.y}
+                          width={auto.sample.box.w}
+                          height={auto.sample.box.h}
+                          fill="none"
+                          stroke="#1d4ed8"
+                          strokeWidth={1.5 / zoom}
+                          pointerEvents="none"
+                        />
+                      ) : null}
+                      {boxSel ? (
+                        <rect
+                          x={Math.min(boxSel.a[0], boxSel.b[0])}
+                          y={Math.min(boxSel.a[1], boxSel.b[1])}
+                          width={Math.abs(boxSel.a[0] - boxSel.b[0])}
+                          height={Math.abs(boxSel.a[1] - boxSel.b[1])}
+                          fill="#3b82f6"
+                          fillOpacity={0.06}
+                          stroke="#2563eb"
+                          strokeWidth={1 / zoom}
+                          strokeDasharray={`${5 / zoom} ${3 / zoom}`}
+                          pointerEvents="none"
+                        />
+                      ) : null}
+                      {autoBox ? (
+                        <rect
+                          x={Math.min(autoBox.a[0], autoBox.b[0])}
+                          y={Math.min(autoBox.a[1], autoBox.b[1])}
+                          width={Math.abs(autoBox.a[0] - autoBox.b[0])}
+                          height={Math.abs(autoBox.a[1] - autoBox.b[1])}
+                          fill="#3b82f6"
+                          fillOpacity={0.08}
+                          stroke="#1d4ed8"
+                          strokeWidth={1.5 / zoom}
+                          strokeDasharray={`${4 / zoom} ${3 / zoom}`}
+                          pointerEvents="none"
+                        />
+                      ) : null}
 
-                    {/* Point handles on the selected shape: drag to move, double-click to curve / straighten, right-click to remove. Arc points are round. */}
-                    {tool === "select" && selected && !selected.pending && !dirFor
-                      ? selected.points.map((p, i) => (
-                          <rect
-                            key={`h${i}`}
-                            data-handle={i}
-                            x={p[0] - px(5)}
-                            y={p[1] - px(5)}
-                            width={px(10)}
-                            height={px(10)}
-                            rx={selected.arcs?.includes(i) ? px(5) : 0}
-                            fill={selected.arcs?.includes(i) ? "#fde68a" : "white"}
-                            stroke="#0f172a"
-                            strokeWidth={1.5}
-                            style={{ cursor: "grab" }}
-                            onDoubleClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const c = condById.get(selected.conditionId);
-                              if (!c || !canArc(c.type)) return;
-                              const arcs = selected.arcs ?? [];
-                              if (arcs.includes(i)) return patchShape(selected.id, { points: selected.points, arcs: arcs.filter((j) => j !== i) });
-                              const closed = !isLineType(c.type);
-                              const n = selected.points.length;
-                              if (i === 0 || (!closed && i === n - 1)) return setFlash("An end point can't be an arc point — pick a point between two others");
-                              if (arcs.includes(i - 1) || arcs.includes(closed ? (i + 1) % n : i + 1))
-                                return setFlash("The points on each side of an arc point have to be corners");
-                              patchShape(selected.id, { points: selected.points, arcs: [...arcs, i].sort((a, b) => a - b) });
-                            }}
-                            onContextMenu={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              const c = condById.get(selected.conditionId);
-                              if (!c || selected.points.length <= minPoints(c.type)) return setFlash("A shape needs at least " + (c ? minPoints(c.type) : 2) + " points");
-                              patchShape(selected.id, {
-                                points: selected.points.filter((_, j) => j !== i),
-                                arcs: (selected.arcs ?? []).filter((j) => j !== i).map((j) => (j > i ? j - 1 : j)),
-                              });
-                            }}
-                            {...stroke}
-                          />
-                        ))
-                      : null}
+                      {/* Point handles on the selected shape: drag to move, double-click to curve / straighten, right-click to remove. Arc points are round. */}
+                      {tool === "select" && selected && !selected.pending && !dirFor
+                        ? selected.points.map((p, i) => (
+                            <rect
+                              key={`h${i}`}
+                              data-handle={i}
+                              x={p[0] - px(5)}
+                              y={p[1] - px(5)}
+                              width={px(10)}
+                              height={px(10)}
+                              rx={selected.arcs?.includes(i) ? px(5) : 0}
+                              fill={selected.arcs?.includes(i) ? "#fde68a" : "white"}
+                              stroke="#0f172a"
+                              strokeWidth={1.5}
+                              style={{ cursor: "grab" }}
+                              onDoubleClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const c = condById.get(selected.conditionId);
+                                if (!c || !canArc(c.type)) return;
+                                const arcs = selected.arcs ?? [];
+                                if (arcs.includes(i)) return patchShape(selected.id, { points: selected.points, arcs: arcs.filter((j) => j !== i) });
+                                const closed = !isLineType(c.type);
+                                const n = selected.points.length;
+                                if (i === 0 || (!closed && i === n - 1)) return setFlash("An end point can't be an arc point — pick a point between two others");
+                                if (arcs.includes(i - 1) || arcs.includes(closed ? (i + 1) % n : i + 1))
+                                  return setFlash("The points on each side of an arc point have to be corners");
+                                patchShape(selected.id, { points: selected.points, arcs: [...arcs, i].sort((a, b) => a - b) });
+                              }}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                const c = condById.get(selected.conditionId);
+                                if (!c || selected.points.length <= minPoints(c.type)) return setFlash("A shape needs at least " + (c ? minPoints(c.type) : 2) + " points");
+                                patchShape(selected.id, {
+                                  points: selected.points.filter((_, j) => j !== i),
+                                  arcs: (selected.arcs ?? []).filter((j) => j !== i).map((j) => (j > i ? j - 1 : j)),
+                                });
+                              }}
+                              {...stroke}
+                            />
+                          ))
+                        : null}
 
-                    {/* Snap marker: square = line end, diamond = on a line, circle = takeoff point */}
-                    {snapHit && (tool === "measure" || tool === "calibrate" || tool === "ruler" || drag?.mode === "vertex") ? (
-                      <g pointerEvents="none">
-                        {snapHit.kind === "end" ? (
-                          <rect x={snapHit.point[0] - px(6)} y={snapHit.point[1] - px(6)} width={px(12)} height={px(12)} fill="none" stroke="#f97316" strokeWidth={2} {...stroke} />
-                        ) : snapHit.kind === "line" ? (
+                      {/* Snap marker: square = line end, diamond = on a line, circle = takeoff point */}
+                      {snapHit && (tool === "measure" || tool === "calibrate" || tool === "ruler" || drag?.mode === "vertex") ? (
+                        <g pointerEvents="none">
+                          {snapHit.kind === "end" ? (
+                            <rect
+                              x={snapHit.point[0] - px(6)}
+                              y={snapHit.point[1] - px(6)}
+                              width={px(12)}
+                              height={px(12)}
+                              fill="none"
+                              stroke="#f97316"
+                              strokeWidth={2}
+                              {...stroke}
+                            />
+                          ) : snapHit.kind === "line" ? (
+                            <polygon
+                              points={[
+                                [snapHit.point[0], snapHit.point[1] - px(7)],
+                                [snapHit.point[0] + px(7), snapHit.point[1]],
+                                [snapHit.point[0], snapHit.point[1] + px(7)],
+                                [snapHit.point[0] - px(7), snapHit.point[1]],
+                              ]
+                                .map((q) => q.join(","))
+                                .join(" ")}
+                              fill="none"
+                              stroke="#f97316"
+                              strokeWidth={2}
+                              {...stroke}
+                            />
+                          ) : (
+                            <circle cx={snapHit.point[0]} cy={snapHit.point[1]} r={px(7)} fill="none" stroke="#f97316" strokeWidth={2} {...stroke} />
+                          )}
+                        </g>
+                      ) : null}
+
+                      {/* Shape being drawn */}
+                      {tool === "measure" && active && preview.length > 0 ? (
+                        <g pointerEvents="none">
+                          {isLineType(active.type) ? (
+                            <polyline
+                              points={previewPath.map((p) => p.join(",")).join(" ")}
+                              fill="none"
+                              stroke={active.color}
+                              strokeWidth={active.type === "HIP_VALLEY" || active.type === "BEAM" ? 4 : 3}
+                              strokeDasharray={deduct ? "6 4" : undefined}
+                              {...stroke}
+                            />
+                          ) : (
+                            <polygon
+                              points={previewPath.map((p) => p.join(",")).join(" ")}
+                              fill={active.color}
+                              fillOpacity={0.15}
+                              stroke={active.color}
+                              strokeWidth={2}
+                              strokeDasharray="6 4"
+                              {...stroke}
+                            />
+                          )}
+                          {willClose ? (
+                            // About to close: the first point rings green — click anywhere in the ring.
+                            <g>
+                              <circle cx={draft[0][0]} cy={draft[0][1]} r={px(CLOSE_PX)} fill="#16a34a" fillOpacity={0.12} stroke="#16a34a" strokeWidth={1.5} {...stroke} />
+                              <text x={draft[0][0]} y={draft[0][1] - px(CLOSE_PX + 4)} textAnchor="middle" fontSize={px(10)} fontWeight={700} fill="#15803d">
+                                Click to close
+                              </text>
+                            </g>
+                          ) : null}
+                          {draft.map((p, i) => (
+                            <circle
+                              key={i}
+                              cx={p[0]}
+                              cy={p[1]}
+                              r={px(i === 0 ? 5 : 3.5)}
+                              fill={draftArcs.includes(i) ? active.color : "white"}
+                              stroke={active.color}
+                              strokeWidth={2}
+                              {...stroke}
+                            />
+                          ))}
+                        </g>
+                      ) : null}
+
+                      {/* Framing direction being picked */}
+                      {dirShape && dirCond ? (
+                        <g pointerEvents="none">
                           <polygon
-                            points={[
-                              [snapHit.point[0], snapHit.point[1] - px(7)],
-                              [snapHit.point[0] + px(7), snapHit.point[1]],
-                              [snapHit.point[0], snapHit.point[1] + px(7)],
-                              [snapHit.point[0] - px(7), snapHit.point[1]],
-                            ]
-                              .map((q) => q.join(","))
+                            points={arcPath(dirShape.points, dirShape.arcs, true)
+                              .map((p) => p.join(","))
                               .join(" ")}
-                            fill="none"
-                            stroke="#f97316"
-                            strokeWidth={2}
-                            {...stroke}
-                          />
-                        ) : (
-                          <circle cx={snapHit.point[0]} cy={snapHit.point[1]} r={px(7)} fill="none" stroke="#f97316" strokeWidth={2} {...stroke} />
-                        )}
-                      </g>
-                    ) : null}
-
-                    {/* Shape being drawn */}
-                    {tool === "measure" && active && preview.length > 0 ? (
-                      <g pointerEvents="none">
-                        {isLineType(active.type) ? (
-                          <polyline
-                            points={previewPath.map((p) => p.join(",")).join(" ")}
-                            fill="none"
-                            stroke={active.color}
-                            strokeWidth={active.type === "HIP_VALLEY" || active.type === "BEAM" ? 4 : 3}
-                            strokeDasharray={deduct ? "6 4" : undefined}
-                            {...stroke}
-                          />
-                        ) : (
-                          <polygon
-                            points={previewPath.map((p) => p.join(",")).join(" ")}
-                            fill={active.color}
-                            fillOpacity={0.15}
-                            stroke={active.color}
+                            fill={dirCond.color}
+                            fillOpacity={0.12}
+                            stroke={dirCond.color}
                             strokeWidth={2}
                             strokeDasharray="6 4"
                             {...stroke}
                           />
-                        )}
-                        {willClose ? (
-                          // About to close: the first point rings green — click anywhere in the ring.
-                          <g>
-                            <circle cx={draft[0][0]} cy={draft[0][1]} r={px(CLOSE_PX)} fill="#16a34a" fillOpacity={0.12} stroke="#16a34a" strokeWidth={1.5} {...stroke} />
-                            <text x={draft[0][0]} y={draft[0][1] - px(CLOSE_PX + 4)} textAnchor="middle" fontSize={px(10)} fontWeight={700} fill="#15803d">
-                              Click to close
-                            </text>
-                          </g>
-                        ) : null}
-                        {draft.map((p, i) => (
-                          <circle
-                            key={i}
-                            cx={p[0]}
-                            cy={p[1]}
-                            r={px(i === 0 ? 5 : 3.5)}
-                            fill={draftArcs.includes(i) ? active.color : "white"}
-                            stroke={active.color}
-                            strokeWidth={2}
-                            {...stroke}
-                          />
-                        ))}
-                      </g>
-                    ) : null}
+                          {unitsPerFoot
+                            ? framingMembers(
+                                dirShape.points,
+                                dirAngle,
+                                (dirCond.spacing / 12) * unitsPerFoot,
+                                memberThickness(dirCond.memberSize, unitsPerFoot, dirCond.memberWidthIn),
+                              ).map(([a, b], i) => (
+                                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={dirCond.color} strokeWidth={1.25} strokeDasharray="4 3" {...stroke} />
+                              ))
+                            : null}
+                          {hoverEdge !== null
+                            ? (() => {
+                                const a = dirShape.points[hoverEdge];
+                                const b = dirShape.points[(hoverEdge + 1) % dirShape.points.length];
+                                return <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#0f172a" strokeWidth={5} strokeLinecap="round" {...stroke} />;
+                              })()
+                            : null}
+                          {directionArrow(centroid(dirShape.points), dirAngle, dirCond.color)}
+                        </g>
+                      ) : null}
 
-                    {/* Framing direction being picked */}
-                    {dirShape && dirCond ? (
-                      <g pointerEvents="none">
-                        <polygon
-                          points={arcPath(dirShape.points, dirShape.arcs, true)
-                            .map((p) => p.join(","))
-                            .join(" ")}
-                          fill={dirCond.color}
-                          fillOpacity={0.12}
-                          stroke={dirCond.color}
-                          strokeWidth={2}
-                          strokeDasharray="6 4"
-                          {...stroke}
-                        />
-                        {unitsPerFoot
-                          ? framingMembers(
-                              dirShape.points,
-                              dirAngle,
-                              (dirCond.spacing / 12) * unitsPerFoot,
-                              memberThickness(dirCond.memberSize, unitsPerFoot, dirCond.memberWidthIn),
-                            ).map(([a, b], i) => (
-                              <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={dirCond.color} strokeWidth={1.25} strokeDasharray="4 3" {...stroke} />
-                            ))
-                          : null}
-                        {hoverEdge !== null
-                          ? (() => {
-                              const a = dirShape.points[hoverEdge];
-                              const b = dirShape.points[(hoverEdge + 1) % dirShape.points.length];
-                              return <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#0f172a" strokeWidth={5} strokeLinecap="round" {...stroke} />;
-                            })()
-                          : null}
-                        {directionArrow(centroid(dirShape.points), dirAngle, dirCond.color)}
-                      </g>
-                    ) : null}
+                      {/* Ruler */}
+                      {tool === "ruler" && ruler.length > 0 && unitsPerFoot
+                        ? (() => {
+                            const a = ruler[0];
+                            const b = ruler[1] ?? (cursor ? snap(cursor, a) : null);
+                            if (!b) return <circle cx={a[0]} cy={a[1]} r={px(4)} fill="#0f172a" stroke="white" strokeWidth={2} pointerEvents="none" {...stroke} />;
+                            const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
+                            const nx = -Math.sin(ang) * px(7);
+                            const ny = Math.cos(ang) * px(7);
+                            const deg = readable((ang * 180) / Math.PI);
+                            const mx = (a[0] + b[0]) / 2;
+                            const my = (a[1] + b[1]) / 2;
+                            return (
+                              <g pointerEvents="none">
+                                <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#0f172a" strokeWidth={2} strokeDasharray={ruler[1] ? undefined : "6 4"} {...stroke} />
+                                {[a, b].map((p, i) => (
+                                  <line key={i} x1={p[0] - nx} y1={p[1] - ny} x2={p[0] + nx} y2={p[1] + ny} stroke="#0f172a" strokeWidth={2} {...stroke} />
+                                ))}
+                                <text
+                                  x={mx}
+                                  y={my}
+                                  dy={-px(9)}
+                                  transform={`rotate(${deg} ${mx} ${my})`}
+                                  textAnchor="middle"
+                                  fontSize={px(13)}
+                                  fontWeight={700}
+                                  fill="#0f172a"
+                                  stroke="white"
+                                  strokeWidth={px(4)}
+                                  paintOrder="stroke"
+                                >
+                                  {feetInches(dist(a, b) / unitsPerFoot)}
+                                </text>
+                              </g>
+                            );
+                          })()
+                        : null}
 
-                    {/* Ruler */}
-                    {tool === "ruler" && ruler.length > 0 && unitsPerFoot
-                      ? (() => {
-                          const a = ruler[0];
-                          const b = ruler[1] ?? (cursor ? snap(cursor, a) : null);
-                          if (!b) return <circle cx={a[0]} cy={a[1]} r={px(4)} fill="#0f172a" stroke="white" strokeWidth={2} pointerEvents="none" {...stroke} />;
-                          const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
-                          const nx = -Math.sin(ang) * px(7);
-                          const ny = Math.cos(ang) * px(7);
-                          const deg = readable((ang * 180) / Math.PI);
-                          const mx = (a[0] + b[0]) / 2;
-                          const my = (a[1] + b[1]) / 2;
-                          return (
-                            <g pointerEvents="none">
-                              <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#0f172a" strokeWidth={2} strokeDasharray={ruler[1] ? undefined : "6 4"} {...stroke} />
-                              {[a, b].map((p, i) => (
-                                <line key={i} x1={p[0] - nx} y1={p[1] - ny} x2={p[0] + nx} y2={p[1] + ny} stroke="#0f172a" strokeWidth={2} {...stroke} />
-                              ))}
+                      {/* Calibration line */}
+                      {tool === "calibrate" && calib.length > 0 ? (
+                        <g pointerEvents="none">
+                          {(() => {
+                            const end = calib[1] ?? (cursor ? snap(cursor, calib[0]) : null);
+                            return end ? (
+                              <line x1={calib[0][0]} y1={calib[0][1]} x2={end[0]} y2={end[1]} stroke="#dc2626" strokeWidth={2} strokeDasharray="8 4" {...stroke} />
+                            ) : null;
+                          })()}
+                          {calib.map((p, i) => (
+                            <circle key={i} cx={p[0]} cy={p[1]} r={px(5)} fill="#dc2626" stroke="white" strokeWidth={2} {...stroke} />
+                          ))}
+                        </g>
+                      ) : null}
+
+                      {/* Selected shape label */}
+                      {sel?.q && sel.c && sel.m.points.length ? (
+                        <g pointerEvents="none">
+                          {(() => {
+                            const [x, y] = sel.c.type === "LINEAR" || isCountType(sel.c.type) ? sel.m.points[0] : centroid(sel.m.points);
+                            const text = `${sel.m.isDeduction ? "−" : ""}${num(Math.abs(sel.q.value))} ${sel.q.unit}`;
+                            return (
                               <text
-                                x={mx}
-                                y={my}
-                                dy={-px(9)}
-                                transform={`rotate(${deg} ${mx} ${my})`}
+                                x={x}
+                                y={y}
+                                dy={px(-12)}
+                                transform={rotation ? `rotate(${-rotation} ${x} ${y})` : undefined}
                                 textAnchor="middle"
                                 fontSize={px(13)}
-                                fontWeight={700}
+                                fontWeight={600}
                                 fill="#0f172a"
                                 stroke="white"
                                 strokeWidth={px(4)}
                                 paintOrder="stroke"
                               >
-                                {feetInches(dist(a, b) / unitsPerFoot)}
+                                {text}
                               </text>
-                            </g>
-                          );
-                        })()
-                      : null}
-
-                    {/* Calibration line */}
-                    {tool === "calibrate" && calib.length > 0 ? (
-                      <g pointerEvents="none">
-                        {(() => {
-                          const end = calib[1] ?? (cursor ? snap(cursor, calib[0]) : null);
-                          return end ? <line x1={calib[0][0]} y1={calib[0][1]} x2={end[0]} y2={end[1]} stroke="#dc2626" strokeWidth={2} strokeDasharray="8 4" {...stroke} /> : null;
-                        })()}
-                        {calib.map((p, i) => (
-                          <circle key={i} cx={p[0]} cy={p[1]} r={px(5)} fill="#dc2626" stroke="white" strokeWidth={2} {...stroke} />
-                        ))}
-                      </g>
-                    ) : null}
-
-                    {/* Selected shape label */}
-                    {sel?.q && sel.c && sel.m.points.length ? (
-                      <g pointerEvents="none">
-                        {(() => {
-                          const [x, y] = sel.c.type === "LINEAR" || isCountType(sel.c.type) ? sel.m.points[0] : centroid(sel.m.points);
-                          const text = `${sel.m.isDeduction ? "−" : ""}${num(Math.abs(sel.q.value))} ${sel.q.unit}`;
-                          return (
-                            <text
-                              x={x}
-                              y={y}
-                              dy={px(-12)}
-                              transform={rotation ? `rotate(${-rotation} ${x} ${y})` : undefined}
-                              textAnchor="middle"
-                              fontSize={px(13)}
-                              fontWeight={600}
-                              fill="#0f172a"
-                              stroke="white"
-                              strokeWidth={px(4)}
-                              paintOrder="stroke"
-                            >
-                              {text}
-                            </text>
-                          );
-                        })()}
-                      </g>
-                    ) : null}
-                  </svg>
-                ) : null}
+                            );
+                          })()}
+                        </g>
+                      ) : null}
+                    </svg>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>

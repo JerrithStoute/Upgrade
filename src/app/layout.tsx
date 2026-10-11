@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
 import { brandCss } from "@/lib/brand";
 import { getBrand } from "@/lib/company-brand";
+import { ActionErrorToast } from "@/components/action-error-toast";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const brand = await getBrand();
   return {
-    title: { default: "Upgrade", template: "%s · Upgrade" },
+    title: { default: "The Builder Station", template: "%s · The Builder Station" },
     description: "Construction project management for builders and remodelers.",
     // The company logo in the browser tab, when there is one.
     ...(brand.logoUrl ? { icons: { icon: brand.logoUrl } } : {}),
@@ -19,7 +20,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="en" className="h-full antialiased">
       <head>{css ? <style dangerouslySetInnerHTML={{ __html: css }} /> : null}</head>
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {children}
+        <ActionErrorToast />
+      </body>
     </html>
   );
 }

@@ -1,9 +1,11 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireAdmin, requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { currentCompanyId } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { money, numField, str, strOrNull } from "@/lib/utils";
 import { lineTotals } from "@/lib/finance";
@@ -119,7 +121,7 @@ export async function saveEstimate(projectId: string, estimateId: string, raw: u
 }
 
 /** New estimate version — blank, or pre-filled from an estimate template. */
-export async function createEstimate(formData: FormData) {
+export const createEstimate = friendly(async function createEstimate(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   await loadProject(projectId);
@@ -134,9 +136,9 @@ export async function createEstimate(formData: FormData) {
   });
   revalidate(projectId);
   redirect(estimatePath(projectId, est.id));
-}
+});
 
-export async function updateEstimateDetails(formData: FormData) {
+export const updateEstimateDetails = friendly(async function updateEstimateDetails(formData: FormData) {
   await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -150,9 +152,9 @@ export async function updateEstimateDetails(formData: FormData) {
   await db.estimate.update({ where: { id }, data });
   revalidate(projectId);
   redirect(estimatePath(projectId, id));
-}
+});
 
-export async function markEstimateSent(formData: FormData) {
+export const markEstimateSent = friendly(async function markEstimateSent(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -168,9 +170,39 @@ export async function markEstimateSent(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "estimate.sent", description: `Estimate "${est.name}" v${est.version} marked sent` });
   revalidate(projectId);
   redirect(estimatePath(projectId, id));
-}
+});
 
-export async function markEstimateApproved(formData: FormData) {
+/**
+ * A spec house has no client to approve it: its estimate is locked in as the budget in one
+ * step — the Budget follows it and the job's prices lock. The job goes to In progress.
+ */
+export const estimateAsBudget = friendly(async function estimateAsBudget(formData: FormData) {
+  const user = await requireStaff();
+  const projectId = str(formData, "projectId");
+  const id = str(formData, "id");
+  const est = await loadEstimate(projectId, id);
+  if (est.status === "APPROVED") return;
+  const project = await loadProject(projectId);
+  if (!project.isSpec) throw new Error("Only a spec house's estimate is used as the budget this way — a client's is sent and approved");
+  const other = await db.estimate.findFirst({ where: { projectId, status: "APPROVED", id: { not: id } }, select: { name: true, version: true } });
+  if (other) throw new Error(`"${other.name}" v${other.version} is already the budget — that one stays unless you change it back first`);
+  await db.estimate.update({ where: { id }, data: { status: "APPROVED", approvedAt: new Date(), sentAt: est.sentAt ?? new Date() } });
+  await lockJobPrices(projectId);
+  if (["LEAD", "ESTIMATING", "PROPOSAL_SENT"].includes(project.status)) await db.project.update({ where: { id: projectId }, data: { status: "IN_PROGRESS" } });
+  const totals = lineTotals(est.items);
+  await logActivity({
+    projectId,
+    userId: user.id,
+    type: "estimate.approved",
+    description: `Estimate "${est.name}" v${est.version} locked in as the budget (${money(totals.cost)} cost)`,
+  });
+  revalidate(projectId);
+  revalidatePath(`/projects/${projectId}/budget`);
+  revalidatePath(`/projects/${projectId}/spec`, "layout");
+  redirect(estimatePath(projectId, id));
+});
+
+export const markEstimateApproved = friendly(async function markEstimateApproved(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -190,9 +222,9 @@ export async function markEstimateApproved(formData: FormData) {
   });
   revalidate(projectId);
   redirect(estimatePath(projectId, id));
-}
+});
 
-export async function markEstimateDeclined(formData: FormData) {
+export const markEstimateDeclined = friendly(async function markEstimateDeclined(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -202,9 +234,9 @@ export async function markEstimateDeclined(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "estimate.declined", description: `Estimate "${est.name}" v${est.version} declined` });
   revalidate(projectId);
   redirect(estimatePath(projectId, id));
-}
+});
 
-export async function createEstimateVersion(formData: FormData) {
+export const createEstimateVersion = friendly(async function createEstimateVersion(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -233,9 +265,9 @@ export async function createEstimateVersion(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "estimate.version", description: `Estimate v${version} created from v${source.version}` });
   revalidate(projectId);
   redirect(estimatePath(projectId, est.id));
-}
+});
 
-export async function deleteEstimate(formData: FormData) {
+export const deleteEstimate = friendly(async function deleteEstimate(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -245,12 +277,12 @@ export async function deleteEstimate(formData: FormData) {
   await logActivity({ projectId, userId: user.id, type: "estimate.deleted", description: `Estimate v${est.version} deleted` });
   revalidate(projectId);
   redirect(estimatePath(projectId));
-}
+});
 
 // --- Templates ----------------------------------------------------------------
 
 /** Appends a template's spec items and lines to a draft estimate (e.g. a "Bathroom" template onto a kitchen job). */
-export async function addTemplateToEstimate(formData: FormData) {
+export const addTemplateToEstimate = friendly(async function addTemplateToEstimate(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const estimateId = str(formData, "estimateId");
@@ -275,14 +307,14 @@ export async function addTemplateToEstimate(formData: FormData) {
   });
   revalidate(projectId);
   redirect(estimatePath(projectId, estimateId));
-}
+});
 
 /**
  * Admins: copy this estimate (spec items, lines, notes, terms, markup) into a new template.
  * "Clear this job's numbers" (on by default) keeps your formulas and typed unit costs and
  * drops the rest (clearJobNumbers). The template is a copy: jobs made from it never change with it.
  */
-export async function saveEstimateAsTemplate(formData: FormData) {
+export const saveEstimateAsTemplate = friendly(async function saveEstimateAsTemplate(formData: FormData) {
   const admin = await requireAdmin();
   const projectId = str(formData, "projectId");
   const estimateId = str(formData, "estimateId");
@@ -306,7 +338,7 @@ export async function saveEstimateAsTemplate(formData: FormData) {
   });
   revalidatePath("/settings/estimate-templates");
   redirect(`/settings/estimate-templates/${template.id}`);
-}
+});
 
 // --- Proposal options ---------------------------------------------------------------
 
@@ -396,7 +428,7 @@ export async function saveParameterValues(projectId: string, estimateId: string,
 // --- Estimate lock and "what changed" ---------------------------------------------------
 
 /** Locks a draft: no automatic updates from the takeoff and no edits until it's unlocked. */
-export async function lockEstimate(formData: FormData) {
+export const lockEstimate = friendly(async function lockEstimate(formData: FormData) {
   const user = await requireStaff();
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
@@ -411,13 +443,14 @@ export async function lockEstimate(formData: FormData) {
   });
   revalidate(projectId);
   redirect(estimatePath(projectId, id));
-}
+});
 
 /** Clears the "what changed" note (the changes stay — just the note goes). */
 export async function dismissAutoNote(projectId: string, estimateId: string): Promise<{ ok: true }> {
   await requireStaff();
   // Without touching the estimate's "updated" time — that would reload the sheet and lose unsaved edits.
-  await db.$executeRaw`UPDATE "Estimate" SET "autoNote" = NULL, "autoBase" = NULL WHERE "id" = ${estimateId} AND "projectId" = ${projectId}`;
+  const companyId = await currentCompanyId();
+  await db.$transaction(async (tx) => tx.$executeRaw`UPDATE "Estimate" SET "autoNote" = NULL, "autoBase" = NULL WHERE "id" = ${estimateId} AND "projectId" = ${projectId} AND "companyId" = ${companyId}`);
   revalidatePath(`/projects/${projectId}/estimate`);
   return { ok: true };
 }

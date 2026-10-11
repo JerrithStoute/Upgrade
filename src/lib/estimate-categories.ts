@@ -71,7 +71,7 @@ export async function learnDivisions(specs: { name: string; category: string }[]
       await tx.estimateCategoryDivision.deleteMany({ where: { division: g } });
       if (!div) continue;
       const cat =
-        (await tx.estimateCategory.findUnique({ where: { name: div } })) ?? (await tx.estimateCategory.create({ data: { name: div, sortOrder: reordered.indexOf(div) } }));
+        (await tx.estimateCategory.findFirst({ where: { name: div } })) ?? (await tx.estimateCategory.create({ data: { name: div, sortOrder: reordered.indexOf(div) } }));
       const n = await tx.estimateCategoryDivision.count({ where: { categoryId: cat.id } });
       await tx.estimateCategoryDivision.create({ data: { categoryId: cat.id, division: g, sortOrder: n } });
     }

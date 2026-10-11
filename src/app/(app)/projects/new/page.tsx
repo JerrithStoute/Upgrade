@@ -6,8 +6,9 @@ import { PageHeader } from "@/components/ui";
 import { ProjectForm } from "../_components/project-form";
 import { createProject } from "../actions";
 
-export default async function NewProjectPage() {
+export default async function NewProjectPage({ searchParams }: { searchParams: Promise<{ kind?: string }> }) {
   const user = await requireStaff();
+  const { kind } = await searchParams;
   const [clients, managers, templates] = await Promise.all([
     db.client.findMany({
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -18,12 +19,8 @@ export default async function NewProjectPage() {
   ]);
   return (
     <div>
-      <PageHeader
-        breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: "New" }]}
-        title="New project"
-        description="Start a lead or set up a contracted job."
-      />
-      <ProjectForm action={createProject} clients={clients} managers={managers} defaultManagerId={user.id} templates={templates} />
+      <PageHeader breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: "New" }]} title="New project" description="Start a lead or set up a contracted job." />
+      <ProjectForm action={createProject} clients={clients} managers={managers} defaultManagerId={user.id} templates={templates} kind={kind} />
     </div>
   );
 }

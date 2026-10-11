@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
 import { db } from "@/lib/db";
 import { getCurrentUser, isStaff } from "@/lib/auth";
-import { uploadDir } from "@/lib/uploads";
+import { readUpload } from "@/lib/uploads";
 
 /** A job's proposal cover picture: staff, and the job's own client. Only PNG, JPG and WebP are ever stored. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -14,7 +12,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!project?.coverPath || !project.coverType) return new NextResponse("No picture", { status: 404 });
   if (user.role === "CLIENT" ? project.clientId !== user.clientId : !isStaff(user)) return new NextResponse("Forbidden", { status: 403 });
   try {
-    const data = await fs.readFile(path.join(uploadDir(), project.coverPath));
+    const data = await readUpload(project.coverPath);
     return new NextResponse(new Uint8Array(data), {
       headers: {
         "Content-Type": project.coverType,

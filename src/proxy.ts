@@ -2,9 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getSessionKey } from "@/lib/session-secret";
 
-const SESSION_COOKIE = "upgrade_session";
-// The company logo shows on the sign-in page too.
-const PUBLIC_PATHS = ["/login", "/logout", "/api/company/logo"];
+const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-bs_session" : "upgrade_session";
+// Pages for people not signed in: sign in (and its second step), sign up, forgot / reset
+// password, confirm email, accept an invitation — and, on this PC only, the test inbox.
+const PUBLIC_PATHS = ["/login", "/logout", "/signup", "/forgot", "/reset", "/verify", "/invite", "/api/health", ...(process.env.NODE_ENV === "production" ? [] : ["/dev/outbox"])];
 
 async function hasValidSession(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;

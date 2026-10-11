@@ -1,14 +1,15 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { str } from "@/lib/utils";
-import { pickedCards } from "@/lib/dashboard-cards";
+import { dashboardLayout, withCards, type Layout } from "@/lib/dashboard-cards";
 import { canSeeReports } from "@/lib/reports";
 
-export async function completeTodo(formData: FormData) {
+export const completeTodo = friendly(async function completeTodo(formData: FormData) {
   const user = await requireStaff();
   const id = str(formData, "id");
   if (!id) return;
@@ -24,12 +25,21 @@ export async function completeTodo(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/todos");
   if (todo.projectId) revalidatePath(`/projects/${todo.projectId}`);
-}
+});
 
-/** Saves which cards your dashboard shows and their order (null = back to the default). */
+/** Turns cards on and off (Customize): the others stay put, new ones go to the shortest column. null = back to the default. */
 export async function saveDashboardCards(keys: string[] | null) {
   const user = await requireStaff();
-  const list = keys ? pickedCards(JSON.stringify(keys), canSeeReports(user)) : null;
-  await db.user.update({ where: { id: user.id }, data: { dashboardCards: list ? JSON.stringify(list) : null } });
+  const me = await db.user.findUnique({ where: { id: user.id }, select: { dashboardCards: true } });
+  const layout = keys ? withCards(dashboardLayout(me?.dashboardCards, canSeeReports(user)), keys, canSeeReports(user)) : null;
+  await db.user.update({ where: { id: user.id }, data: { dashboardCards: layout ? JSON.stringify(layout) : null } });
   revalidatePath("/dashboard");
+}
+
+/** Saves where your cards are, after a drag. */
+export async function saveDashboardLayout(layout: Layout) {
+  const user = await requireStaff();
+  // Cleaned the same way it's read: only cards you may see, each once.
+  const clean = dashboardLayout(JSON.stringify(layout), canSeeReports(user));
+  await db.user.update({ where: { id: user.id }, data: { dashboardCards: JSON.stringify(clean) } });
 }

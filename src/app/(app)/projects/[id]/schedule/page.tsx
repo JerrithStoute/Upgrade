@@ -340,7 +340,7 @@ export default async function SchedulePage({
           <Link href="/schedule/calendar" className="text-xs font-medium text-blue-700 hover:underline">
             Calendar
           </Link>
-          <div className="flex items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5 text-xs">
+          <div className="hidden items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5 text-xs md:flex">
             <Link href={base} className={cn("flex items-center gap-1 rounded px-2.5 py-1 font-medium", !isList ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>
               <GanttChartSquare className="h-3.5 w-3.5" /> Gantt
             </Link>
@@ -419,80 +419,119 @@ export default async function SchedulePage({
 
       {tasks.length === 0 ? (
         <EmptyState icon={GanttChartSquare} title="No schedule yet" description="Start from a template below, or click + Add task above." />
-      ) : isList ? (
-        <ScheduleReorder projectId={project.id} insertBase={`${base}?`} insertTail={listQ}>
-          <Table>
-            <THead>
-              <tr>
-                <Th>Task</Th>
-                <Th>Phase</Th>
-                <Th>Start</Th>
-                <Th>End</Th>
-                <Th right>Workdays</Th>
-                <Th>Assignee</Th>
-                <Th>Progress</Th>
-                <Th>Waits on</Th>
-              </tr>
-            </THead>
-            <TBody>
-              {groupByPhase(tasks).flatMap((g) =>
-                g.tasks.map((t) => {
-                  const od = isTaskOverdue(t, today);
-                  return (
-                    <tr key={t.id} data-drop-task={t.id} data-task-name={t.name} className="group/row hover:bg-slate-50/60">
-                      <Td className="relative">
-                        <span
-                          draggable
-                          data-drag-task={t.id}
-                          title="Drag to move it in the schedule"
-                          aria-hidden
-                          className="absolute left-1 top-1/2 flex h-6 w-3 -translate-y-1/2 cursor-grab items-center justify-center text-slate-400 opacity-0 transition-opacity hover:text-slate-700 active:cursor-grabbing group-hover/row:opacity-100"
-                        >
-                          <GripVertical className="h-3.5 w-3.5" />
-                        </span>
-                        <InsertLinks above={insertHref(t, "above")} below={insertHref(t, "below")} name={t.name} more={eraseTool(t)} />
-                        <Link href={`${base}?task=${t.id}&view=list`} className="font-medium text-slate-900 hover:underline">
-                          {t.isMilestone ? <span className="mr-1 text-violet-600">◆</span> : null}
-                          {t.name}
-                        </Link>
-                      </Td>
-                      <Td className="text-slate-500">{t.phase}</Td>
-                      <Td className="whitespace-nowrap">{fmtDate(t.startDate)}</Td>
-                      <Td className={cn("whitespace-nowrap", od && "font-medium text-rose-600")}>{fmtDate(t.endDate)}</Td>
-                      <Td right>{t.isMilestone ? "—" : taskWorkdays(cal, t)}</Td>
-                      <Td>
-                        {t.assignee ? (
-                          <span className="flex items-center gap-1.5">
-                            <Avatar name={t.assignee.name} className="h-6 w-6 text-[10px]" /> {t.assignee.name}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
-                      </Td>
-                      <Td>
-                        <div className="flex items-center gap-2">
-                          <Progress value={t.percentComplete} color={t.color} className="w-20" />
-                          <span className="text-xs tabular-nums text-slate-600">{t.percentComplete}%</span>
-                        </div>
-                      </Td>
-                      <Td className="text-slate-500">
-                        {waitsOn(t.id).length
-                          ? waitsOn(t.id)
-                              .map((l) => `${nameOf(l.predecessorId)}${l.lagDays ? ` +${l.lagDays}` : ""}`)
-                              .join(", ")
-                          : "—"}
-                      </Td>
-                    </tr>
-                  );
-                }),
-              )}
-            </TBody>
-          </Table>
-        </ScheduleReorder>
       ) : (
-        <ScheduleReorder projectId={project.id} insertBase={`${base}?`} insertTail={listQ}>
-          <Gantt tasks={tasks} today={today} taskHref={(t) => `${base}?task=${t.id}`} selectedTaskId={editing?.id} draggable insertHref={insertHref} rowTools={eraseTool} />
-        </ScheduleReorder>
+        <>
+          {/* Phones: the tasks by phase, each a tap away from its details (the Gantt and table need a bigger screen). */}
+          <div className="space-y-4 md:hidden">
+            {groupByPhase(tasks).map((g) => (
+              <section key={g.phase} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                <h3 className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.phase}</h3>
+                <ul className="divide-y divide-slate-100">
+                  {g.tasks.map((t) => {
+                    const od = isTaskOverdue(t, today);
+                    return (
+                      <li key={t.id}>
+                        <Link href={`${base}?task=${t.id}`} className={cn("block px-4 py-3 active:bg-slate-50", editing?.id === t.id && "bg-blue-50")}>
+                          <span className="flex items-baseline justify-between gap-3">
+                            <span className="min-w-0 font-medium text-slate-900">
+                              {t.isMilestone ? <span className="mr-1 text-violet-600">◆</span> : null}
+                              {t.name}
+                            </span>
+                            <span className={cn("shrink-0 text-xs", od ? "font-medium text-rose-600" : "text-slate-500")}>
+                              {t.isMilestone ? fmtDate(t.startDate, "MMM d") : `${fmtDate(t.startDate, "MMM d")} – ${fmtDate(t.endDate, "MMM d")}`}
+                            </span>
+                          </span>
+                          {t.assignee ? <span className="mt-0.5 block truncate text-xs text-slate-500">{t.assignee.name}</span> : null}
+                          <span className="mt-1.5 flex items-center gap-2">
+                            <Progress value={t.percentComplete} color={t.color} className="flex-1" />
+                            <span className="w-9 text-right text-xs tabular-nums text-slate-600">{t.percentComplete}%</span>
+                          </span>
+                        </Link>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            ))}
+          </div>
+          <div className="hidden md:block">
+            {isList ? (
+              <ScheduleReorder projectId={project.id} insertBase={`${base}?`} insertTail={listQ}>
+                <Table>
+                  <THead>
+                    <tr>
+                      <Th>Task</Th>
+                      <Th>Phase</Th>
+                      <Th>Start</Th>
+                      <Th>End</Th>
+                      <Th right>Workdays</Th>
+                      <Th>Assignee</Th>
+                      <Th>Progress</Th>
+                      <Th>Waits on</Th>
+                    </tr>
+                  </THead>
+                  <TBody>
+                    {groupByPhase(tasks).flatMap((g) =>
+                      g.tasks.map((t) => {
+                        const od = isTaskOverdue(t, today);
+                        return (
+                          <tr key={t.id} data-drop-task={t.id} data-task-name={t.name} className="group/row hover:bg-slate-50/60">
+                            <Td className="relative">
+                              <span
+                                draggable
+                                data-drag-task={t.id}
+                                title="Drag to move it in the schedule"
+                                aria-hidden
+                                className="absolute left-1 top-1/2 flex h-6 w-3 -translate-y-1/2 cursor-grab items-center justify-center text-slate-400 opacity-0 transition-opacity hover:text-slate-700 active:cursor-grabbing group-hover/row:opacity-100"
+                              >
+                                <GripVertical className="h-3.5 w-3.5" />
+                              </span>
+                              <InsertLinks above={insertHref(t, "above")} below={insertHref(t, "below")} name={t.name} more={eraseTool(t)} />
+                              <Link href={`${base}?task=${t.id}&view=list`} className="font-medium text-slate-900 hover:underline">
+                                {t.isMilestone ? <span className="mr-1 text-violet-600">◆</span> : null}
+                                {t.name}
+                              </Link>
+                            </Td>
+                            <Td className="text-slate-500">{t.phase}</Td>
+                            <Td className="whitespace-nowrap">{fmtDate(t.startDate)}</Td>
+                            <Td className={cn("whitespace-nowrap", od && "font-medium text-rose-600")}>{fmtDate(t.endDate)}</Td>
+                            <Td right>{t.isMilestone ? "—" : taskWorkdays(cal, t)}</Td>
+                            <Td>
+                              {t.assignee ? (
+                                <span className="flex items-center gap-1.5">
+                                  <Avatar name={t.assignee.name} className="h-6 w-6 text-[10px]" /> {t.assignee.name}
+                                </span>
+                              ) : (
+                                <span className="text-slate-400">—</span>
+                              )}
+                            </Td>
+                            <Td>
+                              <div className="flex items-center gap-2">
+                                <Progress value={t.percentComplete} color={t.color} className="w-20" />
+                                <span className="text-xs tabular-nums text-slate-600">{t.percentComplete}%</span>
+                              </div>
+                            </Td>
+                            <Td className="text-slate-500">
+                              {waitsOn(t.id).length
+                                ? waitsOn(t.id)
+                                    .map((l) => `${nameOf(l.predecessorId)}${l.lagDays ? ` +${l.lagDays}` : ""}`)
+                                    .join(", ")
+                                : "—"}
+                            </Td>
+                          </tr>
+                        );
+                      }),
+                    )}
+                  </TBody>
+                </Table>
+              </ScheduleReorder>
+            ) : (
+              <ScheduleReorder projectId={project.id} insertBase={`${base}?`} insertTail={listQ}>
+                <Gantt tasks={tasks} today={today} taskHref={(t) => `${base}?task=${t.id}`} selectedTaskId={editing?.id} draggable insertHref={insertHref} rowTools={eraseTool} />
+              </ScheduleReorder>
+            )}
+          </div>
+        </>
       )}
 
       <Collapsible

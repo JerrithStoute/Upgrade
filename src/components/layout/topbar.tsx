@@ -13,13 +13,13 @@ export function Topbar({ user, title }: { user: SessionUser; title?: string }) {
         <Link href="/todos" className="rounded-md p-2 text-slate-500 hover:bg-slate-100" title="My to-dos">
           <Bell className="h-4 w-4" />
         </Link>
-        <div className="flex items-center gap-2">
+        <Link href="/account" className="flex items-center gap-2 rounded-md px-1 py-0.5 hover:bg-slate-100" title="Your account — password, two-step sign-in">
           <Avatar name={user.name} />
           <div className="hidden leading-tight sm:block">
             <p className="text-sm font-medium text-slate-900">{user.name}</p>
             <Badge status={user.role} className="mt-0.5 !px-1.5 !py-0 text-[10px]" />
           </div>
-        </div>
+        </Link>
         <form action="/logout" method="post">
           <button type="submit" className="rounded-md p-2 text-slate-500 hover:bg-slate-100" title="Sign out">
             <LogOut className="h-4 w-4" />

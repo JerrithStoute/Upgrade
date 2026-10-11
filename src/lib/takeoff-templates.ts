@@ -1,6 +1,5 @@
 import "server-only";
-import type { Prisma } from "@prisma/client";
-import { db } from "./db";
+import { db, type Tx } from "./db";
 import { isLumberMetric, itemNameKey } from "./takeoff";
 
 /** Condition settings that a template carries (everything but measurements). */
@@ -190,7 +189,7 @@ export async function pullLibraryTakeoff(templateConditionId: string, projectId:
  * these when `update` is on. Lumber lines aren't saved (they come from each job's layout).
  */
 export async function addConditionsToTemplate(
-  tx: Prisma.TransactionClient,
+  tx: Tx,
   templateId: string,
   conditions: (Parameters<typeof conditionData>[0] & { items: (Parameters<typeof itemData>[0] & { metric: string })[] })[],
   update = false,

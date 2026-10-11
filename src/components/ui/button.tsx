@@ -24,21 +24,10 @@ export function buttonClasses(variant: Variant = "primary", size: Size = "md", c
   return cn(base, variants[variant], sizes[size], className);
 }
 
-export function Button({
-  variant = "primary",
-  size = "md",
-  className,
-  ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
+export function Button({ variant = "primary", size = "md", className, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: Size }) {
   return <button className={buttonClasses(variant, size, className)} {...props} />;
 }
 
-export function ButtonLink({
-  variant = "primary",
-  size = "md",
-  className,
-  href,
-  ...props
-}: React.ComponentProps<typeof Link> & { variant?: Variant; size?: Size }) {
+export function ButtonLink({ variant = "primary", size = "md", className, href, ...props }: React.ComponentProps<typeof Link> & { variant?: Variant; size?: Size }) {
   return <Link href={href} className={buttonClasses(variant, size, className)} {...props} />;
 }

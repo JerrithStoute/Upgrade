@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server";
-import { promises as fs } from "fs";
-import path from "path";
 import { db } from "@/lib/db";
-import { uploadDir } from "@/lib/uploads";
+import { readUpload } from "@/lib/uploads";
 
-/** The company logo — public, so the sign-in page can show it. Only PNG, JPG and WebP are ever stored. */
+/** The signed-in company's logo. Only PNG, JPG and WebP are ever stored. */
 export async function GET() {
-  const c = await db.company.findFirst({ select: { logoPath: true, logoType: true } });
-  if (!c?.logoPath || !c.logoType) return new NextResponse("No logo", { status: 404 });
   try {
-    const data = await fs.readFile(path.join(uploadDir(), c.logoPath));
+    // Only after signing in: the logo belongs to the signed-in person's company.
+    const c = await db.company.findFirst({ select: { logoPath: true, logoType: true } });
+    if (!c?.logoPath || !c.logoType) return new NextResponse("No logo", { status: 404 });
+    const data = await readUpload(c.logoPath);
     return new NextResponse(new Uint8Array(data), {
       headers: {
         "Content-Type": c.logoType,

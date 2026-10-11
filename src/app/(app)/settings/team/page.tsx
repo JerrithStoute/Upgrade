@@ -1,10 +1,11 @@
 import Link from "next/link";
-import { Pencil, UserPlus, Users, X } from "lucide-react";
+import { Mail, Pencil, ShieldCheck, UserPlus, Users, X } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { fmtDate } from "@/lib/utils";
+import { openInvites } from "@/lib/invites";
+import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { Badge, Button, ButtonLink, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
-import { createTeamMember, updateTeamMember, toggleTeamMemberActive, deleteTeamMember } from "./actions";
+import { addNoLoginMember, cancelTeamInvite, deleteTeamMember, inviteTeamMember, resendTeamInvite, sendPasswordReset, setRequireTwoStep, toggleTeamMemberActive, updateTeamMember } from "./actions";
 
 export const metadata = { title: "Team" };
 
@@ -15,11 +16,13 @@ function roleLabel(r: (typeof ROLES)[number]) {
   return r === "SUB" ? "Subcontractor (no login)" : r === "ADMIN" ? "Admin" : "Staff";
 }
 
-export default async function TeamSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
+export default async function TeamSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; invited?: string; reset?: string }> }) {
   const admin = await requireAdmin();
-  const { edit } = await searchParams;
+  const { edit, invited, reset } = await searchParams;
 
-  const [team, clients] = await Promise.all([
+  const [company, waiting, team, clients, securityLog] = await Promise.all([
+    db.company.findFirstOrThrow({ select: { requireTwoStep: true } }),
+    openInvites({ kind: "TEAM" }),
     db.user.findMany({
       where: { role: { notIn: ["CLIENT", "VENDOR"] } },
       orderBy: [{ active: "desc" }, { name: "asc" }],
@@ -30,49 +33,134 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
       orderBy: { name: "asc" },
       include: { client: { select: { id: true, firstName: true, lastName: true, company: true, _count: { select: { projects: true } } } } },
     }),
+    // Sign-ins, failed attempts, and changes to logins (by the person or by an admin).
+    db.activity.findMany({
+      where: { OR: [{ type: { startsWith: "security." } }, { type: { startsWith: "user." } }, { type: "company.two-step" }] },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: { id: true, type: true, description: true, createdAt: true },
+    }),
   ]);
 
   const EDIT_FORM = "edit-team-member";
 
   return (
     <div className="space-y-6">
+      {invited ? (
+        <p className="rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800">Invitation sent to {invited}. They&apos;ll choose their own password from the email.</p>
+      ) : null}
+      {reset ? <p className="rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800">A link to choose a new password was emailed to {reset}.</p> : null}
       <Collapsible
+        defaultOpen={team.length <= 1}
         summary={
           <span className="inline-flex items-center gap-2">
-            <UserPlus className="h-4 w-4 text-slate-500" /> Add team member
+            <UserPlus className="h-4 w-4 text-slate-500" /> Invite a team member
           </span>
         }
       >
-        <form action={createTeamMember} className="space-y-4">
+        <form action={inviteTeamMember} className="space-y-4">
           <FormGrid className="md:grid-cols-3">
-            <Field label="Name" htmlFor="new-name">
-              <input id="new-name" name="name" className="input" required />
-            </Field>
             <Field label="Email" htmlFor="new-email">
               <input id="new-email" name="email" type="email" className="input" required />
             </Field>
+            <Field label="Name (optional)" htmlFor="new-name">
+              <input id="new-name" name="name" className="input" />
+            </Field>
             <Field label="Role" htmlFor="new-role">
               <select id="new-role" name="role" className="input" defaultValue="STAFF">
-                {ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {roleLabel(r)}
-                  </option>
-                ))}
+                <option value="STAFF">Staff</option>
+                <option value="ADMIN">Admin (everything, including Settings)</option>
               </select>
             </Field>
-            <Field label="Title" htmlFor="new-title">
-              <input id="new-title" name="title" className="input" placeholder="Project Manager" />
-            </Field>
-            <Field label="Phone" htmlFor="new-phone">
-              <input id="new-phone" name="phone" type="tel" className="input" />
-            </Field>
-            <Field label="Password" htmlFor="new-password" hint="At least 6 characters. Share it with the team member.">
-              <input id="new-password" name="password" type="password" className="input" required minLength={6} autoComplete="new-password" />
-            </Field>
           </FormGrid>
-          <SubmitButton>Add team member</SubmitButton>
+          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-700">
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" name="canDelay" className="h-4 w-4 rounded border-slate-300" /> Can delay jobs
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" name="canApproveBills" className="h-4 w-4 rounded border-slate-300" /> Can approve &amp; pay bills
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" name="canSeeReports" className="h-4 w-4 rounded border-slate-300" /> Can see reports
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" name="canManageTime" className="h-4 w-4 rounded border-slate-300" /> Can manage everyone&apos;s time
+            </label>
+          </div>
+          <p className="text-xs text-slate-500">They get an email with a link to choose their own password. It works for 7 days.</p>
+          <SubmitButton pendingText="Sending…">
+            <Mail className="h-4 w-4" /> Send invitation
+          </SubmitButton>
         </form>
+        <details className="mt-5 border-t border-slate-100 pt-4">
+          <summary className="cursor-pointer text-sm font-medium text-slate-600">Add someone who doesn&apos;t sign in (crew on the schedule or time clock)</summary>
+          <form action={addNoLoginMember} className="mt-3 space-y-3">
+            <FormGrid className="md:grid-cols-3">
+              <Field label="Name" htmlFor="nl-name">
+                <input id="nl-name" name="name" className="input" required />
+              </Field>
+              <Field label="Title" htmlFor="nl-title">
+                <input id="nl-title" name="title" className="input" placeholder="Framer" />
+              </Field>
+              <Field label="Phone" htmlFor="nl-phone">
+                <input id="nl-phone" name="phone" type="tel" className="input" />
+              </Field>
+            </FormGrid>
+            <SubmitButton variant="secondary">Add without a login</SubmitButton>
+          </form>
+        </details>
       </Collapsible>
+
+      {waiting.length ? (
+        <Card>
+          <CardHeader title="Invitations waiting" description="Sent, not yet accepted." />
+          <ul className="divide-y divide-slate-100">
+            {waiting.map((i) => (
+              <li key={i.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-5 py-2.5 text-sm">
+                <span className="min-w-0 flex-1">
+                  <span className="font-medium text-slate-900">{i.email}</span>
+                  <span className="ml-2 text-xs text-slate-500">
+                    {i.role === "ADMIN" ? "Admin" : "Staff"} · sent {fmtDate(i.createdAt)}
+                    {i.invitedBy ? ` by ${i.invitedBy.name}` : ""} · {i.expiresAt < new Date() ? <span className="text-rose-600">expired</span> : `good until ${fmtDate(i.expiresAt)}`}
+                  </span>
+                </span>
+                <form action={resendTeamInvite}>
+                  <input type="hidden" name="id" value={i.id} />
+                  <SubmitButton size="sm" variant="ghost" pendingText="Sending…">
+                    Resend
+                  </SubmitButton>
+                </form>
+                <ConfirmForm action={cancelTeamInvite} hidden={{ id: i.id }} variant="ghost" message={`Cancel the invitation to ${i.email}? The link in their email stops working.`}>
+                  <span className="text-rose-600">Cancel</span>
+                </ConfirmForm>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      <Card>
+        <CardHeader
+          title={
+            <span className="inline-flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-slate-400" /> Two-step sign-in for the team
+            </span>
+          }
+          description={
+            company.requireTwoStep
+              ? "Required: everyone on the team signs in with a code from an authenticator app. Anyone without it sets it up at their next sign-in."
+              : "Optional: each person can turn it on under Your account. Require it to protect the whole company if a password leaks."
+          }
+          actions={
+            <form action={setRequireTwoStep}>
+              <input type="hidden" name="on" value={company.requireTwoStep ? "" : "on"} />
+              <SubmitButton size="sm" variant={company.requireTwoStep ? "ghost" : "secondary"}>
+                {company.requireTwoStep ? "Stop requiring it" : "Require it"}
+              </SubmitButton>
+            </form>
+          }
+        />
+      </Card>
 
       {/* The inline edit row's inputs point at this form via the `form` attribute. */}
       {edit ? <form id={EDIT_FORM} action={updateTeamMember} /> : null}
@@ -155,6 +243,36 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                       </label>
                       <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
                         <input
+                          type="checkbox"
+                          name="canManageTime"
+                          defaultChecked={u.canManageTime || u.role === "ADMIN"}
+                          disabled={u.role === "ADMIN"}
+                          form={EDIT_FORM}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        Can manage everyone&apos;s time
+                      </label>
+                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
+                        $
+                        <input
+                          name="payRate"
+                          type="number"
+                          min={0}
+                          step="0.01"
+                          defaultValue={u.payRate ?? ""}
+                          placeholder="—"
+                          form={EDIT_FORM}
+                          className="input !h-7 !w-20 !py-0 text-right"
+                          aria-label="Pay per hour"
+                        />
+                        / hr pay
+                      </label>
+                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
+                        <input type="checkbox" name="salaried" defaultChecked={u.salaried} form={EDIT_FORM} className="h-4 w-4 rounded border-slate-300" />
+                        Salaried (no overtime)
+                      </label>
+                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
+                        <input
                           name="vacationDays"
                           type="number"
                           min={0}
@@ -182,7 +300,16 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                       />
                     </Td>
                     <Td>
-                      <input name="password" type="password" placeholder="New password" className="input" form={EDIT_FORM} autoComplete="new-password" aria-label="New password" />
+                      {u.role !== "SUB" && u.active ? (
+                        <form action={sendPasswordReset}>
+                          <input type="hidden" name="id" value={u.id} />
+                          <SubmitButton size="sm" variant="ghost" pendingText="Sending…" title="Emails them a link to choose a new password">
+                            Send password reset
+                          </SubmitButton>
+                        </form>
+                      ) : (
+                        <span className="text-xs text-slate-400">No login</span>
+                      )}
                     </Td>
                     <Td right>
                       <div className="flex justify-end gap-1.5">
@@ -214,8 +341,14 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                     {u.role === "ADMIN" || u.canDelay ? <span className="block">Can delay jobs</span> : null}
                     {u.role === "ADMIN" || u.canApproveBills ? <span className="block">Can approve &amp; pay bills</span> : null}
                     {u.role === "ADMIN" || u.canSeeReports ? <span className="block">Can see reports</span> : null}
+                    {u.role === "ADMIN" || u.canManageTime ? <span className="block">Can manage everyone&apos;s time</span> : null}
+                    {u.payRate != null ? (
+                      <span className="block">
+                        ${u.payRate.toFixed(2)} / hr{u.salaried ? " · salaried" : ""}
+                      </span>
+                    ) : null}
                     {u.vacationDays != null ? <span className="block">{u.vacationDays} vacation days / yr</span> : null}
-                    {!(u.role === "ADMIN" || u.canDelay || u.canApproveBills) && u.vacationDays == null ? "—" : null}
+                    {!(u.role === "ADMIN" || u.canDelay || u.canApproveBills || u.canManageTime) && u.vacationDays == null && u.payRate == null ? "—" : null}
                   </Td>
                   <Td>
                     {isSelf ? (
@@ -307,6 +440,32 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
               ))}
             </TBody>
           </Table>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title="Security log" description="Sign-ins, wrong passwords and codes, and changes to logins — the latest 100." />
+        {securityLog.length === 0 ? (
+          <p className="p-5 text-sm text-slate-500">Nothing yet.</p>
+        ) : (
+          <div className="max-h-96 overflow-y-auto">
+            <Table className="rounded-t-none border-0 shadow-none">
+              <THead>
+                <tr>
+                  <Th className="w-48">When</Th>
+                  <Th>What happened</Th>
+                </tr>
+              </THead>
+              <TBody>
+                {securityLog.map((e) => (
+                  <Tr key={e.id}>
+                    <Td className="whitespace-nowrap text-slate-500">{fmtDateTime(e.createdAt)}</Td>
+                    <Td className={e.type === "security.failed" ? "font-medium text-amber-800" : undefined}>{e.description}</Td>
+                  </Tr>
+                ))}
+              </TBody>
+            </Table>
+          </div>
         )}
       </Card>
     </div>

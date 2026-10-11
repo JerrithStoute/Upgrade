@@ -5,10 +5,12 @@ import { db } from "@/lib/db";
 import { cn, dateInput, fmtDate, money } from "@/lib/utils";
 import { COVERAGE_TYPES, PO_STATUS_LABEL, SOON_DAYS, coverageLabel, coverageWarning, poTotal, vendorCoverage } from "@/lib/purchasing";
 import { Badge, Button, Card, CardBody, CardHeader, ConfirmForm, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
-import { addInsurance, confirmInsurance, createVendorLogin, deleteInsurance, deleteVendorLogin, setInsuranceRequired, updateVendorLogin } from "../actions";
+import { addInsurance, cancelVendorInvite, confirmInsurance, createVendorLogin, deleteInsurance, deleteVendorLogin, resendVendorInvite, setInsuranceRequired, updateVendorLogin } from "../actions";
+import { openInvites } from "@/lib/invites";
 
 export default async function VendorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const waiting = await openInvites({ vendorId: id });
   const vendor = await db.vendor.findUnique({
     where: { id },
     include: {
@@ -192,13 +194,15 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
                   <span className={cn("min-w-0 flex-1", !u.active && "text-slate-400 line-through")}>
                     <span className="font-medium">{u.name}</span> <span className="text-xs text-slate-500">{u.email}</span>
                   </span>
-                  <form action={updateVendorLogin} className="flex items-center gap-1">
-                    <input type="hidden" name="id" value={u.id} />
-                    <input name="password" type="password" autoComplete="new-password" className="input !h-8 w-36 text-xs" placeholder="New password" aria-label="New password" />
-                    <Button type="submit" size="sm" variant="secondary">
-                      Set
-                    </Button>
-                  </form>
+                  {u.active ? (
+                    <form action={updateVendorLogin}>
+                      <input type="hidden" name="id" value={u.id} />
+                      <input type="hidden" name="reset" value="1" />
+                      <SubmitButton size="sm" variant="ghost" pendingText="Sending…" title="Emails them a link to choose a new password">
+                        Send password reset
+                      </SubmitButton>
+                    </form>
+                  ) : null}
                   <form action={updateVendorLogin}>
                     <input type="hidden" name="id" value={u.id} />
                     <input type="hidden" name="toggle" value="1" />
@@ -213,9 +217,30 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
               ))}
             </ul>
           ) : null}
-          <form action={createVendorLogin} className="grid gap-2 md:grid-cols-4">
+          {waiting.length ? (
+            <ul className="divide-y divide-slate-100 rounded-lg border border-amber-200 bg-amber-50/50">
+              {waiting.map((i) => (
+                <li key={i.id} className="flex flex-wrap items-center gap-2 px-3 py-2 text-sm">
+                  <span className="min-w-0 flex-1">
+                    <span className="font-medium">{i.name ?? i.email}</span> <span className="text-xs text-slate-500">{i.email} · invited, {i.expiresAt < new Date() ? "expired" : `waiting until ${fmtDate(i.expiresAt)}`}</span>
+                  </span>
+                  <form action={resendVendorInvite}>
+                    <input type="hidden" name="vendorId" value={vendor.id} />
+                    <input type="hidden" name="inviteId" value={i.id} />
+                    <SubmitButton size="sm" variant="ghost" pendingText="Sending…">
+                      Resend
+                    </SubmitButton>
+                  </form>
+                  <ConfirmForm action={cancelVendorInvite} hidden={{ vendorId: vendor.id, inviteId: i.id }} message={`Cancel the invitation to ${i.email}?`} variant="ghost">
+                    <span className="text-xs text-rose-600">Cancel</span>
+                  </ConfirmForm>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <form action={createVendorLogin} className="grid gap-2 md:grid-cols-3">
             <input type="hidden" name="vendorId" value={vendor.id} />
-            <input name="name" required className="input" placeholder="Name" aria-label="Name" />
+            <input name="name" className="input" placeholder="Name (optional)" aria-label="Name" />
             <input
               name="email"
               type="email"
@@ -225,8 +250,7 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
               aria-label="Email"
               defaultValue={vendor.logins.length ? "" : (vendor.email ?? "")}
             />
-            <input name="password" type="password" required minLength={6} autoComplete="new-password" className="input" placeholder="Password (tell them)" aria-label="Password" />
-            <SubmitButton pendingText="Adding…">Add login</SubmitButton>
+            <SubmitButton pendingText="Sending…">Invite to the vendor portal</SubmitButton>
           </form>
         </CardBody>
       </Card>

@@ -1,5 +1,6 @@
 "use server";
 
+import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
@@ -67,7 +68,7 @@ function returnTo(fd: FormData, projectId: string, hash = "", tab: "plans" | "co
 
 // Uploads go through /api/takeoff/plans (one file per request, with progress).
 
-export async function renamePlan(fd: FormData) {
+export const renamePlan = friendly(async function renamePlan(fd: FormData) {
   await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -78,10 +79,10 @@ export async function renamePlan(fd: FormData) {
   await db.takeoffPlan.update({ where: { id }, data: { name } });
   revalidate(project.id);
   redirect(returnTo(fd, project.id));
-}
+});
 
 /** Deletes the plan, every measurement on it, and its file (from Files and from disk). */
-export async function deletePlan(fd: FormData) {
+export const deletePlan = friendly(async function deletePlan(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -93,10 +94,10 @@ export async function deletePlan(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.plan_deleted", description: `Deleted plan "${plan.name}" and its measurements` });
   revalidate(project.id);
   redirect(returnTo(fd, project.id));
-}
+});
 
 /** Shows or hides a plan set (or a plan file in Files → Plans) in the client portal. */
-export async function togglePlanClientVisible(fd: FormData) {
+export const togglePlanClientVisible = friendly(async function togglePlanClientVisible(fd: FormData) {
   await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const planId = str(fd, "planId");
@@ -106,10 +107,10 @@ export async function togglePlanClientVisible(fd: FormData) {
   await db.fileAsset.update({ where: { id: file.id }, data: { clientVisible: !file.clientVisible } });
   revalidate(project.id);
   redirect(returnTo(fd, project.id));
-}
+});
 
 /** A plan PDF (or image) already in Files becomes a plan set you can measure on. */
-export async function planFromFile(fd: FormData) {
+export const planFromFile = friendly(async function planFromFile(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const file = await db.fileAsset.findFirst({ where: { id: str(fd, "fileId"), projectId: project.id }, include: { takeoffPlan: { select: { id: true } } } });
@@ -132,7 +133,7 @@ export async function planFromFile(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.plan_uploaded", description: `Set up "${name}" from Files for takeoff` });
   revalidate(project.id);
   redirect(`${takeoffPath(project.id)}/${plan.id}`);
-}
+});
 
 // --- Conditions -----------------------------------------------------------------
 
@@ -147,7 +148,7 @@ async function nextConditionSort(projectId: string) {
   return (last?.sortOrder ?? -1) + 1;
 }
 
-export async function createCondition(fd: FormData) {
+export const createCondition = friendly(async function createCondition(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const data = await conditionFields(fd);
@@ -181,9 +182,9 @@ export async function createCondition(fd: FormData) {
   revalidate(project.id);
   const back = returnTo(fd, project.id, "", "conditions");
   redirect(`${back}${toolbox ? `${back.includes("?") ? "&" : "?"}toolbox=${encodeURIComponent(toolbox)}` : ""}#condition-${c.id}`);
-}
+});
 
-export async function updateCondition(fd: FormData) {
+export const updateCondition = friendly(async function updateCondition(fd: FormData) {
   await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -221,7 +222,7 @@ export async function updateCondition(fd: FormData) {
   if (hasAutoLines(data.type) || hasAutoLines(existing.type)) await syncAutoItems(project.id, resize ? undefined : id);
   revalidate(project.id);
   redirect(returnTo(fd, project.id, `#condition-${id}`, "conditions"));
-}
+});
 
 /**
  * A copy of a takeoff — every setting and every item under it, but none of the shapes —
@@ -235,7 +236,7 @@ async function copyConditionRow(projectId: string, userId: string, id: string, n
   return copy;
 }
 
-export async function copyCondition(fd: FormData) {
+export const copyCondition = friendly(async function copyCondition(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const copy = await copyConditionRow(project.id, user.id, str(fd, "id"));
@@ -243,7 +244,7 @@ export async function copyCondition(fd: FormData) {
   // Back to the plan with the copy's edit panel open.
   const back = returnTo(fd, project.id);
   redirect(`${back}${back.includes("?") ? "&" : "?"}cond=${copy.id}`);
-}
+});
 
 /**
  * From a shape on the plan: "New takeoff like this…" — a copy of its takeoff (items and all)
@@ -274,7 +275,7 @@ export async function copyConditionForShape(input: { projectId: string; measurem
   return { id: copy.id, from: first.conditionId, moved: shapes.map((m) => ({ id: m.id, from: m.conditionId })) };
 }
 
-export async function deleteCondition(fd: FormData) {
+export const deleteCondition = friendly(async function deleteCondition(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
@@ -284,7 +285,7 @@ export async function deleteCondition(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.condition_deleted", description: `Deleted takeoff "${c.name}"` });
   revalidate(project.id);
   redirect(returnTo(fd, project.id, "", "conditions"));
-}
+});
 
 // --- Assembly items ------------------------------------------------------------
 
@@ -356,7 +357,7 @@ async function priceEverywhere(fd: FormData, data: AssemblyFields & { materialIt
   }
 }
 
-export async function createAssemblyItem(fd: FormData) {
+export const createAssemblyItem = friendly(async function createAssemblyItem(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const conditionId = str(fd, "conditionId");
@@ -367,7 +368,7 @@ export async function createAssemblyItem(fd: FormData) {
   await priceEverywhere(fd, data, user.id, project.id);
   revalidate(project.id);
   redirect(returnTo(fd, project.id, `#condition-${conditionId}`, "conditions"));
-}
+});
 
 async function loadAssemblyItem(projectId: string, id: string) {
   const item = await db.takeoffAssemblyItem.findFirst({ where: { id, condition: { projectId } }, include: { condition: true } });
@@ -375,7 +376,7 @@ async function loadAssemblyItem(projectId: string, id: string) {
   return item;
 }
 
-export async function updateAssemblyItem(fd: FormData) {
+export const updateAssemblyItem = friendly(async function updateAssemblyItem(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const item = await loadAssemblyItem(project.id, str(fd, "id"));
@@ -385,9 +386,9 @@ export async function updateAssemblyItem(fd: FormData) {
   await priceEverywhere(fd, data, user.id, project.id);
   revalidate(project.id);
   redirect(returnTo(fd, project.id, `#condition-${item.conditionId}`, "conditions"));
-}
+});
 
-export async function deleteAssemblyItem(fd: FormData) {
+export const deleteAssemblyItem = friendly(async function deleteAssemblyItem(fd: FormData) {
   await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const item = await loadAssemblyItem(project.id, str(fd, "id"));
@@ -397,12 +398,12 @@ export async function deleteAssemblyItem(fd: FormData) {
   await db.takeoffAssemblyItem.delete({ where: { id: item.id } });
   revalidate(project.id);
   redirect(returnTo(fd, project.id, `#condition-${item.conditionId}`, "conditions"));
-}
+});
 
 // --- Templates ---------------------------------------------------------------------
 
 /** Adds a template's conditions to this job (skipping names it already has). */
-export async function applyTakeoffTemplate(fd: FormData) {
+export const applyTakeoffTemplate = friendly(async function applyTakeoffTemplate(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const templateId = str(fd, "templateId");
@@ -418,7 +419,7 @@ export async function applyTakeoffTemplate(fd: FormData) {
   // Back to the sheet you were on, with a note of what was added.
   const back = returnTo(fd, project.id);
   redirect(`${back}${back.includes("?") ? "&" : "?"}applied=${added.length}&skipped=${skipped.length}`);
-}
+});
 
 /** One takeoff from the Library (your templates) onto this job, ready to measure. */
 export async function pullFromLibrary(input: { projectId: string; templateConditionId: string }) {
@@ -437,7 +438,7 @@ export async function pullFromLibrary(input: { projectId: string; templateCondit
  * Admins: one takeoff (items and all) into the Library — a template you have (refreshing
  * the one by that name if it's there) or a new one.
  */
-export async function saveConditionToLibrary(fd: FormData) {
+export const saveConditionToLibrary = friendly(async function saveConditionToLibrary(fd: FormData) {
   const admin = await requireAdmin();
   const project = await getProject(str(fd, "projectId"));
   const back = returnTo(fd, project.id);
@@ -464,13 +465,13 @@ export async function saveConditionToLibrary(fd: FormData) {
   });
   revalidatePath("/settings/takeoff-templates");
   redirect(`${back}${join}library=${encodeURIComponent(`${r.updated.length ? "Updated" : "Saved"} "${c.name}" in your Library (${t!.name})`)}`);
-}
+});
 
 /**
  * Admins: this job's takeoffs (items and all) into a template — a new one, added to one
  * you have (only the takeoffs it doesn't have yet, or refreshing those too), or replacing one.
  */
-export async function saveTakeoffAsTemplate(fd: FormData) {
+export const saveTakeoffAsTemplate = friendly(async function saveTakeoffAsTemplate(fd: FormData) {
   const admin = await requireAdmin();
   const project = await getProject(str(fd, "projectId"));
   const mode = str(fd, "mode") || (strOrNull(fd, "replaceId") ? "replace" : "new");
@@ -510,7 +511,7 @@ export async function saveTakeoffAsTemplate(fd: FormData) {
   });
   revalidatePath("/settings/takeoff-templates");
   redirect(`/settings/takeoff-templates/${id}`);
-}
+});
 
 // --- Prices ----------------------------------------------------------------------------
 
@@ -534,7 +535,7 @@ function backTo(fd: FormData, projectId: string, fallback: string) {
 const reviewPath = (projectId: string) => `/projects/${projectId}/takeoff/rebid`;
 
 /** Locks this job's prices: the Item List no longer changes it. */
-export async function lockPrices(fd: FormData) {
+export const lockPrices = friendly(async function lockPrices(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   await syncAutoItems(project.id);
@@ -542,10 +543,10 @@ export async function lockPrices(fd: FormData) {
   await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.prices_locked", description: "Prices locked" });
   revalidatePrices(project.id);
   redirect(backTo(fd, project.id, reviewPath(project.id)));
-}
+});
 
 /** Unlocks: the job follows the Item List again and takes today's prices (pinned items keep theirs). */
-export async function unlockPrices(fd: FormData) {
+export const unlockPrices = friendly(async function unlockPrices(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const n = await unlockJobPrices(project.id);
@@ -557,10 +558,10 @@ export async function unlockPrices(fd: FormData) {
   });
   revalidatePrices(project.id);
   redirect(backTo(fd, project.id, reviewPath(project.id)));
-}
+});
 
 /** Price review: the ticked items (or groups) take today's Item List price on this job. */
-export async function updateSelectedPrices(fd: FormData) {
+export const updateSelectedPrices = friendly(async function updateSelectedPrices(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const ids = fd.getAll("item").filter((v): v is string => typeof v === "string" && v.length > 0);
@@ -574,7 +575,7 @@ export async function updateSelectedPrices(fd: FormData) {
     });
   revalidatePrices(project.id);
   redirect(`${reviewPath(project.id)}?updated=${ids.length}`);
-}
+});
 
 /** "This job only": pin (keep this job's price) or unpin (follow the Item List) an item. */
 export async function pinItemPrice(projectId: string, materialItemId: string, pinned: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -1199,7 +1200,7 @@ export async function createDoorItem(input: {
   const costCodeId = data.costCodeId === undefined ? place.costCodeId : data.costCodeId;
   const name = data.name.replace(/\s+/g, " ");
   const nameKey = itemNameKey(name);
-  const existing = await db.materialItem.findUnique({ where: { nameKey }, select: { id: true } });
+  const existing = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } });
   if (existing) throw new Error(`"${name}" is already on the Item List`);
   const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   const item = await db.materialItem.create({
@@ -1278,14 +1279,14 @@ export async function substituteItem(raw: z.input<typeof substituteInput>): Prom
 }
 
 /** Undoes a substitution on this job. */
-export async function swapBackSubstitution(fd: FormData) {
+export const swapBackSubstitution = friendly(async function swapBackSubstitution(fd: FormData) {
   const user = await requireStaff();
   const project = await getProject(str(fd, "projectId"));
   const s = await swapBack(project.id, str(fd, "id"));
   await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.substitution", description: `Swapped back to ${s.fromName} (was ${s.toName})` });
   revalidatePrices(project.id);
   redirect(backTo(fd, project.id, `/projects/${project.id}/materials`));
-}
+});
 
 /** The Item List, to pick a substitute from. */
 export async function substituteChoices() {

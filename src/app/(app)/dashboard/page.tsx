@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { addDays } from "date-fns";
-import { AlertTriangle, CalendarDays, CheckSquare, ClipboardList, FileInput, FolderKanban, LayoutGrid, ShieldAlert, ShieldCheck } from "lucide-react";
+import { AlertTriangle, FileInput, LayoutGrid, ShieldAlert, ShieldCheck } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { contractValue } from "@/lib/projects";
@@ -9,30 +9,67 @@ import { cn, fmtDate, money, timeAgo } from "@/lib/utils";
 import { billTotal, coverageWarning, vendorsCoverage } from "@/lib/purchasing";
 import { ACTIVE, agingRows, canSeeReports, cashFlow, jobRows, sumRows } from "@/lib/reports";
 import { AGING_BUCKETS } from "@/lib/report-math";
-import { availableCards, DASHBOARD_CARDS, pickedCards } from "@/lib/dashboard-cards";
-import { Badge, Button, Card, CardBody, CardHeader, EmptyState, PageHeader, Progress, Stat } from "@/components/ui";
+import { availableCards, dashboardLayout, DASHBOARD_CARDS, layoutKeys } from "@/lib/dashboard-cards";
+import { Badge, Button, EmptyState, PageHeader, Progress } from "@/components/ui";
 import { Signed, pctText } from "../reports/_parts";
 import { completeTodo } from "./actions";
+import { syncLeadStages } from "@/lib/leads";
+import { LEAD_STAGES, OPEN_STAGES, winRate } from "@/lib/leads-math";
 import { CustomizeDashboard } from "./customize";
+import { DashboardBoard } from "./board";
+import { MoreList } from "@/components/more-list";
 
-const SPAN: Record<string, string> = { full: "lg:col-span-3", wide: "lg:col-span-2", narrow: "" };
+/** A compact dashboard card: title, a short note and a link in one line, then its content. */
+function Panel({ title, note, href, link, children }: { title: string; note?: React.ReactNode; href?: string; link?: string; children: React.ReactNode }) {
+  return (
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="border-b border-slate-100 py-2 pl-4 pr-10">
+        <div className="flex items-baseline justify-between gap-2">
+          <h2 className="truncate text-sm font-semibold text-slate-900">{title}</h2>
+          {href ? (
+            <Link href={href} className="shrink-0 text-xs font-medium text-blue-700 hover:underline">
+              {link}
+            </Link>
+          ) : null}
+        </div>
+        {note ? <p className="truncate text-xs text-slate-500">{note}</p> : null}
+      </header>
+      {children}
+    </section>
+  );
+}
 
-const seeAll = (href: string, label: string) => (
-  <Link href={href} className="text-sm font-medium text-blue-700 hover:underline">
-    {label}
-  </Link>
+/** One line when a card has nothing to show. */
+const Quiet = ({ children, good }: { children: React.ReactNode; good?: boolean }) => (
+  <p className={cn("flex items-center gap-2 px-4 py-3 text-sm", good ? "text-emerald-800" : "text-slate-500")}>{children}</p>
 );
 
-export default async function DashboardPage() {
+/** A small number tile for Key numbers. */
+function Tile({ label, value, hint, tone }: { label: string; value: React.ReactNode; hint?: string; tone?: "warn" }) {
+  return (
+    <div className="min-w-0 flex-1 basis-36 rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-sm">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
+      <p className={cn("text-lg font-semibold tabular-nums", tone === "warn" ? "text-amber-600" : "text-slate-900")}>{value}</p>
+      {hint ? <p className="truncate text-xs text-slate-500">{hint}</p> : null}
+    </div>
+  );
+}
+
+const row = "px-4 py-2";
+
+export default async function DashboardPage({ searchParams }: { searchParams: Promise<{ welcome?: string }> }) {
+  // Just signed up (or just joined): a first hello instead of "welcome back".
+  const first = (await searchParams).welcome === "1";
   const user = await requireStaff();
   const reports = canSeeReports(user);
   const me = await db.user.findUnique({ where: { id: user.id }, select: { dashboardCards: true } });
-  const cards = pickedCards(me?.dashboardCards, reports);
+  const layout = dashboardLayout(me?.dashboardCards, reports);
+  const cards = layoutKeys(layout);
   const want = (k: string) => cards.includes(k);
   const now = new Date();
 
   // Only what the picked cards need is loaded.
-  const [cardStats, cardProjects, cardVendors, cardAttention, cardTodos, cardSchedule, cardActivity, cardProfit, cardCash, cardAging] = await Promise.all([
+  const [cardStats, cardProjects, cardVendors, cardAttention, cardTodos, cardSchedule, cardActivity, cardProfit, cardCash, cardAging, cardSales] = await Promise.all([
     want("stats") ? statsData(user.id, now) : null,
     want("projects") ? projectsData() : null,
     want("vendors") ? vendorsData() : null,
@@ -49,159 +86,184 @@ export default async function DashboardPage() {
           where: { startDate: { gte: now, lte: addDays(now, 7) } },
           include: { project: { select: { id: true, name: true } } },
           orderBy: { startDate: "asc" },
-          take: 12,
+          take: 30,
         })
       : null,
     want("activity")
-      ? db.activity.findMany({ include: { user: { select: { name: true } }, project: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 12 })
+      ? db.activity.findMany({ where: { NOT: { type: { startsWith: "security." } } }, include: { user: { select: { name: true } }, project: { select: { id: true, name: true } } }, orderBy: { createdAt: "desc" }, take: 20 })
       : null,
     want("profit") || want("wip") ? jobRows(ACTIVE) : null,
     want("cash") ? cashFlow("week", now) : null,
     want("aging") ? agingRows(now) : null,
+    want("sales") ? salesData(user.id, now) : null,
   ]);
 
   const render: Record<string, () => React.ReactNode> = {
     stats: () => {
       const s = cardStats!;
       return (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-5">
-          <Stat label="Active projects" value={s.activeCount} hint="Contracted, in progress or on hold" />
-          <Stat label="Active contract value" value={money(s.activeContractTotal, true)} hint="Approved estimates + change orders" />
-          <Stat label="Outstanding receivables" value={money(s.receivables, true)} tone={s.receivables > 0 ? "warn" : "default"} hint="Invoiced, not yet paid" />
-          <Stat label="My open to-dos" value={s.myOpen} hint={`${s.myOverdue} overdue`} />
-          <Stat
-            label="Pending client approvals"
+        // Tiles stretch to fill each row, so there's never an empty spot.
+        <div className="flex flex-wrap gap-2 pr-8">
+          <Tile label="Active projects" value={s.activeCount} hint="Contracted, building, on hold" />
+          <Tile label="Contract value" value={money(s.activeContractTotal, true)} hint="Active jobs" />
+          <Tile label="Receivables" value={money(s.receivables, true)} hint="Invoiced, not paid" tone={s.receivables > 0 ? "warn" : undefined} />
+          <Tile label="My to-dos" value={s.myOpen} hint={`${s.myOverdue} overdue`} />
+          <Tile
+            label="Client approvals"
             value={s.pendingSelections + s.pendingCOs}
-            tone={s.pendingSelections + s.pendingCOs > 0 ? "warn" : "default"}
-            hint={`${s.pendingSelections} selections · ${s.pendingCOs} change orders`}
+            hint={`${s.pendingSelections} selections · ${s.pendingCOs} COs`}
+            tone={s.pendingSelections + s.pendingCOs > 0 ? "warn" : undefined}
           />
         </div>
+      );
+    },
+    sales: () => {
+      const s = cardSales!;
+      return (
+        <Panel
+          title="Sales pipeline"
+          note={`${s.open.length} open · ${money(
+            s.open.reduce((n, l) => n + (l.value ?? 0), 0),
+            true,
+          )}`}
+          href="/leads"
+          link="Leads"
+        >
+          <ul className="grid grid-cols-1 gap-x-4 gap-y-1 px-4 py-2 text-sm @sm:grid-cols-2">
+            {LEAD_STAGES.filter((x) => x.key !== "WON").map((x) => (
+              <li key={x.key} className="flex justify-between">
+                <span className="text-slate-600">{x.label}</span>
+                <span className="font-medium tabular-nums">{s.open.filter((l) => l.stage === x.key).length}</span>
+              </li>
+            ))}
+          </ul>
+          <div className="flex justify-between border-t border-slate-100 px-4 py-2 text-sm">
+            <Link href="/leads?view=list&sort=follow" className={cn("hover:underline", s.mineDue ? "font-semibold text-rose-700" : "text-slate-600")}>
+              Follow-ups due: {s.mineDue}
+            </Link>
+            <span className="text-slate-600">
+              Win rate <strong className="text-slate-900">{s.rate == null ? "—" : `${Math.round(s.rate * 100)}%`}</strong>
+            </span>
+          </div>
+        </Panel>
       );
     },
     projects: () => {
       const { activeProjects, contractValues, progressMap } = cardProjects!;
       return (
-        <Card>
-          <CardHeader title="Active projects" description={`${activeProjects.length} in flight`} actions={seeAll("/projects", "All projects")} />
+        <Panel title="Active projects" note={`${activeProjects.length} in flight`} href="/projects" link="All projects">
           {activeProjects.length === 0 ? (
-            <CardBody>
-              <EmptyState icon={FolderKanban} title="No active projects" description="Projects show here once they are contracted." />
-            </CardBody>
+            <Quiet>No active projects — they show here once contracted.</Quiet>
           ) : (
-            <ul className="divide-y divide-slate-100">
-              {activeProjects.map((p, i) => {
+            <MoreList
+              items={activeProjects.map((p, i) => {
                 const progress = progressMap.get(p.id) ?? 0;
                 return (
-                  <li key={p.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+                  <li key={p.id} className={cn(row, "flex items-center gap-3")}>
                     <div className="min-w-0 flex-1">
                       <Link href={`/projects/${p.id}`} className="block truncate text-sm font-medium text-slate-900 hover:text-blue-700">
                         <span className="text-slate-400">#{p.number}</span> {p.name}
                       </Link>
                       <p className="truncate text-xs text-slate-500">
-                        {p.client ? `${p.client.firstName} ${p.client.lastName}` : "No client"} · {money(contractValues[i], true)}
+                        {p.client ? `${p.client.firstName} ${p.client.lastName}` : p.isSpec ? "Spec home" : "No client"} · {money(contractValues[i], true)}
                       </p>
                     </div>
-                    <Badge status={p.status} />
-                    <div className="w-32">
-                      <div className="mb-1 flex justify-between text-[11px] text-slate-500">
-                        <span>Schedule</span>
-                        <span className="tabular-nums">{progress}%</span>
-                      </div>
+                    <div className="w-20 shrink-0">
+                      <p className="mb-0.5 text-right text-[11px] tabular-nums text-slate-500">{progress}%</p>
                       <Progress value={progress} />
                     </div>
                   </li>
                 );
               })}
-            </ul>
+            />
           )}
-        </Card>
+        </Panel>
       );
     },
     vendors: () => {
       const { insuranceWarnings, billsWaiting } = cardVendors!;
+      const items = [
+        ...(billsWaiting.length
+          ? [
+              <li key="bills" className={row}>
+                <Link href="/bills" className="flex items-center gap-2 text-sm font-medium text-slate-900 hover:text-blue-700">
+                  <FileInput className="h-4 w-4 shrink-0 text-amber-600" />
+                  {billsWaiting.length} bill{billsWaiting.length === 1 ? "" : "s"} to approve ·{" "}
+                  {money(
+                    billsWaiting.reduce((n, b) => n + billTotal(b.lines), 0),
+                    true,
+                  )}
+                </Link>
+              </li>,
+            ]
+          : []),
+        ...insuranceWarnings.map((w) => (
+          <li key={w.vendor.id} className={row}>
+            <Link href={`/settings/vendors/${w.vendor.id}`} className="flex items-start gap-2 text-sm hover:text-blue-700">
+              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+              <span className="min-w-0">
+                <span className="font-medium text-slate-900">{w.vendor.name}</span>
+                <span className="block truncate text-xs text-slate-600">{w.text}</span>
+              </span>
+            </Link>
+          </li>
+        )),
+      ];
       return (
-        <Card>
-          <CardHeader title="Subs & vendors" description="Bills to approve and insurance running out" />
-          {!insuranceWarnings.length && !billsWaiting.length ? (
-            <CardBody>
-              <p className="flex items-center gap-2 text-sm text-emerald-800">
-                <ShieldCheck className="h-4 w-4" /> All clear — no bills waiting, insurance up to date.
-              </p>
-            </CardBody>
+        <Panel title="Subs & vendors">
+          {items.length ? (
+            <MoreList items={items} />
           ) : (
-            <ul className="divide-y divide-slate-100 text-sm">
-              {billsWaiting.length ? (
-                <li className="px-5 py-2.5">
-                  <Link href="/bills" className="flex items-center gap-2 font-medium text-slate-900 hover:text-blue-700">
-                    <FileInput className="h-4 w-4 text-amber-600" />
-                    {billsWaiting.length} bill{billsWaiting.length === 1 ? "" : "s"} waiting for approval · {money(billsWaiting.reduce((n, b) => n + billTotal(b.lines), 0))}
-                  </Link>
-                </li>
-              ) : null}
-              {insuranceWarnings.map((w) => (
-                <li key={w.vendor.id} className="px-5 py-2.5">
-                  <Link href={`/settings/vendors/${w.vendor.id}`} className="flex items-start gap-2 hover:text-blue-700">
-                    <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-                    <span>
-                      <span className="font-medium text-slate-900">{w.vendor.name}</span>
-                      <span className="block text-xs text-slate-600">{w.text}</span>
-                    </span>
-                  </Link>
-                </li>
-              ))}
-            </ul>
+            <Quiet good>
+              <ShieldCheck className="h-4 w-4" /> All clear — no bills waiting, insurance up to date.
+            </Quiet>
           )}
-        </Card>
+        </Panel>
       );
     },
     attention: () => (
-      <Card>
-        <CardHeader title="Needs attention" description="Overdue selections, pending change orders, late to-dos and past-due invoices" />
+      <Panel title="Needs attention" note={cardAttention!.length ? `${cardAttention!.length}` : undefined}>
         {cardAttention!.length === 0 ? (
-          <CardBody>
-            <EmptyState icon={AlertTriangle} title="All clear" description="Nothing is overdue or waiting on a decision." />
-          </CardBody>
+          <Quiet good>All clear — nothing overdue or waiting on a decision.</Quiet>
         ) : (
-          <ul className="divide-y divide-slate-100">
-            {cardAttention!.map((a) => (
+          <MoreList
+            items={cardAttention!.map((a) => (
               <li key={a.key}>
-                <Link href={a.href} className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50">
+                <Link href={a.href} className={cn(row, "flex items-center gap-2 hover:bg-slate-50")}>
                   <AlertTriangle className="h-4 w-4 shrink-0 text-amber-500" />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-slate-900">{a.label}</p>
-                    <p className="truncate text-xs text-slate-500">{a.detail}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {a.tone} · {a.detail}
+                    </p>
                   </div>
-                  <Badge>{a.tone}</Badge>
-                  <span className="w-24 text-right text-xs text-slate-500">{a.date ? fmtDate(a.date) : "—"}</span>
+                  <span className="shrink-0 text-xs text-slate-500">{a.date ? fmtDate(a.date, "MMM d") : ""}</span>
                 </Link>
               </li>
             ))}
-          </ul>
+          />
         )}
-      </Card>
+      </Panel>
     ),
     todos: () => {
       const todos = cardTodos!;
       return (
-        <Card>
-          <CardHeader title="My to-dos" description={`${todos.length} open`} actions={seeAll("/todos", "All to-dos")} />
+        <Panel title="My to-dos" note={`${todos.length} open`} href="/todos" link="All to-dos">
           {todos.length === 0 ? (
-            <CardBody>
-              <EmptyState icon={CheckSquare} title="You're all caught up" />
-            </CardBody>
+            <Quiet good>You&apos;re all caught up.</Quiet>
           ) : (
-            <ul className="divide-y divide-slate-100">
-              {todos.slice(0, 8).map((t) => {
+            <MoreList
+              items={todos.map((t) => {
                 const overdue = t.dueDate ? t.dueDate < now : false;
                 return (
-                  <li key={t.id} className="flex items-start gap-3 px-5 py-2.5">
+                  <li key={t.id} className={cn(row, "flex items-start gap-2.5")}>
                     <form action={completeTodo} className="pt-0.5">
                       <input type="hidden" name="id" value={t.id} />
                       <Button
                         type="submit"
                         variant="ghost"
                         size="sm"
-                        className="h-6 w-6 rounded-full border border-slate-300 p-0 hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700"
+                        className="h-5 w-5 rounded-full border border-slate-300 p-0 hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-700"
                         title="Mark complete"
                         aria-label={`Complete ${t.title}`}
                       >
@@ -209,9 +271,13 @@ export default async function DashboardPage() {
                       </Button>
                     </form>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm text-slate-900">{t.title}</p>
-                      <p className="text-xs text-slate-500">
-                        {t.project ? (
+                      <p className="truncate text-sm text-slate-900">{t.title}</p>
+                      <p className="truncate text-xs text-slate-500">
+                        {t.leadId ? (
+                          <Link href={`/leads/${t.leadId}`} className="hover:underline">
+                            Lead
+                          </Link>
+                        ) : t.project ? (
                           <Link href={`/projects/${t.project.id}/todos`} className="hover:underline">
                             {t.project.name}
                           </Link>
@@ -225,56 +291,46 @@ export default async function DashboardPage() {
                   </li>
                 );
               })}
-            </ul>
+            />
           )}
-        </Card>
+        </Panel>
       );
     },
     schedule: () => (
-      <Card>
-        <CardHeader title="Upcoming schedule" description="Tasks starting in the next 7 days" actions={seeAll("/schedule", "Look-ahead")} />
+      <Panel title="Upcoming schedule" note="Next 7 days" href="/schedule" link="Look-ahead">
         {cardSchedule!.length === 0 ? (
-          <CardBody>
-            <EmptyState icon={CalendarDays} title="Nothing starting this week" />
-          </CardBody>
+          <Quiet>Nothing starting this week.</Quiet>
         ) : (
-          <ul className="divide-y divide-slate-100">
-            {cardSchedule!.map((t) => (
+          <MoreList
+            items={cardSchedule!.map((t) => (
               <li key={t.id}>
-                <Link href={`/projects/${t.projectId}/schedule`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50">
+                <Link href={`/projects/${t.projectId}/schedule`} className={cn(row, "flex items-center gap-2.5 hover:bg-slate-50")}>
                   <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm text-slate-900">
                       {t.name}
-                      {t.isMilestone ? <span className="ml-2 text-xs text-violet-700">Milestone</span> : null}
+                      {t.isMilestone ? <span className="ml-1.5 text-xs text-violet-700">Milestone</span> : null}
                     </p>
-                    <p className="truncate text-xs text-slate-500">
-                      {t.project.name} · {t.phase}
-                    </p>
+                    <p className="truncate text-xs text-slate-500">{t.project.name}</p>
                   </div>
-                  <span className="text-xs text-slate-600 tabular-nums">
-                    {fmtDate(t.startDate, "MMM d")} – {fmtDate(t.endDate, "MMM d")}
-                  </span>
+                  <span className="shrink-0 text-xs tabular-nums text-slate-600">{fmtDate(t.startDate, "MMM d")}</span>
                 </Link>
               </li>
             ))}
-          </ul>
+          />
         )}
-      </Card>
+      </Panel>
     ),
     activity: () => (
-      <Card>
-        <CardHeader title="Recent activity" />
+      <Panel title="Recent activity">
         {cardActivity!.length === 0 ? (
-          <CardBody>
-            <EmptyState icon={ClipboardList} title="No activity yet" />
-          </CardBody>
+          <Quiet>No activity yet.</Quiet>
         ) : (
-          <ul className="divide-y divide-slate-100">
-            {cardActivity!.map((a) => (
-              <li key={a.id} className="px-5 py-2.5">
-                <p className="text-sm text-slate-900">{a.description}</p>
-                <p className="mt-0.5 text-xs text-slate-500">
+          <MoreList
+            items={cardActivity!.map((a) => (
+              <li key={a.id} className={row}>
+                <p className="line-clamp-2 text-sm text-slate-900">{a.description}</p>
+                <p className="truncate text-xs text-slate-500">
                   {a.user?.name ?? "System"}
                   {a.project ? (
                     <>
@@ -289,57 +345,35 @@ export default async function DashboardPage() {
                 </p>
               </li>
             ))}
-          </ul>
+          />
         )}
-      </Card>
+      </Panel>
     ),
     profit: () => {
       const rows = cardProfit!;
       const t = sumRows(rows);
       return (
-        <Card>
-          <CardHeader
-            title="Job profit"
-            description={`Active jobs heading for ${money(t.projectedProfit, true)} (${pctText(t.projectedMargin)})`}
-            actions={seeAll("/reports", "Report")}
-          />
+        <Panel title="Job profit" note={`Heading for ${money(t.projectedProfit, true)} (${pctText(t.projectedMargin)})`} href="/reports" link="Report">
           {rows.length === 0 ? (
-            <CardBody>
-              <p className="text-sm text-slate-500">No active jobs.</p>
-            </CardBody>
+            <Quiet>No active jobs.</Quiet>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-5 py-2 font-medium">Job</th>
-                    <th className="hidden px-3 py-2 text-right font-medium xl:table-cell">Contract</th>
-                    <th className="px-3 py-2 text-right font-medium">Heading for</th>
-                    <th className="px-5 py-2 text-right font-medium">vs. bid</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {rows.map((r) => (
-                    <tr key={r.id}>
-                      <td className="max-w-[12rem] truncate px-5 py-2">
-                        <Link href={`/projects/${r.id}/budget`} className="font-medium text-slate-900 hover:text-blue-700">
-                          {r.name}
-                        </Link>
-                      </td>
-                      <td className="hidden px-3 py-2 text-right tabular-nums xl:table-cell">{money(r.contract, true)}</td>
-                      <td className="whitespace-nowrap px-3 py-2 text-right">
-                        <Signed value={r.projectedProfit} /> <span className="text-xs text-slate-500">{pctText(r.projectedMargin)}</span>
-                      </td>
-                      <td className="whitespace-nowrap px-5 py-2 text-right">
-                        {r.fade < -0.5 ? <Signed value={r.fade} className="font-semibold" /> : <span className="text-xs text-emerald-700">on bid</span>}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <MoreList
+              items={rows.map((r) => (
+                <li key={r.id} className={cn(row, "flex items-center gap-2 text-sm")}>
+                  <Link href={`/projects/${r.id}/budget`} className="min-w-0 flex-1 truncate font-medium text-slate-900 hover:text-blue-700">
+                    {r.name}
+                  </Link>
+                  <span className="shrink-0 whitespace-nowrap text-right">
+                    <Signed value={r.projectedProfit} /> <span className="text-xs text-slate-500">{pctText(r.projectedMargin)}</span>
+                  </span>
+                  <span className="w-20 shrink-0 text-right text-xs">
+                    {r.fade < -0.5 ? <Signed value={r.fade} className="font-semibold" /> : <span className="text-emerald-700">on bid</span>}
+                  </span>
+                </li>
+              ))}
+            />
           )}
-        </Card>
+        </Panel>
       );
     },
     wip: () => {
@@ -347,36 +381,34 @@ export default async function DashboardPage() {
       const t = sumRows(rows);
       const under = rows.filter((r) => r.overUnder < -0.5).sort((a, b) => a.overUnder - b.overUnder);
       return (
-        <Card>
-          <CardHeader title="Over / under billing" actions={seeAll("/reports/wip", "WIP")} />
-          <CardBody className="space-y-3">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <div>
-                <p className="text-xs text-slate-500">Over-billed</p>
-                <p className="text-lg font-semibold tabular-nums text-amber-700">{money(t.overBilled, true)}</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-500">Under-billed</p>
-                <p className="text-lg font-semibold tabular-nums text-rose-700">{money(Math.abs(t.underBilled), true)}</p>
-              </div>
+        <Panel title="Over / under billing" href="/reports/wip" link="WIP">
+          <div className="grid grid-cols-2 gap-3 px-4 py-2 text-sm">
+            <div>
+              <p className="text-xs text-slate-500">Over-billed</p>
+              <p className="font-semibold tabular-nums text-amber-700">{money(t.overBilled, true)}</p>
             </div>
-            {under.length ? (
-              <ul className="space-y-1 text-sm">
-                {under.slice(0, 4).map((r) => (
-                  <li key={r.id} className="flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate">{r.name}</span>
-                    <span className="tabular-nums text-rose-700">{money(-r.overUnder, true)}</span>
-                    <Link href={`/projects/${r.id}/invoices/new`} className="text-xs font-medium text-blue-700 hover:underline">
-                      Bill it
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="text-sm text-slate-500">No job is behind on billing.</p>
-            )}
-          </CardBody>
-        </Card>
+            <div>
+              <p className="text-xs text-slate-500">Under-billed</p>
+              <p className="font-semibold tabular-nums text-rose-700">{money(Math.abs(t.underBilled), true)}</p>
+            </div>
+          </div>
+          {under.length ? (
+            <MoreList
+              className="border-t border-slate-100"
+              items={under.map((r) => (
+                <li key={r.id} className={cn(row, "flex items-center gap-2 text-sm")}>
+                  <span className="min-w-0 flex-1 truncate">{r.name}</span>
+                  <span className="tabular-nums text-rose-700">{money(-r.overUnder, true)}</span>
+                  <Link href={`/projects/${r.id}/invoices/new`} className="text-xs font-medium text-blue-700 hover:underline">
+                    Bill it
+                  </Link>
+                </li>
+              ))}
+            />
+          ) : (
+            <Quiet>No job is behind on billing.</Quiet>
+          )}
+        </Panel>
       );
     },
     cash: () => {
@@ -385,9 +417,8 @@ export default async function DashboardPage() {
       const out = ahead.reduce((n, r) => n + r.out + r.expectedOut, 0);
       const scale = Math.max(1, inn, out);
       return (
-        <Card>
-          <CardHeader title="Cash next 30 days" description="This week and the next four" actions={seeAll("/reports/cash-flow?by=week", "Cash flow")} />
-          <CardBody className="space-y-3 text-sm">
+        <Panel title="Cash next 30 days" href="/reports/cash-flow?by=week" link="Cash flow">
+          <div className="space-y-2 px-4 py-2 text-sm">
             {[
               { label: "Coming in", value: inn, bar: "bg-emerald-500" },
               { label: "Going out", value: out, bar: "bg-rose-500" },
@@ -397,66 +428,57 @@ export default async function DashboardPage() {
                   <span className="text-slate-600">{x.label}</span>
                   <span className="font-medium tabular-nums">{money(x.value, true)}</span>
                 </div>
-                <div className="mt-1 h-2 overflow-hidden rounded bg-slate-100">
+                <div className="mt-0.5 h-1.5 overflow-hidden rounded bg-slate-100">
                   <div className={cn("h-full", x.bar)} style={{ width: `${(x.value / scale) * 100}%` }} />
                 </div>
               </div>
             ))}
-            <p className="flex justify-between border-t border-slate-100 pt-2 font-semibold">
+            <p className="flex justify-between border-t border-slate-100 pt-1.5 font-semibold">
               <span>Net</span>
               <Signed value={inn - out} />
             </p>
-          </CardBody>
-        </Card>
+          </div>
+        </Panel>
       );
     },
     aging: () => {
       const rows = cardAging!;
       const total = rows.reduce((n, r) => n + r.balance, 0);
       return (
-        <Card>
-          <CardHeader
-            title="What clients owe"
-            description={`${money(total, true)} on ${rows.length} invoice${rows.length === 1 ? "" : "s"}`}
-            actions={seeAll("/reports/aging", "Aging")}
-          />
-          <CardBody>
-            <ul className="space-y-1.5 text-sm">
-              {AGING_BUCKETS.map((b) => {
-                const v = rows.filter((r) => r.bucket === b.key).reduce((n, r) => n + r.balance, 0);
-                return (
-                  <li key={b.key} className="flex justify-between">
-                    <span className="text-slate-600">{b.label}</span>
-                    <span className={cn("tabular-nums", v > 0.5 && b.key !== "current" && (b.key === "d30" ? "text-amber-700" : "font-semibold text-rose-700"))}>
-                      {money(v, true)}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
-          </CardBody>
-        </Card>
+        <Panel title="What clients owe" note={`${money(total, true)} · ${rows.length} invoice${rows.length === 1 ? "" : "s"}`} href="/reports/aging" link="Aging">
+          <ul className="space-y-1 px-4 py-2 text-sm">
+            {AGING_BUCKETS.map((b) => {
+              const v = rows.filter((r) => r.bucket === b.key).reduce((n, r) => n + r.balance, 0);
+              return (
+                <li key={b.key} className="flex justify-between">
+                  <span className="text-slate-600">{b.label}</span>
+                  <span className={cn("tabular-nums", v > 0.5 && b.key !== "current" && (b.key === "d30" ? "text-amber-700" : "font-semibold text-rose-700"))}>
+                    {money(v, true)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
       );
     },
   };
 
+  const nodes = Object.fromEntries(cards.filter((k) => render[k]).map((k) => [k, render[k]()]));
+  const titles = Object.fromEntries(DASHBOARD_CARDS.map((c) => [c.key, c.title]));
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <PageHeader
         title="Dashboard"
-        description={`Welcome back, ${user.name.split(" ")[0]}. Here's what's happening across your jobs.`}
+        description={first ? `Welcome to The Builder Station, ${user.name.split(" ")[0]}! Start with Projects → New project, or invite your team in Settings → Team.` : `Welcome back, ${user.name.split(" ")[0]}. Drag a card by its grip to move it.`}
         actions={<CustomizeDashboard cards={availableCards(reports)} picked={cards} />}
       />
       {cards.length === 0 ? (
         <EmptyState icon={LayoutGrid} title="Your dashboard is empty" description="Use Customize to pick the cards you want." />
       ) : (
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-flow-dense lg:grid-cols-3">
-          {cards.map((k) => (
-            <div key={k} className={SPAN[DASHBOARD_CARDS.find((c) => c.key === k)?.size ?? "narrow"]}>
-              {render[k]?.()}
-            </div>
-          ))}
-        </div>
+        // Keyed by the saved layout: after Customize (or Reset) it redraws from what's saved.
+        <DashboardBoard key={JSON.stringify(layout)} layout={layout} cards={nodes} titles={titles} />
       )}
     </div>
   );
@@ -558,4 +580,16 @@ async function attentionData(now: Date) {
     }),
   ];
   return list.sort((a, b) => (a.date?.getTime() ?? 0) - (b.date?.getTime() ?? 0));
+}
+
+async function salesData(userId: string, now: Date) {
+  await syncLeadStages();
+  const yearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+  const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+  const [leads, mineDue] = await Promise.all([
+    db.lead.findMany({ select: { stage: true, value: true, wonAt: true, lostAt: true } }),
+    db.todo.count({ where: { leadId: { not: null }, assigneeId: userId, status: { not: "DONE" }, dueDate: { lte: endOfToday } } }),
+  ]);
+  const decided = leads.filter((l) => (l.stage === "WON" && l.wonAt && l.wonAt >= yearAgo) || (l.stage === "LOST" && l.lostAt && l.lostAt >= yearAgo));
+  return { open: leads.filter((l) => OPEN_STAGES.includes(l.stage)), mineDue, rate: winRate(decided).rate };
 }

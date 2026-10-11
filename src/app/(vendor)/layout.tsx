@@ -30,6 +30,9 @@ export default async function VendorLayout({ children }: { children: React.React
               <Avatar name={user.name} />
               <p className="hidden max-w-[200px] truncate text-sm font-medium text-slate-900 sm:block">{user.name}</p>
             </div>
+            <a href="/account" className="rounded-md px-2 py-2 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-800" title="Password and sign-in">
+              Account
+            </a>
             <form action="/logout" method="post">
               <button type="submit" className="flex items-center gap-1.5 rounded-md px-2 py-2 text-sm text-slate-500 hover:bg-slate-100 hover:text-slate-800" title="Sign out">
                 <LogOut className="h-4 w-4" />
