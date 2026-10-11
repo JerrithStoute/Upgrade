@@ -48,7 +48,7 @@ export async function readTwoStep(): Promise<Pending | null> {
 }
 
 export async function clearTwoStep() {
-  (await cookies()).delete(PENDING);
+  (await cookies()).set(PENDING, "", { httpOnly: true, sameSite: "lax", secure, path: "/", maxAge: 0 });
 }
 
 /** Does this browser skip the code for `userId` ("remember this computer")? */

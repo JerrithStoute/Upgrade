@@ -80,3 +80,10 @@ test("every download address checks who is signed in", () => {
   const missing = routes.filter((r) => !PUBLIC_ROUTES.has(r.file) && r.file !== "logout/route.ts" && !GUARD.test(r.body));
   assert.deepEqual(missing.map((r) => r.file), []);
 });
+
+test("no redirect is built from the request's own address", () => {
+  // Online the program sees requests at the host's internal address (localhost:10000);
+  // a redirect built from it sends people somewhere their browser can't reach.
+  const bad = files(APP, (f) => /\.tsx?$/.test(f)).filter((p) => /redirect\([^)]*new URL\([^)]*\b(req|request)\.url/.test(read(p)));
+  assert.deepEqual(bad.map(rel), []);
+});

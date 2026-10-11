@@ -75,8 +75,10 @@ export async function createSession(userId: string) {
 }
 
 export async function destroySession() {
+  // Removed with the same settings it was made with: online the browser ignores a removal of
+  // this cookie that isn't marked secure — the old sign-in would linger and loop.
   const store = await cookies();
-  store.delete(SESSION_COOKIE);
+  store.set(SESSION_COOKIE, "", { httpOnly: true, sameSite: "lax", secure: process.env.NODE_ENV === "production", path: "/", maxAge: 0 });
 }
 
 /** Ends every sign-in this person has, everywhere (password changed, deactivated, "sign out everywhere"). */

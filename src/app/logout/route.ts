@@ -1,12 +1,17 @@
-import { NextResponse } from "next/server";
 import { destroySession } from "@/lib/auth";
 
-export async function POST(req: Request) {
-  await destroySession();
-  return NextResponse.redirect(new URL("/login", req.url), { status: 303 });
+// Back to the sign-in page by its path alone: online, the address the program sees for a
+// request is the host's internal one (localhost:10000), not app.thebuilderstation.com.
+function toSignIn() {
+  return new Response(null, { status: 303, headers: { Location: "/login" } });
 }
 
-export async function GET(req: Request) {
+export async function POST() {
   await destroySession();
-  return NextResponse.redirect(new URL("/login", req.url), { status: 303 });
+  return toSignIn();
+}
+
+export async function GET() {
+  await destroySession();
+  return toSignIn();
 }
