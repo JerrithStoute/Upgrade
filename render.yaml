@@ -7,7 +7,7 @@ services:
     type: web
     runtime: node
     region: ohio
-    plan: 0.5c-512mb # raise to 1c-2g in Render if it runs short of memory
+    plan: 1c-2g # 1 processor, 2 GB (upgraded from 0.5c-512mb: pages were slow)
     buildCommand: npm ci --include=dev && npm run build
     # Database changes and the company-separation rules, before the new version starts.
     preDeployCommand: node scripts/online.mjs npm run db:deploy
@@ -60,7 +60,7 @@ services:
 
 databases:
   - name: builderstation-db
-    plan: 0.1c-256mb
+    plan: 0.5c-1g # 0.5 processor, 1 GB (upgraded from 0.1c-256mb: every page waited on it)
     region: ohio
     postgresMajorVersion: "17"
     databaseName: builderstation

@@ -13,6 +13,19 @@ import { boolField, money, str, strOrNull } from "@/lib/utils";
 import { resolveMaterialItem } from "@/lib/material-items";
 import { syncAutoItems } from "@/lib/walls";
 import { copyTakeoff, placeBySpan, resizeFamily, resizeSheet } from "@/lib/span-sizing";
+import { refreshLater } from "@/lib/takeoff-background";
+
+/** Sheets whose span-table joists need sizing again because these walls / beams changed. */
+const supportSheets = (rows: { type: string; sheetId: string }[]) => [...new Set(rows.filter((r) => r.type === "WALL" || r.type === "BEAM").map((r) => r.sheetId))];
+
+/**
+ * After drawing changes: the job's lumber lines and joists held up by changed walls follow in
+ * the background (takeoff-background.ts), so the save is answered right away.
+ */
+async function followUp(projectId: string, rows: { type: string; sheetId: string }[], sized = false) {
+  const sheets = supportSheets(rows);
+  if (sized || sheets.length || rows.some((r) => hasAutoLines(r.type))) await refreshLater(projectId, sheets);
+}
 
 /** Walls and beams hold joists up: when they change, span-table joists on those sheets are sized again. */
 async function supportsChanged(projectId: string, rows: { type: string; sheetId: string }[]) {
@@ -836,10 +849,9 @@ export async function createMeasurement(input: {
       height: c.type === "LINEAR" ? (data.height ?? null) : null,
     },
   });
-  if (hasAutoLines(c.type)) await syncAutoItems(data.projectId, c.id);
-  // Joists/rafters on a span table: filed under the size its span calls for.
-  const placed = c.spanTableId ? await placeBySpan(data.projectId, m.id) : null;
-  await supportsChanged(data.projectId, [{ type: c.type, sheetId: data.sheetId }]);
+  // Joists/rafters on a span table: filed under the size its span calls for (right away — it's on screen).
+  const placed = c.spanTableId ? await placeBySpan(data.projectId, m.id, { sync: false }) : null;
+  await followUp(data.projectId, [{ type: c.type, sheetId: data.sheetId }], !!placed);
   revalidate(data.projectId);
   return { id: m.id, isDeduction: m.isDeduction, conditionId: placed?.conditionId ?? c.id, sizedAs: placed?.size ?? null, sizeNote: placed?.pick?.reason ?? null };
 }
@@ -906,11 +918,11 @@ export async function updateMeasurement(input: {
       sizeLocked: data.sizeLocked !== undefined ? data.sizeLocked : toAuto ? false : conditionId && m.condition.spanTableId ? true : undefined,
     },
   });
-  if (hasAutoLines(m.condition.type)) await syncAutoItems(data.projectId);
   // Reshaped, turned, or back on Auto: the span may call for another size.
   let placed = null;
-  if ((m.condition.spanTableId && (data.points || data.angle !== undefined || data.sizeLocked === false)) || toAuto) placed = await placeBySpan(data.projectId, m.id);
-  if (data.points || data.conditionId) await supportsChanged(data.projectId, [{ type: m.condition.type, sheetId: m.sheetId }]);
+  if ((m.condition.spanTableId && (data.points || data.angle !== undefined || data.sizeLocked === false)) || toAuto) placed = await placeBySpan(data.projectId, m.id, { sync: false });
+  // Moved to another takeoff (a size picked by hand): both takeoffs' lumber lines change.
+  await followUp(data.projectId, data.points || data.conditionId ? [{ type: m.condition.type, sheetId: m.sheetId }] : [], !!placed || !!data.conditionId || hasAutoLines(m.condition.type));
   revalidate(data.projectId);
   return { ok: true, conditionId: placed?.conditionId ?? conditionId ?? m.conditionId, sizeNote: placed?.pick?.reason ?? null };
 }
@@ -921,8 +933,7 @@ export async function deleteMeasurement(input: { projectId: string; id: string }
   const m = await db.takeoffMeasurement.findFirst({ where: { id, sheet: { plan: { projectId } } }, include: { condition: { select: { type: true } } } });
   if (!m) throw new Error("Measurement not found");
   await db.takeoffMeasurement.delete({ where: { id } });
-  if (hasAutoLines(m.condition.type)) await syncAutoItems(projectId, m.conditionId);
-  await supportsChanged(projectId, [{ type: m.condition.type, sheetId: m.sheetId }]);
+  await followUp(projectId, [{ type: m.condition.type, sheetId: m.sheetId }]);
   revalidate(projectId);
 }
 
@@ -967,7 +978,7 @@ export async function createCountMarkers(input: {
       }),
     ),
   );
-  if (hasAutoLines(c.type)) await syncAutoItems(data.projectId, c.id);
+  await followUp(data.projectId, [...new Set(data.markers.map((m) => m.sheetId))].map((sheetId) => ({ type: c.type, sheetId })));
   revalidate(data.projectId);
   return { ids: created.map((m) => m.id) };
 }
@@ -981,11 +992,10 @@ export async function deleteMeasurements(input: { projectId: string; ids: string
     select: { id: true, conditionId: true, sheetId: true, condition: { select: { type: true } } },
   });
   await db.takeoffMeasurement.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
-  await supportsChanged(
+  await followUp(
     projectId,
     rows.map((r) => ({ type: r.condition.type, sheetId: r.sheetId })),
   );
-  for (const conditionId of new Set(rows.filter((r) => hasAutoLines(r.condition.type)).map((r) => r.conditionId))) await syncAutoItems(projectId, conditionId);
   revalidate(projectId);
 }
 
@@ -1018,8 +1028,7 @@ export async function deleteConditionShapes(input: { projectId: string; conditio
   });
   if (!rows.length) return [];
   await db.takeoffMeasurement.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
-  if (hasAutoLines(c.type)) await syncAutoItems(data.projectId, c.id);
-  await supportsChanged(
+  await followUp(
     data.projectId,
     rows.map((r) => ({ type: c.type, sheetId: r.sheetId })),
   );
@@ -1123,11 +1132,13 @@ export async function createShapes(input: {
       });
     }),
   );
-  for (const c of conds.values()) if (hasAutoLines(c.type)) await syncAutoItems(data.projectId, c.id);
-  for (let i = 0; i < created.length; i++) if (conds.get(data.shapes[i].conditionId)!.spanTableId) await placeBySpan(data.projectId, created[i].id);
-  await supportsChanged(
+  let sized = false;
+  for (let i = 0; i < created.length; i++)
+    if (conds.get(data.shapes[i].conditionId)!.spanTableId) sized = !!(await placeBySpan(data.projectId, created[i].id, { sync: false })) || sized;
+  await followUp(
     data.projectId,
     data.shapes.map((x) => ({ type: conds.get(x.conditionId)!.type, sheetId: x.sheetId })),
+    sized,
   );
   revalidate(data.projectId);
   return { ids: created.map((m) => m.id) };
@@ -1197,11 +1208,11 @@ export async function restoreShapes(input: {
       ids.push(m.id);
     }
   });
-  await syncAutoItems(data.projectId);
   const types = await db.takeoffCondition.findMany({ where: { id: { in: [...conds] } }, select: { id: true, type: true } });
-  await supportsChanged(
+  await followUp(
     data.projectId,
     data.shapes.map((x) => ({ type: types.find((t) => t.id === x.conditionId)?.type ?? "", sheetId: x.sheetId })),
+    true,
   );
   revalidate(data.projectId);
   return { ids };

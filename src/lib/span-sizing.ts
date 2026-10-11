@@ -109,7 +109,7 @@ export type SpanPlacement = { conditionId: string; size: string | null; pick: Si
  * "Floor Joists 2x10"), each made (a copy, items and all) the first time it's needed. A shape
  * you sized yourself (sizeLocked) stays where it is. Returns where it went.
  */
-export async function placeBySpan(projectId: string, measurementId: string): Promise<SpanPlacement | null> {
+export async function placeBySpan(projectId: string, measurementId: string, opts: { sync?: boolean } = {}): Promise<SpanPlacement | null> {
   const m = await db.takeoffMeasurement.findFirst({
     where: { id: measurementId, sheet: { plan: { projectId } } },
     include: { sheet: { select: { unitsPerFoot: true } }, condition: { include: { spanTable: true, memberSizeRef: { select: { widthIn: true } } } } },
@@ -161,17 +161,20 @@ export async function placeBySpan(projectId: string, measurementId: string): Pro
     });
     have.add(itemNameKey(name));
   }
-  await syncAutoItems(projectId);
+  // The job's lumber lines follow — unless the caller does that once for many shapes.
+  if (opts.sync !== false) await syncAutoItems(projectId);
   return { conditionId: target.id, size: pick.size, pick, spanFt };
 }
 
 /** Walls or beams on a sheet changed: the span-table joists/rafters on it are sized again. */
-export async function resizeSheet(projectId: string, sheetId: string) {
+export async function resizeSheet(projectId: string, sheetId: string, opts: { sync?: boolean } = {}) {
   const shapes = await db.takeoffMeasurement.findMany({
     where: { sheetId, sizeLocked: false, isDeduction: false, condition: { projectId, type: "FRAMING", spanTableId: { not: null } } },
     select: { id: true },
   });
-  for (const s of shapes) await placeBySpan(projectId, s.id);
+  // Each sized without redoing the job's lumber lines; that's done once at the end.
+  for (const s of shapes) await placeBySpan(projectId, s.id, { sync: false });
+  if (shapes.length && opts.sync !== false) await syncAutoItems(projectId);
   return shapes.length;
 }
 
@@ -212,8 +215,9 @@ export async function resizeFamily(projectId: string, conditionId: string) {
   });
   let moved = 0;
   for (const s of shapes) {
-    const p = await placeBySpan(projectId, s.id);
+    const p = await placeBySpan(projectId, s.id, { sync: false });
     if (p && p.conditionId !== s.conditionId) moved++;
   }
+  if (shapes.length) await syncAutoItems(projectId);
   return moved;
 }

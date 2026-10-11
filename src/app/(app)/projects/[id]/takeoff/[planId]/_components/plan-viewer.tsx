@@ -505,7 +505,37 @@ export function PlanViewer({
   const editHref = (conditionId: string) => `${viewerHref}&cond=${conditionId}`;
   const scrollRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const [, startTransition] = useTransition();
+  const [saving, startTransition] = useTransition();
+  // After saves: the server finishes the job's lumber lines and joist sizes in the background;
+  // "Saving…" stays up until that's done, then the plan refreshes with the results.
+  const [catchingUp, setCatchingUp] = useState(false);
+  const wasSaving = useRef(false);
+  const settleRound = useRef(0);
+  // Before the screen is drawn, so the tag goes straight from "Saving…" to "Updating totals…".
+  useLayoutEffect(() => {
+    if (saving) {
+      wasSaving.current = true;
+      return;
+    }
+    if (!wasSaving.current) return;
+    wasSaving.current = false;
+    const round = ++settleRound.current;
+    setCatchingUp(true);
+    fetch(`/api/takeoff/settled?project=${encodeURIComponent(projectId)}`, { cache: "no-store" })
+      .catch(() => {})
+      .finally(() => {
+        if (round !== settleRound.current) return;
+        router.refresh();
+        setCatchingUp(false);
+      });
+  }, [saving, projectId, router]);
+  // Leaving while a save is still on its way would lose it: the browser asks first.
+  useEffect(() => {
+    if (!saving) return;
+    const stay = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", stay);
+    return () => window.removeEventListener("beforeunload", stay);
+  }, [saving]);
 
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [zoom, setZoom] = useState(1);
@@ -2986,6 +3016,17 @@ export function PlanViewer({
           </ToolButton>
         </div>
       </div>
+
+      {/* Saving: floats over the corner, so nothing on the page moves when it comes and goes. */}
+      {saving || catchingUp ? (
+        <div
+          role="status"
+          className="no-print pointer-events-none fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-slate-900/85 px-3 py-1.5 text-xs font-medium text-white shadow-lg"
+        >
+          <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
+          {saving ? "Saving…" : "Updating totals…"}
+        </div>
+      ) : null}
 
       {/* Hint / status bar */}
       <div className="flex min-h-8 flex-wrap items-center gap-3 border-b border-slate-100 bg-slate-50 px-3 py-1.5 text-xs text-slate-600">
