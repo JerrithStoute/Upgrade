@@ -12,7 +12,7 @@ import {
   type BoardPattern,
   type MetricKey,
 } from "./takeoff";
-import { syncAutoItems } from "./walls";
+import { syncAutoItemsIfChanged } from "./walls";
 
 export type MaterialLine = {
   key: string;
@@ -71,7 +71,7 @@ type Acc = Omit<MaterialLine, "quantity" | "unitCost" | "extended" | "usedIn" | 
  */
 export async function buildMaterialList(projectId: string, planId?: string | null, opts: { synced?: boolean } = {}) {
   // `synced`: the caller just brought the job's lumber lines up to date (don't do it twice).
-  if (!opts.synced) await syncAutoItems(projectId);
+  if (!opts.synced) await syncAutoItemsIfChanged(projectId);
   return materialListFrom(await loadConditions(projectId), planId);
 }
 

@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from "async_hooks";
 import { Prisma, PrismaClient } from "@prisma/client";
 import { currentCompanyId } from "./tenant";
 import { countQuery } from "./request-stats";
+import { changesLumber, workingOut } from "./lumber-state";
 
 /**
  * The database, one company at a time.
@@ -115,7 +116,10 @@ const scoped = appDb.$extends({
         // Counted for the speed alarm (request-stats.ts).
         const t = performance.now();
         try {
-          return await gatekeep(params);
+          const result = await gatekeep(params);
+          // Something the jobs' lumber lines are worked out from changed (lumber-state.ts).
+          if (changesLumber(params.model, params.operation) && !workingOut()) await lumberChanged();
+          return result;
         } finally {
           countQuery(performance.now() - t);
         }
@@ -123,6 +127,11 @@ const scoped = appDb.$extends({
     },
   },
 });
+
+/** The company's jobs: their lumber lines need working out again (after the change, never before it). */
+async function lumberChanged() {
+  await systemDb.project.updateMany({ where: { companyId: await currentCompanyId() }, data: { lumberChangedAt: new Date() } });
+}
 
 /** Every company query: scoped to the current company, and tagged with it when written. */
 async function gatekeep({ model, operation, args, query }: { model: string; operation: string; args: unknown; query: (args: unknown) => Prisma.PrismaPromise<unknown> }) {

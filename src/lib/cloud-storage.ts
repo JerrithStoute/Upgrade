@@ -32,7 +32,6 @@ function aws() {
     secretAccessKey: process.env.S3_SECRET_ACCESS_KEY!,
     service: "s3",
     region: process.env.S3_REGION || "auto",
-    retries: 3,
   });
   return client;
 }
@@ -40,9 +39,22 @@ function aws() {
 const bucketUrl = () => `${process.env.S3_ENDPOINT!.replace(/\/+$/, "")}/${encodeURIComponent(process.env.S3_BUCKET!)}`;
 const objectUrl = (key: string) => `${bucketUrl()}/${key.split("/").map(encodeURIComponent).join("/")}`;
 
+/**
+ * The plain fetch. While handling a request, Next.js puts its own fetch in place, and that one
+ * re-sends a signed upload as a stream of unknown length — which R2 refuses ("411
+ * MissingContentLength"). Uploads go out with the original, which states the size.
+ */
+const plainFetch: typeof fetch = (input, init) => ((globalThis.fetch as typeof fetch & { _nextOriginalFetch?: typeof fetch })._nextOriginalFetch ?? globalThis.fetch)(input, init);
+
 async function call(url: string, init: RequestInit & { headers?: Record<string, string> } = {}) {
-  const res = await aws().fetch(url, init);
-  return res;
+  for (let attempt = 0; ; attempt++) {
+    const signed = await aws().sign(url, init);
+    // Sent as the bytes themselves (not the signed Request's stream), so the size goes with it.
+    const res = await plainFetch(signed.url, { method: signed.method, headers: signed.headers, body: init.body ?? undefined });
+    // Busy or a hiccup at Cloudflare's end: try again shortly (a few times).
+    if ((res.status < 500 && res.status !== 429) || attempt >= 3) return res;
+    await new Promise((r) => setTimeout(r, 200 * 2 ** attempt));
+  }
 }
 
 async function fail(res: Response, what: string): Promise<never> {

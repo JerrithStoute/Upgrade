@@ -202,6 +202,11 @@ model Project {
   // Prices locked on this job (set when an estimate is marked sent, or by hand): the Item
   // List no longer changes it. null = the job follows the Item List (except pinned items).
   pricesLockedAt    DateTime?
+  // The job's lumber & material lines: when something they're worked out from last changed, and
+  // when they were last worked out. Opening the estimate or material list redoes them only if
+  // they changed since (src/lib/lumber-state.ts). Null = unknown: worked out again.
+  lumberChangedAt   DateTime?
+  lumberSyncedAt    DateTime?
   // "Pull from JT&I's inventory before ordering?" — YES / NO once answered (null = not asked yet).
   inventoryAnswer   String?
   // A spec house: built to sell, no client (Spec homes, the job's Spec sale tab).

@@ -627,8 +627,9 @@ export async function refreshDraftFromTakeoff(projectId: string, estimateId: str
   if (!est || est.status !== "DRAFT" || est.lockedAt) return null;
   // A draft without the takeoff on it yet picks it up too — once the job has a takeoff.
   if (!est.items.length && !(await db.takeoffCondition.count({ where: { projectId } }))) return null;
-  const { syncAutoItems } = await import("./walls");
-  await syncAutoItems(projectId);
+  // The job's lumber lines: worked out again only if something they come from changed.
+  const { syncAutoItemsIfChanged } = await import("./walls");
+  await syncAutoItemsIfChanged(projectId);
   return syncTakeoffToEstimate(projectId, estimateId);
 }
 

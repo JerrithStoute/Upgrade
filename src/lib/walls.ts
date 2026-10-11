@@ -1,5 +1,6 @@
 import "server-only";
-import { db } from "./db";
+import { db, systemDb } from "./db";
+import { lumberUpToDate, whileWorkingOut } from "./lumber-state";
 import { newItemPlacement } from "./item-codes";
 import { kindOfLegacyCategory } from "./code-groups";
 import { conditionTotals, loadConditions } from "./takeoff-data";
@@ -113,13 +114,34 @@ const running = new Map<string, Promise<void>>();
 
 export async function syncAutoItems(projectId: string, conditionId?: string) {
   const before = running.get(projectId) ?? Promise.resolve();
-  const mine = before.catch(() => {}).then(() => syncAutoItemsNow(projectId, conditionId));
+  const mine = before
+    .catch(() => {})
+    .then(async () => {
+      // When it started: a change made while it runs still counts as a change afterwards.
+      const started = new Date();
+      await whileWorkingOut(() => syncAutoItemsNow(projectId, conditionId));
+      if (!conditionId) await systemDb.project.updateMany({ where: { id: projectId }, data: { lumberSyncedAt: started } });
+    });
   running.set(projectId, mine);
   try {
     await mine;
   } finally {
     if (running.get(projectId) === mine) running.delete(projectId);
   }
+}
+
+/**
+ * Pages that show the lines (estimate, material list, bids): worked out again only when something
+ * they come from changed since they last were (lumber-state.ts). Returns whether it ran.
+ */
+export async function syncAutoItemsIfChanged(projectId: string) {
+  const p = await systemDb.project.findUnique({ where: { id: projectId }, select: { lumberChangedAt: true, lumberSyncedAt: true } });
+  if (p && lumberUpToDate(p.lumberChangedAt, p.lumberSyncedAt)) {
+    await running.get(projectId)?.catch(() => {}); // one already on its way: let it finish
+    return false;
+  }
+  await syncAutoItems(projectId);
+  return true;
 }
 
 async function syncAutoItemsNow(projectId: string, conditionId?: string) {

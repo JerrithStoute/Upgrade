@@ -108,6 +108,11 @@ export async function replaceCompany(client: pg.Client | pg.PoolClient, companyI
       );
       if (bad.rowCount) throw new Error(`${l.tbl} links to a ${l.ref} of another company — nothing was changed`);
     }
+    // Lines are worked out again after this (lumber-state.ts): the restored dates can't be trusted.
+    if (tables.includes("Project")) {
+      const cols = (await client.query(`SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'Project' AND column_name = 'lumberSyncedAt'`)).rowCount;
+      if (cols) await client.query(`UPDATE "Project" SET "lumberSyncedAt" = NULL WHERE "companyId" = $1`, [companyId]);
+    }
     for (const t of tables) {
       const n = Number((await client.query(`SELECT count(*) n FROM ${q(t)} WHERE ${t === "Company" ? '"id"' : '"companyId"'} = $1`, [companyId])).rows[0].n);
       if (n !== copied[t]) throw new Error(`${t}: expected ${copied[t]} rows, found ${n}`);
