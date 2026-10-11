@@ -23,11 +23,14 @@ import { currentCompanyId } from "./tenant";
 const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient; appPrisma?: PrismaClient };
 const log: Prisma.LogLevel[] = process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"];
 
-export const systemDb =
-  globalForPrisma.prisma ?? new PrismaClient({ log, datasources: { db: { url: process.env.SYSTEM_DATABASE_URL ?? process.env.DATABASE_URL } } });
+// Only named when it's set: while the program is being built online there's no database
+// address yet, and Prisma refuses an empty one outright (it's only needed once it runs).
+const at = (url: string | undefined): Prisma.PrismaClientOptions => ({ log, ...(url ? { datasources: { db: { url } } } : {}) });
+
+export const systemDb = globalForPrisma.prisma ?? new PrismaClient(at(process.env.SYSTEM_DATABASE_URL ?? process.env.DATABASE_URL));
 
 /** The app's own database login — the database limits it to one company per query. */
-const appDb = globalForPrisma.appPrisma ?? new PrismaClient({ log, datasources: { db: { url: process.env.DATABASE_URL } } });
+const appDb = globalForPrisma.appPrisma ?? new PrismaClient(at(process.env.DATABASE_URL));
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = systemDb;
