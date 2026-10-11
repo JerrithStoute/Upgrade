@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
 import { brandCss } from "@/lib/brand";
 import { getBrand } from "@/lib/company-brand";
+import { Suspense } from "react";
 import { ActionErrorToast } from "@/components/action-error-toast";
+import { NavigationProgress } from "@/components/navigation-progress";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -23,6 +25,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-full flex flex-col">
         {children}
         <ActionErrorToast />
+        <Suspense fallback={null}>
+          <NavigationProgress />
+        </Suspense>
       </body>
     </html>
   );
