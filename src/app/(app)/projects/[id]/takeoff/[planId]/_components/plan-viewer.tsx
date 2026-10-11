@@ -92,6 +92,7 @@ import {
   createCountMarkers,
   deleteMeasurements,
   createMeasurement,
+  createShapes,
   deleteMeasurement,
   initPlanPages,
   quickCreateCondition,
@@ -291,6 +292,8 @@ type HistoryEntry =
   | { kind: "createMany"; ids: string[]; conditionId: string; markers: { sheetId: string; x: number; y: number }[]; materialItemId: string | null; cased: boolean | null }
   // Many shapes deleted (drag-selected, a cleared takeoff) or changed at once, undone together.
   | { kind: "deleteMany"; label: string; ids: string[]; data: ShapeData[] }
+  // Many shapes added at once (Find walls), undone together.
+  | { kind: "addMany"; label: string; ids: string[]; data: ShapeData[] }
   | { kind: "updateMany"; label: string; changes: { id: string; before: ShapePatch; after: ShapePatch }[] };
 
 // Totals / Material list panel: which view is open ("" = closed), remembered per browser.
@@ -1116,29 +1119,46 @@ export function PlanViewer({
   };
 
   // --- Saving ---------------------------------------------------------------------------
+  /** What a new shape drawn on this sheet with `cond` is saved as. */
+  const shapeFor = (cond: ViewerCondition, sheetId: string, points: Pt[], framingAngle?: number, arcs: number[] = []): ShapeData => ({
+    sheetId,
+    conditionId: cond.id,
+    points,
+    arcs,
+    isDeduction: deduct && (cond.type === "AREA" || cond.type === "LINEAR"),
+    angle: cond.type === "FRAMING" ? (framingAngle ?? firstEdgeAngle(points)) : 0,
+    pitch: hasShapePitch(cond.type) && nextPitch.forId === cond.id ? pitchOrNull(nextPitch.p1) : null,
+    pitch2: cond.type === "HIP_VALLEY" && nextPitch.forId === cond.id ? pitchOrNull(nextPitch.p2) : null,
+    height: cond.type === "LINEAR" ? heightOrNull(nextHeight[cond.id]) : null,
+    materialItemId: isUnitType(cond.type) ? (doorPick[cond.id] ?? null) : null,
+    cased: cond.type === "WINDOW" ? (casedPick[cond.id] ?? true) : null,
+  });
+
+  /** Saves many new shapes in one trip (shown right away), undone together. */
+  const createMany = (list: ShapeData[], label: string) => {
+    if (!list.length) return;
+    const temps = list.map((d) => ({ ...d, id: `pending-${Math.random().toString(36).slice(2)}`, pending: true }));
+    setPending((p) => [...p, ...temps]);
+    startTransition(async () => {
+      try {
+        const { ids } = await createShapes({ projectId, shapes: list });
+        const real = new Map(temps.map((t, i) => [t.id, ids[i]]));
+        setPending((p) => p.map((m) => (real.has(m.id) ? { ...m, id: real.get(m.id)!, pending: false } : m)));
+        record({ kind: "addMany", label, ids, data: list });
+      } catch (e) {
+        const gone = new Set(temps.map((t) => t.id));
+        setPending((p) => p.filter((m) => !gone.has(m.id)));
+        setError(e instanceof Error ? e.message : "Could not save the shapes");
+      }
+    });
+  };
+
   const save = useCallback(
     (cond: ViewerCondition, points: Pt[], framingAngle?: number, arcs: number[] = []) => {
       if (!sheet) return;
-      const isDeduction = deduct && (cond.type === "AREA" || cond.type === "LINEAR");
-      const angle = cond.type === "FRAMING" ? (framingAngle ?? firstEdgeAngle(points)) : 0;
-      const pitch = hasShapePitch(cond.type) && nextPitch.forId === cond.id ? pitchOrNull(nextPitch.p1) : null;
-      const pitch2 = cond.type === "HIP_VALLEY" && nextPitch.forId === cond.id ? pitchOrNull(nextPitch.p2) : null;
-      const height = cond.type === "LINEAR" ? heightOrNull(nextHeight[cond.id]) : null;
-      createShape({
-        sheetId: sheet.id,
-        conditionId: cond.id,
-        points,
-        arcs,
-        isDeduction,
-        angle,
-        pitch,
-        pitch2,
-        height,
-        materialItemId: isUnitType(cond.type) ? (doorPick[cond.id] ?? null) : null,
-        cased: cond.type === "WINDOW" ? (casedPick[cond.id] ?? true) : null,
-      });
+      createShape(shapeFor(cond, sheet.id, points, framingAngle, arcs));
     },
-    // createShape is recreated each render; save only needs its latest version.
+    // createShape / shapeFor are recreated each render; save only needs their latest versions.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [deduct, projectId, sheet, nextPitch, nextHeight, doorPick, casedPick],
   );
@@ -1492,6 +1512,16 @@ export function PlanViewer({
           }
           (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
           setFlash(`${direction === "undo" ? "Undid" : "Redid"} an auto-count (${entry.ids.length})`);
+          return;
+        }
+        if (entry.kind === "addMany") {
+          if (direction === "undo") await deleteMeasurements({ projectId, ids: entry.ids.map(resolveId) });
+          else {
+            const { ids } = await createShapes({ projectId, shapes: entry.data });
+            entry.ids.forEach((old, i) => idMap.current.set(resolveId(old), ids[i]));
+          }
+          (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
+          setFlash(`${direction === "undo" ? "Undid" : "Redid"} ${entry.label}`);
           return;
         }
         if (entry.kind === "deleteMany") {
@@ -3962,7 +3992,7 @@ export function PlanViewer({
                 if (!wallFind) return;
                 // Each wall saved on its own, like a wall you traced (undo, materials, estimate all as usual).
                 const keep = wallFind.runs.filter((_, i) => !wallFind.off.includes(i));
-                for (const run of keep) save(active, run);
+                if (sheet) createMany(keep.map((run) => shapeFor(active, sheet.id, run)), `adding ${keep.length} walls`);
                 setFlash(`Added ${keep.length} wall${keep.length === 1 ? "" : "s"}`);
                 setWallFind(null);
               }}

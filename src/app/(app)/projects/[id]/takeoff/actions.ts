@@ -1046,6 +1046,93 @@ export async function deleteConditionShapes(input: { projectId: string; conditio
   }));
 }
 
+/**
+ * Many new shapes in one trip (Find walls → Add): the same rules as createMeasurement, but
+ * saved together and the follow-up work (wall material lines, joists sized again) done once
+ * instead of once per shape. Online that's one round trip instead of one per wall.
+ * Returns the new ids, in order.
+ */
+export async function createShapes(input: {
+  projectId: string;
+  shapes: {
+    sheetId: string;
+    conditionId: string;
+    points: [number, number][];
+    arcs?: number[];
+    isDeduction?: boolean;
+    angle?: number;
+    pitch?: number | null;
+    pitch2?: number | null;
+    height?: number | null;
+    materialItemId?: string | null;
+    cased?: boolean | null;
+  }[];
+}) {
+  await requireStaff();
+  const data = z
+    .object({
+      projectId: z.string(),
+      shapes: z
+        .array(
+          z.object({
+            sheetId: z.string(),
+            conditionId: z.string(),
+            points: z.array(ptSchema).min(1).max(5000),
+            arcs: arcsSchema,
+            isDeduction: z.boolean().optional(),
+            angle: z.number().finite().optional(),
+            pitch: z.number().finite().min(0).max(48).nullable().optional(),
+            pitch2: z.number().finite().min(0).max(48).nullable().optional(),
+            height: z.number().finite().min(0).max(200).nullable().optional(),
+            materialItemId: z.string().nullable().optional(),
+            cased: z.boolean().nullable().optional(),
+          }),
+        )
+        .min(1)
+        .max(2000),
+    })
+    .parse(input);
+  const sheetIds = [...new Set(data.shapes.map((x) => x.sheetId))];
+  for (const id of sheetIds) await viewerSheet(data.projectId, id);
+  await assertMeasurable(sheetIds);
+  const conds = new Map<string, Awaited<ReturnType<typeof loadCondition>>>();
+  for (const id of new Set(data.shapes.map((x) => x.conditionId))) conds.set(id, await loadCondition(data.projectId, id));
+  for (const x of data.shapes) if (x.points.length < minPointsFor(conds.get(x.conditionId)!.type)) throw new Error("Not enough points for one of the shapes");
+  const items = new Map<string, string | null>();
+  for (const x of data.shapes) {
+    const c = conds.get(x.conditionId)!;
+    if ((c.type === "DOOR" || c.type === "WINDOW") && !items.has(x.materialItemId ?? "")) items.set(x.materialItemId ?? "", await doorItemId(x.materialItemId));
+  }
+  const created = await db.$transaction(
+    data.shapes.map((x) => {
+      const c = conds.get(x.conditionId)!;
+      return db.takeoffMeasurement.create({
+        data: {
+          sheetId: x.sheetId,
+          conditionId: c.id,
+          points: pointsJson(x.points, x.arcs),
+          materialItemId: c.type === "DOOR" || c.type === "WINDOW" ? (items.get(x.materialItemId ?? "") ?? null) : null,
+          cased: c.type === "WINDOW" ? (x.cased ?? null) : null,
+          isDeduction: c.type === "AREA" || c.type === "LINEAR" ? !!x.isDeduction : false,
+          angle: x.angle ?? 0,
+          pitch: hasShapePitch(c.type) ? (x.pitch ?? null) : null,
+          pitch2: c.type === "HIP_VALLEY" ? (x.pitch2 ?? null) : null,
+          height: c.type === "LINEAR" ? (x.height ?? null) : null,
+        },
+        select: { id: true },
+      });
+    }),
+  );
+  for (const c of conds.values()) if (hasAutoLines(c.type)) await syncAutoItems(data.projectId, c.id);
+  for (let i = 0; i < created.length; i++) if (conds.get(data.shapes[i].conditionId)!.spanTableId) await placeBySpan(data.projectId, created[i].id);
+  await supportsChanged(
+    data.projectId,
+    data.shapes.map((x) => ({ type: conds.get(x.conditionId)!.type, sheetId: x.sheetId })),
+  );
+  revalidate(data.projectId);
+  return { ids: created.map((m) => m.id) };
+}
+
 /** Undo of a delete of many shapes (drag-selected, or a cleared takeoff): all put back at once. Returns their new ids, in order. */
 export async function restoreShapes(input: {
   projectId: string;
