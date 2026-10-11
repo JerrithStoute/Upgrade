@@ -614,7 +614,9 @@ export function PlanViewer({
     points: Pt[];
     moved: boolean;
   } | null>(null);
-  const [overrides, setOverrides] = useState<Map<string, { points: Pt[]; arcs?: number[] }>>(new Map());
+  // A shape being moved: shown where it was moved to until the plan's refreshed shapes include the move
+  // (`over` is the shape it was saved over; a newer one from the server means the move has arrived).
+  const [overrides, setOverrides] = useState<Map<string, { points: Pt[]; arcs?: number[]; over?: ViewerMeasurement }>>(new Map());
   // Undo / redo for this sheet. Re-created shapes get new ids; idMap follows them.
   const history = useRef<{ undo: HistoryEntry[]; redo: HistoryEntry[] }>({
     undo: [],
@@ -708,15 +710,37 @@ export function PlanViewer({
   const nextCard = !!active && tool === "measure" && !editor && (hasShapePitch(active.type) || active.type === "LINEAR");
   const unitsPerFoot = sheet?.unitsPerFoot ?? null;
 
+  // Online, each save takes a trip to the server, and the plan's refreshed shapes arrive a little
+  // later (after every save in a batch). Until they include a change, the change stays on screen
+  // here: new shapes in `pending` (with their saved id once saved), deleted ones in `removing`,
+  // moved ones in `overrides`. Dropping them sooner made shapes blink out and back.
+  const latest = useRef(measurements);
+  latest.current = measurements;
+  useEffect(() => {
+    const ids = new Set(measurements.map((m) => m.id));
+    setPending((p) => (p.some((m) => !m.pending && ids.has(m.id)) ? p.filter((m) => m.pending || !ids.has(m.id)) : p));
+    setRemoving((r) => ([...r].some((id) => !ids.has(id)) ? new Set([...r].filter((id) => ids.has(id))) : r));
+    setOverrides((o) => {
+      const done = [...o].filter(([id, v]) => v.over && measurements.find((m) => m.id === id) !== v.over).map(([id]) => id);
+      if (!done.length) return o;
+      const n = new Map(o);
+      for (const id of done) n.delete(id);
+      return n;
+    });
+  }, [measurements]);
+
   const shapes = useMemo(
     () =>
-      [...measurements.filter((m) => !removing.has(m.id)), ...pending].map((m) => {
+      [
+        ...measurements.filter((m) => !removing.has(m.id)),
+        ...pending.filter((m) => (m as { sheetId?: string }).sheetId === sheet?.id && !removing.has(m.id) && !measurements.some((x) => x.id === m.id)),
+      ].map((m) => {
         // Show a shape where it's being dragged to, or where it was just moved while saving.
         if (drag?.id === m.id) return { ...m, points: drag.points };
         const moved = overrides.get(m.id);
         return moved ? { ...m, points: moved.points, arcs: moved.arcs ?? m.arcs } : m;
       }),
-    [measurements, pending, removing, drag, overrides],
+    [measurements, pending, removing, drag, overrides, sheet?.id],
   );
   const selected = shapes.find((m) => m.id === selectedId) ?? null;
 
@@ -764,6 +788,7 @@ export function PlanViewer({
       try {
         const { id } = await quickCreateCondition({ projectId, name, type: newCondType });
         pickTakeoff(id);
+        router.refresh();
         // Walls and openings need their options set: open the new condition's settings.
         if (["WALL", "OPENING", "DOOR", "WINDOW"].includes(newCondType)) router.push(editHref(id), { scroll: false });
       } catch (err) {
@@ -1079,13 +1104,13 @@ export function PlanViewer({
     startTransition(async () => {
       try {
         const r = await createMeasurement({ projectId, ...data });
+        setPending((p) => p.map((m) => (m.id === tempId ? { ...m, id: r.id, conditionId: r.conditionId ?? m.conditionId, pending: false } : m)));
         if (track) record({ kind: "create", id: r.id, data });
         // Joists/rafters on a span table: say which size it got (and why).
         if (r.sizeNote) setFlash(`${r.sizedAs ? `Sized ${r.sizedAs}` : "No size for this span"} — ${r.sizeNote}`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not save the measurement");
-      } finally {
         setPending((p) => p.filter((m) => m.id !== tempId));
+        setError(e instanceof Error ? e.message : "Could not save the measurement");
       }
     });
   };
@@ -1150,15 +1175,16 @@ export function PlanViewer({
       startTransition(async () => {
         try {
           await deleteMeasurement({ projectId, id });
+          // Saved but not refreshed in yet: forget the on-screen copy.
+          setPending((p) => p.filter((m) => m.id !== id));
           if (data) record({ kind: "delete", id, data });
         } catch (e) {
-          setError(e instanceof Error ? e.message : "Could not delete the measurement");
-        } finally {
           setRemoving((s) => {
             const n = new Set(s);
             n.delete(id);
             return n;
           });
+          setError(e instanceof Error ? e.message : "Could not delete the measurement");
         }
       });
     },
@@ -1189,17 +1215,28 @@ export function PlanViewer({
     startTransition(async () => {
       try {
         const r = await updateMeasurement({ projectId, id, ...patch });
+        if (patch.points) {
+          const over = latest.current.find((m) => m.id === id);
+          setOverrides((o) => {
+            const cur = o.get(id);
+            if (!cur || !over) {
+              const n = new Map(o);
+              n.delete(id);
+              return n;
+            }
+            return new Map(o).set(id, { ...cur, over });
+          });
+        }
         record({ kind: "update", id, before: prev, after: patch });
         if (r.sizeNote && r.conditionId !== shape?.conditionId) setFlash(`Sized again — ${r.sizeNote}`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not update the measurement");
-      } finally {
         if (patch.points)
           setOverrides((o) => {
             const n = new Map(o);
             n.delete(id);
             return n;
           });
+        setError(e instanceof Error ? e.message : "Could not update the measurement");
       }
     });
   };
@@ -1216,12 +1253,12 @@ export function PlanViewer({
     startTransition(async () => {
       try {
         await deleteMeasurements({ projectId, ids: gone });
+        setPending((p) => p.filter((m) => !gone.includes(m.id)));
         record({ kind: "deleteMany", label: `deleting ${gone.length} shapes`, ids: gone, data });
         setFlash(`Deleted ${gone.length} shapes — Ctrl+Z brings them back`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not delete the shapes");
-      } finally {
         setRemoving((s) => new Set([...s].filter((x) => !gone.includes(x))));
+        setError(e instanceof Error ? e.message : "Could not delete the shapes");
       }
     });
   };
@@ -1252,9 +1289,14 @@ export function PlanViewer({
     setClearing(false);
     setSelectedId(null);
     setMulti([]);
+    const here = shapes.filter((m) => m.conditionId === c.id && !m.pending).map((m) => m.id);
+    setRemoving((s) => new Set([...s, ...here]));
     startTransition(async () => {
       try {
         const rows = await deleteConditionShapes({ projectId, conditionId: c.id, sheetId: everySheet ? null : (sheet?.id ?? null) });
+        const gone = rows.map((r) => r.id);
+        setPending((p) => p.filter((m) => !gone.includes(m.id)));
+        router.refresh();
         if (!rows.length) return setFlash(`${c.name} has nothing to clear`);
         record({
           kind: "deleteMany",
@@ -1276,6 +1318,7 @@ export function PlanViewer({
         });
         setFlash(`Cleared ${rows.length} measurement${rows.length === 1 ? "" : "s"} from ${c.name} — Ctrl+Z brings them back`);
       } catch (e) {
+        setRemoving((s) => new Set([...s].filter((x) => !here.includes(x))));
         setError(e instanceof Error ? e.message : "Could not clear the takeoff");
       }
     });
