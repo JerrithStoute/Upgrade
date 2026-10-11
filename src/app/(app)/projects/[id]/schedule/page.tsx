@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { GripVertical, Play, Plus, List, GanttChartSquare, ChevronRight, ChevronsRight, CheckCircle2, CloudRain, LayoutTemplate, Bell, Settings2 } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { LogOut, Bell } from "lucide-react";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";

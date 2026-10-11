@@ -4,7 +4,7 @@ import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { ClientViewButton } from "./_components/client-view-button";
-import Link from "next/link";
+import Link from "@/components/link";
 import { ChevronRight, Pencil } from "lucide-react";
 import { ProjectHeaderSwitch } from "@/components/layout/topbar-slot";
 import { StickyJobHead } from "@/components/layout/sticky-job-head";

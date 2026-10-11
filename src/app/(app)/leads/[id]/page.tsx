@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { Bell, Briefcase, CalendarClock, Mail, MapPin, MessageSquare, Phone, StickyNote, Users } from "lucide-react";
 import { requireStaff } from "@/lib/auth";

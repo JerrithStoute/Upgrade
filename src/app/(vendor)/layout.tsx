@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { LogOut } from "lucide-react";
 import { BrandMark } from "@/components/brand-mark";
 import { getBrand } from "@/lib/company-brand";

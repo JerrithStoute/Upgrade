@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { TrendingDown } from "lucide-react";
 import { ACTIVE, SOLD, jobRows, sumRows } from "@/lib/reports";
 import { cn, money, titleCase } from "@/lib/utils";

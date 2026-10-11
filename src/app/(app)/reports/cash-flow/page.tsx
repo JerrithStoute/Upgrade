@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { cashFlow } from "@/lib/reports";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { Button, Stat } from "@/components/ui";

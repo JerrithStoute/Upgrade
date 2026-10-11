@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { cookies } from "next/headers";
 import { Plus, Search } from "lucide-react";
 import { requireStaff } from "@/lib/auth";

@@ -87,3 +87,11 @@ test("no redirect is built from the request's own address", () => {
   const bad = files(APP, (f) => /\.tsx?$/.test(f)).filter((p) => /redirect\([^)]*new URL\([^)]*\b(req|request)\.url/.test(read(p)));
   assert.deepEqual(bad.map(rel), []);
 });
+
+test("links don't load pages in the background (use @/components/link)", () => {
+  // Every page is built fresh per company: background loading ("prefetch") of each link on a
+  // screen swamped the server and made real clicks wait. The program's own Link turns it off.
+  const src = join(process.cwd(), "src");
+  const bad = files(src, (f) => /\.tsx?$/.test(f) && f !== "link.tsx").filter((p) => /from "next\/link"/.test(read(p)));
+  assert.deepEqual(bad.map((p) => relative(src, p).split(sep).join("/")), []);
+});

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { Printer } from "lucide-react";
 import { requireVendor } from "@/lib/auth";

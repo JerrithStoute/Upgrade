@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/link";
 import { Plus, Trash2 } from "lucide-react";
 import { Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { SPAN_LOADS, SPAN_USES, SPECIES, codeSizes, codeSpanFt, type SpanUse } from "@/lib/span-tables";

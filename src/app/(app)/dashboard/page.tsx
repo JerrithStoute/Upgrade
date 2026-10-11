@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { addDays } from "date-fns";
 import { AlertTriangle, FileInput, LayoutGrid, ShieldAlert, ShieldCheck } from "lucide-react";
 import { requireStaff } from "@/lib/auth";

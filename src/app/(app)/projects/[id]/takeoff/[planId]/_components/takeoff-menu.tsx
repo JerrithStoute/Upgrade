@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/link";
 import { Calculator, ClipboardList, FolderOpen, LayoutTemplate, MoreHorizontal, RefreshCw, Save, X } from "lucide-react";
 import { SubmitButton } from "@/components/ui";
 import { cn } from "@/lib/utils";

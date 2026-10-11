@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { ArrowRight, CalendarDays, FolderKanban, MapPin, Phone, Mail, ClipboardCheck } from "lucide-react";
 import { requireClient } from "@/lib/auth";
 import { changeOrderTotals } from "@/lib/change-orders";

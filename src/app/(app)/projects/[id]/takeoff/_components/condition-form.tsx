@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useSyncExternalStore } from "react";
-import Link from "next/link";
+import Link from "@/components/link";
 import { Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { cn, costCodeLabel, money, num } from "@/lib/utils";
 import {

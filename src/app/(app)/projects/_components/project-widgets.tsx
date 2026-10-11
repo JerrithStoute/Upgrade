@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
+import Link from "@/components/link";
 import { ChevronDown, GripVertical, Hammer, Home, KeyRound, List, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PROJECTS_COOKIE } from "@/lib/projects-view";

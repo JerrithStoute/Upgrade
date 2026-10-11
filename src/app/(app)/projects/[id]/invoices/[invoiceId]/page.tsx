@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil, Printer } from "lucide-react";
 import { requireStaff } from "@/lib/auth";

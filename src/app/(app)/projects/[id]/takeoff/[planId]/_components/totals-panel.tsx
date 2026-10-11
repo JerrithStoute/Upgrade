@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/link";
 import { ChevronRight, ExternalLink, X } from "lucide-react";
 import { boardPatternText, feetInches, type BoardPattern } from "@/lib/takeoff";
 import { cn, money, num } from "@/lib/utils";

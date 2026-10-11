@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { AlertTriangle, ChevronDown, Clock, RefreshCw } from "lucide-react";
 import { cn, fmtDate, money, num } from "@/lib/utils";
 

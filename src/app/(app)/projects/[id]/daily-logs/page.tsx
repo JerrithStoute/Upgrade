@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { Plus, ClipboardList, Pencil, CloudSun, Users, Clock, AlertTriangle, EyeOff } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";

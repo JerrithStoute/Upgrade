@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { LayoutTemplate, Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { fmtDate } from "@/lib/utils";

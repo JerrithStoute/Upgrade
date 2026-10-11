@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { Pencil, Plus, ShieldAlert, ShieldCheck, Truck, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import { codeLabelOf } from "@/lib/takeoff-materials";

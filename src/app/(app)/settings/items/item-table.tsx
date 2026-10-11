@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/link";
 import { useEffect, useState, useTransition } from "react";
 import { Check, Pencil, Trash2, X } from "lucide-react";
 import { UNITS } from "@/lib/constants";

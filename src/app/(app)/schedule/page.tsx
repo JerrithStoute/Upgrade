@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { addDays, startOfDay, startOfWeek, endOfWeek } from "date-fns";
 import { CalendarRange } from "lucide-react";
 import { requireStaff } from "@/lib/auth";

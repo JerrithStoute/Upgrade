@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { format } from "date-fns";
 import { cn, initials } from "@/lib/utils";
 import { barGeometry, dayIndex, ganttWindow, groupByPhase, isTaskOverdue, type GanttTask } from "@/lib/schedule";

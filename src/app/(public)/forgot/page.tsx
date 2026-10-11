@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { AuthCard } from "@/components/auth-card";
 import { ForgotForm } from "../forms";
 import { robotCheckKey } from "@/lib/turnstile";

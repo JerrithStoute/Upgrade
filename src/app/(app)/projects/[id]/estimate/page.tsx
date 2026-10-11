@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { FileText, Plus, ExternalLink, Copy, FileStack, Lock, LockOpen, ChevronDown } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";

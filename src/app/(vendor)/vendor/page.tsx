@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { CalendarDays, ClipboardList, FileInput, ShieldAlert, ShieldCheck } from "lucide-react";
 import { requireVendor } from "@/lib/auth";
 import { db } from "@/lib/db";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { requireVendor } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { dateInput, fmtDate, money } from "@/lib/utils";

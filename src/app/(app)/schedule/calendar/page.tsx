@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { addDays, addMonths, endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from "date-fns";
 import { Bell, ChevronLeft, ChevronRight, Palmtree, Trash2, TriangleAlert } from "lucide-react";
 import { requireStaff } from "@/lib/auth";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { ArrowLeft, KeyRound, LogOut, ShieldCheck } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { systemDb } from "@/lib/db";

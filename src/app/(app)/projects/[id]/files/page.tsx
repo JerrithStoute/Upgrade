@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { FileText, FileImage, FileSpreadsheet, File as FileIcon, FileArchive, Eye, EyeOff, ExternalLink, Upload, FolderOpen } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";

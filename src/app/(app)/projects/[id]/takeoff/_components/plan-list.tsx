@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { Download, Eye, EyeOff, FileText, Image as ImageIcon, Printer, Ruler } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";

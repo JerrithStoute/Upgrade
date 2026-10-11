@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import type { Project } from "@prisma/client";
 import { PROJECT_STATUSES } from "@/lib/constants";
 import { dateInput, titleCase } from "@/lib/utils";

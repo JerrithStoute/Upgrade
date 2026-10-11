@@ -2,7 +2,7 @@
 
 import { useState, useTransition, type ReactNode } from "react";
 import { flushSync } from "react-dom";
-import Link from "next/link";
+import Link from "@/components/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";

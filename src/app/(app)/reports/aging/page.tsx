@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { Receipt } from "lucide-react";
 import { agingRows } from "@/lib/reports";
 import { AGING_BUCKETS } from "@/lib/report-math";

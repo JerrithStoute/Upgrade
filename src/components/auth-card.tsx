@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 
 /** The plain card the sign-in-type pages share (sign up, forgot password, invitations…). */
 export function AuthCard({ title, intro, children, footer }: { title: string; intro?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {

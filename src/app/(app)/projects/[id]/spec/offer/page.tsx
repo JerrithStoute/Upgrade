@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { addDays } from "date-fns";
 import { requireStaff } from "@/lib/auth";
 import { getProject } from "@/lib/projects";

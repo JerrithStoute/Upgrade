@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { cn, money } from "@/lib/utils";
 
 /** A percent, or a dash when there's nothing to divide by. */

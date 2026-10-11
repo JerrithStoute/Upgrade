@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { subDays } from "date-fns";
 import { Receipt } from "lucide-react";
 import { requireStaff } from "@/lib/auth";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import Link from "@/components/link";
 import { BookOpen, Plus } from "lucide-react";
 import { Field, SubmitButton, buttonClasses } from "@/components/ui";
 import { UNITS } from "@/lib/constants";

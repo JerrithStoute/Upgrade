@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { BookOpen, Plus, Search, Truck } from "lucide-react";
 import { db } from "@/lib/db";
 import { activeCostCodes } from "@/lib/projects";

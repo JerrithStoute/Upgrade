@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { Check, Pencil, Plus, CheckSquare } from "lucide-react";
 import type { Todo } from "@prisma/client";
 import { TODO_PRIORITIES } from "@/lib/constants";

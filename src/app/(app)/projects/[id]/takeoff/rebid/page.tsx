@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { ArrowLeft, Lock, LockOpen } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { getProject } from "@/lib/projects";

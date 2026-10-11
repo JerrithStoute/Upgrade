@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import Link from "@/components/link";
 import { AlertTriangle, CalendarClock, ChevronDown, ChevronRight, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { daysUntil, deadlineState } from "@/lib/deadlines";

@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { AuthCard } from "@/components/auth-card";
 import { systemDb } from "@/lib/db";
 import { hashToken } from "@/lib/account";

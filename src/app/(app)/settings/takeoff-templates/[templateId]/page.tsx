@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Layers, Pencil, Plus } from "lucide-react";
 import { db } from "@/lib/db";

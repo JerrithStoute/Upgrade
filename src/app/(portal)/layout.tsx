@@ -1,5 +1,5 @@
 import { Suspense } from "react";
-import Link from "next/link";
+import Link from "@/components/link";
 import { Eye, LogOut } from "lucide-react";
 import { closeClientView } from "@/app/(app)/projects/[id]/client-view-actions";
 import { BrandMark } from "@/components/brand-mark";

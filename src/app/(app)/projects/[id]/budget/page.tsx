@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { Pencil } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { changeOrderTotals } from "@/lib/change-orders";

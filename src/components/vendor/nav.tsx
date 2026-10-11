@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link from "@/components/link";
 import { usePathname } from "next/navigation";
 import { CalendarDays, ClipboardList, FileInput, Home, ShieldCheck, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";

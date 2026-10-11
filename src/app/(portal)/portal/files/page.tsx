@@ -5,7 +5,7 @@ import { portalContext } from "@/lib/portal";
 import { cn, fmtDate } from "@/lib/utils";
 import { Card, CardBody, CardHeader, EmptyState } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
-import Link from "next/link";
+import Link from "@/components/link";
 import { FileTypesNote } from "@/components/selections/extras";
 
 export const metadata = { title: "Photos & Files" };

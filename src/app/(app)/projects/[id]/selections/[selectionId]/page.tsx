@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Check, Plus, Star, Pencil, RotateCcw, Package, Wrench, ThumbsUp } from "lucide-react";
 import { requireStaff } from "@/lib/auth";

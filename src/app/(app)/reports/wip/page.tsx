@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { Gauge } from "lucide-react";
 import { ACTIVE, jobRows, sumRows } from "@/lib/reports";
 import { dateInput, fmtDate, money, parseDateInput } from "@/lib/utils";

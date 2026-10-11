@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { requireStaff } from "@/lib/auth";
 import { getProject, nextChangeOrderNumber } from "@/lib/projects";
 import { CHANGE_ORDER_REASONS } from "@/lib/finance";

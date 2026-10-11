@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/link";
 import { Pencil, Plus, Ruler } from "lucide-react";
 import { db } from "@/lib/db";
 import { groupBy } from "@/lib/finance";
