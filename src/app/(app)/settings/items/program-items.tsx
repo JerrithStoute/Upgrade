@@ -27,7 +27,7 @@ export function ProgramItems({
   counts: Partial<Record<CodeGroup, Record<string, number>>>;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div id="program-items" className="scroll-mt-20 rounded-xl border border-slate-200 bg-white shadow-sm">
       <div className="flex items-start gap-2 border-b border-slate-100 px-4 py-3">
         <Bot className="mt-0.5 h-4 w-4 text-slate-400" />
         <div>

@@ -8,6 +8,7 @@ import { logActivity } from "@/lib/activity";
 import { str } from "@/lib/utils";
 import { dashboardLayout, withCards, type Layout } from "@/lib/dashboard-cards";
 import { canSeeReports } from "@/lib/reports";
+import { cookies } from "next/headers";
 
 export const completeTodo = friendly(async function completeTodo(formData: FormData) {
   const user = await requireStaff();
@@ -28,6 +29,13 @@ export const completeTodo = friendly(async function completeTodo(formData: FormD
 });
 
 /** Turns cards on and off (Customize): the others stay put, new ones go to the shortest column. null = back to the default. */
+/** Getting started: hidden on this browser. */
+export async function hideGettingStarted() {
+  await requireStaff();
+  (await cookies()).set("bs_hide_getting_started", "1", { path: "/", maxAge: 60 * 60 * 24 * 365, sameSite: "lax", secure: process.env.NODE_ENV === "production" });
+  revalidatePath("/dashboard");
+}
+
 export async function saveDashboardCards(keys: string[] | null) {
   const user = await requireStaff();
   const me = await db.user.findUnique({ where: { id: user.id }, select: { dashboardCards: true } });

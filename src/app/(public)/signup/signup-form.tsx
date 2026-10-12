@@ -68,6 +68,15 @@ export function SignUpForm({ robotKey }: { robotKey: string | null }) {
           </span>
         </label>
       </fieldset>
+      <label className="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="starterLumber" defaultChecked className="mt-1" />
+        <span>
+          Start with common lumber
+          <span className="block text-xs text-slate-500">
+            2x4–2x12, TJI, BCI, LVL and glulam sizes, plus studs, plates, sheathing and drywall for your first walls — no prices. Change or remove any.
+          </span>
+        </span>
+      </label>
       <RobotCheck siteKey={robotKey} round={state} />
       <FormNote error={state?.error} />
       <button type="submit" disabled={pending} className={authButton}>

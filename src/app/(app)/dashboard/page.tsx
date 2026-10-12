@@ -11,6 +11,7 @@ import { ACTIVE, agingRows, canSeeReports, cashFlow, jobRows, sumRows } from "@/
 import { AGING_BUCKETS } from "@/lib/report-math";
 import { availableCards, dashboardLayout, DASHBOARD_CARDS, layoutKeys } from "@/lib/dashboard-cards";
 import { Badge, Button, EmptyState, PageHeader, Progress } from "@/components/ui";
+import { GettingStarted } from "./getting-started";
 import { Signed, pctText } from "../reports/_parts";
 import { completeTodo } from "./actions";
 import { syncLeadStages } from "@/lib/leads";
@@ -474,6 +475,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
         description={first ? `Welcome to The Builder Station, ${user.name.split(" ")[0]}! Start with Projects → New project, or invite your team in Settings → Team.` : `Welcome back, ${user.name.split(" ")[0]}. Drag a card by its grip to move it.`}
         actions={<CustomizeDashboard cards={availableCards(reports)} picked={cards} />}
       />
+      <GettingStarted isAdmin={user.role === "ADMIN"} />
       {cards.length === 0 ? (
         <EmptyState icon={LayoutGrid} title="Your dashboard is empty" description="Use Customize to pick the cards you want." />
       ) : (
