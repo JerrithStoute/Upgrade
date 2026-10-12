@@ -211,6 +211,8 @@ model Project {
   inventoryAnswer   String?
   // A spec house: built to sell, no client (Spec homes, the job's Spec sale tab).
   isSpec            Boolean                 @default(false)
+  // QuickBooks Desktop: the Customer:Job it is there (its ListID) — linked by name, or picked.
+  qbListId          String?
   estimates         Estimate[]
   parameterValues   ProjectParameterValue[]
   selections        Selection[]
@@ -255,6 +257,8 @@ model CostCode {
   division  String // group, e.g. "03 Concrete"
   sortOrder Int      @default(0)
   active    Boolean  @default(true)
+  // QuickBooks Desktop: the item it is there (its ListID) — the item named with this code.
+  qbListId  String?
   createdAt DateTime @default(now())
 
   estimateItems             EstimateItem[]
@@ -274,6 +278,7 @@ model CostCode {
   timeEntries               TimeEntry[]
 
   @@unique([companyId, code])
+  @@unique([companyId, qbListId])
   @@index([companyId])
 }
 
@@ -1454,6 +1459,8 @@ model Vendor {
   costCodeIds       String? // JSON ["<costCodeId>", "none", …]
   // Insurance needed? null = automatic: yes once they're on a PO for work (not a supplier's bid) or have a certificate on file.
   insuranceRequired Boolean?
+  // QuickBooks Desktop: the vendor it is there (its ListID) — see src/lib/qb.
+  qbListId          String?
   createdAt         DateTime @default(now())
 
   bids           Bid[]
@@ -1463,6 +1470,7 @@ model Vendor {
   logins         User[]
   tasks          ScheduleTask[]
 
+  @@unique([companyId, qbListId])
   @@index([companyId])
 }
 
@@ -2091,4 +2099,46 @@ model Invite {
 
   @@index([companyId])
   @@index([email])
+}
+
+/// QuickBooks Desktop through Intuit's Web Connector (src/lib/qb): one per company. The Web
+/// Connector signs in with username + password (only its hash is kept) and is tied to the
+/// QuickBooks company file it first synced with.
+model QbConnection {
+  id           String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String    @unique @default(dbgenerated("current_setting('app.company_id'::text)"))
+  username     String    @unique
+  passwordHash String
+  fileId       String // the .qwc file's FileID
+  companyFile  String? // the QuickBooks company file (path), from the first sync
+  qbCompany    String? // its company name, as QuickBooks has it
+  lastSyncAt   DateTime?
+  lastError    String?
+  // The Web Connector session in progress: its ticket and what's left to ask for (JSON).
+  ticket       String?   @unique
+  ticketState  String?
+  ticketAt     DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/// A QuickBooks list entry as last read: kind VENDOR | CUSTOMER (customers and their jobs) |
+/// ITEM | CLASS. listId is QuickBooks' own id; detail is JSON (item type, description…).
+model QbListItem {
+  id           String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId    String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  kind         String
+  listId       String
+  name         String
+  fullName     String
+  parentListId String?
+  sublevel     Int      @default(0)
+  active       Boolean  @default(true)
+  detail       String?
+  seenAt       DateTime @default(now())
+
+  @@unique([companyId, kind, listId])
+  @@index([companyId])
 }

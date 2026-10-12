@@ -30,6 +30,7 @@ const PUBLIC_ACTIONS = new Set([
 const PUBLIC_ROUTES = new Set([
   "api/pdfjs/[...path]/route.ts", // the plan viewer's own program files — nothing private
   "api/health/route.ts", // for the host: "up or not", nothing else
+  "api/qbwc/route.ts", // the QuickBooks Web Connector: signs in with its own username and password (src/lib/qb/sync.ts)
   "api/company/logo/route.ts", // reads through the company gatekeeper, which refuses anyone not signed in
 ]);
 
