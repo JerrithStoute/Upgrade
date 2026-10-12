@@ -155,3 +155,4 @@ describe("a joist lying on a wall", () => {
     );
   });
 });
+

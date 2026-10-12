@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, type ReactNode } from "react";
+import { useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { flushSync } from "react-dom";
 import Link from "@/components/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -24,7 +24,13 @@ import {
   type Pt,
 } from "@/lib/takeoff";
 import { PlanCanvas } from "../_components/plan-canvas";
-import { areaJoists, joistGroupText } from "../_components/joist-labels";
+import { areaJoists, joistGroupText, pieceLine } from "../_components/joist-labels";
+import type { MemberPiece } from "@/lib/joist-pieces";
+import type { TextBox } from "../_components/pdf-vectors";
+import { placeLabels } from "./label-placement";
+
+/** A label waiting for its spot: what it says, where it'd like to be, and how far it may move. */
+type Tag = { x: number; y: number; t: string; deg: number; color: string; filled: boolean; region?: Pt[]; maxShift?: number; first: boolean };
 
 type PrintCondition = ConditionCalc & { id: string; name: string; color: string; metric: string };
 type PrintShape = {
@@ -37,8 +43,8 @@ type PrintShape = {
   pitch: number | null;
   pitch2: number | null;
   height?: number | null;
-  /** Span-table joists split by size: the takeoff each joist is ordered under (layout order). */
-  memberOwners?: string[];
+  /** Joists broken at walls / split by size: each joist's pieces and the takeoff each is ordered under (joist-pieces.ts). */
+  memberPieces?: MemberPiece[][];
 };
 
 export type PrintSheet = {
@@ -101,7 +107,7 @@ export function PrintSheets({
   conditions: PrintCondition[];
   initialPages: number[];
   /** Takeoffs on this plan, and the ones left off the print (hidden on the plan, or here). */
-  onPlan: { id: string; name: string; color: string }[];
+  onPlan: { id: string; name: string; color: string; type: string }[];
   hidden: string[];
   /** The Material list and cut sheet for the takeoffs printed (made on the server). */
   materials: ReactNode;
@@ -111,6 +117,9 @@ export function PrintSheets({
   const params = useSearchParams();
   const [pending, startTransition] = useTransition();
   const [withMaterials, setWithMaterials] = useState(true);
+  // The plan drawn faded under the takeoff: its own dark fills (elevations, cabinets) print light
+  // gray instead of solid black on a black-and-white printer. The takeoff stays full strength.
+  const [fadePlan, setFadePlan] = useState(true);
   const hidden = new Set(hiddenIds);
   // Turning a takeoff on or off: back to the server, so the Material list follows.
   const toggleTakeoff = (id: string) => {
@@ -143,7 +152,19 @@ export function PrintSheets({
   };
   const canScale = plan.kind === "PDF";
   const [sizes, setSizes] = useState<Record<number, { w: number; h: number }>>({});
+  // The same, right away (the plan's lines can arrive before the state above updates).
+  const sizeNow = useRef<Record<number, { w: number; h: number }>>({});
   const [rendered, setRendered] = useState<Set<number>>(new Set());
+  // Where each sheet's own text is (dimensions, room names): labels stay off it.
+  const [planText, setPlanText] = useState<Record<number, TextBox[]>>({});
+  // Label boxes fit their words: measured in the font they print in.
+  const measure = useMemo(() => {
+    if (typeof document === "undefined") return null;
+    const ctx = document.createElement("canvas").getContext("2d");
+    if (!ctx) return null;
+    ctx.font = `600 100px ${getComputedStyle(document.body).fontFamily}`;
+    return (t: string, size: number) => (ctx.measureText(t).width * size) / 100;
+  }, []);
   const condById = new Map(conditions.map((c) => [c.id, c]));
   const shown = sheets.filter((s) => chosen.has(s.pageNumber));
   const ready = shown.every((s) => rendered.has(s.pageNumber));
@@ -181,6 +202,10 @@ export function PrintSheets({
                 <option value="all">All takeoffs</option>
                 <option value="none">None</option>
               </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-slate-700" title="The plan prints light under the takeoff — its dark fills don't come out solid black">
+              <input type="checkbox" checked={fadePlan} onChange={(e) => setFadePlan(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              Fade the plan
             </label>
             <label className="flex items-center gap-1.5 text-sm text-slate-700">
               <input type="checkbox" checked={withLegend} onChange={(e) => setWithLegend(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
@@ -269,6 +294,35 @@ export function PrintSheets({
                 {c.name}
               </button>
             ))}
+            <button
+              type="button"
+              disabled={pending}
+              className="rounded-full px-2.5 py-1 text-xs font-medium text-blue-700 ring-1 ring-inset ring-blue-200 hover:bg-blue-50"
+              title="Print only the joist and rafter takeoffs — everything else left off"
+              onClick={() => {
+                const q = new URLSearchParams(params.toString());
+                q.set("pages", [...chosen].join(","));
+                const off = onPlan.filter((c) => c.type !== "FRAMING").map((c) => c.id);
+                if (off.length) q.set("hide", off.join(","));
+                else q.delete("hide");
+                startTransition(() => router.replace(`${pathname}?${q.toString()}`, { scroll: false }));
+              }}
+            >
+              Just joists &amp; rafters
+            </button>
+            <button
+              type="button"
+              disabled={pending || !hidden.size}
+              className="rounded-full px-2.5 py-1 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200 hover:bg-slate-50 disabled:opacity-40"
+              onClick={() => {
+                const q = new URLSearchParams(params.toString());
+                q.set("pages", [...chosen].join(","));
+                q.delete("hide");
+                startTransition(() => router.replace(`${pathname}?${q.toString()}`, { scroll: false }));
+              }}
+            >
+              All
+            </button>
             <span className="text-xs text-slate-500">— the ones hidden on the plan start off; the Material list follows.</span>
           </div>
         ) : null}
@@ -297,7 +351,7 @@ export function PrintSheets({
               toScale && `scale-sheet-${s.pageNumber} print:overflow-hidden`,
               printPart === "lists" && "print:hidden",
               // Printing only the sheets: no page break after the last one (it'd add a blank sheet).
-              printPart === "sheets" && si === shown.length - 1 && "last-printed",
+              (printPart === "sheets" || (toScale && printPart !== "lists")) && si === shown.length - 1 && "last-printed",
             )}
           >
             {/* Title block (to scale: the plan's own title block is on the sheet) */}
@@ -324,6 +378,7 @@ export function PrintSheets({
                 className={cn("relative min-h-40 min-w-0 flex-1 self-start border border-slate-300 bg-white", toScale && "print:h-full print:w-full print:border-0")}
                 style={size ? { aspectRatio: `${size.w} / ${size.h}` } : undefined}
               >
+                <div className="absolute inset-0" style={fadePlan ? { opacity: 0.4 } : undefined}>
                 <PlanCanvas
                   key={toScale ? "scale" : "fit"}
                   url={plan.fileUrl}
@@ -331,40 +386,53 @@ export function PrintSheets({
                   pageNumber={s.pageNumber}
                   zoom={toScale ? SCALE_ZOOM : PRINT_ZOOM}
                   fill
-                  onSize={(w, h) => setSizes((cur) => (cur[s.pageNumber]?.w === w && cur[s.pageNumber]?.h === h ? cur : { ...cur, [s.pageNumber]: { w, h } }))}
+                  onSize={(w, h) => {
+                    sizeNow.current[s.pageNumber] = { w, h };
+                    setSizes((cur) => (cur[s.pageNumber]?.w === w && cur[s.pageNumber]?.h === h ? cur : { ...cur, [s.pageNumber]: { w, h } }));
+                  }}
                   onRendered={() => setRendered((cur) => (cur.has(s.pageNumber) ? cur : new Set(cur).add(s.pageNumber)))}
+                  onText={(boxes) => setPlanText((cur) => ({ ...cur, [s.pageNumber]: [...boxes, ...(cur[s.pageNumber] ?? [])] }))}
+                  // CAD plans often draw their lettering (dimensions, pitches, room names) as short strokes
+                  // rather than text: those count as text to stay off too.
+                  onVectors={(segs) => {
+                    const page = sizeNow.current[s.pageNumber];
+                    const stroke = (page ? page.w / 150 : 8) * 1.2;
+                    const pad = stroke * 0.12;
+                    const boxes: TextBox[] = [];
+                    for (let i = 0; i + 3 < segs.length; i += 4) {
+                      const [x1, y1, x2, y2] = [segs[i], segs[i + 1], segs[i + 2], segs[i + 3]];
+                      const len = Math.hypot(x2 - x1, y2 - y1);
+                      if (len > 0 && len <= stroke) boxes.push([Math.min(x1, x2) - pad, Math.min(y1, y2) - pad, Math.max(x1, x2) + pad, Math.max(y1, y2) + pad]);
+                    }
+                    setPlanText((cur) => ({ ...cur, [s.pageNumber]: [...(cur[s.pageNumber] ?? []), ...boxes] }));
+                  }}
                 />
-                {size ? (
-                  <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${size.w} ${size.h}`} preserveAspectRatio="none">
-                    {s.shapes.map((m) => {
+                </div>
+                {size ? (() => {
+                  // Labels are gathered while the shapes draw, then placed and drawn last — on top of
+                  // everything, each clear of the others and of the plan's own text.
+                  const tags: Tag[] = [];
+                  const shapes = s.shapes.map((m) => {
                       const c = condById.get(m.conditionId);
                       if (!c) return null;
                       const ownShown = !hidden.has(c.id);
-                      if (!ownShown && !m.memberOwners?.some((o) => !hidden.has(o))) return null;
+                      if (!ownShown && !m.memberPieces?.some((row) => row.some((p) => !hidden.has(p.owner)))) return null;
                       const path = shapePath(c.type, m);
                       const d = path.map((p) => p.join(",")).join(" ");
-                      // A label: dark text on a small white tag edged in the takeoff's color — readable, out of the way.
-                      const text = (x: number, y: number, t: string, rotate = 0, color = c.color, filled = false, on = labels) => {
-                        if (!on) return null;
-                        const w = t.length * fs * 0.56 + fs * 0.8;
-                        return (
-                          <g transform={rotate ? `rotate(${rotate} ${x} ${y})` : undefined}>
-                            <rect
-                              x={x - w / 2}
-                              y={y - fs * 0.92}
-                              width={w}
-                              height={fs * 1.3}
-                              rx={fs * 0.2}
-                              fill={filled ? color : "white"}
-                              fillOpacity={0.94}
-                              stroke={color}
-                              strokeWidth={sw}
-                            />
-                            <text x={x} y={y} fontSize={fs} fontWeight={600} fill={filled ? "white" : "#0f172a"} textAnchor="middle">
-                              {t}
-                            </text>
-                          </g>
-                        );
+                      // A label: dark text on a small white tag edged in the takeoff's color. An area's label
+                      // stays inside its area (`region`); a line's stays near the line (`maxShift`).
+                      const text = (
+                        x: number,
+                        y: number,
+                        t: string,
+                        rotate = 0,
+                        color = c.color,
+                        filled = false,
+                        on = labels,
+                        place: { region?: Pt[]; maxShift?: number; first?: boolean } = {},
+                      ) => {
+                        if (on) tags.push({ x, y, t, deg: rotate, color, filled, region: place.region, maxShift: place.region ? undefined : (place.maxShift ?? fs * 6), first: !!place.first });
+                        return null;
                       };
                       if (c.type === "COUNT" || c.type === "DOOR" || c.type === "WINDOW") {
                         return (
@@ -386,7 +454,7 @@ export function PrintSheets({
                         return (
                           <g key={m.id}>
                             <polyline points={d} fill="none" stroke={c.color} strokeWidth={sw * 3} strokeLinejoin="miter" strokeLinecap="square" />
-                            {upf ? text((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + fs * 1.2, feetInches(polylineLength(path) / upf), deg) : null}
+                            {upf ? text((a[0] + b[0]) / 2, (a[1] + b[1]) / 2 + fs * 1.2, feetInches(polylineLength(path) / upf), deg, c.color, false, labels, { maxShift: fs * 5 }) : null}
                           </g>
                         );
                       }
@@ -418,7 +486,7 @@ export function PrintSheets({
                               strokeLinecap="round"
                               strokeLinejoin="round"
                             />
-                            {t ? text(x, y - fs * 0.5, t, deg) : null}
+                            {t ? text(x, y - fs * 0.5, t, deg, c.color, false, labels, { maxShift: fs * 5 }) : null}
                           </g>
                         );
                       }
@@ -427,39 +495,40 @@ export function PrintSheets({
                       let label = "";
                       // Joist areas: what they use, one line per size — "2x8: (10) 14' (3) 18'".
                       const joistTags =
-                        upf && c.type === "FRAMING" && joistLabels && (ownShown || m.memberOwners)
+                        upf && c.type === "FRAMING" && joistLabels && (ownShown || m.memberPieces)
                           ? areaJoists(c, m, upf, condById)
                               .filter((g) => !hidden.has(g.conditionId))
-                              .map((g, i) => <g key={i}>{text(g.at[0], g.at[1], joistGroupText(g), joistDeg(m.angle), g.color, false, true)}</g>)
+                              .map((g, i) => <g key={i}>{text(g.at[0], g.at[1], joistGroupText(g), joistDeg(m.angle), g.color, false, true, { region: path, first: true })}</g>)
                           : null;
                       if (upf && c.type !== "FRAMING") {
                         const q = measurementMetrics(c, m, upf)[c.metric as MetricKey] ?? 0;
                         label = `${m.isDeduction ? "−" : ""}${num(Math.abs(q))} ${metricUnit(c.metric)}`;
                       }
-                      // Joists in the color of the size takeoff they're ordered under (hidden with it).
-                      const owners = m.memberOwners && m.memberOwners.length === members.length ? m.memberOwners : null;
-                      // Split by size: no one-color fill — each size shades the strip its joists cover.
-                      const band = owners && upf ? (c.spacing / 12) * upf : 0;
-                      const shownOwner = (i: number) => {
-                        const o = owners ? condById.get(owners[i]) : c;
+                      // Each piece in the color of the size takeoff it's ordered under (hidden with it), a hair
+                      // apart where two meet over a wall so the break shows.
+                      const split = m.memberPieces && m.memberPieces.length === members.length ? m.memberPieces : null;
+                      const shownOwner = (id: string) => {
+                        const o = condById.get(id) ?? c;
                         return o && !hidden.has(o.id) ? o : null;
                       };
+                      const gap = upf ? upf / 8 : 0;
                       return (
                         <g key={m.id}>
-                          {owners ? (
+                          {/* Joists and rafters print as the area's outline and its joists — no shading. */}
+                          {c.type === "FRAMING" && !m.isDeduction ? (
                             <polygon
                               points={d}
                               fill="none"
                               stroke={c.color}
-                              strokeOpacity={ownShown ? 0.9 : 0.4}
-                              strokeWidth={sw * (ownShown ? 1.5 : 1)}
+                              strokeOpacity={ownShown ? 1 : 0.5}
+                              strokeWidth={sw * 2}
                               strokeDasharray={ownShown ? undefined : `${sw * 4} ${sw * 4}`}
                             />
                           ) : ownShown ? (
                             <polygon
                               points={d}
-                              fill={m.isDeduction ? "white" : c.color}
-                              fillOpacity={m.isDeduction ? 0.6 : c.type === "FRAMING" ? 0.1 : 0.22}
+                              // No shading on paper (it prints dark, black-and-white most of all): outlines only.
+                              fill="none"
                               stroke={c.color}
                               strokeWidth={sw * 2}
                               strokeDasharray={m.isDeduction ? `${sw * 6} ${sw * 4}` : undefined}
@@ -467,33 +536,64 @@ export function PrintSheets({
                           ) : (
                             <polygon points={d} fill="none" stroke={c.color} strokeOpacity={0.4} strokeWidth={sw} strokeDasharray={`${sw * 4} ${sw * 4}`} />
                           )}
-                          {band ? (
-                            <>
-                              <clipPath id={`print-area-${m.id}`}>
-                                <polygon points={d} />
-                              </clipPath>
-                              <g clipPath={`url(#print-area-${m.id})`}>
-                                {members.map(([a, b], i) => {
-                                  const owner = shownOwner(i);
-                                  return owner ? (
-                                    <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeOpacity={0.14} strokeWidth={band} strokeLinecap="butt" />
-                                  ) : null;
-                                })}
-                              </g>
-                            </>
-                          ) : null}
-                          {members.map(([a, b], i) => {
-                            const owner = shownOwner(i);
-                            if (!owner) return null;
-                            return <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeWidth={owners ? sw * 1.6 : sw} />;
-                          })}
-                          {label && ownShown ? text(cx, cy, label) : null}
+                          {members.flatMap((mem, i) =>
+                            (split?.[i] ?? [{ a: 0, b: 1, owner: c.id, length: 0 }]).map((p, j, row) => {
+                              const owner = shownOwner(p.owner);
+                              if (!owner) return null;
+                              const [a, b] = pieceLine(mem, p);
+                              const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+                              const [ux, uy] = [(b[0] - a[0]) / len, (b[1] - a[1]) / len];
+                              const s0 = j > 0 ? gap / 2 : 0;
+                              const s1 = j < row.length - 1 ? gap / 2 : 0;
+                              return (
+                                <line key={`${i}.${j}`} x1={a[0] + ux * s0} y1={a[1] + uy * s0} x2={b[0] - ux * s1} y2={b[1] - uy * s1} stroke={owner.color} strokeWidth={sw * 0.8} />
+                              );
+                            }),
+                          )}
+                          {label && ownShown ? text(cx, cy, label, 0, c.color, false, labels, { region: path }) : null}
                           {joistTags}
                         </g>
                       );
-                    })}
-                  </svg>
-                ) : null}
+                    });
+                  // Joist labels pick their spots first; then the rest, in drawing order.
+                  const order = tags.map((_, i) => i).sort((i, j) => Number(tags[j].first) - Number(tags[i].first) || i - j);
+                  const boxW = (t: string) => (measure ? measure(t, fs) : t.length * fs * 0.56) + fs * 0.6;
+                  const boxH = fs * 1.25;
+                  const spots = placeLabels(
+                    order.map((i) => ({ x: tags[i].x, y: tags[i].y, w: boxW(tags[i].t), h: boxH, deg: tags[i].deg, region: tags[i].region, maxShift: tags[i].maxShift })),
+                    planText[s.pageNumber] ?? [],
+                  );
+                  return (
+                    <svg className="absolute inset-0 h-full w-full" viewBox={`0 0 ${size.w} ${size.h}`} preserveAspectRatio="none">
+                      {shapes}
+                      <g>
+                        {order.map((i, k) => {
+                          const g = tags[i];
+                          const [x, y] = spots[k];
+                          const w = boxW(g.t);
+                          return (
+                            <g key={i} transform={g.deg ? `rotate(${g.deg} ${x} ${y})` : undefined}>
+                              <rect
+                                x={x - w / 2}
+                                y={y - boxH / 2}
+                                width={w}
+                                height={boxH}
+                                rx={fs * 0.2}
+                                fill={g.filled ? g.color : "white"}
+                                fillOpacity={0.96}
+                                stroke={g.color}
+                                strokeWidth={sw}
+                              />
+                              <text x={x} y={y} dy="0.35em" fontSize={fs} fontWeight={600} fill={g.filled ? "white" : "#0f172a"} textAnchor="middle">
+                                {g.t}
+                              </text>
+                            </g>
+                          );
+                        })}
+                      </g>
+                    </svg>
+                  );
+                })() : null}
               </div>
 
               {/* Legend */}
@@ -503,24 +603,24 @@ export function PrintSheets({
                   {s.legend.length === 0 ? (
                     <p className="text-xs text-slate-500">Nothing measured on this sheet.</p>
                   ) : (
-                    <table className="w-full text-xs">
+                    <table className="w-full text-xs print:text-[8px] print:leading-tight">
                       <tbody>
                         {s.legend
                           .filter((l) => !hidden.has(l.conditionId))
                           .map((l) => (
                             <tr key={l.conditionId} className="border-b border-slate-100 align-top">
-                              <td className="py-1 pr-1.5">
+                              <td className="py-1 pr-1.5 print:py-px">
                                 <span className="mt-0.5 inline-block h-3 w-3 rounded-sm" style={{ background: l.color }} />
                               </td>
-                              <td className="py-1 pr-1">
+                              <td className="py-1 pr-1 print:py-px">
                                 <span className="font-medium text-slate-900">{l.name}</span>
-                                <span className="block text-[10px] text-slate-500">
+                                <span className="block text-[10px] text-slate-500 print:hidden">
                                   {l.type}
                                   {l.shapes ? ` · ${l.shapes} shape${l.shapes === 1 ? "" : "s"}` : ""}
                                   {l.joists ? ` · ${l.joists} joist${l.joists === 1 ? "" : "s"} from other areas` : ""}
                                 </span>
                               </td>
-                              <td className="whitespace-nowrap py-1 text-right tabular-nums text-slate-900">
+                              <td className="whitespace-nowrap py-1 text-right tabular-nums text-slate-900 print:py-px">
                                 {num(l.quantity)} {l.unit}
                               </td>
                             </tr>
@@ -540,7 +640,7 @@ export function PrintSheets({
         <section
           className={cn(
             "print-sheet space-y-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm print:rounded-none print:border-0 print:p-0 print:shadow-none",
-            printPart === "sheets" && "print:hidden",
+            (printPart === "sheets" || toScale) && printPart !== "lists" && "print:hidden",
           )}
         >
           <div className="border-b-2 border-slate-900 pb-1.5">
@@ -579,7 +679,7 @@ export function PrintSheets({
         </section>
       ) : null}
 
-      {withMaterials && shown.length ? <div className={cn(printPart === "sheets" && "print:hidden")}>{materials}</div> : null}
+      {withMaterials && shown.length ? <div className={cn((printPart === "sheets" || toScale) && printPart !== "lists" && "print:hidden")}>{materials}</div> : null}
     </div>
   );
 }

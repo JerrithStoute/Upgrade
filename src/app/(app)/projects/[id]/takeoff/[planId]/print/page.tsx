@@ -51,7 +51,7 @@ export default async function PrintPlanPage({
           pitch: m.pitch,
           pitch2: m.pitch2,
           height: m.height,
-          memberOwners: c.bandSplit.owners.get(m.id),
+          memberPieces: c.bandSplit.pieces.get(m.id),
         })),
     );
     const legend = conditions
@@ -107,7 +107,7 @@ export default async function PrintPlanPage({
       plan={{ id: plan.id, name: plan.name, kind: plan.kind, fileUrl: `/api/files/${plan.fileId}` }}
       sheets={sheets}
       initialPages={initial}
-      onPlan={onPlan.map((c) => ({ id: c.id, name: c.name, color: c.color }))}
+      onPlan={onPlan.map((c) => ({ id: c.id, name: c.name, color: c.color, type: c.type }))}
       hidden={[...hidden].filter((x) => onPlan.some((c) => c.id === x))}
       conditions={conditions.map((c) => ({
         id: c.id,

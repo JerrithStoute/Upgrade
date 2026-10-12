@@ -2,7 +2,8 @@ import "server-only";
 import { db } from "./db";
 import { syncAutoItems } from "./walls";
 import { CONDITION_COLORS, arcPath, framingMembers, isLumberMetric, itemNameKey, memberThickness, parseArcs, parsePoints, parseMemberSize, shapePath, type Pt } from "./takeoff";
-import { longestUnsupported, memberSizes, pickSize, spanSpec, type SizePick } from "./span-tables";
+import { longestUnsupported, pickSize, spanSpec, type SizePick } from "./span-tables";
+import { joistPieces, sizePieces } from "./joist-pieces";
 
 function without<T extends object, K extends keyof T>(row: T, ...keys: K[]): Omit<T, K> {
   const out = { ...row };
@@ -37,10 +38,44 @@ export async function copyTakeoff(
   return copy;
 }
 
-/** A color for a new size in a family: one no other takeoff in the job uses, if there's one left. */
-async function freshColor(projectId: string) {
-  const used = new Set((await db.takeoffCondition.findMany({ where: { projectId }, select: { color: true } })).map((c) => c.color.toLowerCase()));
-  return CONDITION_COLORS.find((c) => !used.has(c.toLowerCase())) ?? CONDITION_COLORS[used.size % CONDITION_COLORS.length];
+/**
+ * A color for a new size in a family: one no other size of the family has (`avoid`), the one the
+ * job uses least — so with every color already in use, sizes still come out different.
+ */
+async function freshColor(projectId: string, avoid: Iterable<string> = []) {
+  const uses = new Map<string, number>();
+  for (const c of await db.takeoffCondition.findMany({ where: { projectId }, select: { color: true } })) uses.set(c.color.toLowerCase(), (uses.get(c.color.toLowerCase()) ?? 0) + 1);
+  const taken = new Set([...avoid].map((c) => c.toLowerCase()));
+  const leastUsed = (list: readonly string[]) => [...list].sort((a, b) => (uses.get(a.toLowerCase()) ?? 0) - (uses.get(b.toLowerCase()) ?? 0))[0];
+  return leastUsed(CONDITION_COLORS.filter((c) => !taken.has(c.toLowerCase()))) ?? leastUsed(CONDITION_COLORS);
+}
+
+/**
+ * Sizes of one family are told apart on the plan by color: a size's own color (Settings → Member
+ * sizes) when it has one; any others sharing a color get one of their own.
+ */
+async function distinctFamilyColors(projectId: string, group: string) {
+  const family = await db.takeoffCondition.findMany({
+    where: { projectId, OR: [{ sizeGroup: group }, { id: group }] },
+    orderBy: { sortOrder: "asc" },
+    select: { id: true, color: true, memberSizeRef: { select: { color: true } } },
+  });
+  for (const f of family) {
+    const own = f.memberSizeRef?.color;
+    if (own && own.toLowerCase() !== f.color.toLowerCase()) {
+      await db.takeoffCondition.update({ where: { id: f.id }, data: { color: own } });
+      f.color = own;
+    }
+  }
+  const seen = new Set(family.filter((f) => f.memberSizeRef?.color).map((f) => f.color.toLowerCase()));
+  for (const f of family) {
+    if (f.memberSizeRef?.color) continue;
+    if (seen.has(f.color.toLowerCase())) {
+      const color = await freshColor(projectId, seen);
+      await db.takeoffCondition.update({ where: { id: f.id }, data: { color } });
+      seen.add(color.toLowerCase());
+    } else seen.add(f.color.toLowerCase());
+  }
 }
 
 /** Plain lumber (2x6 … 2x12) is 1-1/2" thick; its actual depth from the nominal. */
@@ -139,28 +174,33 @@ export async function placeBySpan(projectId: string, measurementId: string, opts
       memberSize: size.name,
       memberSizeId: size.id,
       sizeGroup: group,
-      color: size.color ?? (await freshColor(projectId)),
+      color: size.color ?? (await freshColor(projectId, family.map((f) => f.color))),
     });
+    family.push(target);
   }
   if (target.id !== m.conditionId) await db.takeoffMeasurement.update({ where: { id: m.id }, data: { conditionId: target.id } });
-  // Joists in this area that need another size (a wall holds them up partway) are ordered under
-  // that size's takeoff: make sure the family has one for each (takeoff-data hands them over).
-  const shape = { points: parsePoints(m.points), arcs: parseArcs(m.points) };
-  const members = framingMembers(shapePath(c.type, shape), m.angle, (c.spacing / 12) * upf, memberThickness(c.memberSize, upf, c.memberSizeRef?.widthIn));
-  const { sizes } = memberSizes(members, supports, (span) => pickSize(table, span / upf, c.spacing).size, (4 / 12) * upf);
+  // Joist pieces in this area that need another size (a wall breaks them, joist-pieces.ts) are
+  // ordered under that size's takeoff: make sure the family has one for each (takeoff-data hands them over).
+  const shape = { points: parsePoints(m.points), arcs: parseArcs(m.points), angle: m.angle, pitch: m.pitch };
+  const { pieces } = joistPieces({ ...c, memberWidthIn: c.memberSizeRef?.widthIn }, shape, upf, supports);
+  const sizes = sizePieces(pieces, (span) => pickSize(table, span, c.spacing).size).flat();
   const have = new Set([...family.map((f) => f.memberSize), target.memberSize].filter((x): x is string => !!x).map(itemNameKey));
   for (const name of new Set(sizes.filter((x): x is string => !!x))) {
     if (have.has(itemNameKey(name))) continue;
     const size = await memberSizeFor(name);
-    await copyTakeoff(projectId, target.id, {
-      name: familyName(target.name, target.memberSize, size.name),
-      memberSize: size.name,
-      memberSizeId: size.id,
-      sizeGroup: group,
-      color: size.color ?? (await freshColor(projectId)),
-    });
+    family.push(
+      await copyTakeoff(projectId, target.id, {
+        name: familyName(target.name, target.memberSize, size.name),
+        memberSize: size.name,
+        memberSizeId: size.id,
+        sizeGroup: group,
+        color: size.color ?? (await freshColor(projectId, family.map((f) => f.color))),
+      }),
+    );
     have.add(itemNameKey(name));
   }
+  // …and each size its own color (a family made before this could have several alike).
+  await distinctFamilyColors(projectId, group);
   // The job's lumber lines follow — unless the caller does that once for many shapes.
   if (opts.sync !== false) await syncAutoItems(projectId);
   return { conditionId: target.id, size: pick.size, pick, spanFt };
@@ -183,32 +223,7 @@ export async function resizeFamily(projectId: string, conditionId: string) {
   const c = await db.takeoffCondition.findFirst({ where: { id: conditionId, projectId }, select: { id: true, sizeGroup: true, spanTableId: true } });
   if (!c?.spanTableId) return 0;
   const group = c.sizeGroup ?? c.id;
-  // Sizes of one family are told apart on the plan by color: a size's own color (Settings → Member
-  // sizes) when it has one; any others sharing a color get their own.
-  const family = await db.takeoffCondition.findMany({
-    where: { projectId, OR: [{ sizeGroup: group }, { id: group }] },
-    orderBy: { sortOrder: "asc" },
-    select: { id: true, color: true, memberSizeRef: { select: { color: true } } },
-  });
-  for (const f of family) {
-    const own = f.memberSizeRef?.color;
-    if (own && own.toLowerCase() !== f.color.toLowerCase()) {
-      await db.takeoffCondition.update({ where: { id: f.id }, data: { color: own } });
-      f.color = own;
-    }
-  }
-  const seen = new Set(family.filter((f) => f.memberSizeRef?.color).map((f) => f.color.toLowerCase()));
-  for (const f of family) {
-    if (f.memberSizeRef?.color) {
-      seen.add(f.color.toLowerCase());
-      continue;
-    }
-    if (seen.has(f.color.toLowerCase())) {
-      const color = await freshColor(projectId);
-      await db.takeoffCondition.update({ where: { id: f.id }, data: { color } });
-      seen.add(color.toLowerCase());
-    } else seen.add(f.color.toLowerCase());
-  }
+  await distinctFamilyColors(projectId, group);
   const shapes = await db.takeoffMeasurement.findMany({
     where: { sizeLocked: false, condition: { projectId, OR: [{ sizeGroup: group }, { id: group }] } },
     select: { id: true, conditionId: true },

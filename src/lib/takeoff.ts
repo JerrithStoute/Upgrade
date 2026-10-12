@@ -518,6 +518,23 @@ export function hipLength(c: ConditionCalc, m: MeasurementShape, unitsPerFoot: n
   return { plan, length: plan * hipFactor(p1, p2) };
 }
 
+/**
+ * Joists / rafters: how far the two pieces of a joist lap where a wall or beam breaks it, in
+ * inches of overlap (IRC R502.6.1: at least 3"). Each piece runs half of it past the wall's center.
+ */
+export type FramingOptions = { lapIn: number };
+export const DEFAULT_FRAMING_OPTIONS: FramingOptions = { lapIn: 3 };
+
+export function framingOptions(options: string | null | undefined): FramingOptions {
+  try {
+    const o = JSON.parse(options ?? "{}") as Partial<FramingOptions>;
+    const lapIn = Number(o.lapIn);
+    return { lapIn: Number.isFinite(lapIn) && lapIn >= 0 ? Math.min(lapIn, 48) : DEFAULT_FRAMING_OPTIONS.lapIn };
+  } catch {
+    return DEFAULT_FRAMING_OPTIONS;
+  }
+}
+
 /** Beams: how long the bearing is at each end, and how many plies (built-up LVLs). */
 export type BeamOptions = { bearingIn: number; plies: number };
 export const DEFAULT_BEAM_OPTIONS: BeamOptions = { bearingIn: 3, plies: 1 };
@@ -701,7 +718,8 @@ export type BoardPattern = { length: number; cuts: number[]; count: number; cuts
 /**
  * How joist/rafter cuts are packed into boards:
  * - WASTE: the fewest lineal feet ordered (least waste) — the default;
- * - CHEAPEST: the lowest cost, from your prices for each length;
+ * - CHEAPEST: the lowest cost, from your prices for each length (and a joist that crosses a wall is
+ *   one long board over it when that costs less than the two pieces — joist-pieces.ts);
  * - LENGTH: every board one length you choose (`packLength`).
  */
 export const PACK_MODES = ["WASTE", "CHEAPEST", "LENGTH"] as const;

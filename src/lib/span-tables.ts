@@ -155,27 +155,37 @@ type P = [number, number];
  */
 export function longestUnsupported(members: [P, P][], supports: [P, P][], onWall = 0) {
   let longest = 0;
-  for (const [a, b] of members) {
-    const dx = b[0] - a[0];
-    const dy = b[1] - a[1];
-    const len = Math.hypot(dx, dy);
-    if (!(len > 0)) continue;
-    if (onWall > 0 && lyingOn([a, b], supports, onWall)) continue; // sitting on a wall the whole way: held up all along
-    const at = [0, len];
-    for (const [c, d] of supports) {
-      const ex = d[0] - c[0];
-      const ey = d[1] - c[1];
-      const cross = dx * ey - dy * ex;
-      if (Math.abs(cross) < 1e-9 * len * Math.hypot(ex, ey)) continue; // parallel: it never holds this joist up
-      const t = ((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / cross; // along the joist, 0…1
-      const u = ((c[0] - a[0]) * dy - (c[1] - a[1]) * dx) / cross; // along the support, 0…1
-      // A wall stopping just shy of the joist (where its traced line ends) still counts — 1% of its length.
-      if (t > 0 && t < 1 && u >= -0.01 && u <= 1.01) at.push(t * len);
-    }
-    at.sort((x, y) => x - y);
+  for (const m of members) {
+    const at = memberBreaks(m, supports, onWall);
+    if (!at) continue; // sitting on a wall the whole way: held up all along
     for (let i = 1; i < at.length; i++) longest = Math.max(longest, at[i] - at[i - 1]);
   }
   return longest;
+}
+
+/**
+ * Where a member is held up, measured along it from its start (page units): its two ends and
+ * every wall or beam that crosses it, in order. Null when it lies on a wall the whole way (within
+ * `onWall`) — held up all along, no span of its own.
+ */
+export function memberBreaks([a, b]: [P, P], supports: [P, P][], onWall = 0): number[] | null {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  if (!(len > 0)) return [0, 0];
+  if (onWall > 0 && lyingOn([a, b], supports, onWall)) return null;
+  const at = [0, len];
+  for (const [c, d] of supports) {
+    const ex = d[0] - c[0];
+    const ey = d[1] - c[1];
+    const cross = dx * ey - dy * ex;
+    if (Math.abs(cross) < 1e-9 * len * Math.hypot(ex, ey)) continue; // parallel: it never holds this joist up
+    const t = ((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / cross; // along the joist, 0…1
+    const u = ((c[0] - a[0]) * dy - (c[1] - a[1]) * dx) / cross; // along the support, 0…1
+    // A wall stopping just shy of the joist (where its traced line ends) still counts — 1% of its length.
+    if (t > 0 && t < 1 && u >= -0.01 && u <= 1.01) at.push(t * len);
+  }
+  return at.sort((x, y) => x - y);
 }
 
 /** A joist lying along a wall (within `tol`) for most of its length. */

@@ -13,6 +13,7 @@ import {
   METRICS_BY_TYPE,
   hipFactor,
   beamOptions,
+  framingOptions,
   metricLabel,
   slopeFactor,
   packBoards,
@@ -142,6 +143,7 @@ export function ConditionForm({
   // Beams are level: no pitch, and their bearing stands in for overhang.
   const showPitch = type !== "COUNT" && !isAuto && !isBeam;
   const beam = beamOptions(values?.options);
+  const framing = framingOptions(values?.options);
   const factor = isHip ? hipFactor(pitch, pitch2) : slopeFactor(pitch);
   const pitchHint = isHip
     ? pitch > 0 && pitch2 > 0
@@ -280,6 +282,15 @@ export function ConditionForm({
             <input id={p("spacing")} name="spacing" inputMode="decimal" className="input" defaultValue={values?.spacing ?? 16} />
           </Field>
         ) : null}
+        {type === "FRAMING" ? (
+          <Field
+            label="Lap over walls (in)"
+            htmlFor={p("lap")}
+            hint="Where a wall or beam you've traced holds a joist up partway, it's two pieces lapped over it by this much (IRC: at least 3)"
+          >
+            <input id={p("lap")} name="opt_lapIn" inputMode="decimal" className="input" defaultValue={framing.lapIn} />
+          </Field>
+        ) : null}
         {isBeam ? (
           <>
             <Field label="Bearing each end (in)" htmlFor={p("bearing")} hint="Added to both ends of every beam (3 = 6 in. longer)">
@@ -308,7 +319,7 @@ export function ConditionForm({
             className="md:col-span-2"
             hint={
               spanTableId
-                ? "Each area you draw gets the size its longest span calls for — the longest stretch a joist runs between the walls or beams you've traced — and goes into that size's takeoff (made for you). Click an area to pick a size yourself."
+                ? "Joists are broken at the walls and beams you've traced, and each piece gets the size its own span calls for — in that size's takeoff (made for you). Click an area to pick a size yourself."
                 : spanTables.length
                   ? "Or let a span table pick the size for each area."
                   : "Make a span table in Settings → Span tables to have sizes picked for you."
@@ -557,7 +568,7 @@ function PackingFields({
           {mode === "WASTE"
             ? "Orders the fewest feet of lumber."
             : mode === "CHEAPEST"
-              ? "Orders what costs least, from your prices for each length. Unpriced lengths are estimated from the nearest priced one's price per foot."
+              ? "Orders what costs least, from your prices for each length. Unpriced lengths are estimated from the nearest priced one's price per foot. A joist that crosses a wall is one long board over it when that costs less than two pieces broken on the wall — only when every board involved has its own price (otherwise it's broken on the wall)."
               : "Every board is the length you enter."}
         </p>
       </FormGrid>

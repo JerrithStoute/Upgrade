@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { extractSegments } from "./pdf-vectors";
+import { extractSegments, extractTextBoxes, type TextBox } from "./pdf-vectors";
 
 const ASSETS = "/api/pdfjs";
 
@@ -65,7 +65,8 @@ const MAX_PIXELS = 40_000_000;
 /**
  * Renders one page of a PDF (or an image) at the current zoom. Page units are
  * PDF points at 100% (or image pixels); `onSize` reports the page size in them.
- * `onVectors` receives the page's line segments (for snapping). With `fill`, the
+ * `onVectors` receives the page's line segments (for snapping); `onText`, where its own text is
+ * (so print labels can stay off it). With `fill`, the
  * page stretches to its container's width (print), rendered at `zoom` resolution.
  */
 export function PlanCanvas({
@@ -77,6 +78,7 @@ export function PlanCanvas({
   onPageCount,
   onVectors,
   onRendered,
+  onText,
   fill = false,
 }: {
   url: string;
@@ -87,6 +89,7 @@ export function PlanCanvas({
   onPageCount?: (n: number) => void;
   onVectors?: (segments: Float32Array) => void;
   onRendered?: () => void;
+  onText?: (boxes: TextBox[]) => void;
   fill?: boolean;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -94,9 +97,9 @@ export function PlanCanvas({
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const callbacks = useRef({ onSize, onPageCount, onVectors, onRendered });
+  const callbacks = useRef({ onSize, onPageCount, onVectors, onRendered, onText });
   useEffect(() => {
-    callbacks.current = { onSize, onPageCount, onVectors, onRendered };
+    callbacks.current = { onSize, onPageCount, onVectors, onRendered, onText };
   });
 
   // Load (or share) the document.
@@ -141,6 +144,12 @@ export function PlanCanvas({
             .then((pdfjs) => extractSegments(pdfjs, p))
             .then((segments) => !cancelled && callbacks.current.onVectors?.(segments))
             .catch(() => !cancelled && callbacks.current.onVectors?.(new Float32Array()));
+        }
+        if (callbacks.current.onText) {
+          loadPdfJs()
+            .then((pdfjs) => extractTextBoxes(pdfjs, p))
+            .then((boxes) => !cancelled && callbacks.current.onText?.(boxes))
+            .catch(() => !cancelled && callbacks.current.onText?.([]));
         }
       },
       (e) => {

@@ -74,7 +74,8 @@ import { PlanCanvas, renderSheetGray } from "./plan-canvas";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { FoundWalls, WallFindPanel, type WallFind } from "./wall-find";
 import { findWalls } from "@/lib/wall-detect";
-import { areaJoists, joistGroupText } from "./joist-labels";
+import { areaJoists, joistGroupText, pieceLine } from "./joist-labels";
+import type { MemberPiece } from "@/lib/joist-pieces";
 import { searchSheet } from "./symbol-search";
 import { TakeoffMenu, type TakeoffMenuData } from "./takeoff-menu";
 import { RevisionOverlay, type DiffMap } from "./revision-overlay";
@@ -155,8 +156,8 @@ type ViewerMeasurement = {
   materialItemId?: string | null; // Doors: which door this marker is
   cased?: boolean | null; // Windows: cased or not (null = cased)
   sizeLocked?: boolean; // span-table joists/rafters: you picked its size yourself
-  /** Span-table joists split by size: the takeoff each joist is ordered under, in layout order. */
-  memberOwners?: string[];
+  /** Joists broken at walls / split by size: each joist's pieces and the takeoff each is ordered under (joist-pieces.ts). */
+  memberPieces?: MemberPiece[][];
   pending?: boolean;
 };
 
@@ -316,6 +317,8 @@ function writePanel(v: PanelView | "") {
   }
   window.dispatchEvent(new Event(LABELS_EVENT));
 }
+// Takeoffs hidden on the plan, remembered per job (in this browser).
+const HIDDEN_KEY = "takeoff.hidden.";
 // Plan rotation (view only — measurements stay as drawn), remembered per sheet.
 const ROTATION_KEY = "takeoff.rotation.";
 function readRotation(sheetKey: string): number {
@@ -572,6 +575,27 @@ export function PlanViewer({
   // "Clear takeoff": asking which sheets.
   const [clearing, setClearing] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
+  // The takeoffs you hid stay hidden next time you open this job's plans (remembered in this
+  // browser). Shapes wait for that to load, so they don't all flash on first.
+  const [hiddenReady, setHiddenReady] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(HIDDEN_KEY + projectId) ?? "[]");
+      if (Array.isArray(saved)) setHidden(new Set(saved.filter((x): x is string => typeof x === "string")));
+    } catch {
+      /* storage blocked: everything shows */
+    }
+    setHiddenReady(true);
+  }, [projectId]);
+  useEffect(() => {
+    if (!hiddenReady) return;
+    try {
+      if (hidden.size) localStorage.setItem(HIDDEN_KEY + projectId, JSON.stringify([...hidden]));
+      else localStorage.removeItem(HIDDEN_KEY + projectId);
+    } catch {
+      /* storage blocked: it just won't be remembered */
+    }
+  }, [hidden, hiddenReady, projectId]);
   const [pending, setPending] = useState<ViewerMeasurement[]>([]);
   const [removing, setRemoving] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
@@ -786,7 +810,7 @@ export function PlanViewer({
     const ids = new Set<string>();
     for (const m of shapes) {
       ids.add(m.conditionId);
-      for (const o of m.memberOwners ?? []) ids.add(o);
+      for (const row of m.memberPieces ?? []) for (const p of row) ids.add(p.owner);
     }
     const groups = new Set(conditions.flatMap((c) => (ids.has(c.id) && c.sizeGroup ? [c.sizeGroup] : [])));
     for (const c of conditions) if ((c.sizeGroup && groups.has(c.sizeGroup)) || groups.has(c.id)) ids.add(c.id);
@@ -806,6 +830,20 @@ export function PlanViewer({
     setFindOpen(false);
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-cond-row="${id}"]`)?.scrollIntoView({ block: "nearest" }));
   };
+  // Back from making a takeoff with "More options" (the address ends #condition-<id>): it goes on
+  // this page's list, picked and ready to measure — as one added from the box above does.
+  const madeHandled = useRef<string | null>(null);
+  const pickRef = useRef(pickTakeoff);
+  useEffect(() => {
+    pickRef.current = pickTakeoff;
+  });
+  useEffect(() => {
+    const made = /^#condition-([\w-]+)$/.exec(window.location.hash)?.[1];
+    if (!made || madeHandled.current === made || !conditions.some((c) => c.id === made)) return;
+    madeHandled.current = made;
+    window.history.replaceState(window.history.state, "", window.location.pathname + window.location.search);
+    pickRef.current(made);
+  }, [conditions]);
   /** The Library window's Add: onto the job (it stays open for more). */
   const addFromLibrary = async (l: LibraryTakeoff) => {
     try {
@@ -2316,10 +2354,10 @@ export function PlanViewer({
 
   const renderShape = (m: ViewerMeasurement) => {
     const c = condById.get(m.conditionId);
-    if (!c) return null;
+    if (!c || !hiddenReady) return null;
     // A joist area whose joists are ordered under several size takeoffs shows while any of them does.
     const ownShowing = !hidden.has(c.id);
-    if (!ownShowing && !m.memberOwners?.some((o) => !hidden.has(o))) return null;
+    if (!ownShowing && !m.memberPieces?.some((row) => row.some((p) => !hidden.has(p.owner)))) return null;
     const isSel = m.id === selectedId || multi.includes(m.id);
     const color = c.color;
     const common = {
@@ -2472,15 +2510,30 @@ export function PlanViewer({
       c.type === "FRAMING" && unitsPerFoot
         ? framingMembers(shapePath(c.type, m), m.angle, (c.spacing / 12) * unitsPerFoot, memberThickness(c.memberSize, unitsPerFoot, c.memberWidthIn))
         : [];
-    // Each joist in its size takeoff's color (when the area's joists are split by size); hidden with that takeoff.
-    const owners = m.memberOwners && m.memberOwners.length === members.length ? m.memberOwners : null;
+    // Joists broken at walls (and split by size): each piece drawn on its own, in the color of the
+    // size takeoff it's ordered under — hidden with that takeoff.
+    const split = m.memberPieces && m.memberPieces.length === members.length ? m.memberPieces : null;
+    const owners = split?.some((row) => row.some((p) => p.owner !== c.id)) ? split : null;
     // Split by size: the area isn't one size, so it isn't filled in one color — each size shades
-    // the strip its joists cover (a joist-spacing-wide band under each joist), hidden with it.
+    // the strip its pieces cover (a joist-spacing-wide band under each piece), hidden with it.
     const band = owners && unitsPerFoot ? (c.spacing / 12) * unitsPerFoot : 0;
-    const shownOwner = (i: number) => {
-      const o = owners ? condById.get(owners[i]) : c;
+    const shownOwner = (id: string) => {
+      const o = condById.get(id) ?? c;
       return o && !hidden.has(o.id) ? o : null;
     };
+    // Each joist's pieces as lines, a hair apart where they meet over a wall so the break shows.
+    const gap = unitsPerFoot ? unitsPerFoot / 8 : 0;
+    const pieceLines = members.flatMap((mem, i) =>
+      (split?.[i] ?? [{ a: 0, b: 1, owner: c.id, length: 0 }]).map((p, j, row) => {
+        const [a, b] = pieceLine(mem, p);
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        const ux = (b[0] - a[0]) / len;
+        const uy = (b[1] - a[1]) / len;
+        const s0 = j > 0 ? gap / 2 : 0;
+        const s1 = j < row.length - 1 ? gap / 2 : 0;
+        return { key: `${i}.${j}`, owner: p.owner, a: [a[0] + ux * s0, a[1] + uy * s0] as Pt, b: [b[0] - ux * s1, b[1] - uy * s1] as Pt };
+      }),
+    );
     return (
       <g key={m.id} {...common}>
         {owners ? (
@@ -2515,17 +2568,17 @@ export function PlanViewer({
               <polygon points={d} />
             </clipPath>
             <g clipPath={`url(#area-${m.id})`} pointerEvents="none">
-              {members.map(([a, b], i) => {
-                const owner = shownOwner(i);
-                return owner ? <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeOpacity={0.16} strokeWidth={band} strokeLinecap="butt" /> : null;
+              {pieceLines.map(({ key, owner: id, a, b }) => {
+                const owner = shownOwner(id);
+                return owner ? <line key={key} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeOpacity={0.16} strokeWidth={band} strokeLinecap="butt" /> : null;
               })}
             </g>
           </>
         ) : null}
-        {members.map(([a, b], i) => {
-          const owner = shownOwner(i);
+        {pieceLines.map(({ key, owner: id, a, b }) => {
+          const owner = shownOwner(id);
           if (!owner) return null;
-          return <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeWidth={owners ? 2 : 1.25} {...stroke} />;
+          return <line key={key} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeWidth={owners ? 2 : 1.25} {...stroke} />;
         })}
         {c.type === "FRAMING" && m.points.length >= 3 && !(dirFor && "id" in dirFor && dirFor.id === m.id) ? (
           <>

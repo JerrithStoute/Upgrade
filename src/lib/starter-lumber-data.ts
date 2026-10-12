@@ -14,10 +14,10 @@ const iJoist = (brand: string, series: string, widthIn: number, depths: (keyof t
 const engineered = (name: string, widthIn: number, depthIn: number, stockLengths: string | null): StarterSize => ({ name, kind: "ENGINEERED", widthIn, depthIn, soldAs: "EXACT_LF", stockLengths, boardFeet: false });
 
 export const STARTER_MEMBER_SIZES: StarterSize[] = [
-  // Sawn through 24'; 2x6 and 2x8 come on to 32' (finger-jointed past 24').
+  // Sawn through 24'; 2x6 comes on to 32' (finger-jointed past 24'). 2x8 stops at 24'.
   dim("2x4", 3.5, "8-24"),
   dim("2x6", 5.5, "8-32"),
-  dim("2x8", 7.25, "8-32"),
+  dim("2x8", 7.25, "8-24"),
   dim("2x10", 9.25, "8-24"),
   dim("2x12", 11.25, "8-24"),
   ...iJoist("TJI", "110", 1.75, ["9-1/2", "11-7/8"]),

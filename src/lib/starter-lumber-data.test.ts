@@ -25,11 +25,11 @@ test("the starter Item List is small: only what a first wall takeoff uses", () =
   assert.ok(starterItems().every((i) => !/ FJ\b/.test(i.name)), "no finger-jointed labels");
 });
 
-test("starter lumber: sawn to 24', 2x6 and 2x8 on to 32'", () => {
+test("starter lumber: sawn to 24', 2x6 on to 32'", () => {
   const len = (n: string) => parseStockLengths(STARTER_MEMBER_SIZES.find((s) => s.name === n)!.stockLengths);
   assert.deepEqual(len("2x4"), [8, 10, 12, 14, 16, 18, 20, 22, 24]);
   assert.equal(Math.max(...len("2x6")!), 32);
-  assert.equal(Math.max(...len("2x8")!), 32);
+  assert.equal(Math.max(...len("2x8")!), 24);
   assert.equal(Math.max(...len("2x10")!), 24);
   assert.equal(new Set(STARTER_MEMBER_SIZES.map((s) => itemNameKey(s.name))).size, STARTER_MEMBER_SIZES.length, "no duplicate names");
 });

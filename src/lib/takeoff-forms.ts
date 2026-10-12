@@ -25,6 +25,8 @@ import {
   packMode,
   beamOptions,
   DEFAULT_BEAM_OPTIONS,
+  DEFAULT_FRAMING_OPTIONS,
+  framingOptions,
 } from "./takeoff";
 
 /**
@@ -69,7 +71,9 @@ export async function conditionFields(fd: FormData) {
             ? optionsJson(fd, DEFAULT_WINDOW_OPTIONS)
             : type === "BEAM"
               ? JSON.stringify(beamOptions(optionsJson(fd, DEFAULT_BEAM_OPTIONS)))
-              : null;
+              : type === "FRAMING"
+                ? JSON.stringify(framingOptions(optionsJson(fd, DEFAULT_FRAMING_OPTIONS)))
+                : null;
   // "Do all windows use the same cost code?" — answered on the form, remembered for next time.
   await saveCodeRulesFromForm(fd);
   if (type === "WALL" && options) await rememberItems(options);

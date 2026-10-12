@@ -87,3 +87,40 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy): Promise
   }
   return new Float32Array(out);
 }
+
+/** A box around some of the plan's own text, in page units: [left, top, right, bottom]. */
+export type TextBox = [number, number, number, number];
+
+/**
+ * Where a PDF page has text (dimensions, room names, notes), as boxes in page units — so the
+ * print's labels can stay off it. Scanned plans have none.
+ */
+export async function extractTextBoxes(pdfjs: PdfJs, page: PDFPageProxy): Promise<TextBox[]> {
+  const vt = page.getViewport({ scale: 1 }).transform as Matrix;
+  const content = await page.getTextContent();
+  const out: TextBox[] = [];
+  for (const item of content.items) {
+    if (!("str" in item) || !item.str.trim() || !(item.width > 0)) continue;
+    const t = pdfjs.Util.transform(vt, item.transform) as Matrix;
+    const along = Math.hypot(t[0], t[1]);
+    const tall = Math.hypot(t[2], t[3]);
+    if (!(along > 0) || !(tall > 0)) continue;
+    const ux = t[0] / along;
+    const uy = t[1] / along;
+    // "Up" from the baseline (the text's own vertical, whichever way it's turned).
+    const vx = t[2] / tall;
+    const vy = t[3] / tall;
+    const [x, y] = [t[4], t[5]];
+    const w = item.width;
+    const corners: [number, number][] = [
+      [x - vx * tall * 0.25, y - vy * tall * 0.25], // below the baseline (descenders)
+      [x + ux * w - vx * tall * 0.25, y + uy * w - vy * tall * 0.25],
+      [x + ux * w + vx * tall, y + uy * w + vy * tall],
+      [x + vx * tall, y + vy * tall],
+    ];
+    const xs = corners.map((c) => c[0]);
+    const ys = corners.map((c) => c[1]);
+    out.push([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+  }
+  return out;
+}
