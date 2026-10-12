@@ -3,7 +3,7 @@
 import { useState, useSyncExternalStore } from "react";
 import Link from "@/components/link";
 import { Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
-import { cn, costCodeLabel, money, num } from "@/lib/utils";
+import { cn, money, num } from "@/lib/utils";
 import {
   CONDITION_COLORS,
   CONDITION_TYPES,
@@ -402,63 +402,57 @@ export function ConditionForm({
         <CodeRuleFields key={type} type={type} costCodes={costCodes} rules={codeRules} categories={Array.from(new Set(itemOptions.map((i) => i.category))).sort()} />
       ) : null}
 
-      {/* Cost code on its own row, then a wide unit cost (room for the price), markup and waste. */}
+      {/* A takeoff is priced by its items only; these older settings are kept as they were, unused. */}
+      <input type="hidden" name="costCodeId" value={values?.costCodeId ?? ""} />
+      <input type="hidden" name="unitCost" value={values?.unitCost ?? 0} />
+      <input type="hidden" name="markupPct" value={values?.markupPct ?? defaultMarkup} />
+      <input type="hidden" name="group" value={values?.group ?? "Takeoff"} />
       <FormGrid className="md:grid-cols-4">
         {isMember || isAuto ? (
-          // Each material carries its own cost code (asked above); the takeoff keeps whatever it had.
-          <input type="hidden" name="costCodeId" value={values?.costCodeId ?? ""} />
-        ) : (
-          <Field label="Cost code" htmlFor={p("costCodeId")} className="md:col-span-4">
-            <select id={p("costCodeId")} name="costCodeId" className="input" defaultValue={values?.costCodeId ?? ""}>
-              <option value="">—</option>
-              {costCodes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {costCodeLabel(c)}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
-        {isMember || isAuto ? (
-          <p className="self-end pb-2 text-xs text-slate-500 md:col-span-3">
-            {isAuto ? (
-              `Materials are added automatically from the ${isWall ? "walls" : isDoor ? "doors" : isWindow ? "windows" : "openings"} and priced from Settings → Item List.`
-            ) : (
-              <>Lumber is priced per piece from Settings → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.</>
-            )}
-          </p>
+          <>
+            <Field
+              label={isMember ? "Extra boards (waste %)" : "Waste %"}
+              htmlFor={p("wastePct")}
+              hint={
+                isMember
+                  ? "Whole extra boards, of the length you order most"
+                  : isWall
+                    ? "Added to studs, sheathing, drywall & base"
+                    : isOpening
+                      ? "Added to king & jack studs"
+                      : "Added to casing & trim"
+              }
+            >
+              <input
+                key={type}
+                id={p("wastePct")}
+                name="wastePct"
+                inputMode="decimal"
+                step="0.5"
+                min="0"
+                className="input"
+                defaultValue={values?.wastePct ?? (isWall || isDoor || isWindow ? 10 : 0)}
+              />
+            </Field>
+            <p className="self-end pb-2 text-xs text-slate-500 md:col-span-3">
+              {isAuto ? (
+                `Materials are added automatically from the ${isWall ? "walls" : isDoor ? "doors" : isWindow ? "windows" : "openings"} and priced from Settings → Item List.`
+              ) : (
+                <>Lumber is priced per piece from Settings → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.</>
+              )}
+            </p>
+          </>
         ) : (
           <>
-            <Field label="Unit cost" htmlFor={p("unitCost")} className="md:col-span-2">
-              <input id={p("unitCost")} name="unitCost" inputMode="decimal" className="input" defaultValue={values?.unitCost ?? 0} />
-            </Field>
-            <Field label="Markup %" htmlFor={p("markupPct")}>
-              <input id={p("markupPct")} name="markupPct" inputMode="decimal" className="input" defaultValue={values?.markupPct ?? defaultMarkup} />
-            </Field>
+            <input type="hidden" name="wastePct" value={values?.wastePct ?? 0} />
+            <p className="text-xs text-slate-500 md:col-span-4">
+              Priced by its items — add them below, each with its own price and waste %. With no items it&apos;s a measurement only (it doesn&apos;t go on the estimate).
+            </p>
           </>
         )}
-        <Field
-          label="Waste %"
-          htmlFor={p("wastePct")}
-          hint={isMember ? "Extra pieces, rounded up" : isWall ? "Studs, sheets & baseboard" : isOpening ? "King & jack studs" : isDoor || isWindow ? "Trim" : undefined}
-        >
-          <input
-            key={type}
-            id={p("wastePct")}
-            name="wastePct"
-            inputMode="decimal"
-            step="0.5"
-            min="0"
-            className="input"
-            defaultValue={values?.wastePct ?? (isWall || isDoor || isWindow ? 10 : 0)}
-          />
-        </Field>
       </FormGrid>
       <FormGrid className="md:grid-cols-4">
-        <Field label="Estimate group" htmlFor={p("group")} hint="Section heading on the estimate">
-          <input id={p("group")} name="group" className="input" defaultValue={values?.group ?? "Takeoff"} />
-        </Field>
-        <label className="flex items-start gap-2 self-end pb-2 text-sm text-slate-700 md:col-span-3">
+        <label className="flex items-start gap-2 self-end pb-2 text-sm text-slate-700 md:col-span-4">
           <input type="checkbox" name="referenceOnly" defaultChecked={values?.referenceOnly ?? false} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
           <span>
             <span className="font-medium">Reference only</span>

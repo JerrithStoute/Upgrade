@@ -113,7 +113,9 @@ export function ConditionDrawer({
         {condition ? (
           <div className="space-y-2 border-t border-slate-100 pt-4">
             <p className="label">{isMember ? "Lumber & add-on items" : "Assembly items"}</p>
-            {condition.items.length === 0 ? <p className="text-xs text-slate-500">None yet.</p> : null}
+            {condition.items.length === 0 ? (
+              <p className="text-xs text-slate-500">{isMember ? "None yet." : "None yet — until it has one, this takeoff is a measurement only (not on the estimate)."}</p>
+            ) : null}
             <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
               {condition.items.map((item) =>
                 editItem === item.id ? (
@@ -135,7 +137,7 @@ export function ConditionDrawer({
                       <span className="block truncate text-slate-900">{item.description}</span>
                       <span className="block text-xs text-slate-500">
                         {isLumberMetric(item.metric)
-                          ? "From the layout · price in Settings → Item List"
+                          ? `From the layout · price in Settings → Item List${item.metric.startsWith("pieces:") ? " · extra boards from the takeoff's waste %" : item.wastePct > 0 ? ` · ${num(item.wastePct, 1)}% waste from the takeoff` : ""}`
                           : `${num(item.qty, 4)} ${item.unit} per ${num(item.per, 4)} ${metricUnit(item.metric)} of ${metricLabel(item.metric)
                               .replace(/ \(.*\)$/, "")
                               .toLowerCase()}`}

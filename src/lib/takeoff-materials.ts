@@ -2,7 +2,6 @@ import "server-only";
 import { conditionTotals, loadConditions, type LoadedCondition } from "./takeoff-data";
 import {
   LUMBER_METRIC_PREFIX,
-  METRICS,
   assemblyBase,
   compareMaterialNames,
   lineWastePct,
@@ -10,7 +9,6 @@ import {
   isMemberType,
   itemNameKey,
   type BoardPattern,
-  type MetricKey,
 } from "./takeoff";
 import { syncAutoItemsIfChanged } from "./walls";
 
@@ -184,22 +182,7 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
       continue;
     }
 
-    add(
-      `condition:${c.id}`,
-      {
-        name: c.name,
-        category: "Takeoffs",
-        sku: null,
-        vendor: null,
-        unit: METRICS[c.metric as MetricKey]?.unit ?? totals.unit,
-        codeKey: c.costCodeId ?? "none",
-        codeLabel: codeLabelOf(c.costCode),
-      },
-      totals.quantityWithWaste,
-      totals.quantityWithWaste * c.unitCost,
-      false,
-      c.name,
-    );
+    // Any other takeoff with no items is a measurement only: nothing to order until it has one.
   }
 
   const lines: MaterialLine[] = Array.from(acc.values()).map((r) => {

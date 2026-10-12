@@ -7,7 +7,7 @@ import { parseMarkupTable, tableTaxPct } from "./markup";
 import { guessCostType, rollupTakeoff } from "./estimate-sheet";
 import { divisionCategories } from "./estimate-categories";
 import { detailChanges, mergeNote, parseAutoNote, parseSnapshot, toSnapshot, type ChangeLine, type SnapRow } from "./takeoff-changes";
-import {
+import { usesTakeoffWaste,
   addMetrics,
   assemblyQuantity,
   emptyMetrics,
@@ -326,7 +326,7 @@ export function conditionTotals(c: LoadedCondition): ConditionTotals {
   const quantityWithWaste =
     isMemberType(c.type) && soldAs !== "LF" && neededLf > 0 && (c.metric === "stock_lf" || c.metric === "board_feet")
       ? quantity * (orderLf / neededLf)
-      : withWaste(quantity, c.wastePct);
+      : withWaste(quantity, usesTakeoffWaste(c.type) ? c.wastePct : 0);
   return {
     metrics,
     quantity,
@@ -381,21 +381,8 @@ export function conditionEstimateLines(c: LoadedCondition, totals: ConditionTota
   // Reference only (Heated & cooled, to check the plan): measured, never priced.
   if (c.referenceOnly) return [];
   const round = (n: number) => Math.round(n * 100) / 100;
-  if (c.items.length === 0) {
-    return [
-      {
-        conditionId: c.id,
-        itemId: null,
-        costCodeId: c.costCodeId,
-        group: c.group,
-        description: withSize(c),
-        quantity: round(totals.quantityWithWaste),
-        unit: totals.unit,
-        unitCost: c.unitCost,
-        markupPct: c.markupPct,
-      },
-    ];
-  }
+  // No items: a measurement only — it's priced by adding an item.
+  if (c.items.length === 0) return [];
   return c.items.map((i) => ({
     conditionId: c.id,
     itemId: i.id,

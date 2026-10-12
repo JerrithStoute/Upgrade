@@ -954,6 +954,13 @@ export function framingBoards(c: ConditionCalc, shapes: { m: MeasurementShape; u
   return { ...packBoards(lengths, parseStockLengths(c.stockLengths), { mode: c.packMode, length: c.packLength, prices: c.lengthPrices }), lengths };
 }
 
+/**
+ * Takeoffs whose own Waste % does something: lumber (extra whole boards) and walls, openings,
+ * doors & windows (it's put on their automatic lines — studs, sheets, drywall, base, trim).
+ * Area, linear and count takeoffs are priced by their items, which each carry their own waste.
+ */
+export const usesTakeoffWaste = (type: string) => ["FRAMING", "BEAM", "HIP_VALLEY", "WALL", "OPENING", "DOOR", "WINDOW"].includes(type);
+
 /** Condition quantity with waste. */
 export function withWaste(value: number, wastePct: number) {
   return value * (1 + wastePct / 100);
