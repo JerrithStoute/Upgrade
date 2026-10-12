@@ -11,6 +11,7 @@ import { runAsCompany } from "@/lib/tenant";
 import { afterFirstStep } from "@/lib/two-step";
 import { logSecurity } from "@/lib/security-log";
 import { addStarterLumber } from "@/lib/starter-lumber";
+import { readBuilderInvite } from "@/lib/builder-invites";
 import { passedRobotCheck, ROBOT_CHECK_FAILED } from "@/lib/turnstile";
 import { STARTER_COST_CODES } from "@/lib/starter-cost-codes";
 import { logActivity } from "@/lib/activity";
@@ -37,6 +38,9 @@ function tooMany(key: string, limit: number, windowMs: number) {
 
 export async function signUp(_prev: FormState, fd: FormData): Promise<FormState> {
   if (!(await passedRobotCheck(fd))) return { error: ROBOT_CHECK_FAILED };
+  // Invite-only for now: the link's invitation, for this very email.
+  const invite = await readBuilderInvite(field(fd, "invite"));
+  if (!invite) return { error: "Sign-up is by invitation for now — this link isn't valid or has expired. Ask for a new one." };
   const companyName = field(fd, "companyName").slice(0, 120);
   const name = field(fd, "name").slice(0, 120);
   const email = field(fd, "email").toLowerCase();
@@ -45,6 +49,7 @@ export async function signUp(_prev: FormState, fd: FormData): Promise<FormState>
   const starterLumber = fd.get("starterLumber") === "on";
   if (!companyName || !name) return { error: "Fill in your company name and your name" };
   if (!emailOk(email)) return { error: "That email doesn't look right" };
+  if (email !== invite.email) return { error: `This invitation is for ${invite.email} — sign up with that email` };
   const problem = passwordProblem(password, email);
   if (problem) return { error: problem };
   if (tooMany(`signup:ip:${await clientIp()}`, 5, HOUR)) return { error: "Too many sign-ups from here — try again in an hour" };

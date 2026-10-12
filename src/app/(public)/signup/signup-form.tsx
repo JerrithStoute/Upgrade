@@ -5,7 +5,7 @@ import { authButton, FormNote } from "@/components/auth-card";
 import { RobotCheck } from "@/components/robot-check";
 import { resendConfirmation, signUp, type FormState } from "../actions";
 
-export function SignUpForm({ robotKey }: { robotKey: string | null }) {
+export function SignUpForm({ robotKey, invite }: { robotKey: string | null; invite: { token: string; email: string; name: string | null; companyName: string | null } }) {
   const [state, action, pending] = useActionState<FormState, FormData>(signUp, undefined);
   const [again, resend, resending] = useActionState<FormState, FormData>(resendConfirmation, undefined);
 
@@ -28,23 +28,33 @@ export function SignUpForm({ robotKey }: { robotKey: string | null }) {
 
   return (
     <form action={action} className="space-y-4">
+      <input type="hidden" name="invite" value={invite.token} />
       <div>
         <label className="label" htmlFor="companyName">
           Company name
         </label>
-        <input id="companyName" name="companyName" required className="input" autoComplete="organization" placeholder="e.g. Smith Custom Homes" />
+        <input
+          id="companyName"
+          name="companyName"
+          required
+          className="input"
+          autoComplete="organization"
+          placeholder="e.g. Smith Custom Homes"
+          defaultValue={invite.companyName ?? ""}
+        />
       </div>
       <div>
         <label className="label" htmlFor="name">
           Your name
         </label>
-        <input id="name" name="name" required className="input" autoComplete="name" />
+        <input id="name" name="name" required className="input" autoComplete="name" defaultValue={invite.name ?? ""} />
       </div>
       <div>
         <label className="label" htmlFor="email">
           Email
         </label>
-        <input id="email" name="email" type="email" required className="input" autoComplete="email" />
+        {/* The invitation is for this email. */}
+        <input id="email" name="email" type="email" required className="input bg-slate-50" autoComplete="email" value={invite.email} readOnly />
       </div>
       <div>
         <label className="label" htmlFor="password">

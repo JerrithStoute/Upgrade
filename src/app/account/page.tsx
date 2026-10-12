@@ -1,5 +1,5 @@
 import Link from "@/components/link";
-import { ArrowLeft, KeyRound, LogOut, ShieldCheck } from "lucide-react";
+import { ArrowLeft, KeyRound, LogOut, ShieldCheck, UserPlus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { systemDb } from "@/lib/db";
 import { setupSecret } from "@/lib/two-step-setup";
@@ -7,6 +7,7 @@ import { fmtDateTime } from "@/lib/utils";
 import { SetupForm } from "../login/two-step/forms";
 import { PasswordForm, TwoStepOnForms } from "./forms";
 import { signOutAll } from "./actions";
+import { isPlatformAdmin } from "@/lib/builder-invites";
 
 export const metadata = { title: "Your account" };
 
@@ -36,6 +37,17 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           </p>
         </div>
         {sp.twostep === "on" ? <p className="rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800">Two-step sign-in is on.</p> : null}
+        {isPlatformAdmin(user.email) ? (
+          <section className={card}>
+            <h2 className="mb-1 flex items-center gap-2 font-semibold text-slate-900">
+              <UserPlus className="h-4 w-4 text-slate-400" /> The Builder Station
+            </h2>
+            <p className="mb-3 text-sm text-slate-500">You run it: sign-up is by invitation for now.</p>
+            <Link href="/builders" className="text-sm font-medium text-blue-700 hover:underline">
+              Invite a builder →
+            </Link>
+          </section>
+        ) : null}
 
         <section className={card}>
           <h2 className="mb-1 flex items-center gap-2 font-semibold text-slate-900">

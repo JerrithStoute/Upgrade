@@ -34,6 +34,9 @@ services:
         value: America/Chicago
       - key: APP_URL
         value: https://app.thebuilderstation.com
+      # Who runs The Builder Station: can invite builders (sign-up is invite-only for now).
+      - key: PLATFORM_ADMIN_EMAILS
+        value: jerrith.jti@gmail.com
       # Files and backups: Cloudflare R2.
       - key: STORAGE
         value: cloud
