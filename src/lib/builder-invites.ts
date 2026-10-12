@@ -42,3 +42,21 @@ export async function readBuilderInvite(token: string | null | undefined, key: U
     return null;
   }
 }
+
+// --- Requests from the website ("Request an invite") ----------------------------------
+
+export type InviteRequest = { name: string; company: string; email: string; phone?: string; where?: string; homes?: string; notes?: string };
+
+/** One readable line for the owner's activity list — readInviteRequest() reads the who back out of it. */
+export function inviteRequestText(r: InviteRequest) {
+  const clean = (s?: string) => (s ?? "").replace(/\s+/g, " ").trim();
+  const extras = [clean(r.phone), clean(r.where), r.homes ? `${clean(r.homes)} homes a year` : ""].filter(Boolean);
+  const notes = clean(r.notes);
+  return `${clean(r.name)} (${clean(r.company)}) asked for an invitation — ${clean(r.email).toLowerCase()}${extras.length ? `, ${extras.join(", ")}` : ""}${notes ? `. “${notes}”` : ""}`;
+}
+
+/** Who asked, from inviteRequestText()'s line — to fill in the invitation. */
+export function readInviteRequest(text: string): { name: string; company: string; email: string } | null {
+  const m = /^(.*?) \((.*)\) asked for an invitation — ([^\s,]+@[^\s,]+?)(?=,|\. “|$)/.exec(text);
+  return m ? { name: m[1], company: m[2], email: m[3] } : null;
+}

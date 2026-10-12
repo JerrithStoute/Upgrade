@@ -1,11 +1,14 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { jwtVerify } from "jose";
 import { getSessionKey } from "@/lib/session-secret";
+import { siteIsLive } from "@/lib/site";
 
 const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-bs_session" : "upgrade_session";
 // Pages for people not signed in: sign in (and its second step), sign up, forgot / reset
 // password, confirm email, accept an invitation — and, on this PC only, the test inbox.
 const PUBLIC_PATHS = ["/login", "/logout", "/signup", "/forgot", "/reset", "/verify", "/invite", "/api/health", ...(process.env.NODE_ENV === "production" ? [] : ["/dev/outbox"])];
+// The website (/site), once it's turned on — until then only its owner sees it (src/lib/site.ts).
+const SITE_PATHS = siteIsLive() ? ["/site"] : [];
 
 async function hasValidSession(req: NextRequest) {
   const token = req.cookies.get(SESSION_COOKIE)?.value;
@@ -21,7 +24,7 @@ async function hasValidSession(req: NextRequest) {
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const isPublic = PUBLIC_PATHS.some((p) => pathname === p || pathname.startsWith(p + "/"));
+  const isPublic = [...PUBLIC_PATHS, ...SITE_PATHS].some((p) => pathname === p || pathname.startsWith(p + "/"));
   const authed = await hasValidSession(req);
 
   if (!authed && !isPublic) {

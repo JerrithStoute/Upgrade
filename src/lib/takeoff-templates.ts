@@ -158,9 +158,9 @@ function jobCondition(c: TemplateCondition, projectId: string, sortOrder: number
 export async function libraryTakeoffs() {
   const rows = await db.takeoffTemplateCondition.findMany({
     orderBy: [{ template: { name: "asc" } }, { sortOrder: "asc" }, { id: "asc" }],
-    select: { id: true, name: true, type: true, color: true, template: { select: { name: true } } },
+    select: { id: true, name: true, type: true, color: true, template: { select: { id: true, name: true } }, _count: { select: { items: true } } },
   });
-  return rows.map((r) => ({ id: r.id, name: r.name, type: r.type, color: r.color, template: r.template.name }));
+  return rows.map((r) => ({ id: r.id, name: r.name, type: r.type, color: r.color, template: r.template.name, templateId: r.template.id, items: r._count.items }));
 }
 
 /**

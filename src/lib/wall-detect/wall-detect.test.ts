@@ -100,6 +100,50 @@ function layeredHouse() {
   return segs;
 }
 
+/**
+ * A brick house with a bump-out, drawn plainly (1 unit = 1 inch): each stud wall just its two faces
+ * 3½" apart, brick a hatched 6" band 2" outside (wider than the wall — it needn't match). The bump
+ * (right half, 10' further up) has its left wall on the same line as the inside wall between the
+ * two rooms below: outside wall for the bump's 10', inside wall from there down.
+ */
+function brickBumpHouse() {
+  const segs: number[] = [];
+  const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+  const h = (y: number, x1: number, x2: number) => line(x1, y, x2, y);
+  const v = (x: number, y1: number, y2: number) => line(x, y1, x, y2);
+  // Stud walls.
+  v(0, 0, 360);
+  v(3.5, 3.5, 356.5); // left
+  h(360, 0, 480);
+  h(356.5, 3.5, 476.5); // bottom
+  h(0, 0, 238);
+  h(3.5, 3.5, 238); // top of the left half
+  v(238, -120, 356.5);
+  v(241.5, -116.5, 356.5); // the bump's left wall, on down between the rooms
+  h(-120, 238, 480);
+  h(-116.5, 241.5, 476.5); // the bump's top
+  v(480, -120, 360);
+  v(476.5, -116.5, 356.5); // right
+  // Brick: a 6" band, hatched every 4".
+  const vBand = (a: number, y1: number, y2: number) => {
+    v(a, y1, y2);
+    v(a + 6, y1, y2);
+    for (let y = y1; y + 6 <= y2; y += 4) line(a, y, a + 6, y + 6);
+  };
+  const hBand = (a: number, x1: number, x2: number) => {
+    h(a, x1, x2);
+    h(a + 6, x1, x2);
+    for (let x = x1; x + 6 <= x2; x += 4) line(x, a, x + 6, a + 6);
+  };
+  vBand(-8, 0, 360); // left
+  hBand(362, -8, 488); // bottom
+  hBand(-8, 0, 230); // top of the left half
+  vBand(230, -128, -8); // the bump's left
+  hBand(-128, 230, 488); // the bump's top
+  vBand(482, -128, 368); // right
+  return segs;
+}
+
 const runLength = (runs: Pt[][]) => runs.reduce((sum, r) => sum + r.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - r[i][0], p[1] - r[i][1]), 0), 0);
 
 describe("wall finder", () => {
@@ -162,6 +206,62 @@ describe("wall finder", () => {
       r.runs.every((run) => run.every(([x, y]) => !(x > 243 && y > 20 && y < 40))),
       "the counter isn't a wall",
     );
+  });
+
+  it("brick wider than the wall still makes it an outside wall — all the way round the bump", () => {
+    const r = findWalls(brickBumpHouse(), [1.75, 200], opts);
+    assert.ok(r.ok);
+    assert.equal(r.kind, "exterior");
+    assert.equal(r.thicknessIn, 3.5);
+    // The bump's left wall is in it — but only the bump's 10', not on down between the rooms.
+    const bumpLeft = r.runs.filter((run) => run.every(([x]) => Math.abs(x - 239.75) < 0.5));
+    assert.equal(bumpLeft.length, 1, "the bump's left wall");
+    assert.ok(bumpLeft[0].every(([, y]) => y < 4), `bump's left wall: ${JSON.stringify(bumpLeft[0])}`);
+    // Round the outside on the center line: left 356½, bottom 476½, right 476½ (the bump's 10' too),
+    // the bump's top 238½ and left 120, the left half's top 238 — 1906".
+    assert.ok(Math.abs(r.lengthFt - 1906 / 12) < 0.1, `found ${r.lengthFt} ft`);
+  });
+
+  it("the inside wall on the bump's line stops where the bump starts", () => {
+    const r = findWalls(brickBumpHouse(), [238, 200], opts);
+    assert.ok(r.ok);
+    assert.equal(r.kind, "interior");
+    assert.ok(r.runs.every((run) => run.every(([, y]) => y > -1)), `went up into the bump: ${JSON.stringify(r.runs)}`);
+  });
+
+  it("a door between two short returns off 2x6 walls is bridged", () => {
+    // A 2x4 wall (faces x 100 / 103.5) down from y 0 to 260. A 2x6 wall comes in from the left at
+    // y 100…105.5; then a 6½" return, a 2'-8" door (jambs at 112 and 144), a 1' return, and a 2x6
+    // wall going off to the right at 156…161.5.
+    const segs: number[] = [];
+    const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+    line(103.5, 0, 103.5, 112); // right face, above the door
+    line(103.5, 144, 103.5, 156);
+    line(103.5, 161.5, 103.5, 260); // right face below the door and the cross wall
+    line(100, 0, 100, 100);
+    line(100, 105.5, 100, 112);
+    line(100, 144, 100, 260); // left face, around the 2x6 wall and the door
+    line(0, 100, 100, 100);
+    line(0, 105.5, 100, 105.5); // the 2x6 wall
+    line(103.5, 156, 300, 156);
+    line(103.5, 161.5, 300, 161.5); // the 2x6 wall to the right
+    line(100, 112, 103.5, 112);
+    line(100, 144, 103.5, 144); // jambs
+    const r = findWalls(segs, [100, 50], opts);
+    assert.ok(r.ok);
+    assert.equal(r.thicknessIn, 3.5);
+    const down = r.runs.filter((run) => run.every(([x]) => Math.abs(x - 101.75) < 0.5));
+    assert.ok(
+      down.some((run) => Math.min(...run.map(([, y]) => y)) < 112 && Math.max(...run.map(([, y]) => y)) > 144),
+      `the door isn't bridged: ${JSON.stringify(down)}`,
+    );
+  });
+
+  it("a click just past the end of a wall says there's no wall there (it used to break)", () => {
+    // One face ends at x 100, the other runs on to 120; the click is just past the shorter one's end —
+    // it's the nearest line, but it doesn't reach across there.
+    const wall = [0, 0, 120, 0, 0, 3.5, 100, 3.5];
+    assert.deepEqual(findWalls(wall, [105, 6], { ...opts, clickRadius: 10 }), { ok: false, reason: "no-wall" });
   });
 
   it("says why when there's nothing to find", () => {

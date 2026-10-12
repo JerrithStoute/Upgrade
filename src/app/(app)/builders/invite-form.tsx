@@ -6,20 +6,21 @@ import { Field, SubmitButton } from "@/components/ui";
 import { FormNote } from "@/components/auth-card";
 import { inviteBuilder, type InviteState } from "./actions";
 
-export function InviteBuilderForm() {
+/** `fill`: a website request's who, to invite them in one click. */
+export function InviteBuilderForm({ fill }: { fill?: { email?: string; name?: string; company?: string } }) {
   const [state, action] = useActionState<InviteState, FormData>(inviteBuilder, undefined);
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-4">
       <form action={action} className="grid gap-3 md:grid-cols-3">
         <Field label="Builder's email" htmlFor="email">
-          <input id="email" name="email" type="email" required className="input" placeholder="sam@samhomes.com" />
+          <input id="email" name="email" type="email" required className="input" placeholder="sam@samhomes.com" defaultValue={fill?.email} />
         </Field>
         <Field label="Their name (optional)" htmlFor="name">
-          <input id="name" name="name" className="input" />
+          <input id="name" name="name" className="input" defaultValue={fill?.name} />
         </Field>
         <Field label="Company (optional)" htmlFor="companyName">
-          <input id="companyName" name="companyName" className="input" />
+          <input id="companyName" name="companyName" className="input" defaultValue={fill?.company} />
         </Field>
         <div className="md:col-span-3">
           <SubmitButton pendingText="Sending…">Send invitation</SubmitButton>

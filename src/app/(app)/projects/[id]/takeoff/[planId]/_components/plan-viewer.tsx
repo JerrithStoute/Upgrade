@@ -37,8 +37,10 @@ import {
   GripVertical,
   WandSparkles,
   Eraser,
+  Library,
 } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
+import { LibraryPicker } from "./library-picker";
 import { cn, money, num } from "@/lib/utils";
 import {
   CONDITION_TYPES,
@@ -161,7 +163,7 @@ type ViewerMeasurement = {
 type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount" | "findwalls";
 
 /** A takeoff in your templates (the Library), to pull onto the job. */
-export type LibraryTakeoff = { id: string; name: string; type: string; color: string; template: string };
+export type LibraryTakeoff = { id: string; name: string; type: string; color: string; template: string; templateId: string; items: number };
 
 // "Show all job takeoffs" in the takeoff list (instead of just this page's), remembered per browser.
 const SHOW_ALL_KEY = "takeoff.showAllTakeoffs";
@@ -584,6 +586,7 @@ export function PlanViewer({
   const [newCondType, setNewCondType] = useState<ConditionType>("AREA");
   // The takeoff search under the name box: open while you're in it; ↑ / ↓ move through it.
   const [findOpen, setFindOpen] = useState(false);
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [findAt, setFindAt] = useState(0);
   const showAll = useSyncExternalStore(subscribeShowAll, readShowAll, () => false);
   // Takeoffs picked onto this page this visit (nothing measured with them here yet) stay in the list.
@@ -803,17 +806,17 @@ export function PlanViewer({
     setFindOpen(false);
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-cond-row="${id}"]`)?.scrollIntoView({ block: "nearest" }));
   };
-  const pickLibrary = (l: LibraryTakeoff) =>
-    startTransition(async () => {
-      try {
-        const r = await pullFromLibrary({ projectId, templateConditionId: l.id });
-        pickTakeoff(r.id);
-        if (r.added) setFlash(`Added "${r.name}" from your Library`);
-        router.refresh();
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not add the takeoff");
-      }
-    });
+  /** The Library window's Add: onto the job (it stays open for more). */
+  const addFromLibrary = async (l: LibraryTakeoff) => {
+    try {
+      const r = await pullFromLibrary({ projectId, templateConditionId: l.id });
+      router.refresh();
+      return r.id;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add the takeoff");
+      return null;
+    }
+  };
   const createNew = () => {
     const name = newCondName.trim();
     if (!name) return;
@@ -829,23 +832,20 @@ export function PlanViewer({
       }
     });
   };
-  // What the search finds: this job's other takeoffs, then the Library's (ones the job has by name are the job's).
+  // What the search finds: this job's other takeoffs (the Library has its own window).
   const findQ = newCondName.trim().toLowerCase();
   const findMatch = (n: string) => !findQ || n.toLowerCase().includes(findQ);
   const jobHits = conditions.filter((c) => !shownIds.has(c.id) && findMatch(c.name));
-  const jobNames = new Set(conditions.map((c) => c.name.trim().toLowerCase()));
-  const libHits = library.filter((l) => !jobNames.has(l.name.trim().toLowerCase()) && findMatch(l.name));
-  const exact = [...conditions, ...library].some((c) => c.name.trim().toLowerCase() === findQ);
-  const findOptions: ({ kind: "job"; c: ViewerCondition } | { kind: "lib"; l: LibraryTakeoff } | { kind: "new" })[] = [
+  const jobNames = useMemo(() => new Set(conditions.map((c) => c.name.trim().toLowerCase())), [conditions]);
+  const exact = conditions.some((c) => c.name.trim().toLowerCase() === findQ);
+  const findOptions: ({ kind: "job"; c: ViewerCondition } | { kind: "new" })[] = [
     ...jobHits.map((c) => ({ kind: "job" as const, c })),
-    ...libHits.map((l) => ({ kind: "lib" as const, l })),
     ...(findQ && !exact ? [{ kind: "new" as const }] : []),
   ];
   const chooseFind = (i: number) => {
     const o = findOptions[i];
     if (!o) return;
     if (o.kind === "job") pickTakeoff(o.c.id);
-    else if (o.kind === "lib") pickLibrary(o.l);
     else createNew();
   };
   const picked = multi.length ? multi : selectedId ? [selectedId] : [];
@@ -3171,12 +3171,12 @@ export function PlanViewer({
                     const head =
                       i === 0 || findOptions[i - 1].kind !== o.kind ? (
                         <p className="px-3 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                          {o.kind === "job" ? "On this job" : o.kind === "lib" ? "Library" : "New"}
+                          {o.kind === "job" ? "On this job" : "New"}
                         </p>
                       ) : null;
-                    const color = o.kind === "job" ? o.c.color : o.kind === "lib" ? o.l.color : null;
+                    const color = o.kind === "job" ? o.c.color : null;
                     return (
-                      <div key={o.kind === "job" ? o.c.id : o.kind === "lib" ? `lib:${o.l.id}` : "new"}>
+                      <div key={o.kind === "job" ? o.c.id : "new"}>
                         {head}
                         <button
                           type="button"
@@ -3189,13 +3189,9 @@ export function PlanViewer({
                           className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === findAt ? "bg-blue-50 text-blue-900" : "text-slate-700")}
                         >
                           {color ? <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} /> : <Plus className="h-3 w-3 shrink-0 text-blue-700" />}
-                          <span className="min-w-0 flex-1 truncate">{o.kind === "job" ? o.c.name : o.kind === "lib" ? o.l.name : `New "${newCondName.trim()}"`}</span>
+                          <span className="min-w-0 flex-1 truncate">{o.kind === "job" ? o.c.name : `New "${newCondName.trim()}"`}</span>
                           <span className="shrink-0 text-[10px] text-slate-400">
-                            {o.kind === "job"
-                              ? (CONDITION_TYPE_LABELS[o.c.type as ConditionType] ?? o.c.type)
-                              : o.kind === "lib"
-                                ? o.l.template
-                                : CONDITION_TYPE_LABELS[newCondType]}
+                            {o.kind === "job" ? (CONDITION_TYPE_LABELS[o.c.type as ConditionType] ?? o.c.type) : CONDITION_TYPE_LABELS[newCondType]}
                           </span>
                         </button>
                       </div>
@@ -3216,7 +3212,21 @@ export function PlanViewer({
                 <Plus className="h-3.5 w-3.5" /> Add
               </Button>
             </div>
+            <Button type="button" size="sm" variant="secondary" className="w-full" onClick={() => setLibraryOpen(true)} title="Pull takeoffs from your templates onto this job">
+              <Library className="h-3.5 w-3.5" /> Library{library.length ? ` (${library.length})` : ""}
+            </Button>
           </form>
+          {libraryOpen ? (
+            <LibraryPicker
+              library={library}
+              jobNames={jobNames}
+              onAdd={addFromLibrary}
+              onDone={(lastId) => {
+                setLibraryOpen(false);
+                if (lastId) pickTakeoff(lastId);
+              }}
+            />
+          ) : null}
           <div className="flex items-center gap-2 py-2 pl-3 pr-2">
             <p className="label !mb-0 flex-1">{showAll ? "All takeoffs" : "On this page"}</p>
             {conditions.length ? (
@@ -3249,10 +3259,10 @@ export function PlanViewer({
             ) : null}
           </div>
           <ul className="min-h-0 flex-1 overflow-y-auto">
-            {conditions.length === 0 ? <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — find one in your Library or add one above.</li> : null}
+            {conditions.length === 0 ? <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — pull some from the Library or add one above.</li> : null}
             {conditions.length > 0 && shownList.length === 0 ? (
               <li className="px-3 py-2 text-xs text-slate-500">
-                Nothing measured on this page yet — find a takeoff above (this job&apos;s or your Library&apos;s) and start measuring.
+                Nothing measured on this page yet — find a takeoff above (or pull one from the Library) and start measuring.
               </li>
             ) : null}
             {shownList.map((c) => {

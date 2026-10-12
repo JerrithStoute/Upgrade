@@ -22,6 +22,8 @@ const PUBLIC_ACTIONS = new Set([
   "(public)/actions.ts:resetPassword",
   "(public)/actions.ts:acceptInvite",
   "login/actions.ts:login",
+  // The website's "Request an invite" — robot check and a limit per address.
+  "site/actions.ts:requestInvite",
 ]);
 
 /** Download addresses that don't need their own check, and why. */

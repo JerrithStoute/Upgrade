@@ -128,9 +128,47 @@ const scoped = appDb.$extends({
   },
 });
 
-/** The company's jobs: their lumber lines need working out again (after the change, never before it). */
+/**
+ * The company's jobs: their lumber lines need working out again (after the change, never before it).
+ *
+ * A burst of saves (Find walls saves every wall at once) used to mark the same rows many times at
+ * once, and Postgres stopped them with "deadlock detected". So a company's marks take turns, and one
+ * that started after this change was saved already covers it — most of a burst is skipped.
+ */
+const marking = new Map<string, Promise<void>>();
+const markedFrom = new Map<string, number>();
 async function lumberChanged() {
-  await systemDb.project.updateMany({ where: { companyId: await currentCompanyId() }, data: { lumberChangedAt: new Date() } });
+  const companyId = await currentCompanyId();
+  const changedAt = performance.now();
+  const mine = (marking.get(companyId) ?? Promise.resolve())
+    .catch(() => {})
+    .then(async () => {
+      if ((markedFrom.get(companyId) ?? -1) > changedAt) return;
+      const start = performance.now();
+      await markJobsChanged(companyId);
+      markedFrom.set(companyId, Math.max(start, markedFrom.get(companyId) ?? -1));
+    });
+  marking.set(companyId, mine);
+  try {
+    await mine;
+  } finally {
+    if (marking.get(companyId) === mine) marking.delete(companyId);
+  }
+}
+
+/** One mark: rows locked in id order (two marks can't wait on each other), tried again on a deadlock. */
+async function markJobsChanged(companyId: string) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await systemDb.$executeRaw`UPDATE "Project" p SET "lumberChangedAt" = ${new Date()}
+        FROM (SELECT id FROM "Project" WHERE "companyId" = ${companyId} ORDER BY id FOR NO KEY UPDATE) s WHERE p.id = s.id`;
+      return;
+    } catch (err) {
+      const deadlock = /40P01|deadlock detected|P2034/.test(String((err as { code?: string })?.code) + String(err));
+      if (!deadlock || attempt >= 4) throw err;
+      await new Promise((r) => setTimeout(r, 25 * attempt + Math.random() * 50));
+    }
+  }
 }
 
 /** Every company query: scoped to the current company, and tagged with it when written. */

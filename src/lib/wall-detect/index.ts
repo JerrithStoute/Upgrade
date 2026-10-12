@@ -218,6 +218,8 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   // Walk out from the bunch you clicked, each way, to the first gap a wall's thickness wide.
   // Brick on the way means you clicked the veneer: the wall is the one behind it.
   const mineAt = bunches.findIndex((c) => c[0] <= 0 && c[1] >= 0);
+  // Clicked past the end of the line (it's the nearest, but doesn't reach across here): no wall.
+  if (mineAt < 0) return { ok: false, reason: "no-wall" };
   const probe = (lo: number, hi: number): Piece => ({
     bucket: bucketOf(clicked.ang),
     ang: clicked.ang,
@@ -377,8 +379,20 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     const [x, y] = at(p, s);
     return long.some((w) => w !== p && Math.abs(Math.sin(w.ang - p.ang)) > Math.sin(45 * DEG) && distToSeg(x, y, segOf(w)) <= half + 2 * inch);
   };
+  // …or off any wall's face: a 2x4 stub can come off a 2x6 wall, or meet a wall right at its corner.
+  // (At least a wall's thickness long — shorter is just where two walls' lines cross.)
+  const offFace = (p: Piece, s: number) => {
+    if (offWall(p, s)) return true;
+    if (lengthOf(p) < thickness) return false;
+    const [x, y] = at(p, s);
+    // Lines square across this wall, passing this end (found by direction, not where their middle is).
+    const across = toLine(x, y, x + p.nx, y + p.ny)!;
+    const reach = half + inch;
+    for (const l of parallelIn(buckets, across.ang, across.rho - reach, across.rho + reach)) if (l.s1 - l.s0 >= upf && distToSeg(x, y, l) <= reach) return true;
+    return false;
+  };
   // A stub comes off a wall at one end and is closed at the other.
-  walls = walls.filter((p) => lengthOf(p) >= upf || (offWall(p, p.s0) && capped(p, p.s1)) || (offWall(p, p.s1) && capped(p, p.s0)));
+  walls = walls.filter((p) => lengthOf(p) >= upf || (offFace(p, p.s0) && capped(p, p.s1)) || (offFace(p, p.s1) && capped(p, p.s0)));
   const drawnAcross = (w: Piece, p: Piece) => {
     const rho = (w.rho + p.rho) / 2;
     return drawn(w.ang, rho - half - inch, rho + half + inch, Math.min(w.s1, p.s1), Math.max(w.s0, p.s0)) >= 0.8;
@@ -410,7 +424,30 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   // wall carries more on its outside (siding, sheathing). Brick veneer alongside settles it.
   // One straight line can be exterior for a stretch and interior past a corner, so a wall
   // is split where it changes.
-  type Look = { kind: WallKind; layers: number };
+  /** brick: seen alongside here (not just more lines on one face) — sure evidence of an outside wall. */
+  type Look = { kind: WallKind; layers: number; brick?: boolean };
+  // Brick drawn right alongside, whatever its width (its band needn't match the wall's): slanted
+  // hatch strokes just outside one face, within a foot or so of here. Brick is outside.
+  // A row of them, all parallel and spaced along — a dimension tick or a door line here and there isn't.
+  const brickBeside = (w: Piece, s: number) => {
+    const [x, y] = at(w, s);
+    const found: { ang: number; along: number; side: number }[] = [];
+    for (const l of strokesNear(x, y, x, y)) {
+      const slant = Math.abs(Math.sin(l.ang - w.ang));
+      if (slant < Math.sin(20 * DEG) || slant > Math.sin(75 * DEG) || l.s1 - l.s0 > 14 * inch) continue;
+      const along = ((l.x1 + l.x2) / 2) * w.ux + ((l.y1 + l.y2) / 2) * w.uy;
+      if (Math.abs(along - s) > 0.75 * upf) continue;
+      const o1 = l.x1 * w.nx + l.y1 * w.ny - w.rho;
+      const o2 = l.x2 * w.nx + l.y2 * w.ny - w.rho;
+      // Both ends out past the same face, the stroke within a brick's reach of it.
+      if (Math.sign(o1) !== Math.sign(o2) || Math.min(Math.abs(o1), Math.abs(o2)) < half - 0.5 * inch || Math.max(Math.abs(o1), Math.abs(o2)) > half + 14 * inch) continue;
+      found.push({ ang: l.ang, along, side: Math.sign(o1) });
+    }
+    return found.some((f) => {
+      const row = found.filter((g) => g.side === f.side && Math.abs(Math.sin(g.ang - f.ang)) < Math.sin(3 * DEG));
+      return new Set(row.map((g) => Math.round(g.along / inch))).size >= 4;
+    });
+  };
   const lookAcross = (w: Piece, s: number): Look | null => {
     const offs: number[] = [];
     for (const l of parallelIn(buckets, w.ang, w.rho - half - 8 * inch, w.rho + half + 8 * inch)) if (l.s0 <= s && l.s1 >= s) offs.push(l.rho - w.rho);
@@ -427,7 +464,8 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     if (!left || !right || right[0] - left[1] < thickness - tol) return null;
     const count = ([lo, hi]: [number, number]) => offs.filter((o) => o >= lo && o <= hi).length;
     const layers = Math.min(count(left), count(right));
-    if (veneer.some((v) => near(v.bucket, w.bucket) && Math.abs(v.rho - w.rho) <= half + 8 * inch + thickness && v.s0 <= s && v.s1 >= s)) return { kind: "exterior", layers };
+    if (veneer.some((v) => near(v.bucket, w.bucket) && Math.abs(v.rho - w.rho) <= half + 8 * inch + thickness && v.s0 <= s && v.s1 >= s) || brickBeside(w, s))
+      return { kind: "exterior", layers, brick: true };
     return { kind: Math.abs(left[1] - left[0] - (right[1] - right[0])) >= 0.75 * inch ? "exterior" : "interior", layers };
   };
   const sections: Piece[] = [];
@@ -456,7 +494,8 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     const kindAt = (k: number): WallKind => {
       if (!said.length) return "interior";
       let bestI = said[0];
-      for (const i of said) if (Math.abs(i - k) < Math.abs(bestI - k)) bestI = i;
+      // A tie goes outside: feet with no say are mostly windows, and windows are in outside walls.
+      for (const i of said) if (Math.abs(i - k) < Math.abs(bestI - k) || (Math.abs(i - k) === Math.abs(bestI - k) && says[i] === "exterior")) bestI = i;
       return says[bestI]!;
     };
     // Stretches of one kind; a stretch under 2 ft goes with the one before it.
@@ -472,8 +511,32 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
         runs[r - 1].to = runs[r].to;
         runs.splice(r, 1);
       }
-    // A stretch between two of the other kind is a window or an opening in that wall.
-    for (let r = 1; r < runs.length - 1; r++) if (runs[r - 1].kind === runs[r + 1].kind && runs[r].to - runs[r].from <= 10) runs[r].kind = runs[r - 1].kind;
+    // …and a short first one goes with the one after it (a corner's foot at the start isn't a stretch
+    // of its own — left alone, it makes the next stretch look like a window between two of its kind).
+    if (runs.length > 1 && runs[0].to - runs[0].from < 2) {
+      runs[1].from = runs[0].from;
+      runs.shift();
+    }
+    // An inside-looking stretch between two outside ones is a window or an opening in an outside
+    // wall (no brick or siding across a window). An outside-looking one between two inside ones
+    // is a stray only when it's shorter than both and no brick was seen along it — otherwise the
+    // wall changes there: a bump-out's outside wall running on as the inside wall between two rooms.
+    const span = (r: (typeof runs)[number]) => r.to - r.from;
+    const brickIn = (r: (typeof runs)[number]) => looks.slice(r.from, r.to).some((l) => l?.brick);
+    const joinAlike = () => {
+      for (let r = runs.length - 1; r > 0; r--)
+        if (runs[r].kind === runs[r - 1].kind) {
+          runs[r - 1].to = runs[r].to;
+          runs.splice(r, 1);
+        }
+    };
+    // Strays first (so they can't make the stretch beside them look like a window)…
+    for (let r = 1; r < runs.length - 1; r++)
+      if (runs[r].kind === "exterior" && runs[r - 1].kind === "interior" && runs[r + 1].kind === "interior" && !brickIn(runs[r]) && span(runs[r]) < span(runs[r - 1]) && span(runs[r]) < span(runs[r + 1]))
+        runs[r].kind = "interior";
+    joinAlike();
+    // …then windows.
+    for (let r = 1; r < runs.length - 1; r++) if (runs[r].kind === "interior" && runs[r - 1].kind === "exterior" && runs[r + 1].kind === "exterior" && span(runs[r]) <= 10) runs[r].kind = "exterior";
     for (let r = runs.length - 1; r > 0; r--)
       if (runs[r].kind === runs[r - 1].kind) {
         runs[r - 1].to = runs[r].to;

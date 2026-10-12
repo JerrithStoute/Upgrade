@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { SignJWT } from "jose";
-import { isPlatformAdmin, makeBuilderInvite, readBuilderInvite } from "./builder-invites";
+import { inviteRequestText, isPlatformAdmin, makeBuilderInvite, readBuilderInvite, readInviteRequest } from "./builder-invites";
 
 const key = new TextEncoder().encode("k".repeat(48));
 const otherKey = new TextEncoder().encode("x".repeat(48));
@@ -28,4 +28,17 @@ test("only the listed emails run the platform", () => {
   assert.equal(isPlatformAdmin("SECOND@example.com", env), true);
   assert.equal(isPlatformAdmin("someone@example.com", env), false);
   assert.equal(isPlatformAdmin("owner@example.com", {} as unknown as NodeJS.ProcessEnv), false, "nobody when it isn't set");
+});
+
+test("a website request reads back who asked, whatever else they wrote", () => {
+  const full = inviteRequestText({ name: " Pat  Smith ", company: "Smith (TX) Homes", email: "Pat@Smith.com", phone: "555-0100", where: "Austin, TX", homes: "6–15", notes: "We use Buildertrend now.\nCan we switch?" });
+  assert.equal(full, "Pat Smith (Smith (TX) Homes) asked for an invitation — pat@smith.com, 555-0100, Austin, TX, 6–15 homes a year. “We use Buildertrend now. Can we switch?”");
+  assert.deepEqual(readInviteRequest(full), { name: "Pat Smith", company: "Smith (TX) Homes", email: "pat@smith.com" });
+  const bare = inviteRequestText({ name: "Lee", company: "Lee Co", email: "lee@lee.co" });
+  assert.deepEqual(readInviteRequest(bare), { name: "Lee", company: "Lee Co", email: "lee@lee.co" });
+  assert.equal(readInviteRequest("Invited sam@x.com to The Builder Station"), null);
+});
+
+test("notes straight after the email don't stick to it", () => {
+  assert.equal(readInviteRequest(inviteRequestText({ name: "A", company: "B", email: "a@b.com", notes: "hi" }))?.email, "a@b.com");
 });
