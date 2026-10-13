@@ -15,7 +15,6 @@ export function materialItemOptions() {
       kind: true,
       unit: true,
       unitCost: true,
-      markupPct: true,
       wastePct: true,
       roundUp: true,
       costCodeId: true,
@@ -38,7 +37,7 @@ export type MaterialItemOption = Awaited<ReturnType<typeof materialItemOptions>>
  */
 export async function resolveMaterialItem(
   client: Client,
-  fields: { description: string; unit: string; unitCost: number; markupPct: number; wastePct: number; roundUp: boolean; costCodeId: string | null },
+  fields: { description: string; unit: string; unitCost: number; wastePct: number; roundUp: boolean; costCodeId: string | null },
 ) {
   const nameKey = itemNameKey(fields.description);
   const existing = await client.materialItem.findFirst({ where: { nameKey }, select: { id: true, name: true } });
@@ -51,7 +50,6 @@ export async function resolveMaterialItem(
       category: costCode?.division ?? "General",
       unit: fields.unit,
       unitCost: fields.unitCost,
-      markupPct: fields.markupPct,
       wastePct: fields.wastePct,
       roundUp: fields.roundUp,
       costCodeId: fields.costCodeId,

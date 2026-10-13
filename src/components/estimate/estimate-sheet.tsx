@@ -1,6 +1,6 @@
 "use client";
 
-import { memo, useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   BookOpen,
@@ -32,6 +32,8 @@ import {
   lineMath,
   linesTotals,
   specsTotals,
+  takeoffKeyOf,
+  takeoffLocked,
   toSaveInput,
   type SaveSheetInput,
   type SheetLine,
@@ -49,8 +51,10 @@ import { CodePicker, CostCodePanel } from "./cost-codes";
 import { DivisionsForm, type DivisionSetup } from "./divisions-form";
 import type { SheetCostCode } from "@/lib/cost-code-divisions";
 import type { TakeoffDetailRow } from "@/lib/takeoff-data";
+import { TakeoffSwitch } from "./takeoff-switch";
 import { allowanceExtras, tableExtras, tableProfitPct, tableTaxRate, taxRateFor, type MarkupRow } from "@/lib/markup";
 import { MarkupPanel } from "./markup-table";
+import { SideScroll } from "./side-scroll";
 import { moveByArrow } from "@/components/grid-keys";
 
 type CostCode = SheetCostCode;
@@ -121,7 +125,7 @@ const COLUMNS = [
   { key: "costCode", label: "Cost code", width: 210 },
   // Shown when the Markup, Margin & Tax table has a tax rate (or a line is taxed).
   { key: "tax", label: "Tax", width: 110 },
-  { key: "profitPct", label: "Profit %", width: 84 },
+  { key: "profitPct", label: "Markup %", width: 84 },
   { key: "profit", label: "Profit $", width: 104 },
   { key: "price", label: "Total price", width: 116 },
   { key: "perSqFt", label: "$ / sq. ft.", width: 92 },
@@ -258,6 +262,7 @@ export function EstimateSheet({
     return lines.some(usesSales) ? settleSales(lines, state.values, null, state.markup).sales : round2(totals.price + extras.overheadTotal);
   }, [state.specs, state.values, state.markup, totals.price, extras.overheadTotal]);
   const [markupOpen, setMarkupOpen] = useState(false);
+  const sheetBox = useRef<HTMLDivElement>(null);
   // A new line's profit %: the table's for its cost type, else the starting profit %.
   const markup = state.markup;
   const profitFor = useCallback((costType: string) => tableProfitPct(markup, costType) ?? defaultMarkup, [markup, defaultMarkup]);
@@ -658,9 +663,9 @@ export function EstimateSheet({
       ) : null}
 
       <div className="flex items-start gap-3">
-        {/* Its own window, sized to the screen: the sideways scrollbar is always in view (just above
-            the bottom bar) and the column headings stay at the top — no trip to the end of the estimate. */}
-        <div className="max-h-[calc(100vh-12.5rem-var(--job-head,0px))] min-w-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        {/* Its own window, sized to the screen, so the column headings stay at the top. Its sideways
+            scrollbar is pinned above the bottom bar (SideScroll) — no trip to the end of the estimate. */}
+        <div ref={sheetBox} className="max-h-[calc(100vh-12.5rem-var(--job-head,0px))] min-w-0 flex-1 overflow-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           {groups.length === 0 ? (
             // Outside the table, so it sits in the middle of what you can see.
             <div className="px-4 py-14 text-center">
@@ -767,7 +772,7 @@ export function EstimateSheet({
                       : specs.map((s) => {
                           const specCollapsed = collapsed.has(s.key);
                           const specKeys = [s.key, ...s.lines.map((l) => l.key)];
-                          const linked = s.lines.some((l) => l.fromTakeoff || l.materialItemId);
+                          const linked = s.lines.some((l) => l.materialItemId);
                           const refreshable = estimate ? s.lines.some((l) => l.materialItemId && estimate.itemPrices[l.materialItemId] !== undefined) : false;
                           // One line: the item and its line share a row (no "Blueprints" under "Blueprints").
                           const single = s.lines.length === 1 ? s.lines[0] : null;
@@ -827,7 +832,7 @@ export function EstimateSheet({
                                       {s.name || "Untitled category"}
                                     </button>
                                     <SpecBadges spec={s} />
-                                    {single ? <LinkIcon line={single} ctx={ctx} open={detailOpen.has(single.key)} /> : null}
+                                    {single ? <LinkIcon line={single} spec={s.key} ctx={ctx} open={detailOpen.has(single.key)} /> : null}
                                     <button
                                       type="button"
                                       onClick={(e) => {
@@ -901,12 +906,12 @@ export function EstimateSheet({
                                               ? [
                                                   {
                                                     label: "Stop updating from Item List",
-                                                    hint: "The takeoff and Item List stop changing these items (delete a line to let the takeoff fill it in again)",
+                                                    hint: "The Item List stops changing these items' prices (the takeoff has its own switch on each item)",
                                                     onClick: () =>
                                                       dispatch({
                                                         type: "specLines",
                                                         spec: s.key,
-                                                        patch: () => ({ fromTakeoff: false, materialItemId: null, addToItemList: false }),
+                                                        patch: () => ({ materialItemId: null, addToItemList: false }),
                                                       }),
                                                   },
                                                 ]
@@ -987,6 +992,7 @@ export function EstimateSheet({
 
       {/* Bottom bar: always the same size, so nothing jumps when you start editing. */}
       <div className="sticky bottom-0 z-20 -mx-1 rounded-xl border border-slate-200 bg-white/95 px-4 py-3 shadow-[0_-4px_12px_-6px_rgba(15,23,42,0.15)] backdrop-blur">
+        <SideScroll box={sheetBox} />
         {/* Ticked items: their bar floats right above this one, so it's there wherever you're working. */}
         {pickedLines.length ? (
           <div className="absolute -top-12 left-1/2 -translate-x-1/2 rounded-lg shadow-lg">
@@ -1085,6 +1091,7 @@ export function EstimateSheet({
           allowanceProfitDefault={estimate ? (allowanceProfitDefault ?? false) : undefined}
           allowanceExtra={allowanceExtras(state.markup, open.lines)}
           onChange={(patch) => dispatch({ type: "spec", spec: open.key, patch })}
+          items={<SpecItems spec={open} ctx={ctx} />}
           onClose={() => setOpenSpec(null)}
           onDelete={() => {
             dispatch({ type: "deleteSpec", spec: open.key });
@@ -1308,15 +1315,23 @@ type LineRowProps = {
   detailOpen: boolean;
 };
 
+const LOCKED_HINT = "From the takeoff — switch “From takeoff” off on this item to type your own";
+
 /** A line's editable cells, from Qty to Notes. */
 function LineCells({ line: l, spec, ctx }: { line: SheetLine; spec: string; ctx: RowCtx }) {
   const { show, dispatch } = ctx;
   const set = (patch: Partial<SheetLine>) => dispatch({ type: "line", spec, line: l.key, patch });
   const m = lineMath(l);
   const muted = l.isOptional ? "text-slate-400" : "";
+  const locked = takeoffLocked(l);
+  const lockedCell = "px-2.5 py-1.5 text-sm tabular-nums text-slate-500";
   return (
     <>
-      {show("qty") ? (
+      {show("qty") && locked ? (
+        <td className={cn(lockedCell, "text-right")} title={LOCKED_HINT}>
+          {num(l.quantity)}
+        </td>
+      ) : show("qty") ? (
         <td className="px-1 py-0.5">
           <QtyCell
             value={l.quantity}
@@ -1328,12 +1343,20 @@ function LineCells({ line: l, spec, ctx }: { line: SheetLine; spec: string; ctx:
           />
         </td>
       ) : null}
-      {show("unit") ? (
+      {show("unit") && locked ? (
+        <td className={lockedCell} title={LOCKED_HINT}>
+          {l.unit}
+        </td>
+      ) : show("unit") ? (
         <td className="px-1 py-0.5">
           <UnitCell value={l.unit} onChange={(unit) => set({ unit })} />
         </td>
       ) : null}
-      {show("unitCost") ? (
+      {show("unitCost") && locked ? (
+        <td className={cn(lockedCell, "text-right")} title={LOCKED_HINT}>
+          {money(l.unitCost)}
+        </td>
+      ) : show("unitCost") ? (
         <td className="px-1 py-0.5">
           <QtyCell
             money
@@ -1385,7 +1408,7 @@ function LineCells({ line: l, spec, ctx }: { line: SheetLine; spec: string; ctx:
       ) : null}
       {show("profitPct") ? (
         <td className="px-1 py-0.5">
-          <NumCell value={l.markupPct} ariaLabel="Profit %" className="text-right" onChange={(v) => set({ markupPct: v })} />
+          <NumCell value={l.markupPct} ariaLabel="Markup %" className="text-right" onChange={(v) => set({ markupPct: v })} />
         </td>
       ) : null}
       {show("profit") ? <td className={cn("px-2 py-0.5 text-right tabular-nums", muted)}>{money(m.profit)}</td> : null}
@@ -1458,7 +1481,7 @@ const LineRow = memo(function LineRow({ line: l, spec, ctx, picked, onPick, auto
               autoFocus={autoFocus}
               onChange={(e) => set({ description: e.target.value })}
             />
-            <LinkIcon line={l} ctx={ctx} open={detailOpen} />
+            <LinkIcon line={l} spec={spec} ctx={ctx} open={detailOpen} />
           </span>
         </td>
         <LineCells line={l} spec={spec} ctx={ctx} />
@@ -1476,6 +1499,123 @@ const LineRow = memo(function LineRow({ line: l, spec, ctx, picked, onPick, auto
     </>
   );
 });
+
+/**
+ * "What's in this price" in a category's details: its items, each the same line as on the sheet —
+ * a change here is a change there. Takeoff items are locked, with the takeoff items behind them
+ * listed. Items are added and removed on the sheet, not here.
+ */
+function SpecItems({ spec, ctx }: { spec: SheetSpec; ctx: RowCtx }) {
+  const head = "whitespace-nowrap px-1.5 py-1 font-medium";
+  if (!spec.lines.length) return <p className="text-xs text-slate-500">No items in this category yet — add them on the estimate.</p>;
+  return (
+    <table className="w-full table-fixed text-sm">
+      <colgroup>
+        <col />
+        <col className="w-16" />
+        <col className="w-14" />
+        <col className="w-24" />
+        <col className="w-24" />
+        <col className="w-20" />
+        <col className="w-24" />
+      </colgroup>
+      <thead className="text-left text-[11px] uppercase tracking-wide text-slate-400">
+        <tr>
+          <th className={head}>Item</th>
+          <th className={cn(head, "text-right")}>Qty</th>
+          <th className={head}>Units</th>
+          <th className={cn(head, "text-right")}>Unit cost</th>
+          <th className={cn(head, "text-right")}>Cost</th>
+          <th className={cn(head, "text-right")}>Markup %</th>
+          <th className={cn(head, "text-right")}>Price</th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-slate-100">
+        {spec.lines.map((l) => {
+          const set = (patch: Partial<SheetLine>) => ctx.dispatch({ type: "line", spec: spec.key, line: l.key, patch });
+          const m = lineMath(l);
+          const locked = takeoffLocked(l);
+          const key = takeoffKeyOf(l);
+          const rows = (locked && key && ctx.takeoffDetail?.[key]) || [];
+          const shown = "px-1.5 py-1 tabular-nums text-slate-500";
+          return (
+            <Fragment key={l.key}>
+              <tr className={l.isOptional ? "text-slate-400" : undefined}>
+                <td className="py-0.5">
+                  <input className={cellClass} value={l.description} placeholder="Description" aria-label="Description" onChange={(e) => set({ description: e.target.value })} />
+                  {key ? (
+                    <span className="block px-1.5 pb-1">
+                      <TakeoffSwitch line={l} detail={ctx.takeoffDetail} onChange={set} label />
+                    </span>
+                  ) : null}
+                  {l.isOptional ? <span className="block px-1.5 pb-1 text-[10px] font-semibold uppercase">Optional — not in the price</span> : null}
+                </td>
+                {locked ? (
+                  <>
+                    <td className={cn(shown, "text-right")} title={LOCKED_HINT}>
+                      {num(l.quantity)}
+                    </td>
+                    <td className={shown} title={LOCKED_HINT}>
+                      {l.unit}
+                    </td>
+                    <td className={cn(shown, "text-right")} title={LOCKED_HINT}>
+                      {money(l.unitCost)}
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className="py-0.5">
+                      <QtyCell
+                        value={l.quantity}
+                        formula={l.qtyFormula}
+                        params={ctx.params}
+                        values={ctx.values}
+                        onNumber={(v) => set({ quantity: v })}
+                        onFormula={(qtyFormula) => set({ qtyFormula })}
+                      />
+                    </td>
+                    <td className="py-0.5">
+                      <UnitCell value={l.unit} onChange={(unit) => set({ unit })} />
+                    </td>
+                    <td className="py-0.5">
+                      <QtyCell
+                        money
+                        ariaLabel="Unit cost"
+                        value={l.unitCost}
+                        formula={l.costFormula}
+                        params={ctx.params}
+                        values={ctx.values}
+                        onNumber={(v) => set({ unitCost: v })}
+                        onFormula={(costFormula) => set({ costFormula })}
+                      />
+                    </td>
+                  </>
+                )}
+                <td className="px-1.5 py-1 text-right tabular-nums text-slate-700">{money(m.cost)}</td>
+                <td className="py-0.5">
+                  <NumCell value={l.markupPct} ariaLabel="Markup %" className="text-right" onChange={(v) => set({ markupPct: v })} />
+                </td>
+                <td className="px-1.5 py-1 text-right font-medium tabular-nums text-slate-900">{money(m.price)}</td>
+              </tr>
+              {rows.map((r, i) => (
+                <tr key={i} className="text-xs text-slate-500">
+                  <td className="truncate py-0.5 pl-5 pr-1.5" title={r.description}>
+                    {r.description}
+                  </td>
+                  <td className="px-1.5 py-0.5 text-right tabular-nums">{num(r.quantity)}</td>
+                  <td className="px-1.5 py-0.5">{r.unit}</td>
+                  <td className="px-1.5 py-0.5 text-right tabular-nums">{money(r.unitCost)}</td>
+                  <td className="px-1.5 py-0.5 text-right tabular-nums">{money(r.quantity * r.unitCost)}</td>
+                  <td colSpan={2} />
+                </tr>
+              ))}
+            </Fragment>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
 
 const OTHER_UNIT = "__other__";
 
@@ -1506,9 +1646,11 @@ function UnitCell({ value, onChange }: { value: string; onChange: (unit: string)
 
 /** A takeoff line dropped down: the takeoff items behind it (only its cost code's). */
 function TakeoffDetail({ line: l, ctx }: { line: SheetLine; ctx: RowCtx }) {
-  const rows = (l.takeoffKey && ctx.takeoffDetail?.[l.takeoffKey]) || [];
+  const key = takeoffKeyOf(l);
+  const rows = (key && ctx.takeoffDetail?.[key]) || [];
   const sum = Math.round(rows.reduce((n, r) => n + r.quantity * r.unitCost, 0) * 100) / 100;
-  const stale = Math.abs(sum - Math.round(l.quantity * l.unitCost * 100) / 100) >= 0.01;
+  // Only a line the takeoff fills can be out of date with it (one switched off is yours).
+  const stale = l.fromTakeoff && Math.abs(sum - Math.round(l.quantity * l.unitCost * 100) / 100) >= 0.01;
   return (
     <tr className="bg-slate-50/70">
       <td />
@@ -1557,20 +1699,24 @@ function TakeoffDetail({ line: l, ctx }: { line: SheetLine; ctx: RowCtx }) {
   );
 }
 
-function LinkIcon({ line: l, ctx, open }: { line: SheetLine; ctx: RowCtx; open: boolean }) {
+function LinkIcon({ line: l, spec, ctx, open }: { line: SheetLine; spec: string; ctx: RowCtx; open: boolean }) {
   const materialListHref = ctx.materialListHref;
-  if (l.fromTakeoff && l.takeoffKey && ctx.takeoffDetail)
+  // A line the takeoff has a total for: its items (click the ruler) and the "From takeoff" switch.
+  if (takeoffKeyOf(l) && ctx.takeoffDetail)
     return (
-      <button
-        type="button"
-        onClick={() => ctx.toggleDetail(l.key)}
-        aria-expanded={open}
-        title={open ? "Hide the takeoff items" : "From the takeoff — click to see the takeoff items behind it. Sending the takeoff again updates this cost."}
-        className={cn("flex shrink-0 items-center rounded p-0.5 hover:bg-blue-50 hover:text-blue-700", open ? "bg-blue-50 text-blue-700" : "text-slate-400")}
-      >
-        <Ruler className="h-3.5 w-3.5" />
-        {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-      </button>
+      <span className="flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={() => ctx.toggleDetail(l.key)}
+          aria-expanded={open}
+          title={open ? "Hide the takeoff items" : "Click to see the takeoff items for this cost code"}
+          className={cn("flex shrink-0 items-center rounded p-0.5 hover:bg-blue-50 hover:text-blue-700", open ? "bg-blue-50 text-blue-700" : "text-slate-400")}
+        >
+          <Ruler className="h-3.5 w-3.5" />
+          {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+        </button>
+        <TakeoffSwitch line={l} detail={ctx.takeoffDetail} onChange={(patch) => ctx.dispatch({ type: "line", spec, line: l.key, patch })} />
+      </span>
     );
   if (l.fromTakeoff)
     return materialListHref ? (
@@ -1768,8 +1914,8 @@ function BulkBar({
         ))}
       </select>
       <input
-        aria-label="Set profit %"
-        placeholder="Profit %"
+        aria-label="Set markup %"
+        placeholder="Markup %"
         className="w-16 rounded border border-blue-200 bg-white px-1 py-0.5"
         value={pct}
         onChange={(e) => setPct(e.target.value)}

@@ -41,7 +41,6 @@ async function itemFields(fd: FormData, id?: string) {
     category: str(fd, "category") || "General",
     unit: (UNITS as readonly string[]).includes(unit) ? unit : "ea",
     unitCost: Math.max(0, numField(fd, "unitCost", 0)),
-    markupPct: numField(fd, "markupPct", 20),
     wastePct: Math.max(0, numField(fd, "wastePct", 0)),
     roundUp: boolField(fd, "roundUp"),
     costCodeId,
@@ -81,7 +80,7 @@ export const updateMaterialItem = friendly(async function updateMaterialItem(fd:
 });
 
 /** Fields that can be changed right in the Item List table. */
-export type ItemCell = "category" | "costCodeId" | "unit" | "unitCost" | "markupPct" | "wastePct" | "roundUp" | "sku" | "vendor";
+export type ItemCell = "category" | "costCodeId" | "unit" | "unitCost" | "wastePct" | "roundUp" | "sku" | "vendor";
 
 async function costCodeOrNull(id: string) {
   if (!id) return null;
@@ -98,8 +97,6 @@ function cellData(field: ItemCell, value: string) {
       return { unit: (UNITS as readonly string[]).includes(value) ? value : "ea" };
     case "unitCost":
       return { unitCost: Number.isFinite(n) ? Math.max(0, n) : 0 };
-    case "markupPct":
-      return { markupPct: Number.isFinite(n) ? n : 0 };
     case "wastePct":
       return { wastePct: Number.isFinite(n) ? Math.max(0, n) : 0 };
     case "roundUp":

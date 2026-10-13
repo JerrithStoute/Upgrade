@@ -150,7 +150,6 @@ export async function addSubstitution(
             category: from.category,
             kind: from.kind,
             costCodeId: from.costCodeId,
-            markupPct: from.markupPct,
             roundUp: from.roundUp,
             // A new item starts at the price you bought it at.
             unitCost: input.unitCost ?? 0,

@@ -44,7 +44,6 @@ export type ConditionFormValues = {
   referenceOnly?: boolean;
   costCodeId: string | null;
   unitCost: number;
-  markupPct: number;
   wastePct: number;
   pitch: number;
   pitchMode: string;
@@ -87,7 +86,6 @@ export function ConditionForm({
   costCodes,
   memberSizes,
   itemOptions = [],
-  defaultMarkup,
   values,
   hasMeasurements,
   cancelHref,
@@ -104,7 +102,6 @@ export function ConditionForm({
   memberSizes: MemberSizeOption[];
   /** Item List items, offered for sheathing, drywall and baseboard. */
   itemOptions?: ItemChoice[];
-  defaultMarkup: number;
   values?: ConditionFormValues;
   hasMeasurements?: boolean;
   cancelHref?: string;
@@ -416,7 +413,6 @@ export function ConditionForm({
       {/* A takeoff is priced by its items only; these older settings are kept as they were, unused. */}
       <input type="hidden" name="costCodeId" value={values?.costCodeId ?? ""} />
       <input type="hidden" name="unitCost" value={values?.unitCost ?? 0} />
-      <input type="hidden" name="markupPct" value={values?.markupPct ?? defaultMarkup} />
       <input type="hidden" name="group" value={values?.group ?? "Takeoff"} />
       <FormGrid className="md:grid-cols-4">
         {isMember || isAuto ? (
@@ -473,7 +469,7 @@ export function ConditionForm({
           </span>
         </label>
       </FormGrid>
-      {!values && assemblyItems ? <PendingItems type={type} metric={metric} costCodes={costCodes} items={assemblyItems} defaultMarkup={defaultMarkup} /> : null}
+      {!values && assemblyItems ? <PendingItems type={type} metric={metric} costCodes={costCodes} items={assemblyItems} /> : null}
       {!values && toolbox?.length ? <ToolboxPick idPrefix={p("toolbox")} templates={toolbox} /> : null}
       <div className="flex items-center gap-2">
         <SubmitButton>{values ? "Save takeoff" : "Add takeoff"}</SubmitButton>

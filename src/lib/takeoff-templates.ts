@@ -12,7 +12,6 @@ function conditionData(c: {
   referenceOnly: boolean;
   costCodeId: string | null;
   unitCost: number;
-  markupPct: number;
   wastePct: number;
   pitch: number;
   pitchMode: string;
@@ -38,7 +37,6 @@ function conditionData(c: {
     referenceOnly: c.referenceOnly,
     costCodeId: c.costCodeId,
     unitCost: c.unitCost,
-    markupPct: c.markupPct,
     wastePct: c.wastePct,
     pitch: c.pitch,
     pitchMode: c.pitchMode,
@@ -68,7 +66,6 @@ function itemData(i: {
   roundUp: boolean;
   wastePct: number;
   unitCost: number;
-  markupPct: number;
   sortOrder: number;
 }) {
   return {
@@ -82,7 +79,6 @@ function itemData(i: {
     roundUp: i.roundUp,
     wastePct: i.wastePct,
     unitCost: i.unitCost,
-    markupPct: i.markupPct,
     sortOrder: i.sortOrder,
   };
 }
@@ -103,7 +99,7 @@ export async function applyTemplate(templateId: string, projectId: string) {
     include: {
       conditions: {
         orderBy: [{ sortOrder: "asc" }, { id: "asc" }],
-        include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: { materialItem: { select: { unitCost: true, markupPct: true } } } } },
+        include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: { materialItem: { select: { unitCost: true } } } } },
       },
     },
   });
@@ -135,7 +131,7 @@ async function spanTableIds() {
 }
 
 type TemplateCondition = Parameters<typeof conditionData>[0] & {
-  items: (Parameters<typeof itemData>[0] & { materialItem: { unitCost: number; markupPct: number } | null })[];
+  items: (Parameters<typeof itemData>[0] & { materialItem: { unitCost: number } | null })[];
 };
 
 /** A template's takeoff as a new takeoff on a job. Items picked from the Item List take today's Item List price. */
@@ -148,7 +144,7 @@ function jobCondition(c: TemplateCondition, projectId: string, sortOrder: number
     items: {
       create: c.items.map((i) => ({
         ...itemData(i),
-        ...(i.materialItem ? { unitCost: i.materialItem.unitCost, markupPct: i.materialItem.markupPct } : {}),
+        ...(i.materialItem ? { unitCost: i.materialItem.unitCost } : {}),
       })),
     },
   };
@@ -170,7 +166,7 @@ export async function libraryTakeoffs() {
 export async function pullLibraryTakeoff(templateConditionId: string, projectId: string) {
   const c = await db.takeoffTemplateCondition.findUnique({
     where: { id: templateConditionId },
-    include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: { materialItem: { select: { unitCost: true, markupPct: true } } } } },
+    include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: { materialItem: { select: { unitCost: true } } } } },
   });
   if (!c) throw new Error("That takeoff is no longer in the Library");
   const existing = await db.takeoffCondition.findMany({ where: { projectId }, select: { id: true, name: true, sortOrder: true } });

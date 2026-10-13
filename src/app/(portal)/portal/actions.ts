@@ -55,7 +55,7 @@ export const chooseOption = friendly(async function chooseOption(formData: FormD
   const selection = await ownedSelection(user.clientId, selectionId);
   if (!["PENDING", "CHOSEN"].includes(selection.status)) throw new Error("This selection can no longer be changed");
   const option = selection.options.find((o) => o.id === optionId);
-  if (!option) throw new Error("Option not found");
+  if (!option) throw new Error("Choice not found");
   // Same rule as the selections page: everything on it opened first.
   const required = await requiredFiles(selection.id, option.id, user.id);
   const seen = await fileSeen(
@@ -85,7 +85,7 @@ export const approveSelection = friendly(async function approveSelection(formDat
   await stopIfPreview(user);
   const selectionId = str(formData, "selectionId");
   const selection = await ownedSelection(user.clientId, selectionId);
-  if (selection.status !== "CHOSEN" || !selection.chosenOptionId) throw new Error("Choose an option before approving");
+  if (selection.status !== "CHOSEN" || !selection.chosenOptionId) throw new Error("Make a choice before approving");
   const option = selection.options.find((o) => o.id === selection.chosenOptionId);
 
   await db.selection.update({

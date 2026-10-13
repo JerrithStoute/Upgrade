@@ -39,7 +39,7 @@ function OptionFields({
       </Field>
       <label className="flex items-center gap-2 text-sm text-slate-700 md:col-span-3">
         <input type="checkbox" name="isRecommended" defaultChecked={values.isRecommended ?? false} className="h-4 w-4 rounded border-slate-300" />
-        Recommended option
+        Recommended choice
       </label>
     </FormGrid>
   );
@@ -140,11 +140,11 @@ export default async function SelectionDetailPage({ params, searchParams }: { pa
 
       <div>
         <h2 className="mb-3 text-base font-semibold text-slate-900">
-          Options <span className="ml-1 text-sm font-normal text-slate-500">{sel.options.length}</span>
+          Choices <span className="ml-1 text-sm font-normal text-slate-500">{sel.options.length}</span>
         </h2>
         {sel.options.length === 0 ? (
           <p className="rounded-xl border border-dashed border-slate-300 bg-white px-5 py-8 text-center text-sm text-slate-500">
-            No options yet — add the products the client can choose from below.
+            No choices yet — add the products the client can choose from below.
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -154,7 +154,7 @@ export default async function SelectionDetailPage({ params, searchParams }: { pa
               if (edit === o.id) {
                 return (
                   <Card key={o.id} className="border-blue-200 md:col-span-2 xl:col-span-3">
-                    <CardHeader title={`Edit option — ${o.name}`} />
+                    <CardHeader title={`Edit choice — ${o.name}`} />
                     <CardBody>
                       <form action={updateOption} className="space-y-4">
                         <input type="hidden" name="projectId" value={project.id} />
@@ -162,7 +162,7 @@ export default async function SelectionDetailPage({ params, searchParams }: { pa
                         <input type="hidden" name="id" value={o.id} />
                         <OptionFields values={o} prefix={`opt-${o.id}`} />
                         <div className="flex items-center gap-2">
-                          <SubmitButton>Save option</SubmitButton>
+                          <SubmitButton>Save choice</SubmitButton>
                           <ButtonLink href={here} variant="secondary">
                             Cancel
                           </ButtonLink>
@@ -219,7 +219,7 @@ export default async function SelectionDetailPage({ params, searchParams }: { pa
                         <Pencil className="h-3.5 w-3.5" /> Edit
                       </ButtonLink>
                       <div className="ml-auto">
-                        <ConfirmForm action={deleteOption} hidden={{ projectId: project.id, selectionId: sel.id, id: o.id }} message={`Delete option "${o.name}"?`} variant="ghost">
+                        <ConfirmForm action={deleteOption} hidden={{ projectId: project.id, selectionId: sel.id, id: o.id }} message={`Delete choice "${o.name}"?`} variant="ghost">
                           Delete
                         </ConfirmForm>
                       </div>
@@ -235,7 +235,7 @@ export default async function SelectionDetailPage({ params, searchParams }: { pa
       <Collapsible
         summary={
           <span className="flex items-center gap-2">
-            <Plus className="h-4 w-4" /> Add option
+            <Plus className="h-4 w-4" /> Add choice
           </span>
         }
       >
@@ -243,7 +243,7 @@ export default async function SelectionDetailPage({ params, searchParams }: { pa
           <input type="hidden" name="projectId" value={project.id} />
           <input type="hidden" name="selectionId" value={sel.id} />
           <OptionFields values={{}} prefix="new-opt" />
-          <SubmitButton>Add option</SubmitButton>
+          <SubmitButton>Add choice</SubmitButton>
         </form>
       </Collapsible>
 
@@ -261,8 +261,8 @@ export default async function SelectionDetailPage({ params, searchParams }: { pa
           <SubmitButton>Save selection</SubmitButton>
         </form>
         <div className="mt-4 flex items-center justify-between gap-3 border-t border-slate-100 pt-4">
-          <p className="text-xs text-slate-500">Deleting removes the selection and all of its options.</p>
-          <ConfirmForm action={deleteSelection} hidden={hidden} message={`Delete selection "${sel.title}" and all of its options?`}>
+          <p className="text-xs text-slate-500">Deleting removes the selection and all of its choices.</p>
+          <ConfirmForm action={deleteSelection} hidden={hidden} message={`Delete selection "${sel.title}" and all of its choices?`}>
             Delete selection
           </ConfirmForm>
         </div>

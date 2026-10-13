@@ -84,6 +84,8 @@ export type SheetLine = {
   fromTakeoff: boolean;
   /** Which takeoff total it carries ("code:<cost code id>") — its dropdown shows the takeoff items behind it. */
   takeoffKey?: string | null;
+  /** "From takeoff" switched off: the takeoff total it'd carry again if switched back on. */
+  takeoffStopped?: string | null;
   /** Linked to an Item List item (added to it, or priced from it). */
   materialItemId: string | null;
   /** "Add cost lines to Item List" was picked — happens on save. */
@@ -121,6 +123,15 @@ export function lineMath(l: { quantity: number; unitCost: number; markupPct: num
   const profit = (cost + tax) * (l.markupPct / 100);
   return { cost, tax, profit, price: cost + tax + profit };
 }
+
+/**
+ * "From takeoff" — one rule everywhere a line shows (the sheet, a category's details):
+ * - the switch is on a line when the takeoff has a total for it (carried now, or switched off);
+ * - on: its quantity and cost are the takeoff's, and locked; off: they're yours, and the takeoff
+ *   leaves the line alone.
+ */
+export const takeoffKeyOf = (l: Pick<SheetLine, "takeoffKey" | "takeoffStopped">) => l.takeoffKey ?? l.takeoffStopped ?? null;
+export const takeoffLocked = (l: Pick<SheetLine, "fromTakeoff" | "takeoffKey">) => l.fromTakeoff && !!l.takeoffKey;
 
 export type Totals = { cost: number; tax: number; profit: number; price: number };
 const ZERO: Totals = { cost: 0, tax: 0, profit: 0, price: 0 };
@@ -293,6 +304,7 @@ const lineInput = z.object({
   fromTakeoff: z.boolean(),
   /** The takeoff line it was when the sheet loaded ("Stop updating" keeps it, so a stop can be told from a stale sheet). */
   takeoffKey: z.string().nullable().optional(),
+  takeoffStopped: z.string().nullable().optional(),
   materialItemId: z.string().nullable(),
   addToItemList: z.boolean(),
   qtyFormula: z.string().max(1000).nullable(),

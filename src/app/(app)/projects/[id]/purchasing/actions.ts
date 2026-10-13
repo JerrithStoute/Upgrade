@@ -8,6 +8,7 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
+import { emailPoToVendor } from "@/lib/notify";
 import { saveUpload } from "@/lib/uploads";
 import { money, parseDateInput, str, strOrNull } from "@/lib/utils";
 import { approveBill, billTotal, canApproveBills, markBillPaid, nextPoNumber, poTotal, unapproveBill, vendorByName } from "@/lib/purchasing";
@@ -165,11 +166,18 @@ export const setPurchaseOrderStatus = friendly(async function setPurchaseOrderSt
     where: { id: po.id },
     data: {
       status,
-      ...(status === "SENT" ? { sentAt: new Date() } : {}),
+      ...(status === "SENT" ? { sentAt: new Date(), sentById: user.id } : {}),
       ...(status === "ACCEPTED" || status === "DECLINED" ? { respondedAt: new Date(), responseNote: strOrNull(fd, "note") } : {}),
     },
   });
-  await logActivity({ projectId: project.id, userId: user.id, type: "po.status", description: `PO-${po.number} ${VERB[status]}` });
+  // Sent: it's emailed to the vendor (when there's an address for them).
+  const emailed = status === "SENT" ? await emailPoToVendor(po.id, user) : [];
+  await logActivity({
+    projectId: project.id,
+    userId: user.id,
+    type: "po.status",
+    description: `PO-${po.number} ${VERB[status]}${status === "SENT" ? (emailed.length ? ` — emailed to ${emailed.join(", ")}` : " — not emailed (no email address for the vendor)") : ""}`,
+  });
   revalidate(project.id);
   redirect(`${base(project.id)}/po/${po.id}`);
 });

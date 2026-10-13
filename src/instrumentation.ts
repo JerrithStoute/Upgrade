@@ -3,7 +3,7 @@ import { PHASE_PRODUCTION_BUILD } from "next/constants";
 /**
  * Runs once when the server starts. Checking the session secret here makes a
  * misconfigured production server fail at startup instead of on the first login.
- * It also starts the nightly backups.
+ * It also starts the nightly backups and the morning emails.
  */
 export async function register() {
   if (process.env.NEXT_PHASE === PHASE_PRODUCTION_BUILD) return; // `next build` doesn't need the secret
@@ -26,5 +26,11 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.BACKUP_AUTO !== "off") {
     const { startNightlyBackups } = await import("./lib/backup");
     startNightlyBackups();
+  }
+
+  // The morning email — what's due today, and insurance about to lapse (MORNING_EMAIL=off to disable).
+  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.MORNING_EMAIL !== "off") {
+    const { startMorningEmails } = await import("./lib/morning-email");
+    startMorningEmails();
   }
 }

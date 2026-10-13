@@ -116,7 +116,7 @@ export default async function EstimatePage({ params, searchParams }: { params: P
       .count({ where: { projectId: project.id } })
       .then(async (n) => (n ? overWarnings(await bidComparison(project.id, { synced: refreshed !== null })) : [])),
     // The takeoff items behind each takeoff line (its dropdown).
-    sheet.some((sp) => sp.lines.some((l) => l.takeoffKey)) ? takeoffDetail(project.id) : undefined,
+    sheet.some((sp) => sp.lines.some((l) => l.takeoffKey || l.takeoffStopped)) ? takeoffDetail(project.id) : undefined,
   ]);
 
   const isDraft = estimate.status === "DRAFT";
@@ -173,7 +173,7 @@ export default async function EstimatePage({ params, searchParams }: { params: P
               Created {fmtDate(estimate.createdAt)}
               {estimate.sentAt ? ` · Sent ${fmtDate(estimate.sentAt)}` : ""}
               {estimate.approvedAt ? ` · Approved ${fmtDate(estimate.approvedAt)}` : ""}
-              {` · New lines start at ${pct(estimate.defaultMarkup, 1)} profit`}
+              {` · New lines start at ${pct(estimate.defaultMarkup, 1)} markup`}
               {isDraft ? "" : " · Changes save as a new version"}
             </>
           }
@@ -422,7 +422,7 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
         }
       />
 
-      <Collapsible summary="Proposal introduction, terms & starting profit %">
+      <Collapsible summary="Proposal introduction, terms & starting markup %">
         <form action={updateEstimateDetails} className="space-y-4">
           <input type="hidden" name="projectId" value={project.id} />
           <input type="hidden" name="id" value={estimate.id} />
@@ -438,7 +438,7 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
             <Field label="Terms (end of the proposal)" htmlFor="est-terms" className="md:col-span-2">
               <textarea id="est-terms" name="terms" rows={5} className="input" defaultValue={estimate.terms ?? ""} />
             </Field>
-            <Field label="Starting profit %" htmlFor="est-markup" hint="What new lines start with.">
+            <Field label="Starting markup %" htmlFor="est-markup" hint="What new lines start with.">
               <input id="est-markup" name="defaultMarkup" type="number" step="0.1" min="0" className="input" defaultValue={estimate.defaultMarkup} />
             </Field>
           </FormGrid>

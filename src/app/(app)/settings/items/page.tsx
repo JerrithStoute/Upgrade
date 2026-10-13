@@ -17,7 +17,6 @@ type ItemValues = {
   category: string;
   unit: string;
   unitCost: number;
-  markupPct: number;
   wastePct: number;
   roundUp: boolean;
   costCodeId: string | null;
@@ -36,14 +35,12 @@ function ItemForm({
   values,
   categories,
   costCodes,
-  defaultMarkup,
   returnTo,
 }: {
   action: (fd: FormData) => Promise<void>;
   values?: ItemValues;
   categories: string[];
   costCodes: { id: string; code: string | null; name: string }[];
-  defaultMarkup: number;
   returnTo: string;
 }) {
   const p = (k: string) => `item-${values?.id ?? "new"}-${k}`;
@@ -86,9 +83,6 @@ function ItemForm({
         </Field>
         <Field label="Unit cost" htmlFor={p("unitCost")}>
           <input id={p("unitCost")} name="unitCost" inputMode="decimal" className="input" defaultValue={values?.unitCost ?? 0} />
-        </Field>
-        <Field label="Markup %" htmlFor={p("markupPct")}>
-          <input id={p("markupPct")} name="markupPct" inputMode="decimal" className="input" defaultValue={values?.markupPct ?? defaultMarkup} />
         </Field>
         <Field label="Waste %" htmlFor={p("wastePct")}>
           <input id={p("wastePct")} name="wastePct" inputMode="decimal" className="input" defaultValue={values?.wastePct ?? 0} />
@@ -152,13 +146,12 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
   // Items still at $0: new ones (added by a takeoff, or the starter lumber) waiting for a price.
   const noPrice = unpriced === "1";
   const noCode = nocode === "1";
-  const [all, costCodes, company, rules, vendors] = await Promise.all([
+  const [all, costCodes, rules, vendors] = await Promise.all([
     db.materialItem.findMany({
       orderBy: [{ category: "asc" }, { name: "asc" }],
       include: { costCode: { select: { code: true, name: true } }, _count: { select: { assemblyItems: true } } },
     }),
     activeCostCodes(),
-    db.company.findFirst({ select: { defaultMarkup: true } }),
     loadCodeRules(),
     db.vendor.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
   ]);
@@ -186,7 +179,6 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
       "rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
       active ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-600 ring-slate-200 hover:bg-slate-50",
     );
-  const defaultMarkup = company?.defaultMarkup ?? 20;
   const editing = edit ? items.find((i) => i.id === edit) : undefined;
   // Items the program adds: how many of each kind sit in each category (for "move them too").
   const counts: Partial<Record<CodeGroup, Record<string, number>>> = {};
@@ -219,7 +211,7 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
           </span>
         }
       >
-        <ItemForm action={createMaterialItem} categories={categories} costCodes={costCodes} defaultMarkup={defaultMarkup} returnTo={returnTo} />
+        <ItemForm action={createMaterialItem} categories={categories} costCodes={costCodes} returnTo={returnTo} />
       </Collapsible>
 
       <ProgramItems rules={rules} categories={categories} costCodes={costCodes.map((c) => ({ id: c.id, code: c.code, name: c.name }))} counts={counts} />
@@ -315,7 +307,6 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
             category: i.category,
             unit: i.unit,
             unitCost: i.unitCost,
-            markupPct: i.markupPct,
             wastePct: i.wastePct,
             roundUp: i.roundUp,
             costCodeId: i.costCodeId,
@@ -328,7 +319,7 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
           editId={editing?.id}
           editForm={
             editing ? (
-              <ItemForm action={updateMaterialItem} values={editing} categories={categories} costCodes={costCodes} defaultMarkup={defaultMarkup} returnTo={returnTo} />
+              <ItemForm action={updateMaterialItem} values={editing} categories={categories} costCodes={costCodes} returnTo={returnTo} />
             ) : null
           }
         />

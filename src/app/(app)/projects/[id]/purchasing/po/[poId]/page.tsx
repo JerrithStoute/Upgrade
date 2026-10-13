@@ -7,6 +7,7 @@ import { getProject, activeCostCodes } from "@/lib/projects";
 import { costCodeLabel, dateInput, fmtDate, fmtDateTime, money } from "@/lib/utils";
 import { BILL_STATUS_LABEL, PO_STATUS_LABEL, billTotal, coverageWarning, poBilling, vendorCoverage } from "@/lib/purchasing";
 import { Badge, Button, ButtonLink, Card, CardBody, CardHeader, ConfirmForm, Table, THead, TBody, Tr, Th, Td, buttonClasses } from "@/components/ui";
+import { vendorContacts } from "@/lib/notify";
 import { PoEditor } from "../../_components/po-editor";
 import { deletePurchaseOrder, setPurchaseOrderStatus } from "../../actions";
 
@@ -51,9 +52,10 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
     db.vendor.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
   ]);
   if (!po) notFound();
-  const [billing, coverage, createdBy] = await Promise.all([
+  const [billing, coverage, sendTo, createdBy] = await Promise.all([
     poBilling(po.id),
     vendorCoverage(po.vendorId),
+    vendorContacts(po.vendorId),
     po.createdById ? db.user.findUnique({ where: { id: po.createdById }, select: { name: true } }) : null,
   ]);
   // A line's cost code may since have been turned off — keep it choosable here.
@@ -135,8 +137,28 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
           </span>
         </p>
       ) : null}
-      {po.status === "DRAFT" ? (
-        <p className="text-xs text-slate-500">Print it or let them see it in their portal, then mark it sent. They can accept it in their portal, or you can mark it accepted.</p>
+      {po.status === "DRAFT" || po.status === "DECLINED" ? (
+        <p className="text-xs text-slate-500">
+          {sendTo.emails.length ? (
+            <>
+              {po.status === "DRAFT" ? "Mark sent" : "Send again"} emails it to <span className="font-medium text-slate-700">{sendTo.emails.join(", ")}</span>.
+            </>
+          ) : (
+            <>
+              <span className="font-medium text-amber-700">No email address for {po.vendorName}</span> — it won&apos;t be emailed. Print it for them
+              {po.vendorId ? (
+                <>
+                  , or{" "}
+                  <Link href={`/settings/vendors/${po.vendorId}`} className="font-medium text-blue-700 hover:underline">
+                    add their email
+                  </Link>
+                </>
+              ) : null}
+              .
+            </>
+          )}{" "}
+          They can accept it in their portal, or you can mark it accepted.
+        </p>
       ) : null}
 
       <Card>

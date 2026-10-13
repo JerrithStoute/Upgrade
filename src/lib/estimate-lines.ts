@@ -4,6 +4,7 @@ import { resolveMaterialItem } from "./material-items";
 import { groupLooseLines, type SaveSheetInput, type SheetSpec } from "./estimate-sheet";
 import { NO_VIEW, parseSpecView, specViewJson } from "./proposal-options";
 import { evaluateFormula } from "./formula";
+import { startingProfit } from "./markup";
 import { formulaQty } from "./estimate-sheet-state";
 import { saveEstimateValues, templateValues } from "./estimate-parameters";
 
@@ -189,7 +190,7 @@ export async function createProjectEstimate(projectId: string, templateId: strin
         name: template?.name ?? "Estimate",
         version: (last?.version ?? 0) + 1,
         status: "DRAFT",
-        defaultMarkup: template?.defaultMarkup ?? company?.defaultMarkup ?? 20,
+        defaultMarkup: template?.defaultMarkup ?? startingProfit(company?.markupTable),
         // The template's Markup, Margin & Tax table, else your default.
         markupTable: template?.markupTable ?? company?.markupTable ?? null,
         notes: template?.notes ?? null,
@@ -284,6 +285,7 @@ function toSheet(specs: LoadedSpec[]): SheetSpec[] {
       isOptional: l.isOptional,
       fromTakeoff: !!(l.takeoffRollup || l.takeoffConditionId),
       takeoffKey: l.takeoffRollup ?? null,
+      takeoffStopped: l.takeoffStopped ?? null,
       materialItemId: l.materialItemId ?? null,
       addToItemList: false,
       qtyFormula: l.qtyFormula ?? null,
@@ -425,7 +427,6 @@ export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: stri
           description: l.description,
           unit: l.unit || "ea",
           unitCost: l.unitCost,
-          markupPct: l.markupPct,
           wastePct: 0,
           roundUp: false,
           costCodeId: l.costCodeId,
@@ -437,11 +438,12 @@ export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: stri
         costCodeId: l.costCodeId && valid.codes.has(l.costCodeId) ? l.costCodeId : null,
         specId,
         materialItemId,
-        // "Stop updating" unhooks the line from the takeoff too.
+        // "From takeoff" off unhooks the line from the takeoff…
         takeoffConditionId: l.fromTakeoff ? (srcLine?.takeoffConditionId ?? null) : null,
         takeoffItemId: l.fromTakeoff ? (srcLine?.takeoffItemId ?? null) : null,
-        takeoffRollup: l.fromTakeoff ? (srcLine?.takeoffRollup ?? null) : null,
-        // "Stop updating" on a takeoff line: remember which one, so the takeoff leaves it be.
+        // …and back on hooks it up again (to the total it was switched off from — never one the sheet made up).
+        takeoffRollup: l.fromTakeoff ? (srcLine?.takeoffRollup ?? (l.takeoffKey && l.takeoffKey === srcLine?.takeoffStopped ? srcLine.takeoffStopped : null)) : null,
+        // Off: remember which total, so the takeoff leaves the line be (and it can be switched back on).
         takeoffStopped: l.fromTakeoff ? null : (srcLine?.takeoffRollup ?? srcLine?.takeoffStopped ?? null),
       };
       if (takeoffOwns(l, srcLine) && srcLine)

@@ -114,7 +114,6 @@ async function main() {
       email: "office@upgradebuilders.com",
       website: "upgradebuilders.com",
       licenseNumber: "TX-RB-204817",
-      defaultMarkup: 20,
     },
   });
   await runAsCompany(company.id, () => seedCompany());
@@ -148,7 +147,6 @@ async function seedCompany() {
     data: {
       name: "Kitchen Remodel",
       description: "Standard mid-range kitchen, ~200 sf",
-      defaultMarkup: 20,
       notes: "Pricing valid for 30 days. Allowances are credited/debited at cost on final invoice.",
       terms: "10% deposit at signing, 40% at demo complete, 40% at cabinets installed, 10% at substantial completion.",
     },
@@ -282,7 +280,6 @@ async function seedCompany() {
       projectId: p1.id,
       name: "Kitchen & Bath Remodel",
       status: "APPROVED",
-      defaultMarkup: 20,
       sentAt: subDays(today, 60),
       approvedAt: subDays(today, 52),
       notes: "Pricing valid for 30 days. Allowances are credited/debited at cost on final invoice.",

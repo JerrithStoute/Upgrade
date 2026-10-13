@@ -19,7 +19,6 @@ export type AssemblyFormValues = {
   roundUp: boolean;
   wastePct: number;
   unitCost: number;
-  markupPct: number;
   /** "This job only": keeps its own price when the Item List changes. */
   pricePinned?: boolean;
 };
@@ -30,7 +29,6 @@ export type ItemOption = {
   category: string;
   unit: string;
   unitCost: number;
-  markupPct: number;
   wastePct: number;
   roundUp: boolean;
   costCodeId: string | null;
@@ -40,7 +38,7 @@ export type ItemOption = {
 /**
  * "qty [unit] per [per] [metric unit] of [metric]" — e.g. 1 ea per 32 sf of area.
  * The item name searches the Item List; picking an entry fills in its unit, price,
- * markup, waste and cost code. A name that isn't on the list is added to it on save.
+ * waste and cost code. A name that isn't on the list is added to it on save.
  */
 export function AssemblyForm({
   action,
@@ -58,7 +56,7 @@ export function AssemblyForm({
   action: (fd: FormData) => Promise<void>;
   /** Hidden fields identifying where the item lives (projectId, or templateId). */
   hidden: Record<string, string>;
-  condition: { id: string; type: string; metric: string; markupPct: number };
+  condition: { id: string; type: string; metric: string };
   costCodes: { id: string; code: string | null; name: string }[];
   items: ItemOption[];
   values?: AssemblyFormValues;
@@ -72,7 +70,6 @@ export function AssemblyForm({
   const [description, setDescription] = useState(values?.description ?? "");
   const [unit, setUnit] = useState(values?.unit ?? "ea");
   const [unitCost, setUnitCost] = useState(String(values?.unitCost ?? 0));
-  const [markupPct, setMarkupPct] = useState(String(values?.markupPct ?? condition.markupPct));
   const [wastePct, setWastePct] = useState(String(values?.wastePct ?? 0));
   const [roundUp, setRoundUp] = useState(values?.roundUp ?? false);
   const [costCodeId, setCostCodeId] = useState(values?.costCodeId ?? "");
@@ -86,7 +83,6 @@ export function AssemblyForm({
     if (!item || itemNameKey(name) === itemNameKey(values?.description ?? "")) return;
     setUnit((UNITS as readonly string[]).includes(item.unit) ? item.unit : "ea");
     setUnitCost(String(item.unitCost));
-    setMarkupPct(String(item.markupPct));
     setWastePct(String(item.wastePct));
     setRoundUp(item.roundUp);
     setCostCodeId(item.costCodeId ?? "");
@@ -99,7 +95,7 @@ export function AssemblyForm({
       ))}
       <input type="hidden" name="conditionId" value={condition.id} />
       {values ? <input type="hidden" name="id" value={values.id} /> : null}
-      {/* Item on its own row; cost code, unit cost and markup under it — room to read the price. */}
+      {/* Item on its own row; cost code and unit cost under it — room to read the price. */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Field label="Item" htmlFor={p("description")} className="col-span-2 md:col-span-4">
           <input
@@ -154,9 +150,6 @@ export function AssemblyForm({
         </Field>
         <Field label="Unit cost" htmlFor={p("unitCost")} className="md:col-span-2">
           <input id={p("unitCost")} name="unitCost" inputMode="decimal" className="input" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
-        </Field>
-        <Field label="Markup %" htmlFor={p("markupPct")}>
-          <input id={p("markupPct")} name="markupPct" inputMode="decimal" className="input" value={markupPct} onChange={(e) => setMarkupPct(e.target.value)} />
         </Field>
         {hidden.projectId ? (
           <div className="col-span-2 space-y-1 text-xs text-slate-500 md:col-span-4">

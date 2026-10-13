@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { fillLogWeather } from "@/lib/weather";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
 import { saveUpload, deleteUpload } from "@/lib/uploads";
@@ -55,6 +56,7 @@ export const createLog = friendly(async function createLog(fd: FormData) {
   const project = await getProject(str(fd, "projectId"));
   const data = readLogFields(fd);
   const log = await db.dailyLog.create({ data: { ...data, projectId: project.id, authorId: user.id } });
+  await fillLogWeather(log.id);
   const photos = photoFiles(fd);
   await savePhotos(photos, project.id, log.id, user.id, data.clientVisible);
   await logActivity({
@@ -75,6 +77,7 @@ export const updateLog = friendly(async function updateLog(fd: FormData) {
   if (!log) throw new Error("Log not found");
   const data = readLogFields(fd);
   await db.dailyLog.update({ where: { id }, data });
+  await fillLogWeather(id);
   const photos = photoFiles(fd);
   await savePhotos(photos, project.id, id, user.id, data.clientVisible);
   await logActivity({ projectId: project.id, userId: user.id, type: "daily_log.updated", description: `Updated daily log for ${fmtDate(data.date)}` });

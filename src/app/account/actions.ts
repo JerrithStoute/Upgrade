@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { systemDb } from "@/lib/db";
 import { createSession, destroySession, hashPassword, requireUser, signOutEverywhere, verifyPassword } from "@/lib/auth";
 import { passwordProblem } from "@/lib/passwords";
@@ -30,6 +31,13 @@ export async function changePassword(_prev: AccountState, fd: FormData): Promise
   await logSecurity(me, "password", "changed their password");
   await sendSecurityNotice(me, "password-changed");
   return { ok: "Password changed. Any other devices were signed out." };
+}
+
+/** The morning email (what's due today), on or off for me. */
+export async function setMorningEmail(fd: FormData) {
+  const me = await requireUser();
+  await systemDb.user.update({ where: { id: me.id }, data: { morningEmail: fd.get("on") === "1" } });
+  revalidatePath("/account");
 }
 
 export async function signOutAll() {

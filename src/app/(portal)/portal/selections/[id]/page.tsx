@@ -45,7 +45,7 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
         {/* Status banner */}
         {selection.status === "PENDING" ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 px-5 py-3 text-sm text-amber-900">
-            Pick the option you&apos;d like below. You&apos;ll be able to review and approve it before it&apos;s final.
+            Pick the choice you&apos;d like below. You&apos;ll be able to review and approve it before it&apos;s final.
           </div>
         ) : null}
         {selection.status === "CHOSEN" && chosen ? (
@@ -83,10 +83,10 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
         ) : null}
 
         <Card>
-          <CardHeader title="Options" description={`${selection.options.length} option${selection.options.length === 1 ? "" : "s"} prepared by your team`} />
+          <CardHeader title="Choices" description={`${selection.options.length} choice${selection.options.length === 1 ? "" : "s"} prepared by your team`} />
           <CardBody>
             {selection.options.length === 0 ? (
-              <EmptyState title="No options yet" description="Your team is still putting options together for this item." />
+              <EmptyState title="No choices yet" description="Your team is still putting choices together for this item." />
             ) : (
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {selection.options.map((o) => {
@@ -136,7 +136,7 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
                             <input type="hidden" name="selectionId" value={selection.id} />
                             <input type="hidden" name="optionId" value={o.id} />
                             <SubmitButton variant={isChosen ? "secondary" : "primary"} size="sm" className="w-full" disabled={isChosen} pendingText="Saving…">
-                              {isChosen ? "Currently chosen" : "Select this option"}
+                              {isChosen ? "Currently chosen" : "Select this choice"}
                             </SubmitButton>
                           </form>
                         ) : null}

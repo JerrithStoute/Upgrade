@@ -28,7 +28,7 @@ export const proposalOptionsSchema = z.object({
   allowances: bool(true),
   /** "Allowance: $X" under each allowance category's text. */
   allowanceInline: bool(true),
-  /** "Option – To be specified by client … TBD" under each Selection category. */
+  /** "Choice – To be specified by client … TBD" under each Selection category. */
   selectionTbd: bool(true),
   /** The heading over the body ("Estimate", "Proposal"…). */
   heading: z.string().max(60).catch("Proposal"),
@@ -129,7 +129,7 @@ export type DocDivision = {
   amount: number;
   /** The allowance as the client sees it (profit included), when this is an allowance category and that's shown. */
   allowance: number | null;
-  /** "Option – To be specified by client … TBD" (or the choice once it's made). */
+  /** "Choice – To be specified by client … TBD" (or the choice once it's made). */
   tbd: boolean;
   choice: { name: string; price: number } | "DECLINED" | null;
   show: boolean;

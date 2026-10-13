@@ -390,7 +390,7 @@ export function ChangeOrderEditor({
             disabled={!draft}
             options={[
               ["NONE", "No profit"],
-              ["PCT", "Profit %"],
+              ["PCT", "Markup %"],
               ["AMOUNT", "Profit $"],
             ]}
             onChange={(v) => save({ profitMode: v })}
@@ -805,7 +805,7 @@ function ProfitCell({ item, co, disabled, onSave }: { item: Item; co: Co; disabl
         <input
           className="input !h-8 !w-16 !py-0 text-right text-xs"
           inputMode="decimal"
-          aria-label={mode === "PCT" ? "Profit %" : "Profit $"}
+          aria-label={mode === "PCT" ? "Markup %" : "Profit $"}
           value={text ?? String(item.profitValue)}
           onFocus={(e) => e.currentTarget.select()}
           onChange={(e) => setText(e.target.value)}

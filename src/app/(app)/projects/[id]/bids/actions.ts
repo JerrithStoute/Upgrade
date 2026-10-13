@@ -218,7 +218,7 @@ async function lumberItemFor(name: string) {
   const nameKey = itemNameKey(name);
   const had = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } });
   if (had) return had.id;
-  const [place, company] = await Promise.all([newItemPlacement("framing lumber"), db.company.findFirst({ select: { defaultMarkup: true } })]);
+  const place = await newItemPlacement("framing lumber");
   const item = await db.materialItem.create({
     data: {
       name,
@@ -227,7 +227,6 @@ async function lumberItemFor(name: string) {
       kind: place.kind,
       unit: "ea",
       unitCost: 0,
-      markupPct: company?.defaultMarkup ?? 20,
       roundUp: true,
       costCodeId: place.costCodeId,
     },

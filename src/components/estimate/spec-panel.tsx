@@ -20,6 +20,7 @@ export function SpecPanel({
   allowanceProfitDefault,
   allowanceExtra = 0,
   onChange,
+  items,
   onClose,
   onDelete,
 }: {
@@ -33,6 +34,8 @@ export function SpecPanel({
   /** What the Markup, Margin & Tax rows marked "in allowances" add (overhead, tax…). */
   allowanceExtra?: number;
   onChange: (p: Patch) => void;
+  /** "What's in this price": the category's items, editable (the same lines as on the sheet). */
+  items?: React.ReactNode;
   onClose: () => void;
   /** Deletes the category and its items (asks first). */
   onDelete?: () => void;
@@ -44,13 +47,36 @@ export function SpecPanel({
       <select
         className="input !h-8 !w-44 !py-0 text-xs"
         value={view[key] === null ? "" : view[key] ? "1" : "0"}
-        onChange={(e) => onChange({ proposalView: { ...view, [key]: e.target.value === "" ? null : e.target.value === "1" } })}
+        onChange={(e) =>
+          onChange({
+            proposalView: {
+              ...view,
+              [key]: e.target.value === "" ? null : e.target.value === "1",
+            },
+          })
+        }
       >
         <option value="">Like the rest</option>
         <option value="1">{yes}</option>
         <option value="0">{no}</option>
       </select>
     </label>
+  );
+  const totalsBox = (
+    <dl className="grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+      <div>
+        <dt className="text-xs text-slate-500">Cost</dt>
+        <dd className="font-semibold tabular-nums text-slate-800">{money(totals.cost)}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-slate-500">Profit</dt>
+        <dd className="font-semibold tabular-nums text-slate-800">{money(totals.profit)}</dd>
+      </div>
+      <div>
+        <dt className="text-xs text-slate-500">Price</dt>
+        <dd className="font-semibold tabular-nums text-slate-900">{money(totals.price)}</dd>
+      </div>
+    </dl>
   );
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === "Escape" && onClose();
@@ -61,7 +87,7 @@ export function SpecPanel({
   return (
     <div className="fixed inset-0 z-40" role="dialog" aria-modal="true" aria-label={`${spec.name} details`}>
       <button type="button" aria-label="Close" className="absolute inset-0 cursor-default bg-slate-900/20" onClick={onClose} />
-      <aside className="absolute inset-y-0 right-0 flex w-full max-w-lg flex-col bg-white shadow-2xl">
+      <aside className={cn("absolute inset-y-0 right-0 flex w-full flex-col bg-white shadow-2xl", items ? "max-w-3xl" : "max-w-lg")}>
         <header className="flex items-center justify-between gap-3 border-b border-slate-200 px-5 py-3">
           <div className="min-w-0">
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{spec.category}</p>
@@ -134,6 +160,17 @@ export function SpecPanel({
             />
           </label>
 
+          {items ? (
+            <div className="space-y-2">
+              <div>
+                <p className="label !mb-0">What&apos;s in this price</p>
+                <p className="text-xs text-slate-500">Change a number here and it changes on the estimate. Add or remove items on the estimate itself.</p>
+              </div>
+              {items}
+              {totalsBox}
+            </div>
+          ) : null}
+
           <div className="rounded-lg border border-slate-200 p-3">
             <label className="flex items-center gap-2 text-sm font-medium text-slate-800">
               <input type="checkbox" className="h-4 w-4 rounded border-slate-300" checked={spec.isAllowance} onChange={(e) => onChange({ isAllowance: e.target.checked })} />
@@ -158,7 +195,11 @@ export function SpecPanel({
                 className="input mt-2 !h-8 !w-auto !py-0 pl-2 text-xs"
                 aria-label="Allowance profit"
                 value={spec.allowanceProfit === null ? "" : spec.allowanceProfit ? "in" : "out"}
-                onChange={(e) => onChange({ allowanceProfit: e.target.value === "" ? null : e.target.value === "in" })}
+                onChange={(e) =>
+                  onChange({
+                    allowanceProfit: e.target.value === "" ? null : e.target.value === "in",
+                  })
+                }
               >
                 <option value="out">Profit out (at cost)</option>
                 <option value="in">Profit in</option>
@@ -191,27 +232,14 @@ export function SpecPanel({
           {proposal ? (
             <div className="space-y-2 rounded-lg border border-slate-200 p-3">
               <p className="text-sm font-medium text-slate-800">On the proposal</p>
-              <p className="-mt-1 text-xs text-slate-500">&ldquo;Like the rest&rdquo; follows the options on the proposal page.</p>
+              <p className="-mt-1 text-xs text-slate-500">&ldquo;Like the rest&rdquo; follows the settings on the proposal page.</p>
               {choice("show", "This category", "Show it", "Hide it")}
               {choice("prices", "Its price", "Show", "Hide")}
               {choice("items", "Its items", "Show them", "Hide them")}
             </div>
           ) : null}
 
-          <dl className="grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
-            <div>
-              <dt className="text-xs text-slate-500">Cost</dt>
-              <dd className="font-semibold tabular-nums text-slate-800">{money(totals.cost)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500">Profit</dt>
-              <dd className="font-semibold tabular-nums text-slate-800">{money(totals.profit)}</dd>
-            </div>
-            <div>
-              <dt className="text-xs text-slate-500">Price</dt>
-              <dd className="font-semibold tabular-nums text-slate-900">{money(totals.price)}</dd>
-            </div>
-          </dl>
+          {items ? null : totalsBox}
         </div>
 
         <footer className="flex items-center justify-between gap-3 border-t border-slate-200 px-5 py-3">

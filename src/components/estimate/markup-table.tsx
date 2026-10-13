@@ -180,7 +180,7 @@ export function MarkupPanel({
                 {rows.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-3 py-6 text-center text-sm text-slate-500">
-                      No rows — lines keep the profit % you type on them.
+                      No rows — lines keep the markup % you type on them.
                     </td>
                   </tr>
                 ) : null}
@@ -194,7 +194,7 @@ export function MarkupPanel({
           )}
           <ul className="list-disc space-y-1 pl-5 text-xs text-slate-500">
             <li>
-              <b>Profit</b> rows fill each line&apos;s profit % (by cost type). Lines still at the table&apos;s % follow it when you change it; a line you changed by hand keeps
+              <b>Profit</b> rows fill each line&apos;s markup % (by cost type). Lines still at the table&apos;s % follow it when you change it; a line you changed by hand keeps
               yours.
             </li>
             <li>

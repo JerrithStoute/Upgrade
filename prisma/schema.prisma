@@ -29,7 +29,6 @@ model Company {
   email               String?
   website             String?
   licenseNumber       String?
-  defaultMarkup       Float    @default(20) // percent
   // Branding: the main color ("#1d4ed8"; null = the built-in blue) and the logo file
   // (under uploads/company; null = none).
   brandColor          String?
@@ -101,6 +100,9 @@ model User {
   canManageTime     Boolean   @default(false)
   // Their dashboard: the cards they picked, in order (JSON ["stats", "projects", …]); null = the default.
   dashboardCards    String?
+  // The morning email (what's due today): on unless they turn it off; the last day it went out ("2026-10-13").
+  morningEmail      Boolean   @default(true)
+  morningEmailOn    String?
   // A vendor portal login (role VENDOR): the vendor it signs in for.
   vendorId          String?
   vendor            Vendor?   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
@@ -1106,7 +1108,6 @@ model TakeoffCondition {
   costCodeId    String?
   costCode      CostCode?   @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
   unitCost      Float       @default(0)
-  markupPct     Float       @default(20)
   wastePct      Float       @default(0)
   pitch         Float       @default(0) // rise in inches per 12" of run
   pitchMode     String      @default("COMMON")
@@ -1186,7 +1187,6 @@ model TakeoffAssemblyItem {
   roundUp        Boolean          @default(false)
   wastePct       Float            @default(0)
   unitCost       Float            @default(0)
-  markupPct      Float            @default(20)
   sortOrder      Int              @default(0)
   // The Item List entry this was picked from. An unlocked job follows its price; a locked
   // job keeps its own until you update it (Price review).
@@ -1211,7 +1211,6 @@ model MaterialItem {
   category   String    @default("General")
   unit       String    @default("ea")
   unitCost   Float     @default(0)
-  markupPct  Float     @default(20)
   wastePct   Float     @default(0)
   roundUp    Boolean   @default(false)
   costCodeId String?
@@ -1342,7 +1341,6 @@ model TakeoffTemplateCondition {
   costCodeId    String?
   costCode      CostCode?       @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
   unitCost      Float           @default(0)
-  markupPct     Float           @default(20)
   wastePct      Float           @default(0)
   pitch         Float           @default(0)
   pitchMode     String          @default("COMMON")
@@ -1386,7 +1384,6 @@ model TakeoffTemplateItem {
   roundUp        Boolean                  @default(false)
   wastePct       Float                    @default(0)
   unitCost       Float                    @default(0)
-  markupPct      Float                    @default(20)
   sortOrder      Int                      @default(0)
 
   @@index([companyId])
@@ -1697,6 +1694,7 @@ model PurchaseOrder {
   // Where it came from: a bid you took (its id), else the budget or blank.
   bidId        String?
   sentAt       DateTime?
+  sentById     String? // who marked it sent — they hear back when the vendor answers
   respondedAt  DateTime?
   responseNote String?
   createdById  String?
@@ -1791,6 +1789,8 @@ model VendorInsurance {
   policyNumber String?
   expiresAt    DateTime
   confirmed    Boolean  @default(true)
+  // The last "about to expire" email sent to the vendor for this certificate: 30, 7 or 0 (days left).
+  reminded     Int?
   // The certificate file (stored under uploads/vendors/<vendor>).
   fileName     String?
   storagePath  String?

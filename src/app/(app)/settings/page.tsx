@@ -189,9 +189,6 @@ export default async function CompanySettingsPage({
               <Field label="License number" htmlFor="licenseNumber">
                 <input id="licenseNumber" name="licenseNumber" className="input" defaultValue={company?.licenseNumber ?? ""} />
               </Field>
-              <Field label="Default markup (%)" htmlFor="defaultMarkup" hint="Applied to new estimate and change order line items.">
-                <input id="defaultMarkup" name="defaultMarkup" type="number" step="0.5" min="0" className="input" defaultValue={company?.defaultMarkup ?? 20} />
-              </Field>
               <Field label="Allowances start with" htmlFor="allowanceProfit" hint="You can switch any allowance on its selection or in the estimate.">
                 <select id="allowanceProfit" name="allowanceProfit" className="input" defaultValue={company?.allowanceProfit ? "in" : "out"}>
                   <option value="out">Profit out (at cost)</option>

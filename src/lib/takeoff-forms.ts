@@ -105,7 +105,6 @@ export async function conditionFields(fd: FormData) {
     referenceOnly: boolField(fd, "referenceOnly"),
     costCodeId,
     unitCost: Math.max(0, numField(fd, "unitCost", 0)),
-    markupPct: numField(fd, "markupPct", 20),
     wastePct: Math.max(0, numField(fd, "wastePct", 0)),
     pitch: type === "BEAM" ? 0 : Math.max(0, numField(fd, "pitch", 0)),
     // Hips & valleys have their own condition type now; Linear pitch is always the common slope.
@@ -155,7 +154,6 @@ async function rememberItems(json: string) {
   if (o.drywallSides > 0 && o.drywallItem.trim()) wanted.push({ name: o.drywallItem.trim(), kind: "drywall", unit: "ea" });
   if (o.baseSides > 0 && o.baseItem.trim()) wanted.push({ name: o.baseItem.trim(), kind: "trim", unit: "lf" });
   if (!wanted.length) return;
-  const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   for (const w of wanted) {
     const nameKey = itemNameKey(w.name);
     if (await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } })) continue;
@@ -168,7 +166,6 @@ async function rememberItems(json: string) {
         kind: place.kind,
         unit: w.unit,
         unitCost: 0,
-        markupPct: company?.defaultMarkup ?? 20,
         roundUp: w.unit === "ea",
         costCodeId: place.costCodeId,
       },
@@ -187,7 +184,6 @@ async function rememberCasing(json: string) {
     if (!existing.lengthFt && o.casingStickFt > 0) await db.materialItem.update({ where: { id: existing.id }, data: { lengthFt: o.casingStickFt } });
     return;
   }
-  const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   const sticks = o.casingStickFt > 0;
   const place = await newItemPlacement("trim");
   await db.materialItem.create({
@@ -199,7 +195,6 @@ async function rememberCasing(json: string) {
       unit: sticks ? "ea" : "lf",
       roundUp: sticks,
       unitCost: 0,
-      markupPct: company?.defaultMarkup ?? 20,
       costCodeId: place.costCodeId,
       lengthFt: sticks ? o.casingStickFt : null,
     },
@@ -224,7 +219,6 @@ export async function assemblyFields(fd: FormData, conditionType: string) {
     roundUp: boolField(fd, "roundUp"),
     wastePct: Math.max(0, numField(fd, "wastePct", 0)),
     unitCost: Math.max(0, numField(fd, "unitCost", 0)),
-    markupPct: numField(fd, "markupPct", 20),
   };
 }
 

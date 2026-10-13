@@ -495,7 +495,6 @@ export function PlanViewer({
     codeRules: CodeRules;
     memberSizes: MemberSizeOption[];
     items: ItemOption[];
-    defaultMarkup: number;
     pricesLocked: boolean;
     nextColor: string;
     /** Admins: takeoff templates a new takeoff can also go into. */
@@ -3450,7 +3449,7 @@ export function PlanViewer({
                       type="button"
                       aria-label={infoOpen.has(c.id) ? `Hide details of ${c.name}` : `Show details of ${c.name}`}
                       aria-expanded={infoOpen.has(c.id)}
-                      title="Details — totals, price and what it orders"
+                      title="Details — totals, cost and what it orders"
                       className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -3509,7 +3508,7 @@ export function PlanViewer({
                         ) : null}
                       </p>
                       <p>
-                        Price <strong className="tabular-nums text-slate-900">{money(info.price)}</strong> <span className="text-slate-400">incl. markup</span>
+                        Cost <strong className="tabular-nums text-slate-900">{money(info.cost)}</strong>
                         {info.unscaled ? <span className="block text-amber-700">{info.unscaled} shape(s) on sheets with no scale aren&apos;t counted</span> : null}
                       </p>
                       {info.lines.length ? (
@@ -4023,7 +4022,6 @@ export function PlanViewer({
               codeRules={editor.codeRules}
               memberSizes={editor.memberSizes}
               items={editor.items}
-              defaultMarkup={editor.defaultMarkup}
               pricesLocked={editor.pricesLocked}
               nextColor={editor.nextColor}
               toolbox={editor.toolbox}

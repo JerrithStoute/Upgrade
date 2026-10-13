@@ -385,7 +385,6 @@ export type EstimateLine = {
   quantity: number;
   unit: string;
   unitCost: number;
-  markupPct: number;
   /** Items bought in whole units: which item it is (so takeoffs sharing it round up once) and the exact amount. */
   roundKey?: string;
   raw?: number;
@@ -415,7 +414,6 @@ export function conditionEstimateLines(c: LoadedCondition, totals: ConditionTota
     quantity: round(assemblyQuantity(i, totals.metrics, totals.cutList, totals.wall)),
     unit: i.unit,
     unitCost: i.unitCost,
-    markupPct: i.markupPct,
     ...(i.roundUp
       ? {
           roundKey: `${i.materialItemId ?? `name:${itemNameKey(i.description)}`}|${i.unit}`,

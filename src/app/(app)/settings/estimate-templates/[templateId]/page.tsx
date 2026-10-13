@@ -46,7 +46,7 @@ export default async function EstimateTemplatePage({ params }: { params: Promise
               </SubmitButton>
             </form>
           }
-          description={`Estimate template · new lines start at ${pct(template.defaultMarkup, 1)} profit · copied into a job when picked — later edits here don't change existing jobs.`}
+          description={`Estimate template · new lines start at ${pct(template.defaultMarkup, 1)} markup · copied into a job when picked — later edits here don't change existing jobs.`}
         />
       </Card>
 
@@ -71,7 +71,7 @@ export default async function EstimateTemplatePage({ params }: { params: Promise
         }}
       />
 
-      <Collapsible summary="Description, proposal notes, terms & starting profit %">
+      <Collapsible summary="Description, proposal notes, terms & starting markup %">
         <form action={updateTemplateDetails} className="space-y-4">
           <input type="hidden" name="templateId" value={template.id} />
           <FormGrid>
@@ -84,7 +84,7 @@ export default async function EstimateTemplatePage({ params }: { params: Promise
             <Field label="Terms (copied to the estimate, shown on proposal)" htmlFor="tpl-terms" className="md:col-span-2">
               <textarea id="tpl-terms" name="terms" rows={3} className="input" defaultValue={template.terms ?? ""} />
             </Field>
-            <Field label="Starting profit %" htmlFor="tpl-markup" hint="What new lines start with.">
+            <Field label="Starting markup %" htmlFor="tpl-markup" hint="What new lines start with.">
               <input id="tpl-markup" name="defaultMarkup" type="number" step="0.1" min="0" className="input" defaultValue={template.defaultMarkup} />
             </Field>
           </FormGrid>

@@ -23,7 +23,7 @@ export function LogFields({
       <Field label="Date" htmlFor="log-date" className="col-span-2">
         <input id="log-date" type="date" name="date" className="input" required defaultValue={dateInput(values.date ?? new Date())} />
       </Field>
-      <Field label="Weather" htmlFor="log-weather" className="col-span-2">
+      <Field label="Weather" htmlFor="log-weather" className="col-span-2" hint="Leave weather, high or low blank and it&apos;s filled in for the job&apos;s ZIP code when you save.">
         <select id="log-weather" name="weather" className="input" defaultValue={values.weather ?? ""}>
           <option value="">—</option>
           {WEATHER.map((w) => (

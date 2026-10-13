@@ -17,7 +17,6 @@ import { STARTER_MEMBER_SIZES, starterItems } from "./starter-lumber-data";
 
 /** Adds the starter member sizes and items to the current company (skips any it already has). */
 export async function addStarterLumber() {
-  const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   const haveSizes = new Set((await db.memberSize.findMany({ select: { nameKey: true } })).map((s) => s.nameKey));
   let order = 0;
   for (const s of STARTER_MEMBER_SIZES) {
@@ -39,7 +38,6 @@ export async function addStarterLumber() {
         kind: place.kind,
         unit: it.unit,
         unitCost: 0,
-        markupPct: company?.defaultMarkup ?? 20,
         roundUp: it.unit === "ea",
         costCodeId: place.costCodeId,
         notes: it.notes ?? null,

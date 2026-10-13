@@ -325,7 +325,6 @@ async function pendingItemFields(fd: FormData, type: string, metric: string) {
         roundUp: z.boolean(),
         wastePct: z.number().finite(),
         unitCost: z.number().finite(),
-        markupPct: z.number().finite(),
       }),
     )
     .max(100)
@@ -1223,7 +1222,7 @@ export async function quickCreateCondition(input: { projectId: string; name: str
   await requireStaff();
   const { projectId, name, type } = z.object({ projectId: z.string(), name: z.string().trim().min(1).max(120), type: z.enum(CONDITION_TYPES) }).parse(input);
   await getProject(projectId);
-  const [count, company] = await Promise.all([db.takeoffCondition.count({ where: { projectId } }), db.company.findFirst({ select: { defaultMarkup: true } })]);
+  const count = await db.takeoffCondition.count({ where: { projectId } });
   // Walls and openings start from sensible defaults; a size in the name ("Ext 2x6 Wall", "2x10 Headers") is used.
   let extra = {};
   if (type === "DOOR") extra = { wastePct: 10, options: JSON.stringify(DEFAULT_DOOR_OPTIONS) };
@@ -1245,7 +1244,6 @@ export async function quickCreateCondition(input: { projectId: string; name: str
       type,
       metric: DEFAULT_METRIC[type],
       color: CONDITION_COLORS[count % CONDITION_COLORS.length],
-      markupPct: company?.defaultMarkup ?? 20,
       ...extra,
       sortOrder: await nextConditionSort(projectId),
     },
@@ -1300,7 +1298,6 @@ export async function createDoorItem(input: {
   const nameKey = itemNameKey(name);
   const existing = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } });
   if (existing) throw new Error(`"${name}" is already on the Item List`);
-  const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   const item = await db.materialItem.create({
     data: {
       name,
@@ -1309,7 +1306,6 @@ export async function createDoorItem(input: {
       kind: place.kind,
       unit: "ea",
       roundUp: true,
-      markupPct: company?.defaultMarkup ?? 20,
       costCodeId,
       widthIn: data.widthIn,
       heightIn: data.heightIn,

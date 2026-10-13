@@ -248,7 +248,7 @@ function reduce(state: SheetState, a: SheetAction): SheetState {
         key: a.key,
         name: `${src.name} (copy)`,
         // Copies aren't tied to the takeoff (it would update both) and aren't re-added to the Item List.
-        lines: src.lines.map((l, j) => ({ ...l, id: null, key: a.lineKeys[j], fromTakeoff: false, takeoffKey: null })),
+        lines: src.lines.map((l, j) => ({ ...l, id: null, key: a.lineKeys[j], fromTakeoff: false, takeoffKey: null, takeoffStopped: null })),
       };
       const specs = [...state.specs];
       specs.splice(i + 1, 0, copy);

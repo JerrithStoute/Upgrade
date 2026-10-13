@@ -1,12 +1,12 @@
 import Link from "@/components/link";
-import { ArrowLeft, KeyRound, LogOut, ShieldCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, KeyRound, LogOut, Mail, ShieldCheck, UserPlus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { systemDb } from "@/lib/db";
 import { setupSecret } from "@/lib/two-step-setup";
 import { fmtDateTime } from "@/lib/utils";
 import { SetupForm } from "../login/two-step/forms";
 import { PasswordForm, TwoStepOnForms } from "./forms";
-import { signOutAll } from "./actions";
+import { setMorningEmail, signOutAll } from "./actions";
 import { isPlatformAdmin } from "@/lib/builder-invites";
 
 export const metadata = { title: "Your account" };
@@ -15,7 +15,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const me = await requireUser();
   const sp = await searchParams;
   const [user, company] = await Promise.all([
-    systemDb.user.findUniqueOrThrow({ where: { id: me.id }, select: { email: true, name: true, totpEnabledAt: true, backupCodes: true, passwordChangedAt: true, lastSignInAt: true } }),
+    systemDb.user.findUniqueOrThrow({ where: { id: me.id }, select: { email: true, name: true, totpEnabledAt: true, morningEmail: true, backupCodes: true, passwordChangedAt: true, lastSignInAt: true } }),
     systemDb.company.findUnique({ where: { id: me.companyId }, select: { name: true, requireTwoStep: true } }),
   ]);
   const home = me.role === "CLIENT" ? "/portal" : me.role === "VENDOR" ? "/vendor" : "/dashboard";
@@ -84,6 +84,24 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             </>
           )}
         </section>
+
+        {team ? (
+          <section className={card}>
+            <h2 className="mb-1 flex items-center gap-2 font-semibold text-slate-900">
+              <Mail className="h-4 w-4 text-slate-400" /> Morning email
+            </h2>
+            <p className="mb-4 text-sm text-slate-500">
+              <span className={user.morningEmail ? "font-medium text-emerald-700" : "font-medium text-slate-700"}>{user.morningEmail ? "On" : "Off"}</span> — one email each
+              morning with what&apos;s yours that day: to-dos and reminders due, tasks starting, selections waiting on a choice. No email on a day with nothing due.
+            </p>
+            <form action={setMorningEmail}>
+              <input type="hidden" name="on" value={user.morningEmail ? "0" : "1"} />
+              <button type="submit" className="rounded-md border border-slate-300 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+                {user.morningEmail ? "Turn it off" : "Turn it on"}
+              </button>
+            </form>
+          </section>
+        ) : null}
 
         <section className={card}>
           <h2 className="mb-1 flex items-center gap-2 font-semibold text-slate-900">

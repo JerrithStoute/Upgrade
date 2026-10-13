@@ -24,7 +24,6 @@ type LumberLine = { metric: string; description: string; listName: string; listU
 export async function syncLumberItems(projectId: string, conditionId?: string) {
   const conditions = (await loadConditions(projectId)).filter((c) => isMemberType(c.type) && (!conditionId || c.id === conditionId));
   if (conditions.length === 0) return;
-  const company = await db.company.findFirst({ select: { defaultMarkup: true } });
   // New sizes / lengths: tagged framing lumber, filed where you chose, with its cost code.
   const place = await newItemPlacement("framing lumber");
   // Boards substituted on this job with another product (an LVL for a 2x10 × 16').
@@ -74,7 +73,6 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
             kind: place.kind,
             unit: line.listUnit,
             unitCost: 0,
-            markupPct: company?.defaultMarkup ?? 20,
             roundUp: line.listUnit === "ea",
             costCodeId: place.costCodeId,
           },
@@ -99,7 +97,6 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
             ...shape,
             unitCost: fromBid || listItem.unitCost,
             pricePinned: fromBid > 0,
-            markupPct: listItem.markupPct,
             costCodeId: listItem.costCodeId ?? c.costCodeId,
             sortOrder: sortOrder++,
           },
@@ -127,7 +124,7 @@ export async function syncLumberItems(projectId: string, conditionId?: string) {
           data: {
             materialItemId: listItem.id,
             ...shape,
-            ...(relinked || unpriced ? { unitCost: listItem.unitCost, markupPct: listItem.markupPct, costCodeId: listItem.costCodeId ?? c.costCodeId } : {}),
+            ...(relinked || unpriced ? { unitCost: listItem.unitCost, costCodeId: listItem.costCodeId ?? c.costCodeId } : {}),
             ...(bidPriced && !unpriced ? { unitCost: fromBid, pricePinned: true } : {}),
             ...(codeNow ? { costCodeId: listItem.costCodeId } : {}),
           },

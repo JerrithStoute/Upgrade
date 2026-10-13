@@ -21,7 +21,6 @@ import {
 } from "../../actions";
 
 export type DrawerCondition = ConditionFormValues & {
-  markupPct: number;
   hasMeasurements: boolean;
   items: (AssemblyFormValues & { costCode: { code: string | null; name: string } | null })[];
 };
@@ -38,7 +37,6 @@ export function ConditionDrawer({
   codeRules,
   memberSizes,
   items,
-  defaultMarkup,
   pricesLocked,
   nextColor,
   toolbox,
@@ -52,7 +50,6 @@ export function ConditionDrawer({
   codeRules: CodeRules;
   memberSizes: MemberSizeOption[];
   items: ItemOption[];
-  defaultMarkup: number;
   /** This job's prices are locked. */
   pricesLocked?: boolean;
   nextColor: string;
@@ -103,7 +100,6 @@ export function ConditionDrawer({
           assemblyItems={items}
           toolbox={toolbox}
           spanTables={spanTables}
-          defaultMarkup={defaultMarkup}
           values={condition ?? undefined}
           hasMeasurements={condition?.hasMeasurements}
           cancelHref={closeHref}
@@ -123,7 +119,7 @@ export function ConditionDrawer({
                     <AssemblyForm
                       action={updateAssemblyItem}
                       hidden={{ projectId, returnTo: stayHref }}
-                      condition={{ id: condition.id, type: condition.type, metric: condition.metric, markupPct: condition.markupPct }}
+                      condition={{ id: condition.id, type: condition.type, metric: condition.metric }}
                       costCodes={costCodes}
                       items={items}
                       values={item}
@@ -168,7 +164,7 @@ export function ConditionDrawer({
                 <AssemblyForm
                   action={createAssemblyItem}
                   hidden={{ projectId, returnTo: stayHref }}
-                  condition={{ id: condition.id, type: condition.type, metric: condition.metric, markupPct: condition.markupPct }}
+                  condition={{ id: condition.id, type: condition.type, metric: condition.metric }}
                   costCodes={costCodes}
                   items={items}
                   pricesLocked={pricesLocked}

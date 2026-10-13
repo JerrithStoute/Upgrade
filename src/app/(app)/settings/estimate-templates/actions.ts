@@ -8,6 +8,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { numField, str, strOrNull } from "@/lib/utils";
+import { startingProfit } from "@/lib/markup";
 import { copyIntoTemplate, loadTemplate, saveTemplateSheet } from "@/lib/estimate-lines";
 import { saveSheetInput } from "@/lib/estimate-sheet";
 import { learnDivisions } from "@/lib/estimate-categories";
@@ -33,7 +34,7 @@ export const createTemplate = friendly(async function createTemplate(formData: F
   if (!name) throw new Error("Template name is required");
   const company = await db.company.findFirst();
   const template = await db.estimateTemplate.create({
-    data: { name, description: strOrNull(formData, "description"), defaultMarkup: company?.defaultMarkup ?? 20 },
+    data: { name, description: strOrNull(formData, "description"), defaultMarkup: startingProfit(company?.markupTable) },
   });
   await logActivity({ userId: admin.id, type: "estimate_template.created", description: `Created estimate template "${name}"` });
   revalidate();

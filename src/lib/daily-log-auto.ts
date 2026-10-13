@@ -1,6 +1,7 @@
 import "server-only";
 import { revalidatePath } from "next/cache";
 import { db } from "./db";
+import { fillLogWeather } from "./weather";
 
 const dayRange = (d: Date) => ({ gte: new Date(d.getFullYear(), d.getMonth(), d.getDate()), lt: new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1) });
 
@@ -18,6 +19,7 @@ export async function addToDailyLog(opts: { projectId: string; date: Date; autho
   const have = log[field] ?? "";
   if (have.split("\n").some((l) => l.trim() === line.trim())) return log;
   await db.dailyLog.update({ where: { id: log.id }, data: { [field]: have ? `${have}\n${line}` : line } });
+  await fillLogWeather(log.id);
   revalidatePath(`/projects/${projectId}/daily-logs`);
   revalidatePath(`/projects/${projectId}`);
   return log;

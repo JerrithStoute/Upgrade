@@ -18,10 +18,9 @@ export type PendingItem = {
   roundUp: boolean;
   wastePct: number;
   unitCost: number;
-  markupPct: number;
 };
 
-const blank = (metric: string, markupPct: number): PendingItem => ({
+const blank = (metric: string): PendingItem => ({
   description: "",
   costCodeId: "",
   metric,
@@ -31,27 +30,24 @@ const blank = (metric: string, markupPct: number): PendingItem => ({
   roundUp: false,
   wastePct: 0,
   unitCost: 0,
-  markupPct,
 });
 
 /**
  * A new takeoff's assembly items, added before it's saved: they go with the
  * takeoff as one JSON field ("pendingItems") and are created along with it.
  * The fields work like the assembly item form (picking an Item List entry fills
- * in its unit, price, markup, waste and cost code).
+ * in its unit, price, waste and cost code).
  */
 export function PendingItems({
   type,
   metric,
   costCodes,
   items,
-  defaultMarkup,
 }: {
   type: ConditionType;
   metric: string;
   costCodes: { id: string; code: string | null; name: string }[];
   items: ItemOption[];
-  defaultMarkup: number;
 }) {
   const [list, setList] = useState<PendingItem[]>([]);
   const [draft, setDraft] = useState<PendingItem | null>(null);
@@ -63,7 +59,7 @@ export function PendingItems({
 
   const open = (i: number | null) => {
     setEditing(i);
-    setDraft(i == null ? blank(metric, defaultMarkup) : { ...list[i], metric: fits(list[i].metric) ? list[i].metric : metric });
+    setDraft(i == null ? blank(metric) : { ...list[i], metric: fits(list[i].metric) ? list[i].metric : metric });
   };
   const commit = () => {
     if (!draft || !draft.description.trim()) return;
@@ -82,7 +78,6 @@ export function PendingItems({
             description: name,
             unit: (UNITS as readonly string[]).includes(item.unit) ? item.unit : "ea",
             unitCost: item.unitCost,
-            markupPct: item.markupPct,
             wastePct: item.wastePct,
             roundUp: item.roundUp,
             costCodeId: item.costCodeId ?? "",
@@ -214,10 +209,6 @@ export function PendingItems({
                 onChange={(e) => set("unitCost", Number(e.target.value) || 0)}
                 onKeyDown={enter}
               />
-            </label>
-            <label className="space-y-1">
-              <span className={lbl}>Markup %</span>
-              <input type="number" step="0.1" className="input !w-20" value={draft.markupPct} onChange={(e) => set("markupPct", Number(e.target.value) || 0)} onKeyDown={enter} />
             </label>
             <label className="space-y-1">
               <span className={lbl}>Waste %</span>

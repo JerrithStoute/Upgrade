@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity";
 import { saveUpload } from "@/lib/uploads";
 import { money, parseDateInput, str, strOrNull } from "@/lib/utils";
 import { COVERAGE_TYPES, coverageLabel } from "@/lib/purchasing";
+import { emailBillUploaded, emailInsuranceUploaded, emailPoAnswered } from "@/lib/notify";
 
 function revalidateAll(projectId?: string) {
   revalidatePath("/vendor", "layout");
@@ -33,6 +34,7 @@ export const respondToPo = friendly(async function respondToPo(fd: FormData) {
     type: "po.status",
     description: `PO-${po.number} ${accept ? "accepted" : "declined"} by ${user.name} (${po.vendorName}) in their portal${note ? `: “${note}”` : ""}`,
   });
+  await emailPoAnswered(po.id, user.name);
   revalidateAll(po.projectId);
   redirect(`/vendor/pos/${po.id}`);
 });
@@ -78,6 +80,7 @@ export const uploadVendorBill = friendly(async function uploadVendorBill(fd: For
     type: "bill.created",
     description: `Bill from ${po.vendorName} on PO-${po.number} uploaded in their portal (${money(amount)})`,
   });
+  await emailBillUploaded(po.id, amount);
   revalidateAll(po.projectId);
   redirect("/vendor/bills?sent=1");
 });
@@ -106,6 +109,7 @@ export const uploadVendorInsurance = friendly(async function uploadVendorInsuran
     },
   });
   await logActivity({ userId: user.id, type: "vendor.insurance", description: `${user.name} uploaded a ${coverageLabel(type)} certificate in their portal` });
+  await emailInsuranceUploaded(user.vendorId, type, expiresAt);
   revalidateAll();
   redirect("/vendor/insurance?sent=1");
 });

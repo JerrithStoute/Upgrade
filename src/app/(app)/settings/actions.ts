@@ -25,7 +25,6 @@ export const saveCompany = friendly(async function saveCompany(formData: FormDat
     email: strOrNull(formData, "email"),
     website: strOrNull(formData, "website"),
     licenseNumber: strOrNull(formData, "licenseNumber"),
-    defaultMarkup: Math.max(0, numField(formData, "defaultMarkup", 20)),
     allowanceProfit: str(formData, "allowanceProfit") === "in",
   };
   const existing = await db.company.findFirst();

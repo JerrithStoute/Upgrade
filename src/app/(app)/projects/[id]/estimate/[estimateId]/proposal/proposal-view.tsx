@@ -84,7 +84,7 @@ export function ProposalView({
           <SlidersHorizontal className="h-4 w-4 text-slate-500" />
           <h2 className="text-sm font-semibold text-slate-900">What the client sees</h2>
         </div>
-        <p className="-mt-1 text-xs text-slate-500">{isCustom ? "This estimate has its own options." : "Following your default options."}</p>
+        <p className="-mt-1 text-xs text-slate-500">{isCustom ? "This estimate has its own settings." : "Following your default settings."}</p>
 
         <Group title="Page">
           <label className="block text-sm text-slate-700">
@@ -135,7 +135,7 @@ export function ProposalView({
             onChange={(v) => set((p) => ({ ...p, divisions: { ...p.divisions, specText: v } }))}
           />
           <Check label="“Allowance: $X” under allowances" checked={o.allowanceInline} onChange={(v) => set((p) => ({ ...p, allowanceInline: v }))} />
-          <Check label="“Option – To be specified by client … TBD” under selections" checked={o.selectionTbd} onChange={(v) => set((p) => ({ ...p, selectionTbd: v }))} />
+          <Check label="“Choice – To be specified by client … TBD” under selections" checked={o.selectionTbd} onChange={(v) => set((p) => ({ ...p, selectionTbd: v }))} />
         </Group>
         <Group title="Items">
           <Check label="Show items" checked={o.items.show} onChange={(v) => set((p) => ({ ...p, items: { ...p.items, show: v } }))} />
@@ -379,7 +379,7 @@ function CoverPage({ cover }: { cover: Cover }) {
         // eslint-disable-next-line @next/next/no-img-element
         <img src={cover.url} alt="" className="h-[26rem] w-full rounded-lg object-cover print:h-[6.4in]" />
       ) : (
-        <div className="no-print grid h-48 place-items-center rounded-lg border-2 border-dashed border-slate-200 text-sm text-slate-400">Add a cover picture in the options</div>
+        <div className="no-print grid h-48 place-items-center rounded-lg border-2 border-dashed border-slate-200 text-sm text-slate-400">Add a cover picture in the settings</div>
       )}
       <div className="mt-8 flex items-end justify-between gap-6">
         <div>
@@ -440,7 +440,7 @@ function ProposalBody({ doc, heading, basePrice }: { doc: ProposalDoc; heading: 
 
       {doc.optional.length > 0 ? (
         <section className="mt-10 break-inside-avoid">
-          <h3 className="text-lg font-semibold">Options not included</h3>
+          <h3 className="text-lg font-semibold">Not included</h3>
           <div className="mt-2 border-t border-slate-300">
             {doc.optional.map((i) => (
               <div key={i.id} className="flex items-baseline justify-between gap-4 border-b border-slate-200 py-2 text-sm">
@@ -528,7 +528,7 @@ function CategoryBlock({ doc, d, indent }: { doc: ProposalDoc; d: ProposalDoc["c
             </>
           ) : (
             <>
-              <span>Option – To be specified by client</span>
+              <span>Choice – To be specified by client</span>
               <span>TBD</span>
             </>
           )}

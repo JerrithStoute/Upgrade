@@ -4,7 +4,6 @@ import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
 import { conditionEstimateLines, conditionTotals, loadConditions } from "@/lib/takeoff-data";
 import { materialListFrom } from "@/lib/takeoff-materials";
-import { linePrice } from "@/lib/utils";
 import { materialItemOptions } from "@/lib/material-items";
 import { CONDITION_COLORS, boardFeetPerLf, isCountType, metricLabel, parseArcs, parsePoints, type MetricKey } from "@/lib/takeoff";
 import { itemsNeedingCodes, loadCodeRules } from "@/lib/item-codes";
@@ -95,10 +94,9 @@ export default async function PlanViewerPage({
   const editing = cond === "new" ? null : (conditions.find((c) => c.id === cond) ?? null);
   let editor = null;
   if (cond === "new" || editing) {
-    const [memberSizes, items, company, spanTables] = await Promise.all([
+    const [memberSizes, items, spanTables] = await Promise.all([
       db.memberSize.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, kind: true, soldAs: true, stockLengths: true } }),
       materialItemOptions(),
-      db.company.findFirst({ select: { defaultMarkup: true } }),
       db.spanTable.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, use: true } }),
     ]);
     editor = {
@@ -113,7 +111,6 @@ export default async function PlanViewerPage({
             referenceOnly: editing.referenceOnly,
             costCodeId: editing.costCodeId,
             unitCost: editing.unitCost,
-            markupPct: editing.markupPct,
             wastePct: editing.wastePct,
             pitch: editing.pitch,
             pitchMode: editing.pitchMode,
@@ -143,7 +140,6 @@ export default async function PlanViewerPage({
               roundUp: i.roundUp,
               wastePct: i.wastePct,
               unitCost: i.unitCost,
-              markupPct: i.markupPct,
               pricePinned: i.pricePinned,
             })),
           }
@@ -153,7 +149,6 @@ export default async function PlanViewerPage({
       memberSizes,
       spanTables,
       items,
-      defaultMarkup: company?.defaultMarkup ?? 20,
       pricesLocked: !!project.pricesLockedAt,
       nextColor: CONDITION_COLORS[conditions.length % CONDITION_COLORS.length],
       toolbox: user.role === "ADMIN" ? templates.map((t) => ({ id: t.id, name: t.name })) : undefined,
@@ -178,7 +173,7 @@ export default async function PlanViewerPage({
         job: t.quantity,
         withWaste: t.quantityWithWaste,
         wastePct: c.type === "DOOR" || c.type === "WINDOW" ? 0 : c.wastePct, // doors / windows: waste is on the trim, not the count
-        price: lines.reduce((sum, l) => sum + linePrice(l), 0),
+        cost: lines.reduce((sum, l) => sum + l.quantity * l.unitCost, 0),
         unscaled: t.unscaledShapes,
         lines: c.items.map((i, k) => ({ name: i.description, quantity: lines[k]?.quantity ?? 0, unit: i.unit })),
       };

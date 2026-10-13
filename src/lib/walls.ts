@@ -22,7 +22,6 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
     (c) => (c.type === "WALL" || c.type === "OPENING" || c.type === "DOOR" || c.type === "WINDOW") && (!conditionId || c.id === conditionId),
   );
   if (conditions.length === 0) return;
-  const company = await db.company.findFirst({ select: { defaultMarkup: true } });
 
   for (const c of conditions) {
     const { wallLines } = conditionTotals(c);
@@ -47,7 +46,6 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
             kind: place.kind,
             unit: line.unit,
             unitCost: 0,
-            markupPct: company?.defaultMarkup ?? 20,
             roundUp: line.unit === "ea",
             costCodeId: place.costCodeId,
           },
@@ -69,7 +67,6 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
             metric,
             ...shape,
             unitCost: listItem.unitCost,
-            markupPct: listItem.markupPct,
             costCodeId: listItem.costCodeId ?? c.costCodeId,
             sortOrder: sortOrder++,
           },
@@ -96,7 +93,7 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
           data: {
             materialItemId: listItem.id,
             ...shape,
-            ...(relinked || unpriced ? { unitCost: listItem.unitCost, markupPct: listItem.markupPct, costCodeId: listItem.costCodeId ?? c.costCodeId } : {}),
+            ...(relinked || unpriced ? { unitCost: listItem.unitCost, costCodeId: listItem.costCodeId ?? c.costCodeId } : {}),
             ...(codeNow ? { costCodeId: listItem.costCodeId } : {}),
           },
         });

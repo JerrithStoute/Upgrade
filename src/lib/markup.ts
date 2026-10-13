@@ -100,6 +100,14 @@ export function tableProfitPct(rows: MarkupRow[], costType: string): number | nu
   return hits.length ? round(hits.reduce((n, r) => n + asMarkup(r), 0)) : null;
 }
 
+/**
+ * The profit % a new estimate or template starts its lines at: the profit in your default
+ * Markup, Margin & Tax table (20% until you've saved one).
+ */
+export function startingProfit(companyTable: string | null | undefined) {
+  return tableProfitPct(parseMarkupTable(companyTable, 20), "ALL") ?? 20;
+}
+
 type Line = { quantity: number; unitCost: number; costType: string; isOptional?: boolean; taxPct?: number | null };
 
 /**

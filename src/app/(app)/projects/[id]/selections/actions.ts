@@ -83,7 +83,7 @@ export const deleteSelection = friendly(async function deleteSelection(fd: FormD
 
 function readOptionFields(fd: FormData) {
   const name = str(fd, "name");
-  if (!name) throw new Error("Option name is required");
+  if (!name) throw new Error("Choice name is required");
   return {
     name,
     vendor: strOrNull(fd, "vendor"),
@@ -102,7 +102,7 @@ export const addOption = friendly(async function addOption(fd: FormData) {
   const data = readOptionFields(fd);
   const sortOrder = sel.options.reduce((m, o) => Math.max(m, o.sortOrder), -1) + 1;
   await db.selectionOption.create({ data: { ...data, selectionId: sel.id, sortOrder } });
-  await logActivity({ projectId: project.id, userId: user.id, type: "selection.option_added", description: `Added option "${data.name}" to "${sel.title}"` });
+  await logActivity({ projectId: project.id, userId: user.id, type: "selection.option_added", description: `Added choice "${data.name}" to "${sel.title}"` });
   revalidate(project.id, sel.id);
   redirect(detailPath(project.id, sel.id));
 });
@@ -112,7 +112,7 @@ export const updateOption = friendly(async function updateOption(fd: FormData) {
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const id = str(fd, "id");
-  if (!sel.options.some((o) => o.id === id)) throw new Error("Option not found");
+  if (!sel.options.some((o) => o.id === id)) throw new Error("Choice not found");
   await db.selectionOption.update({ where: { id }, data: readOptionFields(fd) });
   if (sel.chosenOptionId === id) await syncSelectionChangeOrder(sel.id, user);
   revalidate(project.id, sel.id);
@@ -124,7 +124,7 @@ export const deleteOption = friendly(async function deleteOption(fd: FormData) {
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const id = str(fd, "id");
-  if (!sel.options.some((o) => o.id === id)) throw new Error("Option not found");
+  if (!sel.options.some((o) => o.id === id)) throw new Error("Choice not found");
   await db.selectionOption.delete({ where: { id } });
   if (sel.chosenOptionId === id) {
     await db.selection.update({ where: { id: sel.id }, data: { chosenOptionId: null, status: "PENDING", chosenAt: null, approvedAt: null } });
@@ -140,7 +140,7 @@ export const chooseOption = friendly(async function chooseOption(fd: FormData) {
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const id = str(fd, "id");
   const opt = sel.options.find((o) => o.id === id);
-  if (!opt) throw new Error("Option not found");
+  if (!opt) throw new Error("Choice not found");
   await db.selection.update({
     where: { id: sel.id },
     data: { chosenOptionId: opt.id, status: "CHOSEN", chosenAt: new Date(), approvedAt: null },

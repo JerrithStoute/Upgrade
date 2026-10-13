@@ -16,7 +16,6 @@ export type ItemRow = {
   category: string;
   unit: string;
   unitCost: number;
-  markupPct: number;
   wastePct: number;
   roundUp: boolean;
   costCodeId: string | null;
@@ -34,7 +33,7 @@ const pinBox = "sticky left-0 z-10 w-10 min-w-10 px-3";
 const pinItem = "sticky left-10 z-10 px-2 shadow-[1px_0_0_0_theme(colors.slate.200)]";
 
 /**
- * The Item List as an editable table: change a price, markup, waste, cost code, unit,
+ * The Item List as an editable table: change a price, waste, cost code, unit,
  * SKU or vendor right in its row (it saves when you leave the box). Like a spreadsheet,
  * tick several rows and a change on one of them goes into the same box on all of them,
  * with Undo.
@@ -120,7 +119,6 @@ export function ItemTable({
               <th className={cn(pinItem, "bg-slate-50 py-2.5 font-medium")}>Item</th>
               <th className="px-2 py-2.5 font-medium">Cost code</th>
               <th className="px-2 py-2.5 text-right font-medium">Unit cost</th>
-              <th className="px-2 py-2.5 text-right font-medium">Markup %</th>
               <th className="px-2 py-2.5 text-right font-medium">Waste %</th>
               <th className="px-2 py-2.5 text-center font-medium" title="Round quantities up (sold whole)">
                 Round up
@@ -146,7 +144,7 @@ export function ItemTable({
                       onChange={(e) => toggle(ids, e.target.checked)}
                     />
                   </td>
-                  <td colSpan={10} className="bg-slate-50 px-2 py-1.5">
+                  <td colSpan={9} className="bg-slate-50 px-2 py-1.5">
                     <span className="sticky left-12 inline-flex flex-wrap items-center gap-x-4 gap-y-1">
                       <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{cat}</span>
                     </span>
@@ -155,7 +153,7 @@ export function ItemTable({
                 {list.map((i) =>
                   editId === i.id ? (
                     <tr key={i.id} id={`item-${i.id}`}>
-                      <td colSpan={11} className="bg-slate-50/50 px-4 py-4">
+                      <td colSpan={10} className="bg-slate-50/50 px-4 py-4">
                         {editForm}
                       </td>
                     </tr>
@@ -215,12 +213,6 @@ export function ItemTable({
                             ))}
                           </select>
                           {mark(i.id, "unit")}
-                        </div>
-                      </td>
-                      <td className="px-2 py-1.5 align-middle">
-                        <div className="flex items-center justify-end gap-1">
-                          {mark(i.id, "markupPct")}
-                          <NumberCell label={`Markup % for ${i.name}`} value={i.markupPct} width="!w-16" onSave={(v) => save(i.id, "markupPct", v)} />
                         </div>
                       </td>
                       <td className="px-2 py-1.5 align-middle">
@@ -365,7 +357,6 @@ const FIELD_LABELS: Record<ItemCell, string> = {
   costCodeId: "Cost code",
   unit: "Unit",
   unitCost: "Unit cost",
-  markupPct: "Markup",
   wastePct: "Waste",
   roundUp: "Round up",
   sku: "SKU",

@@ -17,7 +17,7 @@ export type TotalsPanelData = {
     job: number; // every sheet, before waste
     withWaste: number;
     wastePct: number;
-    price: number; // incl. markup
+    cost: number;
     unscaled: number;
     lines: { name: string; quantity: number; unit: string }[]; // what it orders
   }[];
@@ -55,7 +55,7 @@ export function TotalsPanel({
   onClose: () => void;
   materialsHref: string;
 }) {
-  const total = data.conditions.reduce((s, c) => s + c.price, 0);
+  const total = data.conditions.reduce((s, c) => s + c.cost, 0);
   const categories = Array.from(new Set(data.materials.lines.map((l) => l.category)));
   const tabClass = (on: boolean) => cn("border-b-2 px-3 py-2 text-sm font-medium", on ? "border-blue-700 text-blue-800" : "border-transparent text-slate-500 hover:text-slate-800");
 
@@ -95,7 +95,7 @@ export function TotalsPanel({
                           <span className="min-w-0">
                             <span className="block truncate text-sm font-medium text-slate-900">{c.name}</span>
                             <span className="block text-[11px] text-slate-500">
-                              {money(c.price)}
+                              {money(c.cost)}
                               {c.unscaled ? <span className="text-amber-700"> · {c.unscaled} unscaled</span> : null}
                             </span>
                           </span>
@@ -125,10 +125,10 @@ export function TotalsPanel({
                 ))}
               </ul>
               <div className="flex justify-between border-t border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-900">
-                <span>Takeoff price</span>
+                <span>Takeoff cost</span>
                 <span className="tabular-nums">{money(total)}</span>
               </div>
-              <p className="px-4 pb-4 text-[11px] text-slate-500">Job totals are before waste; prices include markup. Click a takeoff to see what it orders.</p>
+              <p className="px-4 pb-4 text-[11px] text-slate-500">Job totals are before waste. Click a takeoff to see what it orders.</p>
             </>
           )
         ) : (
