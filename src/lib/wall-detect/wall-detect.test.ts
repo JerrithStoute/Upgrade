@@ -264,6 +264,33 @@ describe("wall finder", () => {
     assert.deepEqual(findWalls(wall, [105, 6], { ...opts, clickRadius: 10 }), { ok: false, reason: "no-wall" });
   });
 
+  it("a wall with stone drawn 2\" off both faces is the 5½\" wall behind the stone — whichever line you click", () => {
+    // Bryant's 2nd-floor porch: an 8' stone-wrapped wall (stone outline 2" off each face), drawn bold
+    // (each face two lines ½" apart), closed at both ends.
+    const segs: number[] = [];
+    const v = (x: number) => segs.push(x, 0, x, 96);
+    v(-2); // stone outline
+    v(0);
+    v(0.5); // face (bold)
+    v(6);
+    v(6.5); // other face (bold)
+    v(8.5); // stone outline
+    segs.push(-2, 0, 8.5, 0, -2, 96, 8.5, 96); // closed ends
+    for (const x of [-2, 0.25, 6.25, 8.5]) {
+      const r = findWalls(segs, [x, 48], opts);
+      assert.ok(r.ok, `click at ${x}`);
+      assert.equal(r.thicknessIn, 5.5, `click at ${x}`);
+      assert.equal(r.kind, "exterior", `click at ${x}`);
+    }
+  });
+
+  it("a thin gap beside a real wall is still a wall when nothing wider is there (Stoute's 2¾\" walls)", () => {
+    const segs = [0, 0, 0, 96, 2.75, 0, 2.75, 96, 0, 0, 2.75, 0, 0, 96, 2.75, 96];
+    const r = findWalls(segs, [0, 48], opts);
+    assert.ok(r.ok);
+    assert.equal(r.thicknessIn, 2.75);
+  });
+
   it("says why when there's nothing to find", () => {
     assert.deepEqual(findWalls(house(), [300, 200], opts), { ok: false, reason: "no-line" });
     assert.deepEqual(findWalls(house(), [100, 384], opts), { ok: false, reason: "no-wall" });

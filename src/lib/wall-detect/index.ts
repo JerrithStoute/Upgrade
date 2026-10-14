@@ -47,6 +47,8 @@ type Line = { x1: number; y1: number; x2: number; y2: number; ang: number; ux: n
 type Piece = { bucket: number; ang: number; ux: number; uy: number; nx: number; ny: number; rho: number; s0: number; s1: number; open: number; openings?: number[] };
 
 const DEG = Math.PI / 180;
+/** A band thinner than this (inches) beside a wall-wide gap is a veneer (stone drawn as an outline), not a wall — real walls are drawn 2¾" and up (Stoute's thinnest). */
+const VENEER_MAX = 2.5;
 const PARALLEL = 1.5 * DEG;
 
 function toLine(x1: number, y1: number, x2: number, y2: number): Line | null {
@@ -232,15 +234,26 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     s1: Math.min(clicked.s1, cs + 2 * upf),
     open: 0,
   });
+  // The gap between bunch k and the next one out (null: none).
+  const gapAt = (k: number, dir: number) => {
+    if (k + dir < 0 || k + dir >= bunches.length) return null;
+    const [lo, hi] = dir > 0 ? [bunches[k][1], bunches[k + 1][0]] : [bunches[k - 1][1], bunches[k][0]];
+    return { lo, hi, t: hi - lo, from: dir > 0 ? lo : -hi };
+  };
   const sides = [-1, 1].map((dir) => {
     let brick = false;
-    for (let k = mineAt; k + dir >= 0 && k + dir < bunches.length; k += dir) {
-      const [lo, hi] = dir > 0 ? [bunches[k][1], bunches[k + 1][0]] : [bunches[k - 1][1], bunches[k][0]];
-      const from = dir > 0 ? lo : -hi;
+    for (let k = mineAt; gapAt(k, dir); k += dir) {
+      const { lo, hi, t, from } = gapAt(k, dir)!;
       if (from > tMax) break;
-      const t = hi - lo;
       if (t < tMin || t > tMax) continue;
       if (hatched(probe(lo, hi), t / 2)) {
+        brick = true;
+        continue;
+      }
+      // A thin band (under 2½") with a wall-wide gap right past it: stone (or another veneer) drawn
+      // as an outline off the wall's face — the wall is the gap behind it, like brick.
+      const next = gapAt(k + dir, dir);
+      if (t < VENEER_MAX * inch && next && next.t >= VENEER_MAX * inch && next.t <= tMax) {
         brick = true;
         continue;
       }
@@ -248,6 +261,10 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     }
     return null;
   });
+  // A thin band one way (under 2½") and a wall-wide gap the other: the thin one is a veneer (stone
+  // drawn as an outline off the face you clicked) — the wall is the other way.
+  const thin = (sd: (typeof sides)[number]) => !!sd && sd.t < VENEER_MAX * inch;
+  if (sides.some(thin) && sides.some((sd) => sd && !thin(sd))) for (const [i, sd] of sides.entries()) if (thin(sd)) sides[i] = null;
   // Gaps both ways: the wall is the narrower (the other is a closet, a chase, a room's edge).
   const pick = sides.find((sd) => sd?.brick) ?? sides.filter((sd) => sd).sort((a, b) => a!.t - b!.t)[0];
   const thickness = pick ? pick.t : Infinity;
@@ -404,7 +421,30 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     // A door: the wall closed at the opening (on at least one side), and both sides free ends —
     // a wall that runs into another wall there is a hallway's side, not a door's.
     const [a, b] = w.s1 <= p.s0 ? [w, p] : [p, w];
-    return gap <= maxDoor && (capped(a, a.s1) || capped(b, b.s0)) && !offWall(a, a.s1) && !offWall(b, b.s0);
+    // …unless another wall runs right alongside the whole gap (its center within about two walls'
+    // thickness): that's the back of a niche or recess (a stone column's C), not a doorway. (A step
+    // or stoop line outside a door isn't a wall, so doors stay doors.)
+    const rho = (w.rho + p.rho) / 2;
+    const backed = walls.some(
+      (q) =>
+        q !== w &&
+        q !== p &&
+        near(q.bucket, w.bucket) &&
+        Math.abs(q.rho - rho) > sameWall &&
+        Math.abs(q.rho - rho) <= 2 * thickness + 4 * inch &&
+        Math.min(q.s1, b.s0) - Math.max(q.s0, a.s1) >= 0.8 * gap,
+    );
+    // …and neither side is a column or pier: a small closed box standing on its own (a short piece
+    // tied into no wall, closed at both ends, with a matching short piece alongside) isn't the side of
+    // a doorway.
+    const pier = (q: Piece) =>
+      lengthOf(q) <= 3.5 * upf &&
+      !offWall(q, q.s0) &&
+      !offWall(q, q.s1) &&
+      capped(q, q.s0) &&
+      capped(q, q.s1) &&
+      walls.some((r) => r !== q && near(r.bucket, q.bucket) && Math.abs(r.rho - q.rho) >= thickness * 1.5 && Math.abs(r.rho - q.rho) <= 3 * upf && lengthOf(r) <= 3.5 * upf && overlapOf(r, q) >= 0.8 * Math.max(lengthOf(q), lengthOf(r)));
+    return gap <= maxDoor && !backed && !pier(a) && !pier(b) && (capped(a, a.s1) || capped(b, b.s0)) && !offWall(a, a.s1) && !offWall(b, b.s0);
   });
 
   // Bits still under a foot are cabinet edges, fixtures and the like — not walls you'd frame.
@@ -425,7 +465,7 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   // One straight line can be exterior for a stretch and interior past a corner, so a wall
   // is split where it changes.
   /** brick: seen alongside here (not just more lines on one face) — sure evidence of an outside wall. */
-  type Look = { kind: WallKind; layers: number; brick?: boolean };
+  type Look = { kind: WallKind; layers: number; brick?: boolean; wrapped?: boolean; stone?: boolean };
   // Brick drawn right alongside, whatever its width (its band needn't match the wall's): slanted
   // hatch strokes just outside one face, within a foot or so of here. Brick is outside.
   // A row of them, all parallel and spaced along — a dimension tick or a door line here and there isn't.
@@ -458,19 +498,31 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
       if (c && o - c[1] <= 1.1 * inch) c[1] = o;
       else clusters.push([o, o]);
     }
-    const left = clusters.filter((c) => c[1] < 0).pop();
-    const right = clusters.find((c) => c[0] > 0);
+    const li = clusters.findLastIndex((c) => c[1] < 0);
+    const ri = clusters.findIndex((c) => c[0] > 0);
+    const left = clusters[li];
+    const right = clusters[ri];
     // No wall here (a door, a window, a corner): no say.
     if (!left || !right || right[0] - left[1] < thickness - tol) return null;
     const count = ([lo, hi]: [number, number]) => offs.filter((o) => o >= lo && o <= hi).length;
     const layers = Math.min(count(left), count(right));
-    if (veneer.some((v) => near(v.bucket, w.bucket) && Math.abs(v.rho - w.rho) <= half + 8 * inch + thickness && v.s0 <= s && v.s1 >= s) || brickBeside(w, s))
-      return { kind: "exterior", layers, brick: true };
-    return { kind: Math.abs(left[1] - left[0] - (right[1] - right[0])) >= 0.75 * inch ? "exterior" : "interior", layers };
+    // Stone (or another veneer) drawn as an outline 1½–2½" off BOTH faces (a stone-wrapped porch wall):
+    // outside. Off one face only it could be a counter or cabinet edge drawn alongside — no say.
+    const outline = (c: [number, number] | undefined, face: number) => !!c && Math.abs(face - (c[0] + c[1]) / 2) >= 1.5 * inch && Math.abs(face - (c[0] + c[1]) / 2) < VENEER_MAX * inch;
+    const outsideLeft = outline(clusters[li - 1], left[0]) && clusters[li - 1]![1] < left[0];
+    const outsideRight = outline(clusters[ri + 1], right[1]) && clusters[ri + 1]![0] > right[1];
+    const wrapped = outsideLeft && outsideRight;
+    const stone = outsideLeft || outsideRight;
+    if (wrapped || veneer.some((v) => near(v.bucket, w.bucket) && Math.abs(v.rho - w.rho) <= half + 8 * inch + thickness && v.s0 <= s && v.s1 >= s) || brickBeside(w, s))
+      return { kind: "exterior", layers, brick: true, wrapped, stone };
+    return { kind: Math.abs(left[1] - left[0] - (right[1] - right[0])) >= 0.75 * inch ? "exterior" : "interior", layers, stone };
   };
   const sections: Piece[] = [];
   const kinds: WallKind[] = [];
   const layers: number[] = [];
+  // Stone outlines along a wall: on both faces (wrapped — a stone porch wall), or one face.
+  const wrappedWall: boolean[] = [];
+  const stoneWall: boolean[] = [];
   for (const w of walls) {
     const n = Math.max(1, Math.min(400, Math.round(lengthOf(w) / upf)));
     const step = lengthOf(w) / n;
@@ -565,6 +617,9 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
         sections.push({ ...w, s0: from, s1: to });
         kinds.push(r.kind);
         layers.push(drawnWith);
+        const said = looks.slice(r.from, r.to).filter((l): l is Look => !!l);
+        wrappedWall.push(said.length > 0 && said.filter((l) => l.wrapped).length * 2 >= said.length);
+        stoneWall.push(said.length > 0 && said.filter((l) => l.stone).length * 2 >= said.length);
       }
       from = to;
     });
@@ -600,6 +655,8 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   while (queue.length) {
     const i = queue.pop()!;
     for (let j = 0; j < walls.length; j++) {
+      // A stone-wrapped wall clicked (a stone porch wall): its returns carry the stone on their outer face only — they go with it.
+      if (!found.has(j) && wrappedWall[start] && stoneWall[j] && touches(i, j)) kinds[j] = kind;
       if (found.has(j) || (kind === "exterior" && kinds[j] !== kind) || !touches(i, j)) continue;
       found.add(j);
       queue.push(j);
