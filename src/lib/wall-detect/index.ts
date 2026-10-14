@@ -176,7 +176,8 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     const len = lengthOf(p);
     const a = at(p, p.s0);
     const b = at(p, p.s1);
-    let n = 0;
+    // Where along it (to the inch): a stroke drawn twice over (plans often double their lines) is one stroke.
+    const seen = new Set<number>();
     for (const l of strokesNear(a[0], a[1], b[0], b[1])) {
       // Hatching runs on a slant; square-across strokes are wall ends, jambs, joints.
       const slant = Math.abs(Math.sin(l.ang - p.ang));
@@ -185,8 +186,9 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
       const o2 = l.x2 * p.nx + l.y2 * p.ny - p.rho;
       const onFace = (o: number) => Math.abs(Math.abs(o) - half) <= 0.75 * inch;
       const s = ((l.x1 + l.x2) / 2) * p.ux + ((l.y1 + l.y2) / 2) * p.uy;
-      if (onFace(o1) && onFace(o2) && Math.sign(o1) !== Math.sign(o2) && s >= p.s0 && s <= p.s1) n++;
+      if (onFace(o1) && onFace(o2) && Math.sign(o1) !== Math.sign(o2) && s >= p.s0 && s <= p.s1) seen.add(Math.round(s / inch));
     }
+    const n = seen.size;
     // Brick hatching is a stroke every few inches; a dimension tick or two across a wall is not.
     return n >= 4 && n >= len / upf;
   };
@@ -437,13 +439,18 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     // …and neither side is a column or pier: a small closed box standing on its own (a short piece
     // tied into no wall, closed at both ends, with a matching short piece alongside) isn't the side of
     // a doorway.
+    // (Its own sides don't tie it in — only a longer wall does.)
+    const tied = (q: Piece, s: number) => {
+      const [x, y] = at(q, s);
+      return long.some((w) => w !== q && lengthOf(w) > 3.5 * upf && Math.abs(Math.sin(w.ang - q.ang)) > Math.sin(45 * DEG) && distToSeg(x, y, segOf(w)) <= half + 2 * inch);
+    };
     const pier = (q: Piece) =>
       lengthOf(q) <= 3.5 * upf &&
-      !offWall(q, q.s0) &&
-      !offWall(q, q.s1) &&
+      !tied(q, q.s0) &&
+      !tied(q, q.s1) &&
       capped(q, q.s0) &&
       capped(q, q.s1) &&
-      walls.some((r) => r !== q && near(r.bucket, q.bucket) && Math.abs(r.rho - q.rho) >= thickness * 1.5 && Math.abs(r.rho - q.rho) <= 3 * upf && lengthOf(r) <= 3.5 * upf && overlapOf(r, q) >= 0.8 * Math.max(lengthOf(q), lengthOf(r)));
+      walls.some((r) => r !== q && near(r.bucket, q.bucket) && Math.abs(r.rho - q.rho) >= thickness * 1.5 && Math.abs(r.rho - q.rho) <= 3 * upf && lengthOf(r) <= 3.5 * upf && overlapOf(r, q) >= 0.6 * Math.max(lengthOf(q), lengthOf(r)));
     return gap <= maxDoor && !backed && !pier(a) && !pier(b) && (capped(a, a.s1) || capped(b, b.s0)) && !offWall(a, a.s1) && !offWall(b, b.s0);
   });
 
@@ -513,9 +520,42 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     const outsideRight = outline(clusters[ri + 1], right[1]) && clusters[ri + 1]![0] > right[1];
     const wrapped = outsideLeft && outsideRight;
     const stone = outsideLeft || outsideRight;
-    if (wrapped || veneer.some((v) => near(v.bucket, w.bucket) && Math.abs(v.rho - w.rho) <= half + 8 * inch + thickness && v.s0 <= s && v.s1 >= s) || brickBeside(w, s))
+    // …or off one face that also carries more layers than the other (sheathing under the stone, drywall
+    // alone inside): outside, even when the extra layer is too thin for the faces to differ by much.
+    // Outside past the stone is open; a tub or counter drawn tight to an inside wall looks the same
+    // up close, but the rest of it (its far edge, 9" to 3 ft on, boxed back to the wall) is right there. (Nearer is a stoop's edge
+    // or the stone's own outer edge — outside things.)
+    const layered = (c: [number, number]) => c[1] - c[0] >= 0.3 * inch;
+    const openPast = (from: number, dir: number) => {
+      const [lo, hi] = dir > 0 ? [from + 0.75 * upf, from + 3 * upf] : [from - 3 * upf, from - 0.75 * upf];
+      // …boxed back to the wall at a corner (its side comes back to this face). A dimension line out
+      // there runs free.
+      const off = (x: number, y: number) => x * w.nx + y * w.ny - w.rho;
+      const boxed = (l: Line) =>
+        [
+          [l.x1, l.y1],
+          [l.x2, l.y2],
+        ].some(([x, y]) =>
+          strokesNear(x, y, x, y).some((m) => {
+            if (Math.abs(Math.sin(m.ang - w.ang)) < Math.sin(75 * DEG) || distToSeg(x, y, m) > 1.5 * inch) return false;
+            const reaches = (o: number) => o >= left[0] - 2 * inch && o <= right[1] + 2 * inch;
+            return reaches(off(m.x1, m.y1)) || reaches(off(m.x2, m.y2));
+          }),
+        );
+      for (const l of parallelIn(buckets, w.ang, w.rho + lo, w.rho + hi)) if (l.s1 - l.s0 >= upf && l.s0 <= s && l.s1 >= s && boxed(l)) return false;
+      return true;
+    };
+    const stoneOut =
+      (outsideLeft && layered(left) && !layered(right) && openPast(clusters[li - 1]![0], -1)) ||
+      (outsideRight && layered(right) && !layered(left) && openPast(clusters[ri + 1]![1], 1));
+    if (wrapped || stoneOut || veneer.some((v) => near(v.bucket, w.bucket) && Math.abs(v.rho - w.rho) <= half + 8 * inch + thickness && v.s0 <= s && v.s1 >= s) || brickBeside(w, s))
       return { kind: "exterior", layers, brick: true, wrapped, stone };
-    return { kind: Math.abs(left[1] - left[0] - (right[1] - right[0])) >= 0.75 * inch ? "exterior" : "interior", layers, stone };
+    // More layers on one face (siding, sheathing) is the outside — when it's open past them (past the
+    // stone, if any). A tub or vanity drawn tight to an inside wall adds lines too, but its far edge is right there.
+    const extra = left[1] - left[0] - (right[1] - right[0]);
+    if (Math.abs(extra) < 0.75 * inch) return { kind: "interior", layers, stone };
+    const open = extra > 0 ? openPast(outsideLeft ? clusters[li - 1]![0] : left[0], -1) : openPast(outsideRight ? clusters[ri + 1]![1] : right[1], 1);
+    return { kind: open ? "exterior" : "interior", layers, stone };
   };
   const sections: Piece[] = [];
   const kinds: WallKind[] = [];

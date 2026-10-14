@@ -291,6 +291,35 @@ describe("wall finder", () => {
     assert.equal(r.thicknessIn, 2.75);
   });
 
+  it("stone 2\" off the sheathed face makes it an outside wall; a tub drawn tight to an inside wall doesn't", () => {
+    // Bryant's 1st-floor front: drywall alone inside (x 0), the stud face and sheathing ½" apart outside
+    // (3.5, 4.1), stone outline 2" past that (6.4). A tub has the same lines up close — and its far edge
+    // 20" on, boxed back to the wall. A dimension line out there (not boxed) changes nothing.
+    const segs: number[] = [];
+    for (const x of [0, 3.5, 4.1, 6.4]) segs.push(x, 0, x, 96);
+    const dimension = [26.4, -20, 26.4, 120];
+    for (const extra of [[], dimension]) {
+      const outside = findWalls([...segs, ...extra], [0, 48], opts);
+      assert.ok(outside.ok);
+      assert.equal(outside.thicknessIn, 3.5);
+      assert.equal(outside.kind, "exterior");
+    }
+    const tub = findWalls([...segs, 26.4, 10, 26.4, 86, 4.1, 10, 26.4, 10, 4.1, 86, 26.4, 86], [0, 48], opts);
+    assert.ok(tub.ok);
+    assert.equal(tub.kind, "interior");
+  });
+
+  it("slanted lines drawn twice over in a wall (a post at a column) aren't brick hatching", () => {
+    // Bryant's dining wall: a 6' 2x6 with three slanted post lines, each drawn twice — it was
+    // thrown out as six hatch strokes of brick.
+    const segs = [0, 0, 72, 0, 0, 5.5, 72, 5.5];
+    for (const x of [30, 40, 50]) segs.push(x, 0, x + 3, 5.5, x + 3, 5.5, x, 0);
+    const r = findWalls(segs, [10, 0], opts);
+    assert.ok(r.ok);
+    assert.equal(r.thicknessIn, 5.5);
+    assert.ok(Math.abs(r.lengthFt - 6) < 0.1, `length ${r.lengthFt}`);
+  });
+
   it("says why when there's nothing to find", () => {
     assert.deepEqual(findWalls(house(), [300, 200], opts), { ok: false, reason: "no-line" });
     assert.deepEqual(findWalls(house(), [100, 384], opts), { ok: false, reason: "no-wall" });
