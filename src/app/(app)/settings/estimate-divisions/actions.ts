@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 
@@ -10,7 +10,7 @@ const input = z.array(z.object({ name: z.string().trim().min(1).max(100), divisi
 
 /** Replaces your division list with what's on screen (names, order, and the cost code categories in each). */
 export async function saveEstimateCategories(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const parsed = input.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Every division needs a name." };
   const cats = parsed.data;

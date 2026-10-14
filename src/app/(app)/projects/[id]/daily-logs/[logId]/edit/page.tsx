@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { fmtDate } from "@/lib/utils";
@@ -8,7 +8,7 @@ import { LogFields } from "../../_components/log-form";
 import { updateLog, deleteLog, deleteLogPhoto } from "../../actions";
 
 export default async function EditDailyLogPage({ params }: { params: Promise<{ id: string; logId: string }> }) {
-  await requireStaff();
+  await requireView("field");
   const { id, logId } = await params;
   const project = await getProject(id);
   const log = await db.dailyLog.findFirst({ where: { id: logId, projectId: project.id }, include: { files: { orderBy: { createdAt: "asc" } } } });

@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { getProject } from "@/lib/projects";
 import { loadChangeOrderDoc } from "@/lib/change-order-doc";
 import { buttonClasses } from "@/components/ui";
@@ -9,7 +9,7 @@ import { ChangeOrderDocument } from "@/components/change-order-document";
 import { PrintButton } from "../../../_components/print-button";
 
 export default async function ChangeOrderPrintPage({ params }: { params: Promise<{ id: string; coId: string }> }) {
-  await requireStaff();
+  await requireView("selections");
   const { id, coId } = await params;
   const project = await getProject(id);
   const doc = await loadChangeOrderDoc(project.id, coId);

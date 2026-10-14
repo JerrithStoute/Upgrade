@@ -6,11 +6,13 @@ import { money } from "@/lib/utils";
 import { Stat } from "@/components/ui";
 import { PrintButton } from "../../projects/[id]/_components/print-button";
 import { Chips, Explain, pctText } from "../_parts";
+import { requireView } from "@/lib/auth";
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /** Sales: win rate (overall, by source, by month), the pipeline, how long it takes, why you lose. */
 export default async function SalesReport({ searchParams }: { searchParams: Promise<{ period?: string }> }) {
+  await requireView("reports");
   const { period = "" } = await searchParams;
   await syncLeadStages();
   const today = new Date();

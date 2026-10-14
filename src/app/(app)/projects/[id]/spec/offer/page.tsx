@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { addDays } from "date-fns";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { getProject } from "@/lib/projects";
 import { specPicture } from "@/lib/spec";
 import { dateInput } from "@/lib/utils";
@@ -8,7 +8,7 @@ import { OfferCalculator } from "./calculator";
 
 /** An offer came in: work it out. */
 export default async function OfferPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("budget");
   const { id } = await params;
   const project = await getProject(id);
   const p = await specPicture(project.id);

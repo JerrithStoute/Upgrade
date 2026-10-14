@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff, requireAdmin } from "@/lib/auth";
+import { requireAdmin, requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -20,7 +20,7 @@ function revalidate(projectId: string) {
 }
 
 export const createThread = friendly(async function createThread(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("files");
   const project = await getProject(str(fd, "projectId"));
   const subject = str(fd, "subject");
   const body = str(fd, "body");
@@ -42,7 +42,7 @@ export const createThread = friendly(async function createThread(fd: FormData) {
 });
 
 export const replyToThread = friendly(async function replyToThread(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("files");
   const project = await getProject(str(fd, "projectId"));
   const threadId = str(fd, "threadId");
   const body = str(fd, "body");

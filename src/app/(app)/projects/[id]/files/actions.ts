@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -25,7 +25,7 @@ function returnTo(fd: FormData, projectId: string) {
 }
 
 export const uploadFiles = friendly(async function uploadFiles(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("files");
   const project = await getProject(str(fd, "projectId"));
   const folderRaw = str(fd, "folder");
   const folder = (FILE_FOLDERS as readonly string[]).includes(folderRaw) ? folderRaw : "Documents";
@@ -47,7 +47,7 @@ export const uploadFiles = friendly(async function uploadFiles(fd: FormData) {
 });
 
 export const toggleFileVisibility = friendly(async function toggleFileVisibility(fd: FormData) {
-  await requireStaff();
+  await requireEdit("files");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const file = await db.fileAsset.findFirst({ where: { id, projectId: project.id } });
@@ -58,7 +58,7 @@ export const toggleFileVisibility = friendly(async function toggleFileVisibility
 });
 
 export const deleteFile = friendly(async function deleteFile(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("files");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const file = await db.fileAsset.findFirst({ where: { id, projectId: project.id } });

@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { Bell, Briefcase, CalendarClock, Mail, MapPin, MessageSquare, Phone, StickyNote, Users } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { leadName, sourceOptions, syncLeadStages } from "@/lib/leads";
 import { LEAD_STAGES, LOST_REASONS, daysBetween, stageLabel } from "@/lib/leads-math";
@@ -15,7 +15,7 @@ const KIND_ICON = { CALL: Phone, EMAIL: Mail, MEETING: Users, NOTE: StickyNote, 
 const KIND_LABEL: Record<string, string> = { CALL: "Call", EMAIL: "Email", MEETING: "Meeting", NOTE: "Note", STAGE: "" };
 
 export default async function LeadPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ note?: string; next?: string }> }) {
-  const user = await requireStaff();
+  const user = await requireView("leads");
   const { dateTime } = await companyClock();
   const { id } = await params;
   const { note, next } = await searchParams;

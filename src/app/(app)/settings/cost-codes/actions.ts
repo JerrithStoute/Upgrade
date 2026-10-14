@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { costCodeLabel, str, strOrNull, intField } from "@/lib/utils";
@@ -16,7 +16,7 @@ function done() {
 }
 
 export const createCostCode = friendly(async function createCostCode(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const code = strOrNull(formData, "code");
   const name = str(formData, "name");
   const division = str(formData, "division") || "General";
@@ -30,7 +30,7 @@ export const createCostCode = friendly(async function createCostCode(formData: F
 });
 
 export const updateCostCode = friendly(async function updateCostCode(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const id = str(formData, "id");
   const code = strOrNull(formData, "code");
   const name = str(formData, "name");
@@ -50,7 +50,7 @@ export const updateCostCode = friendly(async function updateCostCode(formData: F
 });
 
 export const toggleCostCodeActive = friendly(async function toggleCostCodeActive(formData: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(formData, "id");
   const current = await db.costCode.findUnique({ where: { id } });
   if (!current) throw new Error("Cost code not found");
@@ -59,7 +59,7 @@ export const toggleCostCodeActive = friendly(async function toggleCostCodeActive
 });
 
 export const deleteCostCode = friendly(async function deleteCostCode(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const id = str(formData, "id");
   const current = await db.costCode.findUnique({
     where: { id },
@@ -87,7 +87,7 @@ export const deleteCostCode = friendly(async function deleteCostCode(formData: F
  * records using it lose their cost code. All-or-nothing.
  */
 export const replaceCostCodesFromCsv = friendly(async function replaceCostCodesFromCsv(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const csv = String(formData.get("csv") ?? "");
   const parsed = parseCostCodeCsv(csv);
   if (parsed.errors.length) throw new Error(`The CSV has problems: ${parsed.errors.slice(0, 5).join(" ")}`);
@@ -130,7 +130,7 @@ export const replaceCostCodesFromCsv = friendly(async function replaceCostCodesF
  * Codes you already have — by number — are never changed or doubled.
  */
 export const addStarterCostCodes = friendly(async function addStarterCostCodes(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const have = new Set((await db.costCode.findMany({ where: { code: { not: null } }, select: { code: true } })).map((c) => c.code!));
   const missing = STARTER_COST_CODES.filter((c) => !have.has(c.code));
   const picked = formData.get("all") === "1" ? missing : missing.filter((c) => formData.getAll("code").includes(c.code));

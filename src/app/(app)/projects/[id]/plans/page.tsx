@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { Download, Eye, FileText, Image as ImageIcon, Ruler } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { Card, CardBody, CardHeader, EmptyState, SubmitButton, buttonClasses } from "@/components/ui";
@@ -14,7 +14,7 @@ import { planFromFile } from "../takeoff/actions";
  * set up for takeoff with one click.
  */
 export default async function PlansPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ renamePlan?: string }> }) {
-  await requireStaff();
+  await requireView("files");
   const { id } = await params;
   const { renamePlan: renamePlanId } = await searchParams;
   const project = await getProject(id);

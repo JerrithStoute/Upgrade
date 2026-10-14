@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { KeyRound, Pencil } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { contractValue } from "@/lib/projects";
 import { fmtDate, money } from "@/lib/utils";
@@ -21,7 +21,7 @@ import { cancelPortalInvite, grantPortalAccess, resendPortalInvite, resetPortalP
 import { openInvites } from "@/lib/invites";
 
 export default async function ClientDetailPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ reset?: string }> }) {
-  await requireStaff();
+  await requireView("leads");
   const { id } = await params;
   const resetSent = (await searchParams).reset === "1";
   const [waiting] = await openInvites({ clientId: id });

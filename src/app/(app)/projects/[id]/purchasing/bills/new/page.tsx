@@ -1,5 +1,5 @@
 import Link from "@/components/link";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { getProject } from "@/lib/projects";
 import { dateInput } from "@/lib/utils";
 import { Card, CardBody } from "@/components/ui";
@@ -8,7 +8,7 @@ import { billChoices } from "../../_data";
 import { createBill } from "../../actions";
 
 export default async function NewBillPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ po?: string }> }) {
-  await requireStaff();
+  await requireView("purchasing");
   const { id } = await params;
   const { po: poId } = await searchParams;
   const project = await getProject(id);

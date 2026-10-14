@@ -1,6 +1,8 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { costWeek, entryHours, fmtHours, loadedRate, nextWeek, parseWeek, weekKey, type Person } from "@/lib/time-math";
+import { cache } from "react";
+import { costWeek, dayKey, entryHours, fmtHours, loadedRate, nextWeek, parseWeek, weekKey, type Person } from "@/lib/time-math";
+import { parseTimeRules } from "@/lib/time-rules";
 import { companyClock } from "@/lib/company-zone";
 
 /**
@@ -9,24 +11,37 @@ import { companyClock } from "@/lib/company-zone";
  * worked out again whenever any time in that week changes — so overtime (which depends on
  * the whole week) always lands right.
  *
- * Days and weeks are the company's (its time zone): a punch belongs to the day and the
- * Monday-to-Sunday week its clock-in falls in on the company's clock.
+ * Days and weeks are the company's (its time zone and its week — Settings → Time clock): a punch
+ * belongs to the day and the week its clock-in falls in on the company's clock.
  */
+
+/** The company's time clock rules (Settings → Time clock). Asked once per page. */
+export const timeRules = cache(async () => parseTimeRules((await db.company.findFirst({ select: { timeRules: true } }))?.timeRules));
 
 export type Spot = { lat: number; lng: number; accuracy: number | null };
 
-/** The week a moment falls in on the company's clock: its key ("2026-10-12"), Monday (wall date) and the real moments it runs between. */
+/**
+ * The week a moment falls in on the company's clock: its key ("2026-10-12"), its first day (wall
+ * date — `monday` is the first day of the company's week, whatever day that is) and the real moments
+ * it runs between. With the rules, and the company's day for a moment (`dayOf`).
+ */
 export async function weekOf(at: Date | string) {
-  const clock = await companyClock();
-  const monday = typeof at === "string" ? parseWeek(at)! : parseWeek(weekKey(clock.wall(at)))!;
-  return { key: weekKey(monday), monday, from: clock.real(monday), to: clock.real(nextWeek(monday)), clock };
+  const [clock, rules] = await Promise.all([companyClock(), timeRules()]);
+  const start = rules.weekStart;
+  const monday = typeof at === "string" ? parseWeek(at, start)! : parseWeek(weekKey(clock.wall(at), start), start)!;
+  return { key: weekKey(monday, start), monday, from: clock.real(monday), to: clock.real(nextWeek(monday)), clock, rules, dayOf: (d: Date) => dayKey(clock.wall(d)) };
 }
 
 export const LABOR_VENDOR = "Crew labor (time clock)";
 
-/** May see and fix everyone's time. */
-export function canManageTime(user: { role: string; canManageTime?: boolean | null }) {
-  return user.role === "ADMIN" || !!user.canManageTime;
+/** May see everyone's time (Timesheets). */
+export function canManageTime(user: { role: string; access?: { time: number } | null }) {
+  return user.role === "ADMIN" || (user.access?.time ?? 0) > 0;
+}
+
+/** May change other people's time (not just see it). */
+export function canFixTime(user: { role: string; access?: { time: number } | null }) {
+  return user.role === "ADMIN" || (user.access?.time ?? 0) > 1;
 }
 
 export async function laborBurden() {
@@ -75,15 +90,27 @@ let chain: Promise<unknown> = Promise.resolve();
 /** Work out the labor costs again for the weeks these dates fall in. */
 export function postLabor(dates: Date[]) {
   const run = chain.then(async () => {
-    const { wall } = await companyClock();
-    for (const w of new Set(dates.map((d) => weekKey(wall(d))))) await postWeek(w);
+    const [{ wall }, rules] = await Promise.all([companyClock(), timeRules()]);
+    for (const w of new Set(dates.map((d) => weekKey(wall(d), rules.weekStart)))) await postWeek(w);
   });
   chain = run.catch(() => {});
   return run;
 }
 
+/**
+ * The rules changed (Settings → Time clock): every week's labor is worked out again by them. A new
+ * week start makes new weeks, so the old postings go first.
+ */
+export async function repostAllLabor() {
+  const finished = await db.timeEntry.findMany({ where: { clockOut: { not: null } }, select: { clockIn: true } });
+  const run = chain.then(() => db.expense.deleteMany({ where: { laborWeek: { not: null } } }));
+  chain = run.catch(() => {});
+  await run;
+  await postLabor(finished.map((e) => e.clockIn));
+}
+
 async function postWeek(key: string) {
-  const { monday, from, to } = await weekOf(key);
+  const { monday, from, to, rules, dayOf } = await weekOf(key);
   const [entries, burden, posted] = await Promise.all([
     db.timeEntry.findMany({
       where: { clockIn: { gte: from, lt: to }, clockOut: { not: null } },
@@ -93,17 +120,18 @@ async function postWeek(key: string) {
     db.expense.findMany({ where: { laborWeek: key } }),
   ]);
   const people = new Map<string, Person>(entries.map((e) => [e.userId, { salaried: e.user.salaried, rate: loadedRate(e.user.payRate, burden) }]));
-  const costed = costWeek(entries, people);
+  const costed = costWeek(entries, people, rules, dayOf);
 
   // One line per job + cost code.
-  type Line = { projectId: string; costCodeId: string | null; hours: number; overtime: number; cost: number; names: Set<string>; last: Date };
+  type Line = { projectId: string; costCodeId: string | null; hours: number; overtime: number; double: number; cost: number; names: Set<string>; last: Date };
   const lines = new Map<string, Line>();
   for (const e of entries) {
     const c = costed.get(e.id)!;
     const k = `${e.projectId}|${e.costCodeId ?? ""}`;
-    const line = lines.get(k) ?? { projectId: e.projectId, costCodeId: e.costCodeId, hours: 0, overtime: 0, cost: 0, names: new Set<string>(), last: e.clockIn };
+    const line = lines.get(k) ?? { projectId: e.projectId, costCodeId: e.costCodeId, hours: 0, overtime: 0, double: 0, cost: 0, names: new Set<string>(), last: e.clockIn };
     line.hours += c.hours;
     line.overtime += c.overtime;
+    line.double += c.double;
     line.cost += c.cost;
     line.names.add(shortName(e.user.name));
     if (e.clockOut! > line.last) line.last = e.clockOut!;
@@ -115,7 +143,9 @@ async function postWeek(key: string) {
   for (const line of lines.values()) {
     const amount = Math.round(line.cost * 100) / 100;
     if (amount <= 0) continue; // no pay rates set: hours show on Timesheets, nothing to cost
-    const description = `Week of ${weekLabel} — ${fmtHours(line.hours)} hrs${line.overtime > 0.004 ? ` (${fmtHours(line.overtime)} overtime)` : ""} · ${[...line.names].join(", ")}`;
+    const h = (n: number) => fmtHours(n, rules.hoursFormat);
+    const extra = [line.overtime > 0.004 ? `${h(line.overtime)} overtime` : "", line.double > 0.004 ? `${h(line.double)} double time` : ""].filter(Boolean).join(", ");
+    const description = `Week of ${weekLabel} — ${h(line.hours)} hrs${extra ? ` (${extra})` : ""} · ${[...line.names].join(", ")}`;
     const had = posted.find((p) => p.projectId === line.projectId && p.costCodeId === line.costCodeId);
     if (had) {
       keep.add(had.id);
@@ -151,7 +181,7 @@ export function shortName(name: string) {
 
 /** Hours so far for a person this week (finished + the stretch they're on). */
 export async function hoursThisWeek(userId: string, now = new Date()) {
-  const { from, to } = await weekOf(now);
+  const { from, to, rules } = await weekOf(now);
   const entries = await db.timeEntry.findMany({ where: { userId, clockIn: { gte: from, lt: to } } });
-  return entries.reduce((n, e) => n + entryHours(e, now), 0);
+  return entries.reduce((n, e) => n + entryHours(e, now, rules), 0);
 }

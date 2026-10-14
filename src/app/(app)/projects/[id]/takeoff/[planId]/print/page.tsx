@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { conditionTotals, loadConditions } from "@/lib/takeoff-data";
@@ -20,7 +20,7 @@ export default async function PrintPlanPage({
   params: Promise<{ id: string; planId: string }>;
   searchParams: Promise<{ pages?: string; hide?: string }>;
 }) {
-  await requireStaff();
+  await requireView("takeoffs");
   const { id, planId } = await params;
   const { pages, hide } = await searchParams;
   const project = await getProject(id);

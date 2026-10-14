@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { FileInput } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cn, dateInput, fmtDate, money } from "@/lib/utils";
 import { BILL_STATUS_LABEL, billTotal, canApproveBills } from "@/lib/purchasing";
@@ -19,7 +19,7 @@ const VIEWS = [
 
 /** Every job's sub and vendor bills: approve the waiting ones, pay the approved ones. */
 export default async function BillsPage({ searchParams }: { searchParams: Promise<{ view?: string }> }) {
-  const user = await requireStaff();
+  const user = await requireView("purchasing");
   const { view: v } = await searchParams;
   const view = VIEWS.find((x) => x.key === (v ?? "")) ?? VIEWS[0];
   const bills = await db.vendorBill.findMany({

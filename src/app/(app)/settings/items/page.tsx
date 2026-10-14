@@ -10,6 +10,7 @@ import { ItemTable } from "./item-table";
 import { ProgramItems } from "./program-items";
 import { groupOf, itemKind, type CodeGroup } from "@/lib/code-groups";
 import { loadCodeRules } from "@/lib/item-codes";
+import { requireView } from "@/lib/auth";
 
 type ItemValues = {
   id: string;
@@ -142,6 +143,7 @@ function ItemForm({
 }
 
 export default async function ItemListPage({ searchParams }: { searchParams: Promise<{ q?: string; category?: string; edit?: string; nocode?: string; unpriced?: string }> }) {
+  await requireView("lists");
   const { q = "", category, edit, nocode, unpriced } = await searchParams;
   // Items still at $0: new ones (added by a takeoff, or the starter lumber) waiting for a price.
   const noPrice = unpriced === "1";

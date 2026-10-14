@@ -3,11 +3,13 @@ import { db } from "@/lib/db";
 import { COMMON_SOURCES } from "@/lib/leads-math";
 import { Card, CardBody, CardHeader, SubmitButton } from "@/components/ui";
 import { addLeadSource, deleteLeadSource, renameLeadSource } from "../../leads/actions";
+import { requireView } from "@/lib/auth";
 
 export const metadata = { title: "Lead sources" };
 
 /** How leads find you: your own list, with the common ones always offered too. */
 export default async function LeadSourcesPage() {
+  await requireView("lists");
   const [sources, counts] = await Promise.all([
     db.leadSource.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     db.lead.groupBy({ by: ["source"], _count: { _all: true } }),

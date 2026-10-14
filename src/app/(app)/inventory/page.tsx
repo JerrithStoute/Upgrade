@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { Boxes } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { MOVE_LABEL, inventoryItems } from "@/lib/inventory";
 import { cn, fmtDate, money, num } from "@/lib/utils";
@@ -11,7 +11,7 @@ export const metadata = { title: "Inventory" };
 
 /** The company's stored materials: what's on hand, what it's worth, and where it went. */
 export default async function InventoryPage() {
-  await requireStaff();
+  await requireView("purchasing");
   const [items, itemList, moves] = await Promise.all([
     inventoryItems(),
     db.materialItem.findMany({ select: { name: true, unit: true }, orderBy: { name: "asc" } }),

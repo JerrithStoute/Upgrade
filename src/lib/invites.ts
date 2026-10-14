@@ -12,7 +12,8 @@ export type InviteInput = {
   email: string;
   name?: string | null;
   role?: "ADMIN" | "STAFF";
-  permissions?: { canDelay?: boolean; canApproveBills?: boolean; canSeeReports?: boolean; canManageTime?: boolean };
+  /** TEAM: their position (src/lib/access.ts). */
+  permissions?: { positionId?: string };
   clientId?: string | null;
   vendorId?: string | null;
 };

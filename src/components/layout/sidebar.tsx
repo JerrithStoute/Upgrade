@@ -28,7 +28,7 @@ import {
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand-mark";
 
-const NAV: { href: string; label: string; icon: LucideIcon; adminOnly?: boolean; reports?: boolean }[] = [
+const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", icon: Target },
   { href: "/projects", label: "Projects", icon: FolderKanban },
@@ -40,8 +40,8 @@ const NAV: { href: string; label: string; icon: LucideIcon; adminOnly?: boolean;
   { href: "/invoices", label: "Invoices", icon: Receipt },
   { href: "/bills", label: "Bills", icon: FileInput },
   { href: "/inventory", label: "Inventory", icon: Boxes },
-  { href: "/reports", label: "Reports", icon: BarChart3, reports: true },
-  { href: "/settings", label: "Settings", icon: Settings, adminOnly: true },
+  { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 /** The takeoff drawing screen (/projects/<id>/takeoff/<planId>), where the menu tucks away to give the plan room. */
@@ -78,15 +78,14 @@ function subscribePinned(cb: () => void) {
 }
 
 function SidebarContent({
-  role,
-  reports,
+  allowed,
   companyName,
   logoUrl,
   pathname,
   extra,
 }: {
-  role: string;
-  reports?: boolean;
+  /** The pages this person's position shows (src/lib/access.ts navPages). */
+  allowed: string[];
   companyName: string;
   logoUrl: string | null;
   pathname: string;
@@ -108,7 +107,7 @@ function SidebarContent({
         {extra}
       </div>
       <nav className="flex-1 space-y-0.5 p-3">
-        {NAV.filter((n) => (!n.adminOnly && !n.reports) || role === "ADMIN" || (n.reports && reports)).map((item) => {
+        {NAV.filter((n) => allowed.includes(n.href)).map((item) => {
           const active = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
@@ -129,7 +128,7 @@ function SidebarContent({
   );
 }
 
-export function Sidebar({ role, reports, companyName, logoUrl }: { role: string; reports?: boolean; companyName: string; logoUrl: string | null }) {
+export function Sidebar({ allowed, companyName, logoUrl }: { allowed: string[]; companyName: string; logoUrl: string | null }) {
   const pathname = usePathname();
   const pinned = useSyncExternalStore(subscribePinned, readPinned, () => false);
   // Open over the plan for this page only; going anywhere else closes it.
@@ -162,9 +161,8 @@ export function Sidebar({ role, reports, companyName, logoUrl }: { role: string;
             <div className="no-print fixed inset-0 z-40 hidden bg-slate-900/10 md:block" onClick={() => setOpenOn(null)} aria-hidden />
             <aside className="no-print fixed inset-y-0 left-0 z-50 hidden w-60 flex-col border-r border-slate-200 bg-white shadow-2xl md:flex">
               <SidebarContent
-                role={role}
-                reports={reports}
-                companyName={companyName}
+                allowed={allowed}
+                                companyName={companyName}
                 logoUrl={logoUrl}
                 pathname={pathname}
                 extra={
@@ -193,9 +191,8 @@ export function Sidebar({ role, reports, companyName, logoUrl }: { role: string;
   return (
     <aside className="no-print sticky top-0 z-20 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white md:flex">
       <SidebarContent
-        role={role}
-        reports={reports}
-        companyName={companyName}
+        allowed={allowed}
+                companyName={companyName}
         logoUrl={logoUrl}
         pathname={pathname}
         extra={
@@ -230,11 +227,11 @@ export function AppMain({ children }: { children: React.ReactNode }) {
 /** The phone menu bar: the field's everyday pages, and More for everything else. */
 const PHONE_BAR = ["/time", "/projects", "/schedule", "/todos"];
 
-export function MobileNav({ role, reports }: { role: string; reports?: boolean }) {
+export function MobileNav({ allowed }: { allowed: string[] }) {
   const pathname = usePathname();
   const [moreOn, setMoreOn] = useState<string | null>(null); // open on this page only
   const more = moreOn === pathname;
-  const items = NAV.filter((n) => (!n.adminOnly && !n.reports) || role === "ADMIN" || (n.reports && reports));
+  const items = NAV.filter((n) => allowed.includes(n.href));
   const isOn = (href: string) => pathname === href || pathname.startsWith(href + "/");
   const bar = PHONE_BAR.map((h) => items.find((n) => n.href === h)).filter((n): n is (typeof NAV)[number] => !!n);
   const rest = items.filter((n) => !PHONE_BAR.includes(n.href));

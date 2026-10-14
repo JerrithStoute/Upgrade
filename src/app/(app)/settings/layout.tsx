@@ -1,35 +1,15 @@
-import { requireAdmin } from "@/lib/auth";
-import { PageHeader, Tabs } from "@/components/ui";
+import { redirect } from "next/navigation";
+import { requireStaff } from "@/lib/auth";
+import { seesSettings } from "@/lib/access";
+import { SettingsHeading } from "@/components/settings/settings-heading";
 
+/** Settings: a home page of every setting (grouped), and each page with the way back. Each page checks who may open it. */
 export default async function SettingsLayout({ children }: { children: React.ReactNode }) {
-  await requireAdmin();
+  const user = await requireStaff();
+  if (!seesSettings(user.role, user.access)) redirect("/dashboard");
   return (
     <div>
-      <PageHeader
-        title="Settings"
-        description="Company profile, team access, the cost code library, estimate divisions, parameters and templates, the takeoff Item List, member sizes, span tables and templates, the vendors you get bids from, the QuickBooks connection, and your work week, delay reasons and schedule templates."
-      />
-      <Tabs
-        className="mb-6"
-        items={[
-          { href: "/settings", label: "Company", exact: true },
-          { href: "/settings/team", label: "Team" },
-          { href: "/settings/billing", label: "Billing" },
-          { href: "/settings/quickbooks", label: "QuickBooks" },
-          { href: "/settings/cost-codes", label: "Cost codes" },
-          { href: "/settings/estimate-divisions", label: "Estimate divisions" },
-          { href: "/settings/estimate-parameters", label: "Estimate parameters" },
-          { href: "/settings/estimate-templates", label: "Estimate templates" },
-          { href: "/settings/items", label: "Item list" },
-          { href: "/settings/member-sizes", label: "Member sizes" },
-          { href: "/settings/span-tables", label: "Span tables" },
-          { href: "/settings/vendors", label: "Vendors" },
-          { href: "/settings/takeoff-templates", label: "Takeoff templates" },
-          { href: "/settings/lead-sources", label: "Lead sources" },
-          { href: "/settings/schedule", label: "Schedule" },
-          { href: "/settings/schedule-templates", label: "Schedule templates" },
-        ]}
-      />
+      <SettingsHeading />
       {children}
     </div>
   );

@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -24,7 +24,7 @@ function revalidate(projectId: string) {
 
 /** "Pull from inventory before ordering?" — yes (to the inventory screen) or no (order everything). */
 export const answerInventory = friendly(async function answerInventory(fd: FormData) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const yes = str(fd, "answer") === "YES";
   await db.project.update({ where: { id: project.id }, data: { inventoryAnswer: yes ? "YES" : "NO" } });
@@ -34,7 +34,7 @@ export const answerInventory = friendly(async function answerInventory(fd: FormD
 
 /** Pulls what you picked (pull:<inventory item> = how many; line:<item> = the Material list line it covers). */
 export const pullFromInventory = friendly(async function pullFromInventory(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const wanted: { itemId: string; qty: number; lineKey: string | null }[] = [];
   for (const [k, v] of fd.entries()) {
@@ -71,7 +71,7 @@ export const pullFromInventory = friendly(async function pullFromInventory(fd: F
 
 /** Leftovers back on the shelf, credited to the job at what they cost it. */
 export const returnLeftovers = friendly(async function returnLeftovers(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const name = str(fd, "item");
   const qty = Number(str(fd, "quantity"));
@@ -97,7 +97,7 @@ export const returnLeftovers = friendly(async function returnLeftovers(fd: FormD
 
 /** Put back a pull, or take back a return — its charge or credit comes off the job. */
 export const undoInventoryMove = friendly(async function undoInventoryMove(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   await undoMove(str(fd, "id"), project.id);
   await logActivity({ projectId: project.id, userId: user.id, type: "inventory.undo", description: "Inventory pull / return undone" });

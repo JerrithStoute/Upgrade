@@ -1,12 +1,12 @@
 import { notFound } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Card, CardBody, CardHeader, ConfirmForm, PageHeader } from "@/components/ui";
 import { ClientForm } from "../../_components/client-form";
 import { deleteClient, updateClient } from "../../actions";
 
 export default async function EditClientPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("leads");
   const { id } = await params;
   const client = await db.client.findUnique({ where: { id }, include: { _count: { select: { projects: true } } } });
   if (!client) notFound();

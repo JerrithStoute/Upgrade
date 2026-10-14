@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "./db";
+import { asWholeCompany } from "./tenant";
 
 /**
  * Purchase orders, vendor bills and insurance (COI) for subs and vendors.
@@ -42,7 +43,8 @@ export function billTotal(lines: { amount: number }[]) {
 
 /** PO numbers count up across all jobs: PO-1001, PO-1002… */
 export async function nextPoNumber() {
-  const last = await db.purchaseOrder.findFirst({ orderBy: { number: "desc" }, select: { number: true } });
+  // Across every job — even for someone who sees only their own.
+  const last = await asWholeCompany(() => db.purchaseOrder.findFirst({ orderBy: { number: "desc" }, select: { number: true } }));
   return (last?.number ?? 1000) + 1;
 }
 
@@ -56,8 +58,8 @@ export async function poBilling(poId: string) {
 }
 
 /** Who approves bills: admins, and team members you've allowed. */
-export function canApproveBills(user: { role: string; canApproveBills?: boolean | null }) {
-  return user.role === "ADMIN" || !!user.canApproveBills;
+export function canApproveBills(user: { role: string; access?: { approveBills: boolean } | null }) {
+  return user.role === "ADMIN" || !!user.access?.approveBills;
 }
 
 /**

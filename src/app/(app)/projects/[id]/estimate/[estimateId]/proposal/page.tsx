@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { getProject } from "@/lib/projects";
 import { loadProposal } from "@/lib/proposal-data";
 import { ensureEstimateSpecs } from "@/lib/estimate-lines";
@@ -13,7 +13,7 @@ import { refreshFormulaQuantities } from "@/lib/estimate-parameters";
 import { PriceWarnings, zeroLineNames } from "@/components/estimate/price-warnings";
 
 export default async function ProposalPage({ params }: { params: Promise<{ id: string; estimateId: string }> }) {
-  const user = await requireStaff();
+  const user = await requireView("estimates");
   const { id, estimateId } = await params;
   const project = await getProject(id);
   await ensureEstimateSpecs(estimateId);

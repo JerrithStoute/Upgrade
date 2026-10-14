@@ -10,6 +10,7 @@ import { costCodeLabel, money, num } from "@/lib/utils";
 import { Badge, Card, CardBody, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { ConditionForm } from "@/app/(app)/projects/[id]/takeoff/_components/condition-form";
 import { AssemblyForm } from "@/app/(app)/projects/[id]/takeoff/_components/assembly-form";
+import { requireView } from "@/lib/auth";
 import {
   createTemplateCondition,
   createTemplateItem,
@@ -28,6 +29,7 @@ export default async function TakeoffTemplatePage({
   params: Promise<{ templateId: string }>;
   searchParams: Promise<{ edit?: string; editItem?: string; added?: string; updated?: string; kept?: string }>;
 }) {
+  await requireView("lists");
   const { templateId } = await params;
   const { edit, editItem, added, updated, kept } = await searchParams;
   const [template, costCodes, items, memberSizes, codeRules, spanTables] = await Promise.all([

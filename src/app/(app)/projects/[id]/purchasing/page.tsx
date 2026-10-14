@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { ClipboardList, Plus, ShieldAlert } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { costCodeLabel, fmtDate, lineCost, money } from "@/lib/utils";
@@ -9,7 +9,7 @@ import { Badge, ButtonLink, Collapsible, EmptyState, Stat, Table, THead, TBody, 
 import { NewPoForm } from "./_components/new-po-form";
 
 export default async function PurchasingPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("purchasing");
   const { id } = await params;
   const project = await getProject(id);
   const base = `/projects/${project.id}/purchasing`;

@@ -4,7 +4,7 @@ import { friendly } from "@/lib/friendly-action";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { numField, str, strOrNull } from "@/lib/utils";
@@ -29,7 +29,7 @@ function revalidate(id?: string) {
 // --- Templates ----------------------------------------------------------------
 
 export const createTemplate = friendly(async function createTemplate(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const name = str(formData, "name");
   if (!name) throw new Error("Template name is required");
   const company = await db.company.findFirst();
@@ -42,7 +42,7 @@ export const createTemplate = friendly(async function createTemplate(formData: F
 });
 
 export const updateTemplateDetails = friendly(async function updateTemplateDetails(formData: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(formData, "templateId");
   await loadTemplate(id);
   const data: { name?: string; description?: string | null; notes?: string | null; terms?: string | null; defaultMarkup?: number } = {};
@@ -57,7 +57,7 @@ export const updateTemplateDetails = friendly(async function updateTemplateDetai
 });
 
 export const duplicateTemplate = friendly(async function duplicateTemplate(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const source = await loadTemplate(str(formData, "templateId"));
   const copy = await db.$transaction(async (tx) => {
     const created = await tx.estimateTemplate.create({
@@ -79,7 +79,7 @@ export const duplicateTemplate = friendly(async function duplicateTemplate(formD
 });
 
 export const deleteTemplate = friendly(async function deleteTemplate(formData: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const template = await loadTemplate(str(formData, "templateId"));
   await db.estimateTemplate.delete({ where: { id: template.id } });
   await logActivity({ userId: admin.id, type: "estimate_template.deleted", description: `Deleted estimate template "${template.name}"` });
@@ -90,7 +90,7 @@ export const deleteTemplate = friendly(async function deleteTemplate(formData: F
 // --- The sheet -------------------------------------------------------------------
 
 export async function saveTemplate(templateId: string, raw: unknown): Promise<{ ok: true; learned: string[] } | { ok: false; error: string }> {
-  await requireAdmin();
+  await requireEdit("lists");
   const parsed = saveSheetInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Some numbers on the sheet aren't valid — check the highlighted cells." };
   await loadTemplate(templateId);
@@ -111,7 +111,7 @@ export async function saveTemplate(templateId: string, raw: unknown): Promise<{ 
  * into each estimate started from the template; changing them never touches a job.
  */
 export async function saveTemplateValues(templateId: string, raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireAdmin();
+  await requireEdit("lists");
   const parsed = z.record(z.string(), z.number().finite().min(-1e9).max(1e9)).safeParse(raw);
   if (!parsed.success) return { ok: false, error: "One of the numbers isn't valid." };
   const known = new Set((await db.estimateParameter.findMany({ select: { id: true } })).map((p) => p.id));

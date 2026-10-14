@@ -5,12 +5,14 @@ import { dateInput, fmtDate, money, parseDateInput } from "@/lib/utils";
 import { Button, EmptyState, Stat } from "@/components/ui";
 import { PrintButton } from "../../projects/[id]/_components/print-button";
 import { Explain, Signed, pctText } from "../_parts";
+import { requireView } from "@/lib/auth";
 
 /**
  * Work in progress: how far along each active job is (cost-to-cost), what that's earned,
  * and whether you've billed ahead of the work (over-billed) or behind it (under-billed).
  */
 export default async function WipReport({ searchParams }: { searchParams: Promise<{ asOf?: string }> }) {
+  await requireView("reports");
   const { asOf: raw } = await searchParams;
   const picked = parseDateInput(raw ?? null);
   const asOf = picked ? new Date(picked.getFullYear(), picked.getMonth(), picked.getDate(), 23, 59, 59) : new Date();

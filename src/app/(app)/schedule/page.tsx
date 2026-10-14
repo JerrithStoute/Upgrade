@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { addDays, startOfDay, startOfWeek, endOfWeek } from "date-fns";
 import { CalendarRange } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fmtDate, cn } from "@/lib/utils";
 import { isTaskOverdue, overlapsRange } from "@/lib/schedule";
@@ -10,7 +10,7 @@ import { Card, CardHeader, CardBody, Badge, Table, THead, TBody, Tr, Th, Td, Emp
 import { companyClock } from "@/lib/company-zone";
 
 export default async function GlobalSchedulePage() {
-  await requireStaff();
+  await requireView("field");
   const today = (await companyClock()).now; // today, on the company's clock
   const weekStart = startOfWeek(startOfDay(today), { weekStartsOn: 1 });
   const weekEnd = startOfDay(endOfWeek(today, { weekStartsOn: 1 }));

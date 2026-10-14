@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { leadName, leadToJob, logLead, syncLeadStages } from "@/lib/leads";
@@ -63,7 +63,7 @@ export type LeadFormState = { error: string } | null;
 const problem = (e: unknown): LeadFormState => ({ error: e instanceof Error ? e.message : "Check the lead" });
 
 export async function createLead(_prev: LeadFormState, fd: FormData): Promise<LeadFormState> {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   let data: ReturnType<typeof leadFields>;
   try {
     data = leadFields(fd);
@@ -81,7 +81,7 @@ export async function createLead(_prev: LeadFormState, fd: FormData): Promise<Le
 }
 
 export async function updateLead(_prev: LeadFormState, fd: FormData): Promise<LeadFormState> {
-  await requireStaff();
+  await requireEdit("leads");
   const id = str(fd, "id");
   let data: ReturnType<typeof leadFields>;
   try {
@@ -102,7 +102,7 @@ export async function updateLead(_prev: LeadFormState, fd: FormData): Promise<Le
  * sets the job's status. Lost needs a reason.
  */
 export async function moveLead(id: string, stage: string, lostReason?: string): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const lead = await db.lead.findUnique({ where: { id } });
   if (!lead) return { ok: false, error: "Lead not found" };
   if (stage !== "LOST" && !LEAD_STAGES.some((s) => s.key === stage)) return { ok: false, error: "Unknown stage" };
@@ -151,7 +151,7 @@ export const moveLeadForm = friendly(async function moveLeadForm(fd: FormData) {
 
 /** A call, email, meeting or note in the lead's log. */
 export const addLeadEntry = friendly(async function addLeadEntry(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const id = str(fd, "id");
   const text = str(fd, "text");
   if (!text) throw new Error("Type what happened");
@@ -163,7 +163,7 @@ export const addLeadEntry = friendly(async function addLeadEntry(fd: FormData) {
 
 /** The next follow-up: a To-Do for whoever's doing it. */
 export const setFollowUp = friendly(async function setFollowUp(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const id = str(fd, "id");
   const lead = await db.lead.findUniqueOrThrow({ where: { id } });
   const date = parseDateInput(fd.get("date"));
@@ -177,7 +177,7 @@ export const setFollowUp = friendly(async function setFollowUp(fd: FormData) {
 
 /** Done with a follow-up: what happened goes in the log, and it asks for the next one. */
 export const completeFollowUp = friendly(async function completeFollowUp(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const id = str(fd, "id");
   const todo = await db.todo.findFirst({ where: { id: str(fd, "todoId"), leadId: id } });
   if (!todo) throw new Error("Follow-up not found");
@@ -190,7 +190,7 @@ export const completeFollowUp = friendly(async function completeFollowUp(fd: For
 
 /** The meeting: on the lead, and a To-Do on that day (so it's on the calendar). Moves an inquiry to Meeting. */
 export const setMeeting = friendly(async function setMeeting(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const id = str(fd, "id");
   const lead = await db.lead.findUniqueOrThrow({ where: { id } });
   const day = parseDateInput(fd.get("date"));
@@ -218,7 +218,7 @@ export const setMeeting = friendly(async function setMeeting(fd: FormData) {
 
 /** Deletes a lead that never became a job (a job's lead goes when the job does). */
 export const deleteLead = friendly(async function deleteLead(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const lead = await db.lead.findUnique({ where: { id: str(fd, "id") }, include: { project: { select: { isSpec: true } } } });
   if (!lead) redirect("/leads");
   // A spec house's lead can go (it isn't a sale); a client job's lead is marked lost instead.
@@ -232,7 +232,7 @@ export const deleteLead = friendly(async function deleteLead(fd: FormData) {
 // --- Lead sources (Settings) ----------------------------------------------------------------
 
 export const addLeadSource = friendly(async function addLeadSource(fd: FormData) {
-  await requireStaff();
+  await requireEdit("leads");
   const name = str(fd, "name");
   if (name) {
     const last = await db.leadSource.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
@@ -245,7 +245,7 @@ export const addLeadSource = friendly(async function addLeadSource(fd: FormData)
 
 /** A new name changes it on every lead (and client) that has it. */
 export const renameLeadSource = friendly(async function renameLeadSource(fd: FormData) {
-  await requireStaff();
+  await requireEdit("leads");
   const src = await db.leadSource.findUnique({ where: { id: str(fd, "id") } });
   const name = str(fd, "name");
   if (src && name && name !== src.name) {
@@ -262,7 +262,7 @@ export const renameLeadSource = friendly(async function renameLeadSource(fd: For
 
 /** Leads that had it keep it. */
 export const deleteLeadSource = friendly(async function deleteLeadSource(fd: FormData) {
-  await requireStaff();
+  await requireEdit("leads");
   await db.leadSource.deleteMany({ where: { id: str(fd, "id") } });
   revalidatePath("/settings/lead-sources");
   redirect("/settings/lead-sources");

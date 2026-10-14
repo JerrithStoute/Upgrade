@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { LayoutTemplate } from "lucide-react";
-import { requireAdmin } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { staffUsers } from "@/lib/projects";
 import { parseTemplateLinks } from "@/lib/schedule-templates";
@@ -13,7 +13,7 @@ export const metadata = { title: "Schedule templates" };
 
 /** Schedules you start jobs from: tasks with lengths in workdays and what each waits on. */
 export default async function ScheduleTemplatesPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
-  await requireAdmin();
+  await requireView("lists");
   const { edit } = await searchParams;
   const [templates, staff] = await Promise.all([db.scheduleTemplate.findMany({ orderBy: { name: "asc" }, include: { tasks: { orderBy: { sortOrder: "asc" } } } }), staffUsers()]);
   const editing = edit ? templates.find((t) => t.id === edit) : undefined;

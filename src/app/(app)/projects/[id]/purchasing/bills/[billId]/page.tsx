@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { FileText, ShieldAlert } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { costCodeLabel, dateInput, fmtDate, fmtDateTime, money } from "@/lib/utils";
@@ -13,7 +13,7 @@ import { decideBill, deleteBill, updateBill } from "../../actions";
 import { companyClock } from "@/lib/company-zone";
 
 export default async function BillPage({ params }: { params: Promise<{ id: string; billId: string }> }) {
-  const user = await requireStaff();
+  const user = await requireView("purchasing");
   const { dateTime } = await companyClock();
   const { id, billId } = await params;
   const project = await getProject(id);

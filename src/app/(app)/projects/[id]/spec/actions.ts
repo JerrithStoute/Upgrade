@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -30,7 +30,7 @@ const numOrNull = (fd: FormData, k: string) => (str(fd, k).trim() === "" ? null 
 
 /** Marks a job as a spec house (or not). */
 export const setSpec = friendly(async function setSpec(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   const on = str(fd, "on") !== "0";
   await db.project.update({ where: { id: project.id }, data: { isSpec: on } });
@@ -41,7 +41,7 @@ export const setSpec = friendly(async function setSpec(fd: FormData) {
 
 /** The listing and what it costs to sell; optionally your usual numbers for the next house. */
 export const saveListing = friendly(async function saveListing(fd: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   const lines = parseLines(str(fd, "closingLines"));
   if (!lines) throw new Error("Check the closing cost lines");
@@ -100,7 +100,7 @@ function carryingFields(fd: FormData) {
 }
 
 export const addCarrying = friendly(async function addCarrying(fd: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   const data = carryingFields(fd);
   const last = await db.carryingCost.findFirst({ where: { projectId: project.id }, orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
@@ -112,7 +112,7 @@ export const addCarrying = friendly(async function addCarrying(fd: FormData) {
 
 /** Changes from now on — months already charged keep what they were charged. */
 export const updateCarrying = friendly(async function updateCarrying(fd: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   const c = await db.carryingCost.findFirst({ where: { id: str(fd, "id"), projectId: project.id } });
   if (!c) throw new Error("Carrying cost not found");
@@ -127,7 +127,7 @@ export const updateCarrying = friendly(async function updateCarrying(fd: FormDat
 
 /** Removes it — and its charges come off the Budget. */
 export const deleteCarrying = friendly(async function deleteCarrying(fd: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   await db.carryingCost.deleteMany({ where: { id: str(fd, "id"), projectId: project.id } });
   revalidate(project.id);
@@ -141,7 +141,7 @@ export async function saveOffer(
   projectId: string,
   o: { buyer: string; price: number; closingDate: string; concessions: number; buyerPct: number; repairs: number; profit: number; note: string },
 ): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("budget");
   if (!(o.price > 0)) return { ok: false, error: "Type the offer price" };
   const closing = parseDateInput(o.closingDate);
   if (!closing) return { ok: false, error: "When would it close?" };
@@ -166,7 +166,7 @@ export async function saveOffer(
 
 /** Countered / accepted / rejected. */
 export const setOfferStatus = friendly(async function setOfferStatus(fd: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   const status = ["OPEN", "COUNTERED", "ACCEPTED", "REJECTED"].includes(str(fd, "status")) ? str(fd, "status") : "OPEN";
   await db.specOffer.updateMany({
@@ -182,7 +182,7 @@ export const setOfferStatus = friendly(async function setOfferStatus(fd: FormDat
  * closing costs, concessions, repairs) goes on the Budget — so the job's profit is real.
  */
 export const markSold = friendly(async function markSold(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   const spec = await db.specSale.findUnique({ where: { projectId: project.id } });
   if (!spec) throw new Error("Fill in the listing first");
@@ -227,7 +227,7 @@ export const markSold = friendly(async function markSold(fd: FormData) {
 
 /** Back on the market: the sale and its selling costs come off. */
 export const unmarkSold = friendly(async function unmarkSold(fd: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   await db.$transaction([
     db.specSale.update({ where: { projectId: project.id }, data: { soldPrice: null, soldAt: null } }),
@@ -243,7 +243,7 @@ export const unmarkSold = friendly(async function unmarkSold(fd: FormData) {
  * actual interest for a month (it replaces the program's figure for that month).
  */
 export const addLoanEntry = friendly(async function addLoanEntry(fd: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   const cost = await db.carryingCost.findFirst({ where: { id: str(fd, "carryingCostId"), projectId: project.id, kind: "INTEREST" } });
   if (!cost) throw new Error("Loan not found");
@@ -278,7 +278,7 @@ export const addLoanEntry = friendly(async function addLoanEntry(fd: FormData) {
 });
 
 export const deleteLoanEntry = friendly(async function deleteLoanEntry(fd: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const project = await getProject(str(fd, "projectId"));
   const e = await db.loanEntry.findFirst({ where: { id: str(fd, "id"), carryingCost: { projectId: project.id } } });
   if (!e) throw new Error("Already gone");

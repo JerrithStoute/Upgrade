@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { addStock, inventoryItemFor, recount } from "@/lib/inventory";
 import { str, strOrNull } from "@/lib/utils";
@@ -17,7 +17,7 @@ function done(anchor?: string) {
 
 /** Stock bought for the shelf (or already there): an Item List item or a name of its own. */
 export const addInventory = friendly(async function addInventory(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const qty = Number(str(fd, "quantity"));
   if (!Number.isFinite(qty) || qty <= 0) throw new Error("How many?");
   const item = await inventoryItemFor({ name: str(fd, "item"), unit: str(fd, "unit") });
@@ -31,7 +31,7 @@ export const addInventory = friendly(async function addInventory(fd: FormData) {
 
 /** A physical count. */
 export const recountInventory = friendly(async function recountInventory(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const count = Number(str(fd, "count"));
   if (!Number.isFinite(count)) throw new Error("Type the count");
   await recount(str(fd, "id"), count, user.id, strOrNull(fd, "note"));
@@ -44,7 +44,7 @@ export const recountInventory = friendly(async function recountInventory(fd: For
  * putting it back brings the item back.
  */
 export const removeInventoryItem = friendly(async function removeInventoryItem(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const item = await db.inventoryItem.findUnique({ where: { id: str(fd, "id") }, include: { _count: { select: { moves: { where: { projectId: { not: null } } } } } } });
   if (!item) return done();
   if (item._count.moves === 0) await db.inventoryItem.delete({ where: { id: item.id } });

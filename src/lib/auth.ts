@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { cache } from "react";
 import { db, systemDb } from "./db";
 import { getSessionKey } from "./session-secret";
+import { AREAS, NO_ACCESS, allows, resolveAccess, type Access, type AreaKey } from "./access";
 
 // Online the cookie name starts with __Host-: browsers then only accept it over HTTPS, from this exact site.
 export const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-bs_session" : "upgrade_session";
@@ -21,13 +22,8 @@ export type SessionUser = {
   /** The company they belong to — everything they see and change is that company's. */
   companyId: string;
   clientId: string | null;
-  /** May delay a job's schedule (admins always can). */
-  canDelay: boolean;
-  /** May approve vendor bills (admins always can). */
-  canApproveBills: boolean;
-  canSeeReports: boolean;
-  /** May see and fix everyone's time on the time clock (admins always can). */
-  canManageTime: boolean;
+  /** What they may see and change (their position and their own changes; admins everything). See access.ts. */
+  access: Access;
   /** A vendor portal login: the vendor it's for. */
   vendorId: string | null;
 };
@@ -107,7 +103,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   // Before the company is known, so past the gatekeeper (it's how the gatekeeper learns the company).
   const user = await systemDb.user.findUnique({
     where: { id: userId },
-    include: { client: { select: { id: true } } },
+    include: { client: { select: { id: true } }, position: { select: { access: true } } },
   });
   // Signed out everywhere since this sign-in (or deactivated): no longer valid.
   if (!user || !user.active || user.sessionVersion !== session.version) return null;
@@ -118,10 +114,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     role: user.role as Role,
     companyId: user.companyId,
     clientId: user.client?.id ?? null,
-    canDelay: user.canDelay,
-    canApproveBills: user.canApproveBills,
-    canSeeReports: user.canSeeReports,
-    canManageTime: user.canManageTime,
+    access: user.role === "ADMIN" || user.role === "STAFF" ? resolveAccess(user.role, user.position?.access, user.access) : NO_ACCESS,
     vendorId: user.vendorId,
   };
 });
@@ -161,10 +154,20 @@ export async function requireVendor(): Promise<VendorUser> {
   return { ...user, vendorId: user.vendorId };
 }
 
-/** Require someone who may see Reports: admins, and team members allowed in Settings → Team. */
-export async function requireReports(): Promise<SessionUser> {
+/** A page in `area`: the team members whose position shows it (Can view or Can edit). Others go home. */
+export async function requireView(area: AreaKey): Promise<SessionUser> {
   const user = await requireStaff();
-  if (user.role !== "ADMIN" && !user.canSeeReports) redirect("/dashboard");
+  if (!allows(user.access, area, 1)) redirect("/dashboard");
+  return user;
+}
+
+/** A change in `area`: the team members whose position may edit it. Others are told why. */
+export async function requireEdit(area: AreaKey): Promise<SessionUser> {
+  const user = await requireStaff();
+  if (!allows(user.access, area, 2)) {
+    const label = AREAS.find((a) => a.key === area)?.label ?? area;
+    throw new Error(`Your position can't change ${label} — an admin can allow it in Settings → Team`);
+  }
   return user;
 }
 
@@ -207,10 +210,7 @@ export const requireClient = cache(async (): Promise<ClientUser> => {
         role: "CLIENT",
         companyId: user.companyId,
         clientId: client.id,
-        canDelay: false,
-        canApproveBills: false,
-        canSeeReports: false,
-        canManageTime: false,
+        access: NO_ACCESS,
         vendorId: null,
         preview: true,
         previewProjectId: projectId || null,

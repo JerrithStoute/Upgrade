@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin, requireStaff } from "@/lib/auth";
+import { requireAdmin, requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { currentCompanyId } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
@@ -67,7 +67,7 @@ export type SaveEstimateResult = { ok: true; estimateId: string; version: number
  * "new" makes the next version from what's on screen and leaves this one as it was.
  */
 export async function saveEstimate(projectId: string, estimateId: string, raw: unknown, mode: "over" | "new"): Promise<SaveEstimateResult> {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const parsed = saveSheetInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Some numbers on the sheet aren't valid — check the highlighted cells." };
   const input = parsed.data;
@@ -125,7 +125,7 @@ export async function saveEstimate(projectId: string, estimateId: string, raw: u
 
 /** New estimate version — blank, or pre-filled from an estimate template. */
 export const createEstimate = friendly(async function createEstimate(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   await loadProject(projectId);
   const { estimate: est, template } = await createProjectEstimate(projectId, strOrNull(formData, "templateId"));
@@ -142,7 +142,7 @@ export const createEstimate = friendly(async function createEstimate(formData: F
 });
 
 export const updateEstimateDetails = friendly(async function updateEstimateDetails(formData: FormData) {
-  await requireStaff();
+  await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   await loadEstimate(projectId, id);
@@ -158,7 +158,7 @@ export const updateEstimateDetails = friendly(async function updateEstimateDetai
 });
 
 export const markEstimateSent = friendly(async function markEstimateSent(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const est = await loadEstimate(projectId, id);
@@ -188,7 +188,7 @@ export const markEstimateSent = friendly(async function markEstimateSent(formDat
  * step — the Budget follows it and the job's prices lock. The job goes to In progress.
  */
 export const estimateAsBudget = friendly(async function estimateAsBudget(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const est = await loadEstimate(projectId, id);
@@ -214,7 +214,7 @@ export const estimateAsBudget = friendly(async function estimateAsBudget(formDat
 });
 
 export const markEstimateApproved = friendly(async function markEstimateApproved(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const est = await loadEstimate(projectId, id);
@@ -236,7 +236,7 @@ export const markEstimateApproved = friendly(async function markEstimateApproved
 });
 
 export const markEstimateDeclined = friendly(async function markEstimateDeclined(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const est = await loadEstimate(projectId, id);
@@ -248,7 +248,7 @@ export const markEstimateDeclined = friendly(async function markEstimateDeclined
 });
 
 export const createEstimateVersion = friendly(async function createEstimateVersion(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const source = await loadEstimate(projectId, id);
@@ -279,7 +279,7 @@ export const createEstimateVersion = friendly(async function createEstimateVersi
 });
 
 export const deleteEstimate = friendly(async function deleteEstimate(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const est = await loadEstimate(projectId, id);
@@ -294,7 +294,7 @@ export const deleteEstimate = friendly(async function deleteEstimate(formData: F
 
 /** Appends a template's spec items and lines to a draft estimate (e.g. a "Bathroom" template onto a kitchen job). */
 export const addTemplateToEstimate = friendly(async function addTemplateToEstimate(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const estimateId = str(formData, "estimateId");
   const templateId = str(formData, "templateId");
@@ -364,7 +364,7 @@ export async function saveProposalOptions(
   raw: unknown,
   scope: "estimate" | "default" | "reset",
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const est = await db.estimate.findFirst({ where: { id: estimateId, projectId }, select: { id: true } });
   if (!est) return { ok: false, error: "Estimate not found" };
   if (scope === "reset") {
@@ -392,7 +392,7 @@ export async function saveProposalOptions(
 
 /** Sets (form has "file") or removes (no file) the job's cover picture. */
 export async function setProjectCover(projectId: string, fd: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireStaff();
+  await requireEdit("estimates");
   const project = await db.project.findUnique({ where: { id: projectId }, select: { coverPath: true } });
   if (!project) return { ok: false, error: "Project not found" };
   const file = fd.get("file");
@@ -415,7 +415,7 @@ export async function setProjectCover(projectId: string, fd: FormData): Promise<
 
 /** "Save as my default": new estimates start with this table. */
 export async function saveMarkupDefault(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireStaff();
+  await requireEdit("estimates");
   const parsed = markupTableSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Check the table's rows" };
   const company = await db.company.findFirst({ select: { id: true } });
@@ -426,7 +426,7 @@ export async function saveMarkupDefault(raw: unknown): Promise<{ ok: true } | { 
 
 /** This estimate version's parameter values — saved when you close the Parameters panel (each version has its own). */
 export async function saveParameterValues(projectId: string, estimateId: string, raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireStaff();
+  await requireEdit("estimates");
   const parsed = saveSheetInput.shape.parameterValues.unwrap().safeParse(raw);
   if (!parsed.success) return { ok: false, error: "One of the numbers isn't valid." };
   const est = await db.estimate.findFirst({ where: { id: estimateId, projectId }, select: { id: true } });
@@ -440,7 +440,7 @@ export async function saveParameterValues(projectId: string, estimateId: string,
 
 /** Locks a draft: no automatic updates from the takeoff and no edits until it's unlocked. */
 export const lockEstimate = friendly(async function lockEstimate(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const est = await loadEstimate(projectId, id);
@@ -458,7 +458,7 @@ export const lockEstimate = friendly(async function lockEstimate(formData: FormD
 
 /** Clears the "what changed" note (the changes stay — just the note goes). */
 export async function dismissAutoNote(projectId: string, estimateId: string): Promise<{ ok: true }> {
-  await requireStaff();
+  await requireEdit("estimates");
   // Without touching the estimate's "updated" time — that would reload the sheet and lose unsaved edits.
   const companyId = await currentCompanyId();
   await db.$transaction(async (tx) => tx.$executeRaw`UPDATE "Estimate" SET "autoNote" = NULL, "autoBase" = NULL WHERE "id" = ${estimateId} AND "projectId" = ${projectId} AND "companyId" = ${companyId}`);
@@ -471,7 +471,7 @@ export async function dismissAutoNote(projectId: string, estimateId: string): Pr
  * last saved (what you bid) or keeping the takeoff's changes.
  */
 export async function lockFromAutoNote(projectId: string, estimateId: string, keep: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   try {
     const { estimate, restored } = await lockAfterAutoChanges(projectId, estimateId, keep);
     await logActivity({

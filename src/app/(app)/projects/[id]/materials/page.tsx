@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { Download, PackageOpen, Replace, Truck, Undo2 } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { buildMaterialList } from "@/lib/takeoff-materials";
@@ -17,7 +17,7 @@ import { answerInventory } from "./inventory/actions";
 
 /** The job's material list: its own project tab, printable with or without prices. */
 export default async function MaterialListPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ plan?: string; prices?: string }> }) {
-  await requireStaff();
+  await requireView("takeoffs");
   const { id } = await params;
   const { plan: planParam, prices } = await searchParams;
   const project = await getProject(id);

@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -31,7 +31,7 @@ function revalidateBids(projectId: string) {
  * You download its Excel file (or PDF) to send; only the vendor's returned file goes in the job's Files.
  */
 export const requestBids = friendly(async function requestBids(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const project = await getProject(str(fd, "projectId"));
   const itemKeys = new Set(fd.getAll("item").map(String));
   const vendorIds = Array.from(new Set(fd.getAll("vendor").map(String)));
@@ -94,7 +94,7 @@ export const requestBids = friendly(async function requestBids(fd: FormData) {
  * its blank details filled in, the cost codes added.
  */
 export async function quickAddVendor(input: { name: string; contact: string; email: string; phone: string; codes: string[] }) {
-  await requireStaff();
+  await requireEdit("estimates");
   const name = cleanVendorName(input.name ?? "");
   if (!name) return { ok: false as const, error: "Type the vendor's name" };
   const email = (input.email ?? "").trim();
@@ -129,7 +129,7 @@ export async function quickAddVendor(input: { name: string; contact: string; ema
  * uploaded it on), each line's price filled in, and the file kept in the job's Files.
  */
 export const importBid = friendly(async function importBid(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const project = await getProject(str(fd, "projectId"));
   const back = (q: string) => redirect(`${bidsPath(project.id)}?${q}#bids`);
   const file = fd.get("file");
@@ -181,7 +181,7 @@ export const importBid = friendly(async function importBid(fd: FormData) {
 
 /** Prices typed in by hand (a bid phoned in or written on the printout). */
 export const saveBidPrices = friendly(async function saveBidPrices(fd: FormData) {
-  await requireStaff();
+  await requireEdit("estimates");
   const project = await getProject(str(fd, "projectId"));
   const bid = await db.bid.findFirst({ where: { id: str(fd, "bidId"), projectId: project.id }, include: { lines: true } });
   if (!bid) throw new Error("Bid not found");
@@ -202,7 +202,7 @@ export const saveBidPrices = friendly(async function saveBidPrices(fd: FormData)
 
 /** Removes a bid (its files stay in the job's Files). Prices already taken from it stay. */
 export const deleteBid = friendly(async function deleteBid(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const project = await getProject(str(fd, "projectId"));
   const bid = await db.bid.findFirst({ where: { id: str(fd, "bidId"), projectId: project.id }, select: { id: true, number: true, vendorName: true } });
   if (bid) {
@@ -244,7 +244,7 @@ async function lumberItemFor(name: string) {
  * (substitutions.ts), "keep mine" leaves that line's price out.
  */
 export const takeBids = friendly(async function takeBids(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("estimates");
   const project = await getProject(str(fd, "projectId"));
   const scope = str(fd, "scope") === "COMPANY" ? "COMPANY" : "JOB";
   const locked = await isJobLocked(project.id);

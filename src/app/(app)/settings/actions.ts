@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { str, strOrNull, numField } from "@/lib/utils";
+import { str, strOrNull } from "@/lib/utils";
 import { DEFAULT_BRAND, isHexColor } from "@/lib/brand";
 import { isZone } from "@/lib/zone";
 import { saveLogo } from "@/lib/company-brand";
@@ -26,7 +26,6 @@ export const saveCompany = friendly(async function saveCompany(formData: FormDat
     email: strOrNull(formData, "email"),
     website: strOrNull(formData, "website"),
     licenseNumber: strOrNull(formData, "licenseNumber"),
-    allowanceProfit: str(formData, "allowanceProfit") === "in",
     ...(isZone(str(formData, "timeZone")) ? { timeZone: str(formData, "timeZone") } : {}),
   };
   const existing = await db.company.findFirst();
@@ -34,7 +33,7 @@ export const saveCompany = friendly(async function saveCompany(formData: FormDat
   else await db.company.create({ data });
   await logActivity({ userId: user.id, type: "company.updated", description: `Updated company profile for ${name}` });
   revalidatePath("/", "layout");
-  redirect("/settings?saved=1");
+  redirect("/settings/company?saved=1");
 });
 
 /** Admins: take a backup right now (database + uploads). */
@@ -43,8 +42,8 @@ export const backupNow = friendly(async function backupNow() {
   const { runBackup } = await import("@/lib/backup");
   const s = await runBackup();
   await logActivity({ userId: admin.id, type: "backup.created", description: `Backup ${s.file} (${(s.bytes / 1024 / 1024).toFixed(1)} MB)` });
-  revalidatePath("/settings");
-  redirect("/settings?backup=1#backups");
+  revalidatePath("/settings/company");
+  redirect("/settings/company?backup=1#backups");
 });
 
 /** Admins: where backups go. Checks the folder can be written to, then backs up there straight away. */
@@ -60,8 +59,8 @@ export const saveBackupFolder = friendly(async function saveBackupFolder(formDat
   await db.company.update({ where: { id: company.id }, data: { backupDir: folder || null } });
   const s = await runBackup();
   await logActivity({ userId: admin.id, type: "backup.folder", description: `Backups now go to ${s.dir}` });
-  revalidatePath("/settings");
-  redirect("/settings?backup=moved#backups");
+  revalidatePath("/settings/company");
+  redirect("/settings/company?backup=moved#backups");
 });
 
 /** Admins: put everything back the way it was in a backup (a backup of right now is taken first). */
@@ -73,7 +72,7 @@ export const restoreFromBackup = friendly(async function restoreFromBackup(formD
   // The activity log was restored too — this goes in after.
   await logActivity({ userId: admin.id, type: "backup.restored", description: `Restored backup ${file} (the moment before was saved as ${r.safety})` });
   revalidatePath("/", "layout");
-  redirect(`/settings?restored=${encodeURIComponent(file)}&undo=${encodeURIComponent(r.safety)}#backups`);
+  redirect(`/settings/company?restored=${encodeURIComponent(file)}&undo=${encodeURIComponent(r.safety)}#backups`);
 });
 
 /** Logo and main color (Settings → Company → Branding). */
@@ -95,5 +94,5 @@ export const saveBranding = friendly(async function saveBranding(formData: FormD
   await db.company.update({ where: { id: company.id }, data });
   await logActivity({ userId: user.id, type: "company.branding", description: "Updated the company branding" });
   revalidatePath("/", "layout");
-  redirect("/settings?branding=1");
+  redirect("/settings/company?branding=1");
 });

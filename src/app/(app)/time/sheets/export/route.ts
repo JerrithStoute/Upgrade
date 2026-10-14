@@ -10,7 +10,7 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const asked = parseWeek(url.searchParams.get("week"));
   // The company's week and clock: the dates and times in the file are the ones on their wall.
-  const { key, from, to, clock } = await weekOf(asked ? url.searchParams.get("week")! : new Date());
+  const { key, from, to, clock, rules, dayOf } = await weekOf(asked ? url.searchParams.get("week")! : new Date());
   const { wall } = clock;
   const [entries, burden] = await Promise.all([
     db.timeEntry.findMany({
@@ -28,6 +28,8 @@ export async function GET(req: Request) {
   const costed = costWeek(
     entries.filter((e) => e.clockOut),
     people,
+    rules,
+    dayOf,
   );
   const cell = (v: string | number) => {
     const s = String(v);
@@ -36,10 +38,12 @@ export async function GET(req: Request) {
   const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const time = (d: Date | null) => (d ? d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "still on the clock");
   const round = (n: number) => Math.round(n * 100) / 100;
-  const lines = [["Person", "Date", "Job", "Cost code", "Started", "Stopped", "Break (min)", "Hours", "Regular", "Overtime", "Pay rate", "Note"].join(",")];
+  const lines = [["Person", "Date", "Job", "Cost code", "Started", "Stopped", "Break (min)", "Hours", "Regular", "Overtime", "Double time", "Pay rate", "Note"].join(",")];
   for (const e of entries) {
-    const hours = entryHours(e);
+    // Hours by the company's rules (rounding, automatic lunch); the punch times are the real ones.
+    const hours = entryHours(e, new Date(), rules);
     const ot = costed.get(e.id)?.overtime ?? 0;
+    const dt = costed.get(e.id)?.double ?? 0;
     lines.push(
       [
         e.user.name,
@@ -50,8 +54,9 @@ export async function GET(req: Request) {
         time(e.clockOut ? wall(e.clockOut) : null),
         e.breakMinutes,
         round(hours),
-        round(hours - ot),
+        round(hours - ot - dt),
         round(ot),
+        round(dt),
         e.user.payRate ?? "",
         e.notes ?? "",
       ]

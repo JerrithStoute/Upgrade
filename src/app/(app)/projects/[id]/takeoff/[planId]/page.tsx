@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
 import { conditionEstimateLines, conditionTotals, loadConditions } from "@/lib/takeoff-data";
@@ -19,7 +19,7 @@ export default async function PlanViewerPage({
   params: Promise<{ id: string; planId: string }>;
   searchParams: Promise<{ page?: string; cond?: string; applied?: string; skipped?: string; templateError?: string; toolbox?: string; library?: string }>;
 }) {
-  const user = await requireStaff();
+  const user = await requireView("takeoffs");
   const { id, planId } = await params;
   const { page, cond, applied, skipped, templateError, toolbox, library: libraryNote } = await searchParams;
   const project = await getProject(id);

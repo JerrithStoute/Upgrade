@@ -1,5 +1,6 @@
 import Link from "@/components/link";
 import { requireStaff } from "@/lib/auth";
+import { allows, type AreaKey } from "@/lib/access";
 import { changeOrderTotals } from "@/lib/change-orders";
 import { db } from "@/lib/db";
 import { getProject, projectFinancials } from "@/lib/projects";
@@ -21,7 +22,9 @@ function Empty({ children }: { children: React.ReactNode }) {
 }
 
 export default async function ProjectOverviewPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  const user = await requireStaff();
+  // Each part of the overview shows when the person's position shows that area.
+  const sees = (area: AreaKey) => allows(user.access, area, 1);
   const { id } = await params;
   const project = await getProject(id);
   const base = `/projects/${project.id}`;
@@ -67,17 +70,25 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-6">
-        <Stat label="Contract value" value={money(financials.contract, true)} />
-        <Stat
-          label="Costs to date"
-          value={money(financials.spent, true)}
-          tone={financials.contract > 0 && financials.spent > financials.contract ? "bad" : "default"}
-          hint={financials.contract > 0 ? `${num((financials.spent / financials.contract) * 100, 0)}% of contract` : undefined}
-        />
-        <Stat label="Invoiced" value={money(financials.invoiced, true)} hint={`${money(financials.remainingToInvoice, true)} left to bill`} />
-        <Stat label="Paid" value={money(financials.paid, true)} tone="good" />
-        <Stat label="Balance due" value={money(financials.outstanding, true)} tone={financials.outstanding > 0 ? "warn" : "default"} />
-        <Stat label="Schedule" value={`${progress}%`} hint={`${tasks.length} task${tasks.length === 1 ? "" : "s"}`} />
+        {sees("budget") ? (
+          <>
+            <Stat label="Contract value" value={money(financials.contract, true)} />
+            <Stat
+              label="Costs to date"
+              value={money(financials.spent, true)}
+              tone={financials.contract > 0 && financials.spent > financials.contract ? "bad" : "default"}
+              hint={financials.contract > 0 ? `${num((financials.spent / financials.contract) * 100, 0)}% of contract` : undefined}
+            />
+          </>
+        ) : null}
+        {sees("invoices") ? (
+          <>
+            <Stat label="Invoiced" value={money(financials.invoiced, true)} hint={`${money(financials.remainingToInvoice, true)} left to bill`} />
+            <Stat label="Paid" value={money(financials.paid, true)} tone="good" />
+            <Stat label="Balance due" value={money(financials.outstanding, true)} tone={financials.outstanding > 0 ? "warn" : "default"} />
+          </>
+        ) : null}
+        {sees("field") ? <Stat label="Schedule" value={`${progress}%`} hint={`${tasks.length} task${tasks.length === 1 ? "" : "s"}`} /> : null}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -134,117 +145,125 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
             </CardBody>
           </Card>
 
-          <Card>
-            <CardHeader title="Upcoming tasks" description={`${tasks.length} tasks on the schedule`} actions={<TabLink href={`${base}/schedule`}>Schedule</TabLink>} />
-            {upcomingTasks.length === 0 ? (
-              <Empty>{tasks.length === 0 ? "No schedule yet." : "All tasks complete."}</Empty>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {upcomingTasks.map((t) => (
-                  <li key={t.id} className="flex items-center gap-3 px-5 py-2.5">
-                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-slate-900">
-                        {t.name}
-                        {t.isMilestone ? <span className="ml-2 text-xs text-violet-700">Milestone</span> : null}
-                      </p>
-                      <p className="text-xs text-slate-500">
-                        {t.phase} · {fmtDate(t.startDate, "MMM d")} – {fmtDate(t.endDate, "MMM d")}
-                      </p>
-                    </div>
-                    <div className="w-24">
-                      <Progress value={t.percentComplete} color={t.color} />
-                    </div>
-                    <span className="w-8 text-right text-xs text-slate-600 tabular-nums">{t.percentComplete}%</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          {sees("field") ? (
+            <Card>
+              <CardHeader title="Upcoming tasks" description={`${tasks.length} tasks on the schedule`} actions={<TabLink href={`${base}/schedule`}>Schedule</TabLink>} />
+              {upcomingTasks.length === 0 ? (
+                <Empty>{tasks.length === 0 ? "No schedule yet." : "All tasks complete."}</Empty>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {upcomingTasks.map((t) => (
+                    <li key={t.id} className="flex items-center gap-3 px-5 py-2.5">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-slate-900">
+                          {t.name}
+                          {t.isMilestone ? <span className="ml-2 text-xs text-violet-700">Milestone</span> : null}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          {t.phase} · {fmtDate(t.startDate, "MMM d")} – {fmtDate(t.endDate, "MMM d")}
+                        </p>
+                      </div>
+                      <div className="w-24">
+                        <Progress value={t.percentComplete} color={t.color} />
+                      </div>
+                      <span className="w-8 text-right text-xs text-slate-600 tabular-nums">{t.percentComplete}%</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          ) : null}
 
-          <Card>
-            <CardHeader title="Recent daily logs" actions={<TabLink href={`${base}/daily-logs`}>Daily logs</TabLink>} />
-            {dailyLogs.length === 0 ? (
-              <Empty>No daily logs yet.</Empty>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {dailyLogs.map((l) => (
-                  <li key={l.id} className="px-5 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-slate-900">{fmtDate(l.date, "EEE, MMM d")}</p>
-                      <p className="text-xs text-slate-500">{[l.weather, l.crewCount ? `${l.crewCount} crew` : null, l.author?.name].filter(Boolean).join(" · ")}</p>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-slate-600">{l.workCompleted || "No work notes."}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          {sees("field") ? (
+            <Card>
+              <CardHeader title="Recent daily logs" actions={<TabLink href={`${base}/daily-logs`}>Daily logs</TabLink>} />
+              {dailyLogs.length === 0 ? (
+                <Empty>No daily logs yet.</Empty>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {dailyLogs.map((l) => (
+                    <li key={l.id} className="px-5 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-medium text-slate-900">{fmtDate(l.date, "EEE, MMM d")}</p>
+                        <p className="text-xs text-slate-500">{[l.weather, l.crewCount ? `${l.crewCount} crew` : null, l.author?.name].filter(Boolean).join(" · ")}</p>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-sm text-slate-600">{l.workCompleted || "No work notes."}</p>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          ) : null}
         </div>
 
         <div className="space-y-6">
-          <Card>
-            <CardHeader title="Client approvals" description={`${pendingSelections.length + pendingChangeOrders.length} waiting`} />
-            {pendingSelections.length === 0 && pendingChangeOrders.length === 0 ? (
-              <Empty>Nothing waiting on the client.</Empty>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {pendingSelections.map((s) => (
-                  <li key={s.id}>
-                    <Link href={`${base}/selections`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm text-slate-900">{s.title}</p>
-                        <p className="text-xs text-slate-500">
-                          Selection · {s.category}
-                          {s.dueDate ? <span className={s.dueDate < now && s.status === "PENDING" ? "text-rose-600" : ""}> · due {fmtDate(s.dueDate, "MMM d")}</span> : null}
-                        </p>
-                      </div>
-                      <Badge status={s.status} />
-                    </Link>
-                  </li>
-                ))}
-                {pendingChangeOrders.map((co) => (
-                  <li key={co.id}>
-                    <Link href={`${base}/change-orders`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50">
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm text-slate-900">
-                          CO #{co.number} · {co.title}
-                        </p>
-                        <p className="text-xs text-slate-500">Change order · {money(changeOrderTotals(co, co.items).total)}</p>
-                      </div>
-                      <Badge status={co.status} />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="flex gap-4 border-t border-slate-100 px-5 py-2.5">
-              <TabLink href={`${base}/selections`}>Selections</TabLink>
-              <TabLink href={`${base}/change-orders`}>Change orders</TabLink>
-            </div>
-          </Card>
+          {sees("selections") ? (
+            <Card>
+              <CardHeader title="Client approvals" description={`${pendingSelections.length + pendingChangeOrders.length} waiting`} />
+              {pendingSelections.length === 0 && pendingChangeOrders.length === 0 ? (
+                <Empty>Nothing waiting on the client.</Empty>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {pendingSelections.map((s) => (
+                    <li key={s.id}>
+                      <Link href={`${base}/selections`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-slate-900">{s.title}</p>
+                          <p className="text-xs text-slate-500">
+                            Selection · {s.category}
+                            {s.dueDate ? <span className={s.dueDate < now && s.status === "PENDING" ? "text-rose-600" : ""}> · due {fmtDate(s.dueDate, "MMM d")}</span> : null}
+                          </p>
+                        </div>
+                        <Badge status={s.status} />
+                      </Link>
+                    </li>
+                  ))}
+                  {pendingChangeOrders.map((co) => (
+                    <li key={co.id}>
+                      <Link href={`${base}/change-orders`} className="flex items-center gap-3 px-5 py-2.5 hover:bg-slate-50">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm text-slate-900">
+                            CO #{co.number} · {co.title}
+                          </p>
+                          <p className="text-xs text-slate-500">Change order · {money(changeOrderTotals(co, co.items).total)}</p>
+                        </div>
+                        <Badge status={co.status} />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex gap-4 border-t border-slate-100 px-5 py-2.5">
+                <TabLink href={`${base}/selections`}>Selections</TabLink>
+                <TabLink href={`${base}/change-orders`}>Change orders</TabLink>
+              </div>
+            </Card>
+          ) : null}
 
-          <Card>
-            <CardHeader title="Open to-dos" actions={<TabLink href={`${base}/todos`}>To-dos</TabLink>} />
-            {openTodos.length === 0 ? (
-              <Empty>No open to-dos.</Empty>
-            ) : (
-              <ul className="divide-y divide-slate-100">
-                {openTodos.map((t) => (
-                  <li key={t.id} className="flex items-center gap-3 px-5 py-2.5">
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-slate-900">{t.title}</p>
-                      <p className="text-xs text-slate-500">
-                        {t.assignee?.name ?? "Unassigned"}
-                        {t.dueDate ? <span className={t.dueDate < now ? "text-rose-600" : ""}> · due {fmtDate(t.dueDate, "MMM d")}</span> : null}
-                      </p>
-                    </div>
-                    {t.priority === "HIGH" ? <Badge status="HIGH" /> : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </Card>
+          {sees("field") ? (
+            <Card>
+              <CardHeader title="Open to-dos" actions={<TabLink href={`${base}/todos`}>To-dos</TabLink>} />
+              {openTodos.length === 0 ? (
+                <Empty>No open to-dos.</Empty>
+              ) : (
+                <ul className="divide-y divide-slate-100">
+                  {openTodos.map((t) => (
+                    <li key={t.id} className="flex items-center gap-3 px-5 py-2.5">
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-slate-900">{t.title}</p>
+                        <p className="text-xs text-slate-500">
+                          {t.assignee?.name ?? "Unassigned"}
+                          {t.dueDate ? <span className={t.dueDate < now ? "text-rose-600" : ""}> · due {fmtDate(t.dueDate, "MMM d")}</span> : null}
+                        </p>
+                      </div>
+                      {t.priority === "HIGH" ? <Badge status="HIGH" /> : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader title="Recent activity" />

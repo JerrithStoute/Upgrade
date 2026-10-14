@@ -8,7 +8,7 @@ import { noteChange } from "./selection-activity";
 import { logActivity } from "./activity";
 
 /**
- * Money flowing on by itself, when you've left it on (Settings → Billing):
+ * Money flowing on by itself, when you've left it on (Settings → Invoices):
  *  - a client's choice over (or under) its allowance goes on the job's draft "Selections"
  *    change order;
  *  - an approved change order goes on the job's next draft invoice — once.

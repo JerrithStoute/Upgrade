@@ -4,7 +4,7 @@ import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -41,7 +41,7 @@ async function budgetEstimate(projectId: string) {
  * cost), or from a bid you took (that vendor's quoted lines and prices for its cost code).
  */
 export const createPurchaseOrder = friendly(async function createPurchaseOrder(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const project = await getProject(str(fd, "projectId"));
   const source = str(fd, "source");
   let vendorName = str(fd, "vendor");
@@ -113,7 +113,7 @@ const poInput = z.object({
 
 /** Saves a PO (its details and lines) — until it's closed or void. */
 export async function savePurchaseOrder(projectId: string, poId: string, raw: unknown): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const parsed = poInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the PO" };
   const po = await db.purchaseOrder.findFirst({ where: { id: poId, projectId } });
@@ -156,7 +156,7 @@ const VERB: Record<string, string> = { SENT: "sent", ACCEPTED: "marked accepted"
 
 /** Sent / accepted (for them) / declined / closed / void / reopened. */
 export const setPurchaseOrderStatus = friendly(async function setPurchaseOrderStatus(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const project = await getProject(str(fd, "projectId"));
   const status = str(fd, "status");
   const po = await db.purchaseOrder.findFirst({ where: { id: str(fd, "id"), projectId: project.id } });
@@ -183,7 +183,7 @@ export const setPurchaseOrderStatus = friendly(async function setPurchaseOrderSt
 });
 
 export const deletePurchaseOrder = friendly(async function deletePurchaseOrder(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const project = await getProject(str(fd, "projectId"));
   const po = await db.purchaseOrder.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { _count: { select: { bills: true } } } });
   if (!po) throw new Error("PO not found");
@@ -225,7 +225,7 @@ async function saveBillFile(fd: FormData, projectId: string, userId: string | nu
 
 /** A bill from a sub or vendor, matched to one of their POs when picked. Waits for approval. */
 export const createBill = friendly(async function createBill(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const project = await getProject(str(fd, "projectId"));
   const lines = readBillLines(fd);
   const poId = str(fd, "purchaseOrderId");
@@ -261,7 +261,7 @@ export const createBill = friendly(async function createBill(fd: FormData) {
 
 /** Changes a bill that's still waiting for approval (or was rejected). */
 export const updateBill = friendly(async function updateBill(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id } });
   if (!bill) throw new Error("Bill not found");
@@ -289,7 +289,7 @@ export const updateBill = friendly(async function updateBill(fd: FormData) {
 
 /** Approve / reject / un-approve / paid — approve and pay by those allowed (Settings → Team). */
 export const decideBill = friendly(async function decideBill(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { lines: true } });
   if (!bill) throw new Error("Bill not found");
@@ -310,7 +310,7 @@ export const decideBill = friendly(async function decideBill(fd: FormData) {
 });
 
 export const deleteBill = friendly(async function deleteBill(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("purchasing");
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { lines: true } });
   if (!bill) throw new Error("Bill not found");

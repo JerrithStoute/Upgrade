@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { loadParameters } from "@/lib/estimate-parameters";
 import { formulaRefs } from "@/lib/formula";
@@ -7,7 +7,7 @@ import { ParametersForm } from "@/components/estimate/parameters-form";
 export const metadata = { title: "Estimate parameters" };
 
 export default async function EstimateParametersPage() {
-  await requireAdmin();
+  await requireView("lists");
   const [params, est, tpl] = await Promise.all([
     loadParameters(),
     db.estimateItem.findMany({ where: { OR: [{ qtyFormula: { not: null } }, { costFormula: { not: null } }] }, select: { qtyFormula: true, costFormula: true } }),

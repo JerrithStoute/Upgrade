@@ -6,6 +6,7 @@ import { num } from "@/lib/utils";
 import { MEMBER_KINDS, MEMBER_KIND_LABELS, SOLD_AS, SOLD_AS_LABELS } from "@/lib/takeoff";
 import { Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
 import { createMemberSize, deleteMemberSize, updateMemberSize } from "./actions";
+import { requireView } from "@/lib/auth";
 
 type SizeValues = {
   id: string;
@@ -91,6 +92,7 @@ function SizeForm({ action, values }: { action: (fd: FormData) => Promise<void>;
 }
 
 export default async function MemberSizesPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
+  await requireView("lists");
   const { edit } = await searchParams;
   const sizes = await db.memberSize.findMany({
     orderBy: [{ sortOrder: "asc" }, { name: "asc" }],

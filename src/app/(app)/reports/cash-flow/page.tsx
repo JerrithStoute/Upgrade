@@ -4,9 +4,11 @@ import { cn, fmtDate, money } from "@/lib/utils";
 import { Button, Stat } from "@/components/ui";
 import { PrintButton } from "../../projects/[id]/_components/print-button";
 import { Chips, Explain, Signed } from "../_parts";
+import { requireView } from "@/lib/auth";
 
 /** Money in and out by week or month: what happened, and what's coming. */
 export default async function CashFlowReport({ searchParams }: { searchParams: Promise<{ by?: string; start?: string }> }) {
+  await requireView("reports");
   const { by: rawBy, start: rawStart } = await searchParams;
   const by = rawBy === "week" ? "week" : "month";
   const start = rawStart != null && rawStart !== "" && Number.isFinite(Number(rawStart)) ? Number(rawStart) : null;

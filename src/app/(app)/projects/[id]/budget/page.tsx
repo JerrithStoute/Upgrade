@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { Pencil } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { changeOrderTotals } from "@/lib/change-orders";
 import { parseMarkupTable, tableExtras } from "@/lib/markup";
 import { db } from "@/lib/db";
@@ -25,7 +25,7 @@ type BudgetRow = {
 const UNASSIGNED = "Unassigned";
 
 export default async function BudgetPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
-  await requireStaff();
+  await requireView("budget");
   const { id } = await params;
   const { edit } = await searchParams;
   const project = await getProject(id);

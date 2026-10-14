@@ -8,8 +8,10 @@ import { Badge, Button, Card, CardBody, CardHeader, ConfirmForm, SubmitButton, T
 import { addInsurance, cancelVendorInvite, confirmInsurance, createVendorLogin, deleteInsurance, deleteVendorLogin, resendVendorInvite, setInsuranceRequired, updateVendorLogin } from "../actions";
 import { openInvites } from "@/lib/invites";
 import { companyClock } from "@/lib/company-zone";
+import { requireView } from "@/lib/auth";
 
 export default async function VendorPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireView("lists");
   const { id } = await params;
   const waiting = await openInvites({ vendorId: id });
   const vendor = await db.vendor.findUnique({

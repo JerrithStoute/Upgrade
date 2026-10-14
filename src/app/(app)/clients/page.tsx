@@ -1,12 +1,12 @@
 import Link from "@/components/link";
 import { Plus, Search, Users } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fmtDate } from "@/lib/utils";
 import { Badge, Button, ButtonLink, EmptyState, PageHeader, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
 
 export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
-  await requireStaff();
+  await requireView("leads");
   const { q: rawQ } = await searchParams;
   const q = (rawQ ?? "").trim();
 

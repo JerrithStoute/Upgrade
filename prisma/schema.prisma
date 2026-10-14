@@ -59,6 +59,8 @@ model Company {
   requireTwoStep      Boolean  @default(false)
   // Time clock: percent added on top of pay for payroll taxes, workers' comp and insurance.
   laborBurden         Float    @default(0)
+  // Time clock rules (JSON, src/lib/time-rules.ts): week start, overtime, rounding, lunch, long shifts, job-site distance.
+  timeRules           String?
   // The company's clock (IANA name; src/lib/zone.ts): time clock days and weeks, times shown, the morning email.
   timeZone            String   @default("America/Chicago")
   // Where backups go (a folder path, e.g. on another drive or OneDrive); null = BACKUP_DIR or ./backups.
@@ -79,14 +81,13 @@ model User {
   phone             String?
   title             String?
   active            Boolean   @default(true)
-  // May delay a job's schedule (admins always can).
-  canDelay          Boolean   @default(false)
+  // Their position (Project manager, Estimator…; src/lib/access.ts) — none: Staff. Admins get everything.
+  positionId        String?
+  position          Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  // Just this person's changes from their position (JSON, only what differs).
+  access            String?
   // Vacation days a year (null = not tracked).
   vacationDays      Float?
-  // May approve vendor bills (admins always can).
-  canApproveBills   Boolean   @default(false)
-  // May see Reports (admins always can).
-  canSeeReports     Boolean   @default(false)
   // Sign-in security.
   emailVerifiedAt   DateTime? // confirmed the email is theirs (sign-up / invite link)
   sessionVersion    Int       @default(0) // bumped to sign them out everywhere (password change, deactivation)
@@ -98,8 +99,6 @@ model User {
   // Time clock: pay per hour (null = not set) and salaried (no overtime).
   payRate           Float?
   salaried          Boolean   @default(false)
-  // May see and fix everyone's time (admins always can).
-  canManageTime     Boolean   @default(false)
   // Their dashboard: the cards they picked, in order (JSON ["stats", "projects", …]); null = the default.
   dashboardCards    String?
   // The morning email (what's due today): on unless they turn it off; the last day it went out ("2026-10-13").
@@ -116,6 +115,7 @@ model User {
   jobDelays       JobDelay[]
   approvedBills   VendorBill[]    @relation("BillApprover")
   managedProjects Project[]       @relation("ProjectManager")
+  jobTeams        ProjectMember[]
   assignedTasks   ScheduleTask[]  @relation("TaskAssignee")
   assignedTodos   Todo[]          @relation("TodoAssignee")
   createdTodos    Todo[]          @relation("TodoCreator")
@@ -199,6 +199,15 @@ model Project {
 
   managerId String?
   manager   User?   @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
+  // The team on this job (besides its manager): people whose position shows only their jobs see it too.
+  members   ProjectMember[]
+  // Where the job is on the map (time clock: on site or not). Found from the address, or set from a phone at the site.
+  siteLat     Float?
+  siteLng     Float?
+  // ADDRESS (found from siteAddress) or PHONE (set standing there); null = not found yet.
+  siteFrom    String?
+  // The address it was found from — a changed address is looked up again.
+  siteAddress String?
 
   // The proposal's cover picture (under uploads/projects; PNG, JPG or WebP); null = none.
   coverPath         String?
@@ -2068,6 +2077,8 @@ model TimeEntry {
   // Cost per hour when it was worked (pay + burden), so a raise later doesn't rewrite old jobs.
   // null = no pay rate was set then; the person's current rate is used.
   rate         Float?
+  // On the clock a long time: when the "still on the clock?" email went out (once per stretch).
+  longShiftSentAt DateTime?
   // Changed by hand (Timesheets) — by whom.
   editedById   String?
   editedBy     User?     @relation("TimeEntryEditor", fields: [editedById], references: [id], onDelete: SetNull)
@@ -2105,7 +2116,7 @@ model Invite {
   email       String
   name        String?
   role        String    @default("STAFF") // the role they'll have (TEAM: ADMIN | STAFF)
-  permissions String? // TEAM: JSON { canDelay, canApproveBills, canSeeReports, canManageTime }
+  permissions String? // TEAM: JSON { positionId, access } — their position and their own changes
   clientId    String? // CLIENT: the client the portal login is for
   vendorId    String? // VENDOR: the vendor
   tokenHash   String    @unique
@@ -2159,4 +2170,38 @@ model QbListItem {
 
   @@unique([companyId, kind, listId])
   @@index([companyId])
+}
+
+/// A position on the team (Project manager, Estimator…): what its people see and change, area
+/// by area (JSON; src/lib/access.ts). Admins aren't a position — they get everything.
+model Position {
+  id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  name      String
+  // The starting position it came from (STAFF, PM, OFFICE, ESTIMATOR); null = one you made.
+  key       String?
+  access    String
+  sortOrder Int      @default(0)
+  users     User[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([companyId])
+}
+
+/// Someone on a job's team (besides its manager).
+model ProjectMember {
+  id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@index([companyId])
+  @@index([userId])
 }

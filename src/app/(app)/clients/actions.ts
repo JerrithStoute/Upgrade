@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { sendResetEmail } from "@/lib/account";
 import { cancelInvite, invite, resendInvite } from "@/lib/invites";
 import { db } from "@/lib/db";
@@ -30,7 +30,7 @@ function readClientFields(fd: FormData) {
 }
 
 export const createClient = friendly(async function createClient(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const data = readClientFields(formData);
   const client = await db.client.create({ data });
   await logActivity({
@@ -43,7 +43,7 @@ export const createClient = friendly(async function createClient(formData: FormD
 });
 
 export const updateClient = friendly(async function updateClient(formData: FormData) {
-  await requireStaff();
+  await requireEdit("leads");
   const id = str(formData, "id");
   const existing = await db.client.findUnique({ where: { id } });
   if (!existing) throw new Error("Client not found.");
@@ -55,7 +55,7 @@ export const updateClient = friendly(async function updateClient(formData: FormD
 });
 
 export const deleteClient = friendly(async function deleteClient(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const id = str(formData, "id");
   const existing = await db.client.findUnique({ where: { id }, include: { _count: { select: { projects: true } } } });
   if (!existing) throw new Error("Client not found.");
@@ -73,7 +73,7 @@ export const deleteClient = friendly(async function deleteClient(formData: FormD
 
 /** Invites the client to their portal: an email with a link to choose their own password. */
 export const grantPortalAccess = friendly(async function grantPortalAccess(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const id = str(formData, "id");
   const client = await db.client.findUnique({ where: { id } });
   if (!client) throw new Error("Client not found.");
@@ -85,20 +85,20 @@ export const grantPortalAccess = friendly(async function grantPortalAccess(formD
 });
 
 export const resendPortalInvite = friendly(async function resendPortalInvite(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   await resendInvite(str(formData, "inviteId"), user);
   revalidatePath(`/clients/${str(formData, "id")}`);
 });
 
 export const cancelPortalInvite = friendly(async function cancelPortalInvite(formData: FormData) {
-  await requireStaff();
+  await requireEdit("leads");
   await cancelInvite(str(formData, "inviteId"));
   revalidatePath(`/clients/${str(formData, "id")}`);
 });
 
 /** Emails the client a link to choose a new password (nobody types one for them). */
 export const resetPortalPassword = friendly(async function resetPortalPassword(formData: FormData) {
-  await requireStaff();
+  await requireEdit("leads");
   const id = str(formData, "id");
   const client = await db.client.findUnique({ where: { id }, include: { user: true } });
   if (!client?.user) throw new Error("This client does not have portal access.");
@@ -108,7 +108,7 @@ export const resetPortalPassword = friendly(async function resetPortalPassword(f
 });
 
 export const revokePortalAccess = friendly(async function revokePortalAccess(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("leads");
   const id = str(formData, "id");
   const client = await db.client.findUnique({ where: { id } });
   if (!client?.userId) throw new Error("This client does not have portal access.");

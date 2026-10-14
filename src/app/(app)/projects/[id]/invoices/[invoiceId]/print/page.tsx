@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { getBrand } from "@/lib/company-brand";
 import { PrintLogo } from "@/components/brand-mark";
 import { db } from "@/lib/db";
@@ -12,7 +12,7 @@ import { buttonClasses } from "@/components/ui";
 import { PrintButton } from "../../../_components/print-button";
 
 export default async function InvoicePrintPage({ params }: { params: Promise<{ id: string; invoiceId: string }> }) {
-  await requireStaff();
+  await requireView("invoices");
   const brand = await getBrand();
   const { id, invoiceId } = await params;
   const project = await getProject(id);

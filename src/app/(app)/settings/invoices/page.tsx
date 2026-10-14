@@ -5,10 +5,10 @@ import { nextInvoiceNumber } from "@/lib/projects";
 import { Card, CardBody, CardHeader, SubmitButton } from "@/components/ui";
 import { saveBilling } from "./actions";
 
-export const metadata = { title: "Billing" };
+export const metadata = { title: "Invoices" };
 
 /** What flows on by itself (overages → change orders → invoices) and how invoices are numbered. */
-export default async function BillingSettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
+export default async function InvoiceSettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   await requireAdmin();
   const { saved } = await searchParams;
   const [company, next, highest] = await Promise.all([

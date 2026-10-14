@@ -1,5 +1,5 @@
 import { Pencil, Plus, X, Hash, FileUp, CheckCircle2, ListChecks } from "lucide-react";
-import { requireAdmin } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cn, costCodeLabel } from "@/lib/utils";
 import { Button, ButtonLink, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
@@ -10,7 +10,7 @@ import { CostCodeCsvImport } from "./_components/csv-import";
 export const metadata = { title: "Cost codes" };
 
 export default async function CostCodesSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; imported?: string; starter?: string }> }) {
-  await requireAdmin();
+  await requireView("lists");
   const { edit, imported, starter } = await searchParams;
 
   const codes = await db.costCode.findMany({

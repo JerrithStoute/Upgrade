@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Download } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { fmtDate, money, num } from "@/lib/utils";
@@ -13,7 +13,7 @@ export const metadata = { title: "Bid" };
 
 /** One bid's lines as sent, with the vendor's prices — typed in here when they came another way. */
 export default async function BidPage({ params, searchParams }: { params: Promise<{ id: string; bidId: string }>; searchParams: Promise<{ saved?: string }> }) {
-  await requireStaff();
+  await requireView("estimates");
   const { id, bidId } = await params;
   const { saved } = await searchParams;
   const project = await getProject(id);

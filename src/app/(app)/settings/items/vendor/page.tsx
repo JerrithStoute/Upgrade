@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { ArrowLeft } from "lucide-react";
-import { requireAdmin } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { buttonClasses } from "@/components/ui";
 import { VendorList, type VendorGroup } from "@/components/vendor-list";
@@ -10,7 +10,7 @@ import { compareMaterialNames } from "@/lib/takeoff";
 
 /** Part of the Item List for a vendor — e.g. your framing items, to get current prices. No prices of yours print. */
 export default async function VendorItemListPage() {
-  await requireAdmin();
+  await requireView("lists");
   const [items, company] = await Promise.all([
     db.materialItem.findMany({ orderBy: [{ category: "asc" }, { name: "asc" }], select: { id: true, name: true, category: true, sku: true, unit: true } }),
     db.company.findFirst(),

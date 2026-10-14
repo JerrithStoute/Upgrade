@@ -5,9 +5,9 @@ import { redirect } from "next/navigation";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { friendly } from "@/lib/friendly-action";
-import { canManageTime, clockIn, clockOut, currentRate, postLabor, weekOf, type Spot } from "@/lib/time-clock";
+import { canFixTime, clockIn, clockOut, currentRate, postLabor, weekOf, type Spot } from "@/lib/time-clock";
 import { companyClock } from "@/lib/company-zone";
-import { intField, numField, str, strOrNull } from "@/lib/utils";
+import { intField, str, strOrNull } from "@/lib/utils";
 
 function refresh() {
   revalidatePath("/time");
@@ -56,7 +56,7 @@ export const clockOutAction = friendly(async function clockOutAction(fd: FormDat
 
 async function requireTimeManager() {
   const user = await requireStaff();
-  if (!canManageTime(user)) throw new Error("Only admins (or people allowed to manage time) can change other people's time");
+  if (!canFixTime(user)) throw new Error("Your position can't change other people's time — an admin can allow it in Settings → Team");
   return user;
 }
 
@@ -141,13 +141,3 @@ export const clockOutFor = friendly(async function clockOutFor(fd: FormData) {
   refresh();
 });
 
-/** The labor burden (payroll taxes, workers' comp, insurance) — Timesheets settings. */
-export const saveLaborBurden = friendly(async function saveLaborBurden(fd: FormData) {
-  await requireTimeManager();
-  const pct = numField(fd, "laborBurden", 0);
-  if (pct < 0 || pct > 200) throw new Error("The burden is a percent of pay — usually between 10 and 40");
-  const company = await db.company.findFirst({ select: { id: true } });
-  if (!company) throw new Error("Save the company profile first (Settings)");
-  await db.company.update({ where: { id: company.id }, data: { laborBurden: pct } });
-  refresh();
-});

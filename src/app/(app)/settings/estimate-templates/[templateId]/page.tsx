@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
-import { requireAdmin } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes } from "@/lib/projects";
 import { loadTemplateSheet } from "@/lib/estimate-lines";
@@ -16,7 +16,7 @@ import { saveMarkupDefault } from "@/app/(app)/projects/[id]/estimate/actions";
 import { parseMarkupTable } from "@/lib/markup";
 
 export default async function EstimateTemplatePage({ params }: { params: Promise<{ templateId: string }> }) {
-  await requireAdmin();
+  await requireView("lists");
   const { templateId } = await params;
   const template = await db.estimateTemplate.findUnique({ where: { id: templateId } });
   if (!template) notFound();

@@ -1,9 +1,9 @@
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { PageHeader, Tabs } from "@/components/ui";
 
 /** Schedule across all jobs: the 4-week look-ahead and the company calendar. */
 export default async function ScheduleLayout({ children }: { children: React.ReactNode }) {
-  await requireStaff();
+  await requireView("field");
   return (
     <div>
       <PageHeader title="Schedule" description="Every active job's work, the company calendar — holidays, time off and reminders." />

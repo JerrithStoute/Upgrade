@@ -22,6 +22,20 @@ const HOUR = 60 * 60 * 1000;
 const field = (fd: FormData, k: string) => String(fd.get(k) ?? "").trim();
 const emailOk = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && e.length <= 200;
 
+/**
+ * A team invitation's position: the one picked when they were invited, or the default. An invite
+ * sent before positions existed carries the four old permissions — they become this person's changes.
+ */
+async function invitedPosition(perms: Record<string, unknown>) {
+  const { companyPositions, defaultPositionId } = await import("@/lib/positions");
+  const rows = await companyPositions();
+  const positionId = rows.find((r) => r.id === perms.positionId)?.id ?? (await defaultPositionId());
+  const old = Object.fromEntries(
+    Object.entries({ reports: perms.canSeeReports ? 1 : undefined, time: perms.canManageTime ? 2 : undefined, delay: perms.canDelay ? true : undefined, approveBills: perms.canApproveBills ? true : undefined }).filter(([, v]) => v !== undefined),
+  );
+  return { positionId, access: Object.keys(old).length ? JSON.stringify(old) : null };
+}
+
 async function clientIp() {
   const h = await headers();
   return h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
@@ -141,7 +155,7 @@ export async function acceptInvite(_prev: FormState, fd: FormData): Promise<Form
     // Used once, even if the button's pressed twice.
     const { count } = await db.invite.updateMany({ where: { id: invite.id, acceptedAt: null }, data: { acceptedAt: new Date() } });
     if (!count) throw new Error("That invitation has already been used");
-    const perms = invite.permissions ? (JSON.parse(invite.permissions) as Record<string, boolean>) : {};
+    const perms = invite.permissions ? (JSON.parse(invite.permissions) as Record<string, unknown>) : {};
     const role = invite.kind === "CLIENT" ? "CLIENT" : invite.kind === "VENDOR" ? "VENDOR" : invite.role === "ADMIN" ? "ADMIN" : "STAFF";
     if (invite.kind === "CLIENT" && (!invite.clientId || !(await db.client.findFirst({ where: { id: invite.clientId, userId: null }, select: { id: true } }))))
       throw new Error("That client already has a portal login");
@@ -155,10 +169,7 @@ export async function acceptInvite(_prev: FormState, fd: FormData): Promise<Form
         role,
         emailVerifiedAt: new Date(),
         passwordChangedAt: new Date(),
-        canDelay: !!perms.canDelay,
-        canApproveBills: !!perms.canApproveBills,
-        canSeeReports: !!perms.canSeeReports,
-        canManageTime: !!perms.canManageTime,
+        ...(role === "STAFF" ? await invitedPosition(perms) : {}),
         vendorId: invite.kind === "VENDOR" ? invite.vendorId : null,
       },
     });

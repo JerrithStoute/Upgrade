@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { Copy, FileStack, Plus } from "lucide-react";
-import { requireAdmin } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fmtDate, money } from "@/lib/utils";
 import { lineTotals } from "@/lib/finance";
@@ -10,7 +10,7 @@ import { createTemplate, deleteTemplate, duplicateTemplate } from "./actions";
 export const metadata = { title: "Estimate templates" };
 
 export default async function EstimateTemplatesPage() {
-  await requireAdmin();
+  await requireView("lists");
   const templates = await db.estimateTemplate.findMany({
     orderBy: { name: "asc" },
     include: { items: true, _count: { select: { specs: { where: { isAllowance: true } } } } },

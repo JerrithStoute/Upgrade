@@ -4,7 +4,7 @@ import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requireAdmin, requireStaff } from "@/lib/auth";
+import { requireAdmin, requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -82,7 +82,7 @@ function returnTo(fd: FormData, projectId: string, hash = "", tab: "plans" | "co
 // Uploads go through /api/takeoff/plans (one file per request, with progress).
 
 export const renamePlan = friendly(async function renamePlan(fd: FormData) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const name = str(fd, "name");
@@ -96,7 +96,7 @@ export const renamePlan = friendly(async function renamePlan(fd: FormData) {
 
 /** Deletes the plan, every measurement on it, and its file (from Files and from disk). */
 export const deletePlan = friendly(async function deletePlan(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const plan = await db.takeoffPlan.findFirst({ where: { id, projectId: project.id }, include: { file: true } });
@@ -111,7 +111,7 @@ export const deletePlan = friendly(async function deletePlan(fd: FormData) {
 
 /** Shows or hides a plan set (or a plan file in Files → Plans) in the client portal. */
 export const togglePlanClientVisible = friendly(async function togglePlanClientVisible(fd: FormData) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const planId = str(fd, "planId");
   const fileId = planId ? (await db.takeoffPlan.findFirst({ where: { id: planId, projectId: project.id }, select: { fileId: true } }))?.fileId : str(fd, "fileId");
@@ -124,7 +124,7 @@ export const togglePlanClientVisible = friendly(async function togglePlanClientV
 
 /** A plan PDF (or image) already in Files becomes a plan set you can measure on. */
 export const planFromFile = friendly(async function planFromFile(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const file = await db.fileAsset.findFirst({ where: { id: str(fd, "fileId"), projectId: project.id }, include: { takeoffPlan: { select: { id: true } } } });
   if (!file) throw new Error("File not found");
@@ -162,7 +162,7 @@ async function nextConditionSort(projectId: string) {
 }
 
 export const createCondition = friendly(async function createCondition(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const data = await conditionFields(fd);
   const pending = await pendingItemFields(fd, data.type, data.metric);
@@ -198,7 +198,7 @@ export const createCondition = friendly(async function createCondition(fd: FormD
 });
 
 export const updateCondition = friendly(async function updateCondition(fd: FormData) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const existing = await loadCondition(project.id, id);
@@ -250,7 +250,7 @@ async function copyConditionRow(projectId: string, userId: string, id: string, n
 }
 
 export const copyCondition = friendly(async function copyCondition(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const copy = await copyConditionRow(project.id, user.id, str(fd, "id"));
   revalidate(project.id);
@@ -264,7 +264,7 @@ export const copyCondition = friendly(async function copyCondition(fd: FormData)
  * under a new name, and the shape moved into it. E.g. one room → "Tile", one wall → "2x6 Walls".
  */
 export async function copyConditionForShape(input: { projectId: string; measurementId?: string; measurementIds?: string[]; name: string }) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const data = z
     .object({ projectId: z.string(), measurementId: z.string().optional(), measurementIds: z.array(z.string()).max(2000).optional(), name: z.string().trim().min(1).max(200) })
     .parse(input);
@@ -289,7 +289,7 @@ export async function copyConditionForShape(input: { projectId: string; measurem
 }
 
 export const deleteCondition = friendly(async function deleteCondition(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const c = await loadCondition(project.id, id);
@@ -370,7 +370,7 @@ async function priceEverywhere(fd: FormData, data: AssemblyFields & { materialIt
 }
 
 export const createAssemblyItem = friendly(async function createAssemblyItem(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const conditionId = str(fd, "conditionId");
   const c = await loadCondition(project.id, conditionId);
@@ -389,7 +389,7 @@ async function loadAssemblyItem(projectId: string, id: string) {
 }
 
 export const updateAssemblyItem = friendly(async function updateAssemblyItem(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const item = await loadAssemblyItem(project.id, str(fd, "id"));
   if (isLumberMetric(item.metric)) throw new Error("Lumber lines follow the joist / rafter layout — price them in Settings → Item List");
@@ -401,7 +401,7 @@ export const updateAssemblyItem = friendly(async function updateAssemblyItem(fd:
 });
 
 export const deleteAssemblyItem = friendly(async function deleteAssemblyItem(fd: FormData) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const item = await loadAssemblyItem(project.id, str(fd, "id"));
   if (isLumberMetric(item.metric)) throw new Error("Lumber lines follow the joist / rafter layout and can't be removed");
@@ -416,7 +416,7 @@ export const deleteAssemblyItem = friendly(async function deleteAssemblyItem(fd:
 
 /** Adds a template's conditions to this job (skipping names it already has). */
 export const applyTakeoffTemplate = friendly(async function applyTakeoffTemplate(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const templateId = str(fd, "templateId");
   if (!templateId) throw new Error("Pick a template");
@@ -435,7 +435,7 @@ export const applyTakeoffTemplate = friendly(async function applyTakeoffTemplate
 
 /** One takeoff from the Library (your templates) onto this job, ready to measure. */
 export async function pullFromLibrary(input: { projectId: string; templateConditionId: string }) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const { projectId, templateConditionId } = z.object({ projectId: z.string(), templateConditionId: z.string() }).parse(input);
   const project = await getProject(projectId);
   const r = await pullLibraryTakeoff(templateConditionId, project.id);
@@ -548,7 +548,7 @@ const reviewPath = (projectId: string) => `/projects/${projectId}/takeoff/rebid`
 
 /** Locks this job's prices: the Item List no longer changes it. */
 export const lockPrices = friendly(async function lockPrices(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   await syncAutoItems(project.id);
   await lockJobPrices(project.id);
@@ -559,7 +559,7 @@ export const lockPrices = friendly(async function lockPrices(fd: FormData) {
 
 /** Unlocks: the job follows the Item List again and takes today's prices (pinned items keep theirs). */
 export const unlockPrices = friendly(async function unlockPrices(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const n = await unlockJobPrices(project.id);
   await logActivity({
@@ -574,7 +574,7 @@ export const unlockPrices = friendly(async function unlockPrices(fd: FormData) {
 
 /** Price review: the ticked items (or groups) take today's Item List price on this job. */
 export const updateSelectedPrices = friendly(async function updateSelectedPrices(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const ids = fd.getAll("item").filter((v): v is string => typeof v === "string" && v.length > 0);
   const n = await applyListPrices(project.id, ids);
@@ -591,7 +591,7 @@ export const updateSelectedPrices = friendly(async function updateSelectedPrices
 
 /** "This job only": pin (keep this job's price) or unpin (follow the Item List) an item. */
 export async function pinItemPrice(projectId: string, materialItemId: string, pinned: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const project = await getProject(projectId);
   await setItemPin(project.id, materialItemId, pinned);
   revalidatePrices(project.id);
@@ -605,7 +605,7 @@ export async function setMaterialPrice(
   raw: string,
   pin: boolean,
 ): Promise<{ ok: true; where: "list" | "job" } | { ok: false; error: string }> {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(projectId);
   const price = Number(raw.replace(/[$,\s]/g, ""));
   if (!Number.isFinite(price) || price < 0) return { ok: false, error: "Enter a price" };
@@ -647,7 +647,7 @@ async function assertMeasurable(sheetIds: string[]) {
  * (from matching points clicked on both; null = as they are).
  */
 export async function saveSheetAlign(input: { projectId: string; sheetId: string; prevSheetId: string | null; align: Align | null }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string(),
@@ -674,7 +674,7 @@ export async function saveSheetAlign(input: { projectId: string; sheetId: string
  * previous revision is then kept only for comparing.
  */
 export async function bringTakeoffsForward(input: { projectId: string; planId: string; pairs: { oldSheetId: string; newSheetId: string }[]; copyScale: boolean }) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string(),
@@ -735,7 +735,7 @@ export async function bringTakeoffsForward(input: { projectId: string; planId: s
 
 /** Records how many pages a PDF has and creates its sheets (first time a plan is opened). */
 export async function initPlanPages(input: { projectId: string; planId: string; pageCount: number }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const { projectId, planId, pageCount } = z.object({ projectId: z.string(), planId: z.string(), pageCount: z.number().int().min(1).max(2000) }).parse(input);
   const plan = await db.takeoffPlan.findFirst({ where: { id: planId, projectId }, include: { sheets: { select: { pageNumber: true } } } });
   if (!plan) throw new Error("Plan not found");
@@ -750,7 +750,7 @@ export async function initPlanPages(input: { projectId: string; planId: string; 
 
 /** The takeoff list in a new order (dragged in the plan viewer): every id, top to bottom. */
 export async function reorderConditions(input: { projectId: string; ids: string[] }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const { projectId, ids } = z.object({ projectId: z.string(), ids: z.array(z.string()).max(2000) }).parse(input);
   const project = await getProject(projectId);
   const mine = await db.takeoffCondition.findMany({ where: { projectId: project.id }, orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true } });
@@ -762,7 +762,7 @@ export async function reorderConditions(input: { projectId: string; ids: string[
 }
 
 export async function renameSheet(input: { projectId: string; sheetId: string; name: string }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const { projectId, sheetId, name } = z.object({ projectId: z.string(), sheetId: z.string(), name: z.string().trim().min(1).max(120) }).parse(input);
   await viewerSheet(projectId, sheetId);
   await db.takeoffSheet.update({ where: { id: sheetId }, data: { name } });
@@ -770,7 +770,7 @@ export async function renameSheet(input: { projectId: string; sheetId: string; n
 }
 
 export async function setSheetScale(input: { projectId: string; sheetId: string; unitsPerFoot: number; scaleLabel: string; applyToPlan?: boolean }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const { projectId, sheetId, unitsPerFoot, scaleLabel, applyToPlan } = z
     .object({
       projectId: z.string(),
@@ -811,7 +811,7 @@ export async function createMeasurement(input: {
   pitch2?: number | null;
   height?: number | null;
 }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string(),
@@ -870,7 +870,7 @@ export async function updateMeasurement(input: {
   cased?: boolean | null; // Windows: cased or not
   sizeLocked?: boolean; // span-table joists/rafters: false = back to "Auto (span table)"
 }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string(),
@@ -927,7 +927,7 @@ export async function updateMeasurement(input: {
 }
 
 export async function deleteMeasurement(input: { projectId: string; id: string }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const { projectId, id } = z.object({ projectId: z.string(), id: z.string() }).parse(input);
   const m = await db.takeoffMeasurement.findFirst({ where: { id, sheet: { plan: { projectId } } }, include: { condition: { select: { type: true } } } });
   if (!m) throw new Error("Measurement not found");
@@ -948,7 +948,7 @@ export async function createCountMarkers(input: {
   materialItemId?: string | null;
   cased?: boolean | null;
 }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string(),
@@ -984,7 +984,7 @@ export async function createCountMarkers(input: {
 
 /** Removes several measurements (undo of an auto-count). */
 export async function deleteMeasurements(input: { projectId: string; ids: string[] }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const { projectId, ids } = z.object({ projectId: z.string(), ids: z.array(z.string()).max(2000) }).parse(input);
   const rows = await db.takeoffMeasurement.findMany({
     where: { id: { in: ids }, sheet: { plan: { projectId } } },
@@ -1019,7 +1019,7 @@ export type SavedShape = {
  * it removed, so Undo can put it all back.
  */
 export async function deleteConditionShapes(input: { projectId: string; conditionId: string; sheetId?: string | null }): Promise<SavedShape[]> {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const data = z.object({ projectId: z.string(), conditionId: z.string(), sheetId: z.string().nullable().optional() }).parse(input);
   const c = await loadCondition(data.projectId, data.conditionId);
   const rows = await db.takeoffMeasurement.findMany({
@@ -1076,7 +1076,7 @@ export async function createShapes(input: {
     cased?: boolean | null;
   }[];
 }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string(),
@@ -1149,7 +1149,7 @@ export async function restoreShapes(input: {
   shapes: (Pick<SavedShape, "sheetId" | "conditionId" | "points" | "isDeduction" | "angle"> &
     Partial<Pick<SavedShape, "arcs" | "pitch" | "pitch2" | "height" | "materialItemId" | "cased">>)[];
 }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string(),
@@ -1219,7 +1219,7 @@ export async function restoreShapes(input: {
 
 /** Minimal condition created from the viewer; details can be filled in on the Takeoff page. */
 export async function quickCreateCondition(input: { projectId: string; name: string; type: string }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const { projectId, name, type } = z.object({ projectId: z.string(), name: z.string().trim().min(1).max(120), type: z.enum(CONDITION_TYPES) }).parse(input);
   await getProject(projectId);
   const count = await db.takeoffCondition.count({ where: { projectId } });
@@ -1272,7 +1272,7 @@ export async function createDoorItem(input: {
   costCodeId?: string | null;
   codeForAll?: boolean;
 }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const data = z
     .object({
       name: z.string().trim().min(1).max(120),
@@ -1322,7 +1322,7 @@ export async function createDoorItem(input: {
  * "all of them use this" was ticked, remembered and filled in for the rest.
  */
 export async function assignCostCodes(input: { projectId: string; items: { id: string; costCodeId: string }[]; rules: { group: string; costCodeId: string }[] }) {
-  await requireStaff();
+  await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string().min(1).max(40),
@@ -1352,7 +1352,7 @@ const substituteInput = z.object({
 
 /** Orders something else instead of an item on this job (see substitutions.ts). */
 export async function substituteItem(raw: z.input<typeof substituteInput>): Promise<{ ok: true } | { ok: false; error: string }> {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const parsed = substituteInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Pick what to order instead" };
   const project = await getProject(parsed.data.projectId);
@@ -1374,7 +1374,7 @@ export async function substituteItem(raw: z.input<typeof substituteInput>): Prom
 
 /** Undoes a substitution on this job. */
 export const swapBackSubstitution = friendly(async function swapBackSubstitution(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const s = await swapBack(project.id, str(fd, "id"));
   await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.substitution", description: `Swapped back to ${s.fromName} (was ${s.toName})` });
@@ -1384,6 +1384,6 @@ export const swapBackSubstitution = friendly(async function swapBackSubstitution
 
 /** The Item List, to pick a substitute from. */
 export async function substituteChoices() {
-  await requireStaff();
+  await requireEdit("takeoffs");
   return db.materialItem.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, unit: true, unitCost: true, category: true } });
 }

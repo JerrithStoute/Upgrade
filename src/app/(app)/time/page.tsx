@@ -4,7 +4,7 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ACTIVE } from "@/lib/reports";
 import { canManageTime, openEntry, weekOf } from "@/lib/time-clock";
-import { entryHours, fmtHours, OVERTIME_AFTER, sameDay, weekDays } from "@/lib/time-math";
+import { costWeek, entryHours, fmtHours, sameDay, weekDays } from "@/lib/time-math";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ClockPanel, type Code, type Job } from "./_components/clock-panel";
@@ -18,7 +18,7 @@ export default async function TimeClockPage() {
   const user = await requireStaff();
   const now = new Date();
   // Days and times on the company's clock.
-  const { monday, from, to, clock } = await weekOf(now);
+  const { monday, from, to, clock, rules, dayOf } = await weekOf(now);
   const { wall } = clock;
   const today = clock.now;
   const [open, projects, costCodes, mine, me] = await Promise.all([
@@ -64,8 +64,11 @@ export default async function TimeClockPage() {
   for (const e of mine) if (e.costCodeId && !(e.projectId in lastCode)) lastCode[e.projectId] = e.costCodeId;
 
   const week = mine.filter((e) => e.clockIn >= from && e.clockIn < to).reverse();
-  const total = week.reduce((n, e) => n + entryHours(e, now), 0);
-  const overtime = me?.salaried ? 0 : Math.max(0, total - OVERTIME_AFTER);
+  const total = week.reduce((n, e) => n + entryHours(e, now, rules), 0);
+  // Overtime by the company's rules (by the day and by the week), the running stretch up to now.
+  const costed = costWeek(week, new Map([[user.id, { salaried: !!me?.salaried, rate: null }]]), rules, dayOf, now);
+  const overtime = [...costed.values()].reduce((n, c) => n + c.overtime + c.double, 0);
+  const hrs = (h: number) => fmtHours(h, rules.hoursFormat);
 
   return (
     <div className="mx-auto max-w-xl">
@@ -90,7 +93,7 @@ export default async function TimeClockPage() {
       <Card className="mt-6">
         <CardHeader
           title="This week"
-          description={`${fmtHours(total)} hrs${overtime > 0.004 ? ` · ${fmtHours(overtime)} overtime` : ""} · week of ${monday.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
+          description={`${hrs(total)} hrs${overtime > 0.004 ? ` · ${hrs(overtime)} overtime` : ""} · week of ${monday.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`}
         />
         <CardBody className="p-0">
           <ul className="divide-y divide-slate-100">
@@ -99,14 +102,14 @@ export default async function TimeClockPage() {
               .reverse()
               .map((d) => {
                 const day = week.filter((e) => sameDay(wall(e.clockIn), d));
-                const hours = day.reduce((n, e) => n + entryHours(e, now), 0);
+                const hours = day.reduce((n, e) => n + entryHours(e, now, rules), 0);
                 return (
                   <li key={d.toISOString()} className="px-4 py-3">
                     <p className="flex items-baseline justify-between text-sm">
                       <span className={cn("font-medium", sameDay(d, today) ? "text-slate-900" : "text-slate-700")}>
                         {sameDay(d, today) ? "Today" : d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
                       </span>
-                      <span className={cn("tabular-nums", hours ? "font-medium text-slate-900" : "text-slate-400")}>{hours ? `${fmtHours(hours)} hrs` : "—"}</span>
+                      <span className={cn("tabular-nums", hours ? "font-medium text-slate-900" : "text-slate-400")}>{hours ? `${hrs(hours)} hrs` : "—"}</span>
                     </p>
                     {day.length ? (
                       <ul className="mt-1 space-y-0.5">

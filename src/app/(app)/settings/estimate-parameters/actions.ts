@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 
@@ -21,7 +21,7 @@ const input = z
  * so formulas and every job's values stay attached when you rename them.
  */
 export async function saveEstimateParameters(raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const parsed = input.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Every parameter needs a name." };
   const rows = parsed.data;

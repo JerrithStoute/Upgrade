@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { syncAutoItemsIfChanged } from "@/lib/walls";
@@ -10,7 +10,7 @@ import { syncAutoItemsIfChanged } from "@/lib/walls";
  * first plan set. With no plans yet, the Plans tab (to upload one).
  */
 export default async function TakeoffPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("takeoffs");
   const { id } = await params;
   const project = await getProject(id);
   const plans = await db.takeoffPlan.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, supersededAt: true } });

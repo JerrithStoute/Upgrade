@@ -5,22 +5,39 @@ import { db } from "@/lib/db";
 import { openInvites } from "@/lib/invites";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { Badge, Button, ButtonLink, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
-import { addNoLoginMember, cancelTeamInvite, deleteTeamMember, inviteTeamMember, resendTeamInvite, sendPasswordReset, setRequireTwoStep, toggleTeamMemberActive, updateTeamMember } from "./actions";
+import {
+  addNoLoginMember,
+  cancelTeamInvite,
+  createPosition,
+  deletePosition,
+  deleteTeamMember,
+  inviteTeamMember,
+  resendTeamInvite,
+  savePersonAccess,
+  savePosition,
+  sendPasswordReset,
+  setRequireTwoStep,
+  toggleTeamMemberActive,
+  updateTeamMember,
+} from "./actions";
 import { companyClock } from "@/lib/company-zone";
+import { companyPositions } from "@/lib/positions";
+import { parseChanges, resolveAccess } from "@/lib/access";
+import { AccessFields } from "@/components/settings/access-fields";
 
 export const metadata = { title: "Team" };
 
-const ROLES = ["ADMIN", "STAFF", "SUB"] as const;
-
-/** Subcontractors can be listed (e.g. for schedule assignments) but can't sign in until a sub portal exists. */
-function roleLabel(r: (typeof ROLES)[number]) {
-  return r === "SUB" ? "Subcontractor (no login)" : r === "ADMIN" ? "Admin" : "Staff";
-}
-
-export default async function TeamSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; invited?: string; reset?: string }> }) {
+export default async function TeamSettingsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ edit?: string; invited?: string; reset?: string; position?: string; access?: string }>;
+}) {
   const admin = await requireAdmin();
   const { dateTime } = await companyClock();
-  const { edit, invited, reset } = await searchParams;
+  const { edit, invited, reset, position: positionOpen, access: accessOpen } = await searchParams;
+  // First, so everyone without a position lands in Staff before the list is read.
+  const positions = await companyPositions();
+  const positionName = (id: string | null | undefined) => positions.find((p) => p.id === id)?.name;
 
   const [company, waiting, team, clients, securityLog] = await Promise.all([
     db.company.findFirstOrThrow({ select: { requireTwoStep: true } }),
@@ -45,6 +62,23 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
   ]);
 
   const EDIT_FORM = "edit-team-member";
+  const staffPos = positions.find((p) => p.key === "STAFF") ?? positions[0];
+  /** Admin, a position, or no login — what the Position column shows. */
+  const positionOf = (u: { role: string; positionId: string | null }) =>
+    u.role === "ADMIN" ? "Admin" : u.role === "SUB" ? "Subcontractor (no login)" : (positionName(u.positionId) ?? "Staff");
+  const positionChoices = (sub: boolean) => (
+    <>
+      <option value="ADMIN">Admin (everything, including Settings)</option>
+      {positions.map((p) => (
+        <option key={p.id} value={`pos:${p.id}`}>
+          {p.name}
+        </option>
+      ))}
+      {sub ? <option value="SUB">Subcontractor (no login)</option> : null}
+    </>
+  );
+  const openPosition = positions.find((p) => p.id === positionOpen);
+  const accessPerson = team.find((u) => u.id === accessOpen && u.role === "STAFF");
 
   return (
     <div className="space-y-6">
@@ -68,27 +102,12 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
             <Field label="Name (optional)" htmlFor="new-name">
               <input id="new-name" name="name" className="input" />
             </Field>
-            <Field label="Role" htmlFor="new-role">
-              <select id="new-role" name="role" className="input" defaultValue="STAFF">
-                <option value="STAFF">Staff</option>
-                <option value="ADMIN">Admin (everything, including Settings)</option>
+            <Field label="Position" htmlFor="new-position" hint="What they see and change — set up under Positions below.">
+              <select id="new-position" name="position" className="input" defaultValue={staffPos ? `pos:${staffPos.id}` : "ADMIN"}>
+                {positionChoices(false)}
               </select>
             </Field>
           </FormGrid>
-          <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-700">
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" name="canDelay" className="h-4 w-4 rounded border-slate-300" /> Can delay jobs
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" name="canApproveBills" className="h-4 w-4 rounded border-slate-300" /> Can approve &amp; pay bills
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" name="canSeeReports" className="h-4 w-4 rounded border-slate-300" /> Can see reports
-            </label>
-            <label className="flex items-center gap-1.5">
-              <input type="checkbox" name="canManageTime" className="h-4 w-4 rounded border-slate-300" /> Can manage everyone&apos;s time
-            </label>
-          </div>
           <p className="text-xs text-slate-500">They get an email with a link to choose their own password. It works for 7 days.</p>
           <SubmitButton pendingText="Sending…">
             <Mail className="h-4 w-4" /> Send invitation
@@ -122,8 +141,9 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                 <span className="min-w-0 flex-1">
                   <span className="font-medium text-slate-900">{i.email}</span>
                   <span className="ml-2 text-xs text-slate-500">
-                    {i.role === "ADMIN" ? "Admin" : "Staff"} · sent {fmtDate(i.createdAt)}
-                    {i.invitedBy ? ` by ${i.invitedBy.name}` : ""} · {i.expiresAt < new Date() ? <span className="text-rose-600">expired</span> : `good until ${fmtDate(i.expiresAt)}`}
+                    {i.role === "ADMIN" ? "Admin" : (positionName(parseInvitePosition(i.permissions)) ?? "Staff")} · sent {fmtDate(i.createdAt)}
+                    {i.invitedBy ? ` by ${i.invitedBy.name}` : ""} ·{" "}
+                    {i.expiresAt < new Date() ? <span className="text-rose-600">expired</span> : `good until ${fmtDate(i.expiresAt)}`}
                   </span>
                 </span>
                 <form action={resendTeamInvite}>
@@ -132,7 +152,12 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                     Resend
                   </SubmitButton>
                 </form>
-                <ConfirmForm action={cancelTeamInvite} hidden={{ id: i.id }} variant="ghost" message={`Cancel the invitation to ${i.email}? The link in their email stops working.`}>
+                <ConfirmForm
+                  action={cancelTeamInvite}
+                  hidden={{ id: i.id }}
+                  variant="ghost"
+                  message={`Cancel the invitation to ${i.email}? The link in their email stops working.`}
+                >
                   <span className="text-rose-600">Cancel</span>
                 </ConfirmForm>
               </li>
@@ -176,8 +201,8 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
               <Th>Email</Th>
               <Th>Title</Th>
               <Th>Phone</Th>
-              <Th>Role</Th>
-              <Th>Schedule</Th>
+              <Th>Position</Th>
+              <Th>Time off</Th>
               <Th>Active</Th>
               <Th>Created</Th>
               <Th right>Actions</Th>
@@ -201,79 +226,20 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                       <input name="phone" defaultValue={u.phone ?? ""} className="input" form={EDIT_FORM} aria-label="Phone" />
                     </Td>
                     <Td>
-                      <select name="role" defaultValue={u.role} className="input" form={EDIT_FORM} disabled={isSelf} aria-label="Role">
-                        {ROLES.map((r) => (
-                          <option key={r} value={r}>
-                            {roleLabel(r)}
-                          </option>
-                        ))}
+                      <select
+                        name="position"
+                        defaultValue={u.role === "ADMIN" ? "ADMIN" : u.role === "SUB" ? "SUB" : `pos:${u.positionId ?? staffPos?.id}`}
+                        className="input"
+                        form={EDIT_FORM}
+                        disabled={isSelf}
+                        aria-label="Position"
+                        title={isSelf ? "You can't change your own position" : "A new position clears changes made for just this person"}
+                      >
+                        {positionChoices(true)}
                       </select>
                     </Td>
                     <Td>
                       <label className="flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
-                        <input
-                          type="checkbox"
-                          name="canDelay"
-                          defaultChecked={u.canDelay || u.role === "ADMIN"}
-                          disabled={u.role === "ADMIN"}
-                          form={EDIT_FORM}
-                          className="h-4 w-4 rounded border-slate-300"
-                        />
-                        Can delay jobs
-                      </label>
-                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
-                        <input
-                          type="checkbox"
-                          name="canApproveBills"
-                          defaultChecked={u.canApproveBills || u.role === "ADMIN"}
-                          disabled={u.role === "ADMIN"}
-                          form={EDIT_FORM}
-                          className="h-4 w-4 rounded border-slate-300"
-                        />
-                        Can approve &amp; pay bills
-                      </label>
-                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
-                        <input
-                          type="checkbox"
-                          name="canSeeReports"
-                          defaultChecked={u.canSeeReports || u.role === "ADMIN"}
-                          disabled={u.role === "ADMIN"}
-                          form={EDIT_FORM}
-                          className="h-4 w-4 rounded border-slate-300"
-                        />
-                        Can see reports
-                      </label>
-                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
-                        <input
-                          type="checkbox"
-                          name="canManageTime"
-                          defaultChecked={u.canManageTime || u.role === "ADMIN"}
-                          disabled={u.role === "ADMIN"}
-                          form={EDIT_FORM}
-                          className="h-4 w-4 rounded border-slate-300"
-                        />
-                        Can manage everyone&apos;s time
-                      </label>
-                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
-                        $
-                        <input
-                          name="payRate"
-                          type="number"
-                          min={0}
-                          step="0.01"
-                          defaultValue={u.payRate ?? ""}
-                          placeholder="—"
-                          form={EDIT_FORM}
-                          className="input !h-7 !w-20 !py-0 text-right"
-                          aria-label="Pay per hour"
-                        />
-                        / hr pay
-                      </label>
-                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
-                        <input type="checkbox" name="salaried" defaultChecked={u.salaried} form={EDIT_FORM} className="h-4 w-4 rounded border-slate-300" />
-                        Salaried (no overtime)
-                      </label>
-                      <label className="mt-1 flex items-center gap-1.5 whitespace-nowrap text-xs text-slate-700">
                         <input
                           name="vacationDays"
                           type="number"
@@ -336,21 +302,12 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                   <Td>{u.email}</Td>
                   <Td>{u.title ?? "—"}</Td>
                   <Td>{u.phone ?? "—"}</Td>
-                  <Td>
-                    <Badge status={u.role} />
+                  <Td className="text-sm">
+                    {positionOf(u)}
+                    {u.role === "STAFF" && Object.keys(parseChanges(u.access)).length ? <span className="block text-xs text-amber-700">changed for this person</span> : null}
                   </Td>
                   <Td className="text-xs text-slate-600">
-                    {u.role === "ADMIN" || u.canDelay ? <span className="block">Can delay jobs</span> : null}
-                    {u.role === "ADMIN" || u.canApproveBills ? <span className="block">Can approve &amp; pay bills</span> : null}
-                    {u.role === "ADMIN" || u.canSeeReports ? <span className="block">Can see reports</span> : null}
-                    {u.role === "ADMIN" || u.canManageTime ? <span className="block">Can manage everyone&apos;s time</span> : null}
-                    {u.payRate != null ? (
-                      <span className="block">
-                        ${u.payRate.toFixed(2)} / hr{u.salaried ? " · salaried" : ""}
-                      </span>
-                    ) : null}
-                    {u.vacationDays != null ? <span className="block">{u.vacationDays} vacation days / yr</span> : null}
-                    {!(u.role === "ADMIN" || u.canDelay || u.canApproveBills || u.canManageTime) && u.vacationDays == null && u.payRate == null ? "—" : null}
+                    {u.vacationDays != null ? <span className="block">{u.vacationDays} vacation days / yr</span> : "—"}
                   </Td>
                   <Td>
                     {isSelf ? (
@@ -378,6 +335,11 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
                       <ButtonLink href={`/settings/team?edit=${u.id}`} variant="secondary" size="sm">
                         <Pencil className="h-3.5 w-3.5" /> Edit
                       </ButtonLink>
+                      {u.role === "STAFF" ? (
+                        <ButtonLink href={`/settings/team?access=${u.id}#access`} variant="ghost" size="sm" title="What just this person sees and changes">
+                          Access
+                        </ButtonLink>
+                      ) : null}
                       {!isSelf ? (
                         <ConfirmForm
                           action={deleteTeamMember}
@@ -399,6 +361,105 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
           </TBody>
         </Table>
       </Card>
+
+      {accessPerson ? (
+        <div id="access" className="scroll-mt-24">
+          <Card>
+            <CardHeader
+              title={`Access for ${accessPerson.name}`}
+              description={`Position: ${positionOf(accessPerson)}. Set anything differently here and it's for ${accessPerson.name} only — the rest follows the position.`}
+            />
+            <form action={savePersonAccess} className="space-y-4 p-5">
+              <input type="hidden" name="id" value={accessPerson.id} />
+              <AccessFields
+                value={resolveAccess("STAFF", positions.find((p) => p.id === accessPerson.positionId)?.access, accessPerson.access)}
+                base={resolveAccess("STAFF", positions.find((p) => p.id === accessPerson.positionId)?.access, null)}
+              />
+              <div className="flex flex-wrap items-center gap-2">
+                <SubmitButton>Save access</SubmitButton>
+                <SubmitButton variant="ghost" name="reset" value="on" title="Clear the changes: same access as the position">
+                  Use the position&apos;s access
+                </SubmitButton>
+                <ButtonLink href="/settings/team" variant="ghost" size="sm">
+                  Cancel
+                </ButtonLink>
+              </div>
+            </form>
+          </Card>
+        </div>
+      ) : null}
+
+      <div id="positions" className="scroll-mt-24">
+        <Card>
+          <CardHeader
+            title="Positions"
+            description="What each position sees and changes. Change a position and everyone in it changes; change one person under Access. Admins always have everything, and only admins change Settings → Company, Team and Billing."
+          />
+          <Table className="rounded-t-none border-0 shadow-none">
+            <THead>
+              <tr>
+                <Th>Position</Th>
+                <Th>People</Th>
+                <Th>Which jobs</Th>
+                <Th right>Actions</Th>
+              </tr>
+            </THead>
+            <TBody>
+              {positions.map((p) => (
+                <Tr key={p.id} className={p.id === openPosition?.id ? "bg-blue-50/40" : undefined}>
+                  <Td className="font-medium text-slate-900">{p.name}</Td>
+                  <Td>{p._count.users}</Td>
+                  <Td className="text-sm text-slate-600">{p.accessOf.jobs === "MINE" ? "Only their jobs" : "Every job"}</Td>
+                  <Td right>
+                    <div className="flex justify-end gap-1.5">
+                      <ButtonLink href={`/settings/team?position=${p.id}#positions`} variant="secondary" size="sm">
+                        <Pencil className="h-3.5 w-3.5" /> Edit
+                      </ButtonLink>
+                      <ConfirmForm action={deletePosition} hidden={{ id: p.id }} variant="ghost" message={`Remove the position "${p.name}"?`}>
+                        <span className="text-rose-600">Remove</span>
+                      </ConfirmForm>
+                    </div>
+                  </Td>
+                </Tr>
+              ))}
+            </TBody>
+          </Table>
+          {openPosition ? (
+            <form action={savePosition} className="space-y-4 border-t border-slate-200 p-5">
+              <input type="hidden" name="id" value={openPosition.id} />
+              <Field label="Position name" htmlFor="pos-name" className="max-w-md">
+                <input id="pos-name" name="name" className="input" defaultValue={openPosition.name} required />
+              </Field>
+              <AccessFields value={openPosition.accessOf} />
+              <div className="flex flex-wrap items-center gap-2">
+                <SubmitButton>Save position</SubmitButton>
+                <ButtonLink href="/settings/team#positions" variant="ghost" size="sm">
+                  Cancel
+                </ButtonLink>
+                <span className="text-xs text-slate-500">
+                  {openPosition._count.users === 1 ? "1 person is" : `${openPosition._count.users} people are`} in this position — they all change.
+                </span>
+              </div>
+            </form>
+          ) : (
+            <form action={createPosition} className="flex flex-wrap items-end gap-3 border-t border-slate-200 p-5">
+              <Field label="New position" htmlFor="new-pos">
+                <input id="new-pos" name="name" className="input" placeholder="e.g. Superintendent" required />
+              </Field>
+              <Field label="Start as a copy of" htmlFor="new-pos-from">
+                <select id="new-pos-from" name="from" className="input" defaultValue={staffPos?.id}>
+                  {positions.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <SubmitButton variant="secondary">Add position</SubmitButton>
+            </form>
+          )}
+        </Card>
+      </div>
 
       <Card>
         <CardHeader title="Client logins" description="Portal accounts linked to a client record. Create or manage them from the client's page." />
@@ -472,4 +533,14 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
       </Card>
     </div>
   );
+}
+
+/** The position a team invitation was sent with (src/lib/invites.ts). */
+function parseInvitePosition(json: string | null) {
+  try {
+    const v = json ? (JSON.parse(json) as { positionId?: unknown }).positionId : null;
+    return typeof v === "string" ? v : null;
+  } catch {
+    return null;
+  }
 }

@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { FileText, FileImage, FileSpreadsheet, File as FileIcon, FileArchive, Eye, EyeOff, ExternalLink, Upload, FolderOpen } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { cn, fmtDate } from "@/lib/utils";
@@ -31,7 +31,7 @@ export default async function FilesPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ folder?: string }>;
 }) {
-  await requireStaff();
+  await requireView("files");
   const { id } = await params;
   const { folder } = await searchParams;
   const project = await getProject(id);

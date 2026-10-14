@@ -4,7 +4,7 @@ import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { str } from "@/lib/utils";
 import { wouldLoop } from "@/lib/workdays";
@@ -13,7 +13,7 @@ import { SAMPLE_NEW_HOME, SAMPLE_NEW_HOME_NAME, phaseColor } from "@/lib/sample-
 const path = "/settings/schedule-templates";
 
 export const createScheduleTemplate = friendly(async function createScheduleTemplate(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const name = str(fd, "name");
   if (!name) throw new Error("Give it a name");
   const t = await db.scheduleTemplate.create({ data: { name } });
@@ -22,7 +22,7 @@ export const createScheduleTemplate = friendly(async function createScheduleTemp
 });
 
 export const deleteScheduleTemplate = friendly(async function deleteScheduleTemplate(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   await db.scheduleTemplate.delete({ where: { id: str(fd, "id") } }).catch(() => null);
   revalidatePath(path);
   redirect(path);
@@ -42,7 +42,7 @@ const templateInput = z.object({ name: z.string().trim().min(1, "Give it a name"
 
 /** Saves the whole template: its tasks in order, each with what it waits on (by the editor's row keys). */
 export async function saveScheduleTemplate(id: string, raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
-  await requireAdmin();
+  await requireEdit("lists");
   const parsed = templateInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the tasks" };
   const { name } = parsed.data;
@@ -88,7 +88,7 @@ export async function saveScheduleTemplate(id: string, raw: unknown): Promise<{ 
 
 /** Adds the sample new-home template (a fresh copy each time) and opens it to edit. */
 export async function addSampleScheduleTemplate() {
-  await requireAdmin();
+  await requireEdit("lists");
   const count = await db.scheduleTemplate.count({ where: { name: { startsWith: SAMPLE_NEW_HOME_NAME } } });
   const t = await db.$transaction(async (tx) => {
     const template = await tx.scheduleTemplate.create({ data: { name: count ? `${SAMPLE_NEW_HOME_NAME} (${count + 1})` : SAMPLE_NEW_HOME_NAME } });

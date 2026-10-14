@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -85,7 +85,7 @@ async function setLinks(projectId: string, taskId: string, wanted: { id: string;
 }
 
 export const createTask = friendly(async function createTask(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const data = readTaskFields(fd);
   const last = await db.scheduleTask.findFirst({ where: { projectId: project.id }, orderBy: { sortOrder: "desc" } });
@@ -101,7 +101,7 @@ export const createTask = friendly(async function createTask(fd: FormData) {
 });
 
 export const updateTask = friendly(async function updateTask(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const existing = await db.scheduleTask.findFirst({ where: { id, projectId: project.id } });
@@ -120,7 +120,7 @@ export const updateTask = friendly(async function updateTask(fd: FormData) {
 });
 
 export const deleteTask = friendly(async function deleteTask(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const task = await db.scheduleTask.findFirst({ where: { id, projectId: project.id } });
@@ -133,7 +133,7 @@ export const deleteTask = friendly(async function deleteTask(fd: FormData) {
 
 /** Moves a task N workdays (keeping its length); what waits on it is pushed to fit. */
 export const shiftTask = friendly(async function shiftTask(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const days = intField(fd, "days", 0);
@@ -155,7 +155,7 @@ export const shiftTask = friendly(async function shiftTask(fd: FormData) {
 });
 
 export const completeTask = friendly(async function completeTask(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const task = await db.scheduleTask.findFirst({ where: { id, projectId: project.id } });
@@ -172,7 +172,7 @@ export const completeTask = friendly(async function completeTask(fd: FormData) {
  * logged with the reason. Admins, and team members allowed to (Settings → Team).
  */
 export const delayJob = friendly(async function delayJob(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   if (!canDelay(user)) throw new Error("You don't have permission to delay jobs — an admin can allow it in Settings → Team");
   const project = await getProject(str(fd, "projectId"));
   const date = parseDateInput(fd.get("date")) ?? (await companyClock()).now;
@@ -207,7 +207,7 @@ export const delayJob = friendly(async function delayJob(fd: FormData) {
 
 /** Lays a schedule template onto the job from a start date. */
 export const startFromTemplate = friendly(async function startFromTemplate(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const start = parseDateInput(fd.get("start"));
   if (!start) throw new Error("Pick a start date");
@@ -219,7 +219,7 @@ export const startFromTemplate = friendly(async function startFromTemplate(fd: F
 
 /** This job's schedule as a new template. */
 export const saveAsScheduleTemplate = friendly(async function saveAsScheduleTemplate(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const name = str(fd, "name");
   if (!name) throw new Error("Give the template a name");
@@ -235,7 +235,7 @@ export const saveAsScheduleTemplate = friendly(async function saveAsScheduleTemp
  * what it waits on don't change.
  */
 export async function moveTask(projectId: string, id: string, targetId: string, after: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(projectId);
   const tasks = await db.scheduleTask.findMany({ where: { projectId: project.id } });
   const task = tasks.find((t) => t.id === id);
@@ -271,7 +271,7 @@ async function placeNear(projectId: string, id: string, targetId: string, after:
  * tied to them). Selections tied to a task keep the deadline they had. The delay log stays.
  */
 export const deleteSchedule = friendly(async function deleteSchedule(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const { count } = await db.scheduleTask.deleteMany({ where: { projectId: project.id } });
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.deleted", description: `Deleted the schedule (${count} task${count === 1 ? "" : "s"})` });
@@ -286,7 +286,7 @@ async function logStarted(projectId: string, name: string, userId: string) {
 
 /** "Mark started": a task not started yet is under way (1%), and today's daily log says so. */
 export const startTask = friendly(async function startTask(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const task = await db.scheduleTask.findFirst({ where: { id, projectId: project.id } });

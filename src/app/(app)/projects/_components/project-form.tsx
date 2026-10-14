@@ -15,6 +15,7 @@ export function ProjectForm({
   clients,
   managers,
   defaultManagerId,
+  teamIds,
   templates,
   kind,
 }: {
@@ -23,6 +24,8 @@ export function ProjectForm({
   clients: ClientOption[];
   managers: ManagerOption[];
   defaultManagerId?: string;
+  /** Who's on the job's team now (besides its manager). */
+  teamIds?: string[];
   /** Estimate templates offered when creating a project (omit when editing). */
   templates?: TemplateOption[];
   /** A new job's kind, already picked: "spec" | "custom" | "remodel". */
@@ -83,6 +86,18 @@ export function ProjectForm({
                 ))}
               </select>
             </Field>
+            <fieldset className="md:col-span-2">
+              <legend className="label">Team on this job</legend>
+              <div className="flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-700">
+                {managers.map((m) => (
+                  <label key={m.id} className="flex items-center gap-1.5">
+                    <input type="checkbox" name="teamIds" value={m.id} defaultChecked={teamIds?.includes(m.id)} className="h-4 w-4 rounded border-slate-300" />
+                    {m.name}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-slate-500">Besides the project manager. Anyone whose position shows only their jobs sees this one too.</p>
+            </fieldset>
             <Field label="Description" htmlFor="description" className="md:col-span-2">
               <textarea id="description" name="description" rows={3} className="input" defaultValue={project?.description ?? ""} />
             </Field>

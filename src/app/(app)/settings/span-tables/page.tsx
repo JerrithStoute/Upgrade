@@ -5,6 +5,7 @@ import { Collapsible, ConfirmForm, EmptyState, buttonClasses } from "@/component
 import { SPAN_LOADS, SPAN_USES, SPECIES, parseSpanRows } from "@/lib/span-tables";
 import { createSpanTable, deleteSpanTable, updateSpanTable } from "./actions";
 import { SpanTableForm } from "./span-table-form";
+import { requireView } from "@/lib/auth";
 
 const ftIn = (ft: number) => {
   const inches = Math.round(ft * 12);
@@ -12,6 +13,7 @@ const ftIn = (ft: number) => {
 };
 
 export default async function SpanTablesPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
+  await requireView("lists");
   const { edit } = await searchParams;
   const [tables, sizes] = await Promise.all([
     db.spanTable.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], include: { _count: { select: { conditions: true } } } }),

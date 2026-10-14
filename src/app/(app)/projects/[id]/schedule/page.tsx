@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { GripVertical, Play, Plus, List, GanttChartSquare, ChevronRight, ChevronsRight, CheckCircle2, CloudRain, LayoutTemplate, Bell, Settings2 } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, staffUsers } from "@/lib/projects";
 import { dateInput, fmtDate, cn } from "@/lib/utils";
@@ -45,7 +45,7 @@ export default async function SchedulePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ task?: string; view?: string; delayed?: string; insert?: string; at?: string; add?: string }>;
 }) {
-  const user = await requireStaff();
+  const user = await requireView("field");
   const { id } = await params;
   const { task: taskId, view, delayed, insert, at, add } = await searchParams;
   const project = await getProject(id);

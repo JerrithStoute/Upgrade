@@ -1,11 +1,11 @@
-import { requireReports } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { PageHeader, Tabs } from "@/components/ui";
 
 export const metadata = { title: "Reports" };
 
 /** Company-wide money reports: profit by job, WIP, cash flow, what clients owe. */
 export default async function ReportsLayout({ children }: { children: React.ReactNode }) {
-  await requireReports();
+  await requireView("reports");
   return (
     <div>
       <PageHeader title="Reports" description="How your jobs are doing — worked out from your estimates, change orders, costs, bills, invoices and payments." />

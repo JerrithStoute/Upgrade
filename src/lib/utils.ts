@@ -31,6 +31,11 @@ export function pct(value: number | null | undefined, digits = 0) {
   return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(value ?? 0)}%`;
 }
 
+/** A distance in feet: "350 ft", "1,250 ft", "2.4 mi". */
+export function fmtFeet(feet: number) {
+  return feet >= 5280 ? `${(feet / 5280).toFixed(1)} mi` : `${Math.round(feet).toLocaleString("en-US")} ft`;
+}
+
 export function fmtDate(d: Date | string | null | undefined, pattern = "MMM d, yyyy") {
   if (!d) return "—";
   return format(typeof d === "string" ? new Date(d) : d, pattern);

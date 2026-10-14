@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { AlertTriangle, ArrowLeft, Check, Download, FileSpreadsheet, Lock, Pencil, Printer, Replace } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { bidComparison, codeGroups, isLadderLine, overWarnings, OVER_WARNING, priceLadders } from "@/lib/bids";
@@ -46,7 +46,7 @@ export default async function BidsPage({
     confirm?: string;
   }>;
 }) {
-  await requireStaff();
+  await requireView("estimates");
   const { id } = await params;
   const q = await searchParams;
   const project = await getProject(id);

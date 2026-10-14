@@ -5,7 +5,7 @@ import { syncSelectionChangeOrder } from "@/lib/billing-flow";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
@@ -49,7 +49,7 @@ function readSelectionFields(fd: FormData) {
 }
 
 export const createSelection = friendly(async function createSelection(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const project = await getProject(str(fd, "projectId"));
   const data = readSelectionFields(fd);
   const sel = await db.selection.create({ data: { ...data, projectId: project.id } });
@@ -59,7 +59,7 @@ export const createSelection = friendly(async function createSelection(fd: FormD
 });
 
 export const updateSelection = friendly(async function updateSelection(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "id"));
   const data = readSelectionFields(fd);
@@ -72,7 +72,7 @@ export const updateSelection = friendly(async function updateSelection(fd: FormD
 });
 
 export const deleteSelection = friendly(async function deleteSelection(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "id"));
   await db.selection.delete({ where: { id: sel.id } });
@@ -96,7 +96,7 @@ function readOptionFields(fd: FormData) {
 }
 
 export const addOption = friendly(async function addOption(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const data = readOptionFields(fd);
@@ -108,7 +108,7 @@ export const addOption = friendly(async function addOption(fd: FormData) {
 });
 
 export const updateOption = friendly(async function updateOption(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const id = str(fd, "id");
@@ -120,7 +120,7 @@ export const updateOption = friendly(async function updateOption(fd: FormData) {
 });
 
 export const deleteOption = friendly(async function deleteOption(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const id = str(fd, "id");
@@ -135,7 +135,7 @@ export const deleteOption = friendly(async function deleteOption(fd: FormData) {
 });
 
 export const chooseOption = friendly(async function chooseOption(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "selectionId"));
   const id = str(fd, "id");
@@ -158,7 +158,7 @@ export const chooseOption = friendly(async function chooseOption(fd: FormData) {
 
 /** Status transitions: APPROVED (from CHOSEN), ORDERED (from APPROVED), INSTALLED (from ORDERED), PENDING (reset from any). */
 export const setSelectionStatus = friendly(async function setSelectionStatus(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const project = await getProject(str(fd, "projectId"));
   const sel = await loadSelection(project.id, str(fd, "id"));
   const status = str(fd, "status");
@@ -206,7 +206,7 @@ async function boardSelection(projectId: string, selectionId: string) {
 
 /** Adds a choice, or saves changes to one. */
 export async function saveChoice(projectId: string, selectionId: string, raw: unknown): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const parsed = choiceInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the choice's fields" };
   const sel = await boardSelection(projectId, selectionId);
@@ -229,7 +229,7 @@ export async function saveChoice(projectId: string, selectionId: string, raw: un
 
 /** Files dropped on a choice (form field "files"): pictures become its picture, PDFs and the rest its documents. */
 export async function addChoiceFiles(projectId: string, selectionId: string, optionId: string, fd: FormData): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const sel = await boardSelection(projectId, selectionId);
   const opt = sel.options.find((o) => o.id === optionId);
   if (!opt) return { ok: false, error: "Choice not found" };
@@ -250,7 +250,7 @@ export async function addChoiceFiles(projectId: string, selectionId: string, opt
 }
 
 export async function removeChoice(projectId: string, selectionId: string, choiceId: string): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const sel = await boardSelection(projectId, selectionId);
   if (!sel.options.some((o) => o.id === choiceId)) return { ok: false, error: "Choice not found" };
   await db.$transaction([
@@ -267,7 +267,7 @@ export async function removeChoice(projectId: string, selectionId: string, choic
 
 /** Makes the choice (a choice's id), "DECLINED" ("I do not want this selection"), or null to undo. */
 export async function makeChoice(projectId: string, selectionId: string, choice: string | null): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const sel = await boardSelection(projectId, selectionId);
   if (choice === null) {
     await db.selection.update({ where: { id: sel.id }, data: { chosenOptionId: null, status: "PENDING", chosenAt: null, approvedAt: null } });
@@ -293,7 +293,7 @@ export async function makeChoice(projectId: string, selectionId: string, choice:
 
 /** Profit in (true), out (false), or the company default (null) for one allowance. */
 export async function setAllowanceProfit(projectId: string, specId: string, value: boolean | null): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const spec = await db.estimateSpec.findFirst({ where: { id: specId, estimate: { projectId } }, select: { id: true, selectionId: true } });
   if (!spec) return { ok: false, error: "Allowance not found" };
   await db.estimateSpec.update({ where: { id: spec.id }, data: { allowanceProfit: value } });
@@ -317,7 +317,7 @@ const deadlineInput = z
 
 /** "Requested by" for one or many selections: no deadline, a date, or a schedule item (n days before it starts). */
 export async function setDeadlines(projectId: string, raw: unknown): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const parsed = deadlineInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: "Check the deadlines" };
   const [sels, tasks] = await Promise.all([
@@ -354,7 +354,7 @@ export async function setDeadlines(projectId: string, raw: unknown): Promise<Res
 // --- Comments, files and pictures -------------------------------------------------
 
 export async function commentOnSelection(projectId: string, selectionId: string, body: string, internal: boolean): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const text = body.trim().slice(0, 5000);
   if (!text) return { ok: false, error: "Write a comment first" };
   const sel = await boardSelection(projectId, selectionId);
@@ -365,7 +365,7 @@ export async function commentOnSelection(projectId: string, selectionId: string,
 
 /** Adds files (form field "files") to a selection. */
 export async function addSelectionFiles(projectId: string, selectionId: string, fd: FormData): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const sel = await boardSelection(projectId, selectionId);
   try {
     const names = await saveSelectionFiles(
@@ -384,7 +384,7 @@ export async function addSelectionFiles(projectId: string, selectionId: string, 
 }
 
 export async function removeSelectionFile(projectId: string, fileId: string): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const file = await db.fileAsset.findFirst({ where: { id: fileId, projectId, OR: [{ selectionId: { not: null } }, { selectionOptionId: { not: null } }] } });
   if (!file) return { ok: false, error: "File not found" };
   await db.fileAsset.delete({ where: { id: file.id } });
@@ -397,7 +397,7 @@ export async function removeSelectionFile(projectId: string, fileId: string): Pr
 
 /** A choice's picture (form field "file"). */
 export async function setChoicePicture(projectId: string, selectionId: string, optionId: string, fd: FormData): Promise<Result> {
-  const user = await requireStaff();
+  const user = await requireEdit("selections");
   const sel = await boardSelection(projectId, selectionId);
   const opt = sel.options.find((o) => o.id === optionId);
   const file = fd.get("file");

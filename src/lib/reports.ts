@@ -14,8 +14,8 @@ export const ACTIVE = ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"];
 export const SOLD = [...ACTIVE, "COMPLETED"];
 
 /** Who sees Reports: admins, and team members you've allowed (Settings → Team). */
-export function canSeeReports(user: { role: string; canSeeReports?: boolean | null }) {
-  return user.role === "ADMIN" || !!user.canSeeReports;
+export function canSeeReports(user: { role: string; access?: { reports: number } | null }) {
+  return user.role === "ADMIN" || (user.access?.reports ?? 0) > 0;
 }
 
 export type JobRow = JobNumbers & {

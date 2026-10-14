@@ -2,7 +2,7 @@ import { ClientEmailNote } from "@/components/client-email-note";
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil, Printer } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { PAYMENT_METHODS } from "@/lib/constants";
@@ -42,7 +42,7 @@ import {
 } from "../actions";
 
 export default async function InvoiceDetailPage({ params, searchParams }: { params: Promise<{ id: string; invoiceId: string }>; searchParams: Promise<{ edit?: string }> }) {
-  await requireStaff();
+  await requireView("invoices");
   const { id, invoiceId } = await params;
   const { edit } = await searchParams;
   const project = await getProject(id);

@@ -1,4 +1,4 @@
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { Card, CardHeader, CardBody, SubmitButton, ButtonLink } from "@/components/ui";
@@ -6,7 +6,7 @@ import { SelectionFields } from "../_components/selection-fields";
 import { createSelection } from "../actions";
 
 export default async function NewSelectionPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("selections");
   const { id } = await params;
   const project = await getProject(id);
   const [costCodes, existing] = await Promise.all([

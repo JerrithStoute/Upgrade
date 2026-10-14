@@ -1,7 +1,7 @@
 import { Fragment } from "react";
 import { addDays } from "date-fns";
 import { AlertTriangle, Calculator, Home } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { specPicture } from "@/lib/spec";
@@ -20,7 +20,7 @@ const OFFER_STATUS: Record<string, string> = { OPEN: "Open", COUNTERED: "Counter
 
 /** A spec house: its listing, what it costs to hold, offers, and selling it. */
 export default async function SpecSalePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("budget");
   const { id } = await params;
   const project = await getProject(id);
   if (!project.isSpec)

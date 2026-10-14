@@ -4,8 +4,10 @@ import { db } from "@/lib/db";
 import { fmtDate } from "@/lib/utils";
 import { Collapsible, EmptyState, Field, FormGrid, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
 import { createTakeoffTemplate } from "./actions";
+import { requireView } from "@/lib/auth";
 
 export default async function TakeoffTemplatesPage() {
+  await requireView("lists");
   const templates = await db.takeoffTemplate.findMany({
     orderBy: { name: "asc" },
     include: { conditions: { orderBy: { sortOrder: "asc" }, select: { name: true, color: true } } },

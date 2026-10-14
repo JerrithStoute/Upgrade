@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { subDays } from "date-fns";
 import { Receipt } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { INVOICE_STATUSES } from "@/lib/constants";
 import { cn, fmtDate, money, titleCase } from "@/lib/utils";
@@ -10,7 +10,7 @@ import { Badge, EmptyState, PageHeader, Stat, Table, THead, TBody, Tr, Th, Td, T
 import { companyClock } from "@/lib/company-zone";
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
-  await requireStaff();
+  await requireView("invoices");
   const { status } = await searchParams;
   const statusFilter = (INVOICE_STATUSES as readonly string[]).includes(status ?? "") ? status! : "";
 

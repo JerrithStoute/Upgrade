@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Check, Plus, Star, Pencil, RotateCcw, Package, Wrench, ThumbsUp } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { money, fmtDate, cn, costCodeLabel } from "@/lib/utils";
@@ -46,7 +46,7 @@ function OptionFields({
 }
 
 export default async function SelectionDetailPage({ params, searchParams }: { params: Promise<{ id: string; selectionId: string }>; searchParams: Promise<{ edit?: string }> }) {
-  await requireStaff();
+  await requireView("selections");
   const { id, selectionId } = await params;
   const { edit } = await searchParams;
   const project = await getProject(id);

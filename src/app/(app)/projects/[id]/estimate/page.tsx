@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { FileText, Plus, ExternalLink, Copy, FileStack, Lock, LockOpen, ChevronDown } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { loadEstimateSheet, templateOptions } from "@/lib/estimate-lines";
@@ -40,7 +40,7 @@ import { addDays } from "date-fns";
 import { ClientEmailNote } from "@/components/client-email-note";
 
 export default async function EstimatePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ estimate?: string }> }) {
-  const user = await requireStaff();
+  const user = await requireView("estimates");
   const isAdmin = user.role === "ADMIN";
   const { id } = await params;
   const { estimate: estimateParam } = await searchParams;

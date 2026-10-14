@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { MessageSquare, Plus, Lock, Send } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { cn, fmtDateTime, timeAgo } from "@/lib/utils";
@@ -16,7 +16,7 @@ export default async function MessagesPage({
   searchParams: Promise<{ thread?: string }>;
 }) {
   const { dateTime } = await companyClock();
-  const user = await requireStaff();
+  const user = await requireView("files");
   const { id } = await params;
   const { thread: threadParam } = await searchParams;
   const project = await getProject(id);

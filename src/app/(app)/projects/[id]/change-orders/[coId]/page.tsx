@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Printer } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { approvedEstimateTotal, getProject, activeCostCodes } from "@/lib/projects";
 import { fmtDate } from "@/lib/utils";
@@ -19,7 +19,7 @@ import { ClientEmailNote } from "@/components/client-email-note";
  * files, closing text and approvals.
  */
 export default async function ChangeOrderDetailPage({ params }: { params: Promise<{ id: string; coId: string }> }) {
-  const user = await requireStaff();
+  const user = await requireView("selections");
   const { id, coId } = await params;
   const project = await getProject(id);
   const [co, open, team, files, company, others, base, costCodes] = await Promise.all([

@@ -1,13 +1,13 @@
 import Link from "@/components/link";
 import { Plus, ClipboardList, Pencil, CloudSun, Users, Clock, AlertTriangle, EyeOff } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { fmtDate, num } from "@/lib/utils";
 import { Card, CardBody, ButtonLink, EmptyState, Avatar } from "@/components/ui";
 
 export default async function DailyLogsPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("field");
   const { id } = await params;
   const project = await getProject(id);
   const logs = await db.dailyLog.findMany({

@@ -18,11 +18,11 @@ export function runAsCompany<T>(companyId: string, fn: () => PromiseLike<T> | T)
   return store.run({ companyId }, async () => await fn());
 }
 
-// Session token → company, for a minute: a person's company never changes, and this
-// saves a lookup on every query of the request.
-const bySession = new Map<string, { companyId: string; at: number }>();
+// Session token → company (and job limit), for a minute: a person's company never changes,
+// and this saves a lookup on every query of the request. A position change shows within the minute.
+const bySession = new Map<string, { companyId: string; jobsOf: string | null; at: number }>();
 
-async function fromSession(): Promise<string | null> {
+async function signedIn(): Promise<{ companyId: string; jobsOf: string | null } | null> {
   let token: string | undefined;
   try {
     const { cookies } = await import("next/headers");
@@ -33,13 +33,34 @@ async function fromSession(): Promise<string | null> {
   }
   if (!token) return null;
   const hit = bySession.get(token);
-  if (hit && Date.now() - hit.at < 60_000) return hit.companyId;
+  if (hit && Date.now() - hit.at < 60_000) return hit;
   const { getCurrentUser } = await import("./auth");
   const user = await getCurrentUser();
   if (!user) return null;
   if (bySession.size > 5000) bySession.clear();
-  bySession.set(token, { companyId: user.companyId, at: Date.now() });
-  return user.companyId;
+  const row = { companyId: user.companyId, jobsOf: user.access.jobs === "MINE" ? user.id : null, at: Date.now() };
+  bySession.set(token, row);
+  return row;
+}
+
+async function fromSession(): Promise<string | null> {
+  return (await signedIn())?.companyId ?? null;
+}
+
+/**
+ * Someone whose position shows only their jobs: their id (the gatekeeper in db.ts then shows
+ * only jobs they manage or are on the team of, and those jobs' records). Null: every job — admins,
+ * everyone else, and work outside a request (backups, scripts, runAsCompany).
+ */
+const whole = new AsyncLocalStorage<boolean>();
+export async function jobsLimitedTo(): Promise<string | null> {
+  if (whole.getStore() || store.getStore()) return null;
+  return (await signedIn())?.jobsOf ?? null;
+}
+
+/** Do `fn` across every job, whoever is signed in (the next job number, "already linked" checks). */
+export function asWholeCompany<T>(fn: () => PromiseLike<T> | T): Promise<T> {
+  return whole.run(true, async () => await fn());
 }
 
 /** The company being worked for, or null (not signed in, no runAsCompany). */

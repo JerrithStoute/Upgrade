@@ -1,10 +1,10 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { connectionFile } from "@/lib/qb/connection";
 
 /** The .qwc file for the Web Connector ("Add an application"). It has no password in it. */
 export async function GET() {
-  await requireAdmin();
+  await requireEdit("quickbooks");
   const [c, company] = await Promise.all([db.qbConnection.findFirst(), db.company.findFirst({ select: { name: true } })]);
   if (!c) return new Response("Set up the QuickBooks connection first.", { status: 404 });
   return new Response(connectionFile(c, company?.name ?? "Builder"), {

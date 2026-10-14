@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
@@ -47,7 +47,7 @@ function expenseData(fd: FormData) {
 }
 
 export const createExpense = friendly(async function createExpense(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("budget");
   const projectId = str(formData, "projectId");
   const project = await db.project.findUnique({ where: { id: projectId } });
   if (!project) throw new Error("Project not found");
@@ -64,7 +64,7 @@ export const createExpense = friendly(async function createExpense(formData: For
 });
 
 export const updateExpense = friendly(async function updateExpense(formData: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   await loadExpense(projectId, id);
@@ -74,7 +74,7 @@ export const updateExpense = friendly(async function updateExpense(formData: For
 });
 
 export const toggleExpensePaid = friendly(async function toggleExpensePaid(formData: FormData) {
-  await requireStaff();
+  await requireEdit("budget");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const expense = await loadExpense(projectId, id);
@@ -84,7 +84,7 @@ export const toggleExpensePaid = friendly(async function toggleExpensePaid(formD
 });
 
 export const deleteExpense = friendly(async function deleteExpense(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("budget");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const expense = await loadExpense(projectId, id);

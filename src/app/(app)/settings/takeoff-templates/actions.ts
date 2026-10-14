@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { resolveMaterialItem } from "@/lib/material-items";
@@ -29,7 +29,7 @@ async function loadTemplateCondition(templateId: string, id: string) {
 }
 
 export const createTakeoffTemplate = friendly(async function createTakeoffTemplate(fd: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const name = str(fd, "name");
   if (!name) throw new Error("Template name is required");
   const t = await db.takeoffTemplate.create({ data: { name, description: strOrNull(fd, "description") } });
@@ -39,7 +39,7 @@ export const createTakeoffTemplate = friendly(async function createTakeoffTempla
 });
 
 export const updateTakeoffTemplate = friendly(async function updateTakeoffTemplate(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(fd, "templateId");
   await loadTemplate(id);
   const name = str(fd, "name");
@@ -51,7 +51,7 @@ export const updateTakeoffTemplate = friendly(async function updateTakeoffTempla
 
 /** Jobs that used the template keep their conditions. */
 export const deleteTakeoffTemplate = friendly(async function deleteTakeoffTemplate(fd: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const t = await loadTemplate(str(fd, "templateId"));
   await db.takeoffTemplate.delete({ where: { id: t.id } });
   await logActivity({ userId: admin.id, type: "takeoff_template.deleted", description: `Deleted takeoff template "${t.name}"` });
@@ -62,7 +62,7 @@ export const deleteTakeoffTemplate = friendly(async function deleteTakeoffTempla
 // --- Conditions ------------------------------------------------------------------
 
 export const createTemplateCondition = friendly(async function createTemplateCondition(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const templateId = str(fd, "templateId");
   await loadTemplate(templateId);
   const data = await conditionFields(fd);
@@ -73,7 +73,7 @@ export const createTemplateCondition = friendly(async function createTemplateCon
 });
 
 export const updateTemplateCondition = friendly(async function updateTemplateCondition(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const templateId = str(fd, "templateId");
   const existing = await loadTemplateCondition(templateId, str(fd, "id"));
   const data = await conditionFields(fd);
@@ -86,7 +86,7 @@ export const updateTemplateCondition = friendly(async function updateTemplateCon
 });
 
 export const deleteTemplateCondition = friendly(async function deleteTemplateCondition(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const templateId = str(fd, "templateId");
   const c = await loadTemplateCondition(templateId, str(fd, "id"));
   await db.takeoffTemplateCondition.delete({ where: { id: c.id } });
@@ -104,7 +104,7 @@ async function itemData(fd: FormData, conditionType: string) {
 }
 
 export const createTemplateItem = friendly(async function createTemplateItem(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const templateId = str(fd, "templateId");
   const c = await loadTemplateCondition(templateId, str(fd, "conditionId"));
   const data = await itemData(fd, c.type);
@@ -122,7 +122,7 @@ async function loadTemplateItem(templateId: string, id: string) {
 }
 
 export const updateTemplateItem = friendly(async function updateTemplateItem(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const templateId = str(fd, "templateId");
   const item = await loadTemplateItem(templateId, str(fd, "id"));
   await db.takeoffTemplateItem.update({ where: { id: item.id }, data: await itemData(fd, item.condition.type) });
@@ -132,7 +132,7 @@ export const updateTemplateItem = friendly(async function updateTemplateItem(fd:
 });
 
 export const deleteTemplateItem = friendly(async function deleteTemplateItem(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const templateId = str(fd, "templateId");
   const item = await loadTemplateItem(templateId, str(fd, "id"));
   await db.takeoffTemplateItem.delete({ where: { id: item.id } });

@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { Plus, UserPlus } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { leadName, syncLeadStages } from "@/lib/leads";
 import { OPEN_STAGES, daysBetween, stageLabel, winRate } from "@/lib/leads-math";
@@ -26,7 +26,7 @@ const SORTS: Record<string, string> = { recent: "Newest", follow: "Next follow-u
 
 /** The sales pipeline: every lead from first call to won or lost — a board, or a list. */
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<{ view?: string; stage?: string; sort?: string; who?: string }> }) {
-  const user = await requireStaff();
+  const user = await requireView("leads");
   const q = await searchParams;
   await syncLeadStages();
   const today = (await companyClock()).now; // today, on the company's clock

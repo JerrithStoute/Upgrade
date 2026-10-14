@@ -1,6 +1,6 @@
 import { AsyncLocalStorage } from "async_hooks";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { currentCompanyId } from "./tenant";
+import { currentCompanyId, jobsLimitedTo } from "./tenant";
 import { countQuery } from "./request-stats";
 import { changesLumber, workingOut } from "./lumber-state";
 
@@ -108,6 +108,36 @@ const WHERE_OPS = new Set([
   "upsert",
 ]);
 
+/**
+ * "Only their jobs" (a position setting, src/lib/access.ts): reads of jobs, and of anything that
+ * belongs to a job, see only the jobs that person manages or is on the team of. Records with no job
+ * (company to-dos, time off) still show. Changes go through records they could read, so the jobs'
+ * own rows are limited for changes too.
+ */
+const JOB_READS = new Set(["findUnique", "findUniqueOrThrow", "findFirst", "findFirstOrThrow", "findMany", "count", "aggregate", "groupBy"]);
+const JOB_WRITES = new Set(["update", "updateMany", "updateManyAndReturn", "delete", "deleteMany"]);
+/** Every model with a job (its `project` link): whether that link can be empty. */
+const BELONGS_TO_JOB = new Map(
+  Prisma.dmmf.datamodel.models.flatMap((m) => {
+    const f = m.fields.find((x) => x.kind === "object" && x.type === "Project" && x.relationFromFields?.length === 1 && x.name === "project");
+    return f ? [[m.name, { optional: !f.isRequired, key: f.relationFromFields![0] }] as const] : [];
+  }),
+);
+const theirJobs = (userId: string) => ({ OR: [{ managerId: userId }, { members: { some: { userId } } }] });
+
+function limitToJobs(model: string, operation: string, a: Data, userId: string) {
+  let filter: Data | null = null;
+  if (model === "Project" && (JOB_READS.has(operation) || JOB_WRITES.has(operation))) filter = theirJobs(userId);
+  else if (JOB_READS.has(operation)) {
+    const link = BELONGS_TO_JOB.get(model);
+    if (link) filter = link.optional ? { OR: [{ [link.key]: null }, { project: theirJobs(userId) }] } : { project: theirJobs(userId) };
+  }
+  if (!filter) return;
+  const where = (a.where as Data) ?? {};
+  const and = where.AND === undefined ? [] : Array.isArray(where.AND) ? where.AND : [where.AND];
+  a.where = { ...where, AND: [...and, filter] };
+}
+
 const scoped = appDb.$extends({
   name: "company-gatekeeper",
   query: {
@@ -184,6 +214,8 @@ async function gatekeep({ model, operation, args, query }: { model: string; oper
           return run(companyId, query(a));
         }
         if (WHERE_OPS.has(operation)) a.where = { ...(a.where as Data), companyId };
+        const jobsOf = model === "Project" || BELONGS_TO_JOB.has(model) ? await jobsLimitedTo() : null;
+        if (jobsOf) limitToJobs(model, operation, a, jobsOf);
         if (operation === "create") a.data = tagRow(a.data as Data, companyId);
         else if (operation === "createMany" || operation === "createManyAndReturn") a.data = each(a.data as Data | Data[], (d) => tagRow(d, companyId));
         else if (operation === "upsert") {

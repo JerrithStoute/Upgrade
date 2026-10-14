@@ -1,5 +1,5 @@
 import { addDays } from "date-fns";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { dateInput } from "@/lib/utils";
 import { db } from "@/lib/db";
 import { sourceOptions } from "@/lib/leads";
@@ -8,7 +8,7 @@ import { LeadForm } from "../_components/lead-form";
 import { createLead } from "../actions";
 
 export default async function NewLeadPage() {
-  const user = await requireStaff();
+  const user = await requireView("leads");
   const [sources, staff] = await Promise.all([
     sourceOptions(),
     db.user.findMany({ where: { role: { in: ["ADMIN", "STAFF"] }, active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),

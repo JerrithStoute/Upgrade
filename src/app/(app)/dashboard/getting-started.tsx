@@ -36,7 +36,7 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
   if (projects.length > 2) return null;
   const job = projects[0]?.id;
   const steps = [
-    { done: !!company?.logoPath, label: "Add your logo", hint: "It goes on proposals, invoices and the client portal.", href: "/settings" },
+    { done: !!company?.logoPath, label: "Add your logo", hint: "It goes on proposals, invoices and the client portal.", href: "/settings/company" },
     { done: people > 1 || invites > 0, label: "Invite your team", hint: "Each person gets their own sign-in.", href: "/settings/team" },
     { done: clients > 0, label: "Add your first client", hint: "Clients can follow their job in the portal.", href: "/clients/new" },
     { done: projects.length > 0, label: "Create your first job", hint: "Pick the client, address and kind of job.", href: "/projects/new" },

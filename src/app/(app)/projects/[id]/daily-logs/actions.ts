@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fillLogWeather } from "@/lib/weather";
 import { getProject } from "@/lib/projects";
@@ -52,7 +52,7 @@ async function savePhotos(files: File[], projectId: string, dailyLogId: string, 
 }
 
 export const createLog = friendly(async function createLog(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const data = readLogFields(fd);
   const log = await db.dailyLog.create({ data: { ...data, projectId: project.id, authorId: user.id } });
@@ -70,7 +70,7 @@ export const createLog = friendly(async function createLog(fd: FormData) {
 });
 
 export const updateLog = friendly(async function updateLog(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const log = await db.dailyLog.findFirst({ where: { id, projectId: project.id } });
@@ -86,7 +86,7 @@ export const updateLog = friendly(async function updateLog(fd: FormData) {
 });
 
 export const deleteLog = friendly(async function deleteLog(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const log = await db.dailyLog.findFirst({ where: { id, projectId: project.id }, include: { files: true } });
@@ -100,7 +100,7 @@ export const deleteLog = friendly(async function deleteLog(fd: FormData) {
 });
 
 export const deleteLogPhoto = friendly(async function deleteLogPhoto(fd: FormData) {
-  await requireStaff();
+  await requireEdit("field");
   const project = await getProject(str(fd, "projectId"));
   const logId = str(fd, "logId");
   const fileId = str(fd, "id");

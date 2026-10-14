@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireStaff } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { contractValue, nextInvoiceNumber } from "@/lib/projects";
@@ -49,7 +49,7 @@ function itemData(fd: FormData) {
 }
 
 export const createInvoice = friendly(async function createInvoice(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const project = await db.project.findUnique({ where: { id: projectId } });
   if (!project) throw new Error("Project not found");
@@ -107,7 +107,7 @@ export const createInvoice = friendly(async function createInvoice(formData: For
 });
 
 export const updateInvoice = friendly(async function updateInvoice(formData: FormData) {
-  await requireStaff();
+  await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const inv = await loadInvoice(projectId, id);
@@ -132,7 +132,7 @@ export const updateInvoice = friendly(async function updateInvoice(formData: For
 });
 
 export const markInvoiceSent = friendly(async function markInvoiceSent(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const inv = await loadInvoice(projectId, id);
@@ -151,7 +151,7 @@ export const markInvoiceSent = friendly(async function markInvoiceSent(formData:
 });
 
 export const voidInvoice = friendly(async function voidInvoice(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const inv = await loadInvoice(projectId, id);
@@ -163,7 +163,7 @@ export const voidInvoice = friendly(async function voidInvoice(formData: FormDat
 });
 
 export const deleteInvoice = friendly(async function deleteInvoice(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const inv = await loadInvoice(projectId, id);
@@ -177,7 +177,7 @@ export const deleteInvoice = friendly(async function deleteInvoice(formData: For
 // --- Items --------------------------------------------------------------------
 
 export const createInvoiceItem = friendly(async function createInvoiceItem(formData: FormData) {
-  await requireStaff();
+  await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
   const inv = await loadInvoice(projectId, invoiceId);
@@ -190,7 +190,7 @@ export const createInvoiceItem = friendly(async function createInvoiceItem(formD
 });
 
 export const updateInvoiceItem = friendly(async function updateInvoiceItem(formData: FormData) {
-  await requireStaff();
+  await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
   const id = str(formData, "id");
@@ -204,7 +204,7 @@ export const updateInvoiceItem = friendly(async function updateInvoiceItem(formD
 });
 
 export const deleteInvoiceItem = friendly(async function deleteInvoiceItem(formData: FormData) {
-  await requireStaff();
+  await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
   const id = str(formData, "id");
@@ -219,7 +219,7 @@ export const deleteInvoiceItem = friendly(async function deleteInvoiceItem(formD
 
 /** "Add tax": on or off for this invoice, at the rate you pick. */
 export const setInvoiceTax = friendly(async function setInvoiceTax(formData: FormData) {
-  await requireStaff();
+  await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
   const inv = await loadInvoice(projectId, invoiceId);
@@ -236,7 +236,7 @@ export const setInvoiceTax = friendly(async function setInvoiceTax(formData: For
 // --- Payments -----------------------------------------------------------------
 
 export const recordPayment = friendly(async function recordPayment(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
   const inv = await loadInvoice(projectId, invoiceId);
@@ -260,7 +260,7 @@ export const recordPayment = friendly(async function recordPayment(formData: For
 });
 
 export const deletePayment = friendly(async function deletePayment(formData: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("invoices");
   const projectId = str(formData, "projectId");
   const invoiceId = str(formData, "invoiceId");
   const id = str(formData, "id");

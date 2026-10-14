@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { Plus, Receipt } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, projectFinancials } from "@/lib/projects";
 import { cn, fmtDate, money } from "@/lib/utils";
@@ -8,7 +8,7 @@ import { invoiceTotal, isOverdue, paymentsTotal } from "@/lib/finance";
 import { Badge, ButtonLink, EmptyState, Stat, Table, THead, TBody, Tr, Th, Td, TFoot } from "@/components/ui";
 
 export default async function ProjectInvoicesPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("invoices");
   const { id } = await params;
   const project = await getProject(id);
   const [invoices, fin] = await Promise.all([

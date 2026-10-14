@@ -10,33 +10,38 @@ import { cancelInvite, invite, resendInvite } from "@/lib/invites";
 import { db, systemDb } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { str, strOrNull, boolField } from "@/lib/utils";
+import { accessFromForm, diffAccess, positionAccess, resolveAccess } from "@/lib/access";
+import { companyPositions, defaultPositionId } from "@/lib/positions";
 
-const TEAM_ROLES = ["ADMIN", "STAFF", "SUB"] as const;
-
-function teamRole(value: string) {
-  return (TEAM_ROLES as readonly string[]).includes(value) ? value : "STAFF";
+/**
+ * The "Position" picker's choice: Admin, Subcontractor (no login), or one of the company's
+ * positions ("pos:<id>"). Anything else (or a position that's gone) is the default position.
+ */
+async function readPosition(value: string): Promise<{ role: "ADMIN" | "STAFF" | "SUB"; positionId: string | null; name: string }> {
+  if (value === "ADMIN") return { role: "ADMIN", positionId: null, name: "Admin" };
+  if (value === "SUB") return { role: "SUB", positionId: null, name: "Subcontractor" };
+  const rows = await companyPositions();
+  const fallback = await defaultPositionId();
+  const pos = rows.find((r) => `pos:${r.id}` === value) ?? rows.find((r) => r.id === fallback);
+  return { role: "STAFF", positionId: pos?.id ?? null, name: pos?.name ?? "Staff" };
 }
 
 /** Invite a team member by email — they choose their own password from the link. */
 export const inviteTeamMember = friendly(async function inviteTeamMember(formData: FormData) {
   const admin = await requireAdmin();
-  const role = str(formData, "role") === "ADMIN" ? "ADMIN" : "STAFF";
+  const pos = await readPosition(str(formData, "position"));
+  if (pos.role === "SUB") throw new Error("Pick a position — subcontractors are added without a login");
   const row = await invite(
     {
       kind: "TEAM",
       email: str(formData, "email"),
       name: strOrNull(formData, "name"),
-      role,
-      permissions: {
-        canDelay: boolField(formData, "canDelay"),
-        canApproveBills: boolField(formData, "canApproveBills"),
-        canSeeReports: boolField(formData, "canSeeReports"),
-        canManageTime: boolField(formData, "canManageTime"),
-      },
+      role: pos.role,
+      permissions: pos.positionId ? { positionId: pos.positionId } : undefined,
     },
     admin,
   );
-  await logActivity({ userId: admin.id, type: "user.invited", description: `Invited ${row.email} to the team (${role === "ADMIN" ? "Admin" : "Staff"})` });
+  await logActivity({ userId: admin.id, type: "user.invited", description: `Invited ${row.email} to the team (${pos.name})` });
   revalidatePath("/settings/team");
   redirect(`/settings/team?invited=${encodeURIComponent(row.email)}`);
 });
@@ -109,21 +114,20 @@ export const updateTeamMember = friendly(async function updateTeamMember(formDat
 
   const isSelf = target.id === admin.id;
   const active = isSelf ? true : boolField(formData, "active");
-  const role = isSelf ? target.role : teamRole(str(formData, "role"));
+  // You can't change your own position (nobody locks themselves out of Settings).
+  const pos = isSelf ? { role: target.role, positionId: target.positionId } : await readPosition(str(formData, "position"));
+  const moved = pos.role !== target.role || pos.positionId !== target.positionId;
   await db.user.update({
     where: { id },
     data: {
       name,
       title: strOrNull(formData, "title"),
       phone: strOrNull(formData, "phone"),
-      role,
+      role: pos.role,
+      positionId: pos.positionId,
+      // A new position starts clean: changes made for just this person were changes from the old one.
+      ...(moved ? { access: null } : {}),
       active,
-      canDelay: boolField(formData, "canDelay"),
-      canApproveBills: boolField(formData, "canApproveBills"),
-      canSeeReports: boolField(formData, "canSeeReports"),
-      canManageTime: boolField(formData, "canManageTime"),
-      payRate: str(formData, "payRate") ? Math.max(0, Math.round((Number(str(formData, "payRate")) || 0) * 100) / 100) || null : null,
-      salaried: boolField(formData, "salaried"),
       vacationDays: str(formData, "vacationDays") ? Math.max(0, Math.min(365, Number(str(formData, "vacationDays")) || 0)) : null,
     },
   });
@@ -171,4 +175,71 @@ export const deleteTeamMember = friendly(async function deleteTeamMember(formDat
   }
   revalidatePath("/settings/team");
   redirect("/settings/team");
+});
+
+// --- Positions --------------------------------------------------------------------------
+
+function back(params = "") {
+  revalidatePath("/settings/team");
+  revalidatePath("/", "layout");
+  redirect(`/settings/team${params}#positions`);
+}
+
+/** A new position, starting as a copy of another (or of Staff). */
+export const createPosition = friendly(async function createPosition(formData: FormData) {
+  const admin = await requireAdmin();
+  const name = str(formData, "name");
+  if (!name) throw new Error("Name the position");
+  const rows = await companyPositions();
+  if (rows.some((r) => r.name.toLowerCase() === name.toLowerCase())) throw new Error(`There's already a position called "${name}"`);
+  const from = rows.find((r) => r.id === str(formData, "from"));
+  const row = await db.position.create({
+    data: { name, access: JSON.stringify(from?.accessOf ?? positionAccess(null)), sortOrder: Math.max(0, ...rows.map((r) => r.sortOrder)) + 1 },
+  });
+  await logActivity({ userId: admin.id, type: "user.position", description: `Added the position "${name}"` });
+  back(`?position=${row.id}`);
+});
+
+/** A position's name and access — everyone in it changes at once. */
+export const savePosition = friendly(async function savePosition(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = str(formData, "id");
+  const name = str(formData, "name");
+  if (!name) throw new Error("Name the position");
+  const rows = await companyPositions();
+  if (!rows.some((r) => r.id === id)) throw new Error("That position isn't there any more");
+  if (rows.some((r) => r.id !== id && r.name.toLowerCase() === name.toLowerCase())) throw new Error(`There's already a position called "${name}"`);
+  await db.position.update({ where: { id }, data: { name, access: JSON.stringify(accessFromForm((k) => strOrNull(formData, k))) } });
+  await logActivity({ userId: admin.id, type: "user.position", description: `Changed the position "${name}"` });
+  back();
+});
+
+/** Only an empty position can go — its people have to be somewhere first. */
+export const deletePosition = friendly(async function deletePosition(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = str(formData, "id");
+  const row = await db.position.findFirst({ where: { id }, include: { _count: { select: { users: true } } } });
+  if (!row) throw new Error("That position isn't there any more");
+  if (row._count.users) throw new Error(`Move the ${row._count.users === 1 ? "person" : `${row._count.users} people`} in "${row.name}" to another position first`);
+  await db.position.delete({ where: { id } });
+  await logActivity({ userId: admin.id, type: "user.position", description: `Removed the position "${row.name}"` });
+  back();
+});
+
+/** Access for just this person: saved as what differs from their position ("Use the position's" clears it). */
+export const savePersonAccess = friendly(async function savePersonAccess(formData: FormData) {
+  const admin = await requireAdmin();
+  const id = str(formData, "id");
+  const target = await db.user.findFirst({ where: { id, role: "STAFF" }, include: { position: { select: { access: true, name: true } } } });
+  if (!target) throw new Error("Only team members in a position have access to change (admins have everything)");
+  const base = resolveAccess("STAFF", target.position?.access, null);
+  const changes = boolField(formData, "reset") ? {} : diffAccess(base, accessFromForm((k) => strOrNull(formData, k)));
+  const n = Object.keys(changes).length;
+  await db.user.update({ where: { id }, data: { access: n ? JSON.stringify(changes) : null } });
+  await logActivity({
+    userId: admin.id,
+    type: "user.updated",
+    description: n ? `Changed ${target.name}'s access (${n} different from ${target.position?.name ?? "their position"})` : `${target.name} has their position's access`,
+  });
+  back();
 });

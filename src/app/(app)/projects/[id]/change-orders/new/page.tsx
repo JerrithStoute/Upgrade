@@ -1,12 +1,12 @@
 import Link from "@/components/link";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { getProject, nextChangeOrderNumber } from "@/lib/projects";
 import { CHANGE_ORDER_REASONS } from "@/lib/finance";
 import { Card, CardBody, CardHeader, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { createChangeOrder } from "../actions";
 
 export default async function NewChangeOrderPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("selections");
   const { id } = await params;
   const project = await getProject(id);
   const number = await nextChangeOrderNumber(project.id);

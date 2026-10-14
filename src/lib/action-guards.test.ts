@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
+import { areaForPath } from "./access";
 
 /**
  * Every button that changes something runs a server action, and anyone can call a server
@@ -11,7 +12,7 @@ import { join, relative, sep } from "node:path";
 
 const APP = join(process.cwd(), "src", "app");
 const GUARD =
-  /\b(requireUser|requireStaff|requireAdmin|requireReports|requireVendor|requireClient|requireTimeManager|getCurrentUser|setupUser|readTwoStep)\s*\(/;
+  /\b(requireUser|requireStaff|requireAdmin|requireView|requireEdit|requireVendor|requireClient|requireTimeManager|getCurrentUser|setupUser|readTwoStep)\s*\(/;
 
 /** Actions meant for people who aren't signed in yet (each protects itself with its own link, code or rate limit). */
 const PUBLIC_ACTIONS = new Set([
@@ -73,8 +74,28 @@ test("every server action checks who is signed in", () => {
   );
 });
 
-test("Settings actions are for administrators only", () => {
-  const loose = serverActions().filter((a) => a.file.startsWith("(app)/settings/") && !/\brequireAdmin\s*\(/.test(a.body));
+/** The area (src/lib/access.ts) an action's folder belongs to, if any. */
+const areaOf = (file: string) => areaForPath("/" + file.replace(/^\(app\)\//, "").replace("projects/[id]/", "projects/x/").replace(/\/[^/]*$/, ""));
+const asksFor = (body: string, area: string) => new RegExp(`\\brequireEdit\\(\\s*"${area}"\\s*\\)`).test(body);
+
+test("Settings actions are for administrators — or a position allowed that part of Settings", () => {
+  const loose = serverActions().filter((a) => {
+    if (!a.file.startsWith("(app)/settings/") || /\brequireAdmin\s*\(/.test(a.body)) return false;
+    const area = areaOf(a.file);
+    return !(area && asksFor(a.body, area));
+  });
+  assert.deepEqual(loose.map((a) => `${a.file}: ${a.name}`), []);
+});
+
+test("a change in an area checks the position may edit that area", () => {
+  // Positions: every action in a folder that belongs to an area asks for that area — a plain
+  // "signed in" check would let a view-only (or hidden) position change it.
+  const own = new Set(["(app)/todos/actions.ts"]); // everyone keeps their own to-dos (the action checks the rest)
+  const loose = serverActions().filter((a) => {
+    const area = areaOf(a.file);
+    if (!area || own.has(a.file) || !GUARD.test(a.body)) return false;
+    return !(asksFor(a.body, area) || /\brequireAdmin\s*\(/.test(a.body));
+  });
   assert.deepEqual(loose.map((a) => `${a.file}: ${a.name}`), []);
 });
 

@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { addDays, addMonths, endOfMonth, endOfWeek, format, startOfMonth, startOfWeek } from "date-fns";
 import { Bell, ChevronLeft, ChevronRight, Palmtree, Trash2, TriangleAlert } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { staffUsers } from "@/lib/projects";
 import { cn, fmtDate } from "@/lib/utils";
@@ -25,7 +25,7 @@ export default async function CalendarPage({
 }: {
   searchParams: Promise<{ month?: string; view?: string; day?: string; job?: string; who?: string; holiday?: string }>;
 }) {
-  const user = await requireStaff();
+  const user = await requireView("field");
   const q = await searchParams;
   const today = (await companyClock()).now; // today, on the company's clock
   const week = q.view === "week";

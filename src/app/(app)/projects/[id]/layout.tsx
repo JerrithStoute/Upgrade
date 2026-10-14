@@ -1,4 +1,6 @@
 import { getProject } from "@/lib/projects";
+import { requireStaff } from "@/lib/auth";
+import { allows, areaForPath } from "@/lib/access";
 import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
@@ -11,7 +13,7 @@ import { StickyJobHead } from "@/components/layout/sticky-job-head";
 
 export default async function ProjectLayout({ children, params }: { children: React.ReactNode; params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const project = await getProject(id);
+  const [user, project] = await Promise.all([requireStaff(), getProject(id)]);
   const base = `/projects/${project.id}`;
   const address = [project.address, project.city, project.state].filter(Boolean).join(", ");
   const clientName = project.client ? `${project.client.firstName} ${project.client.lastName}` : "No client";
@@ -86,7 +88,7 @@ export default async function ProjectLayout({ children, params }: { children: Re
             { href: `${base}/todos`, label: "To-Dos" },
             { href: `${base}/files`, label: "Files" },
             { href: `${base}/messages`, label: "Messages" },
-          ]}
+          ].filter((t) => allows(user.access, areaForPath(t.href), 1))}
         />
       </StickyJobHead>
       {children}

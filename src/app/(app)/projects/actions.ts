@@ -3,10 +3,12 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin, requireStaff } from "@/lib/auth";
+import { requireAdmin, requireStaff, type SessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { nextProjectNumber } from "@/lib/projects";
+import { refreshJobSite, siteAddressOf } from "@/lib/job-site";
+import { runAsCompany } from "@/lib/tenant";
 import { createProjectEstimate } from "@/lib/estimate-lines";
 import { PROJECT_STATUSES, PROJECT_TYPES } from "@/lib/constants";
 import { parseDateInput, str, strOrNull, titleCase } from "@/lib/utils";
@@ -37,11 +39,31 @@ function readProjectFields(fd: FormData) {
   };
 }
 
+/**
+ * The job's team from the form (team members only). Someone who sees only their jobs is kept on
+ * a job they make or change — it doesn't vanish from under them.
+ */
+async function readTeam(fd: FormData, user: SessionUser, managerId: string | null) {
+  const picked = fd.getAll("teamIds").map(String);
+  const staff = await db.user.findMany({ where: { id: { in: picked }, role: { in: ["ADMIN", "STAFF"] } }, select: { id: true } });
+  const ids = new Set(staff.map((u) => u.id));
+  if (user.access.jobs === "MINE" && managerId !== user.id) ids.add(user.id);
+  if (managerId) ids.delete(managerId);
+  return [...ids];
+}
+
+/** The job's spot on the map, from its address (time clock: on site or not) — looked up after the save, never holding it up. */
+function findSiteLater(user: SessionUser, projectId: string) {
+  void runAsCompany(user.companyId, () => refreshJobSite(projectId)).catch(() => {});
+}
+
 export const createProject = friendly(async function createProject(formData: FormData) {
   const user = await requireStaff();
   const data = readProjectFields(formData);
   const number = await nextProjectNumber();
-  const project = await db.project.create({ data: { ...data, number } });
+  const team = await readTeam(formData, user, data.managerId);
+  const project = await db.project.create({ data: { ...data, number, members: { create: team.map((userId) => ({ userId })) } } });
+  findSiteLater(user, project.id);
   await logActivity({
     projectId: project.id,
     userId: user.id,
@@ -71,7 +93,12 @@ export const updateProject = friendly(async function updateProject(formData: For
   if (!existing) throw new Error("Project not found.");
   const data = readProjectFields(formData);
   const actualEndDate = parseDateInput(formData.get("actualEndDate"));
-  const project = await db.project.update({ where: { id }, data: { ...data, actualEndDate } });
+  const team = await readTeam(formData, user, data.managerId);
+  const project = await db.project.update({
+    where: { id },
+    data: { ...data, actualEndDate, members: { deleteMany: {}, create: team.map((userId) => ({ userId })) } },
+  });
+  findSiteLater(user, id);
   if (existing.status !== project.status) {
     await logActivity({
       projectId: project.id,
@@ -108,3 +135,23 @@ export const deleteProject = friendly(async function deleteProject(formData: For
   revalidatePath("/dashboard");
   redirect("/projects");
 });
+
+/** The job's spot on the map: where the phone is now (standing at the site), or its address looked up again. */
+export async function setJobSite(projectId: string, spot: { lat: number; lng: number } | "address"): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireStaff();
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, name: true } });
+  if (!project) return { ok: false, error: "Project not found." };
+  if (spot === "address") {
+    await refreshJobSite(projectId, true);
+    const p = await db.project.findUnique({ where: { id: projectId }, select: { siteLat: true } });
+    if (p?.siteLat == null) return { ok: false, error: "The address wasn't found on the map — stand at the site and use where you are instead." };
+  } else {
+    if (!Number.isFinite(spot.lat) || !Number.isFinite(spot.lng) || Math.abs(spot.lat) > 90 || Math.abs(spot.lng) > 180) return { ok: false, error: "That spot didn't come through." };
+    // Kept until the address changes: the address it was set against is noted with it.
+    const p = await db.project.findUnique({ where: { id: projectId }, select: { address: true, city: true, state: true, zip: true } });
+    await db.project.update({ where: { id: projectId }, data: { siteLat: spot.lat, siteLng: spot.lng, siteFrom: "PHONE", siteAddress: p ? siteAddressOf(p) : null } });
+  }
+  await logActivity({ projectId, userId: user.id, type: "project.updated", description: spot === "address" ? "Job site found from the address" : "Job site set from a phone at the site" });
+  revalidatePath(`/projects/${projectId}/edit`);
+  return { ok: true };
+}

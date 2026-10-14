@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { requireStaff } from "@/lib/auth";
+import { allows } from "@/lib/access";
 import { db } from "@/lib/db";
 import { staffUsers } from "@/lib/projects";
 import { PageHeader } from "@/components/ui";
@@ -8,9 +9,11 @@ import { companyClock } from "@/lib/company-zone";
 
 export default async function TodosPage({ searchParams }: { searchParams: Promise<{ show?: string; assignee?: string; edit?: string }> }) {
   const user = await requireStaff();
+  // Everyone has their own to-dos; everyone else's take "Schedule, daily logs & to-dos".
+  const everyone = allows(user.access, "field", 1);
   const sp = await searchParams;
   const show = sp.show === "done" || sp.show === "all" ? sp.show : "open";
-  const assignee = sp.assignee === "all" ? "all" : "me";
+  const assignee = sp.assignee === "all" && everyone ? "all" : "me";
   const where: Prisma.TodoWhereInput = {};
   if (show !== "all") where.status = show === "done" ? "DONE" : "OPEN";
   if (assignee === "me") where.assigneeId = user.id;

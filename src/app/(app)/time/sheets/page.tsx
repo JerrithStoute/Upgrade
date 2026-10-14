@@ -4,11 +4,13 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Download, MapPin, MapPinOff, 
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { canManageTime, laborBurden, weekOf } from "@/lib/time-clock";
+import { overtimeSentence, siteCheck } from "@/lib/time-rules";
 import { costWeek, entryHours, fmtHours, loadedRate, looksForgotten, nextWeek, parseWeek, weekDays, weekKey, type Person } from "@/lib/time-math";
 import { zoneLabel } from "@/lib/zone";
 import { ButtonLink, Card, CardBody, CardHeader, ConfirmForm, Field, PageHeader, SubmitButton } from "@/components/ui";
+import { fmtFeet } from "@/lib/utils";
 import { cn, dateInput, money } from "@/lib/utils";
-import { clockOutFor, deleteTimeEntry, saveLaborBurden, saveTimeEntry } from "../actions";
+import { clockOutFor, deleteTimeEntry, saveTimeEntry } from "../actions";
 
 export const metadata = { title: "Timesheets" };
 
@@ -16,19 +18,24 @@ const timeOf = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", min
 const hhmm = (d: Date | null) => (d ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : "");
 const codeLabel = (c: { code: string | null; name: string }) => (c.code ? `${c.code} ${c.name}` : c.name);
 
-/** Where the phone was at a punch: a pin that opens the spot on a map. Only on Timesheets (people who manage time). */
-function Pin({ lat, lng, accuracy, what }: { lat: number | null; lng: number | null; accuracy: number | null; what: string }) {
+/**
+ * Where the phone was at a punch: a pin that opens the spot on a map. Only on Timesheets (people
+ * who manage time). Surely farther from the job site than Settings → Time clock allows: "off site".
+ */
+function Pin({ lat, lng, accuracy, what, check }: { lat: number | null; lng: number | null; accuracy: number | null; what: string; check: { feet: number; offSite: boolean } | null }) {
   if (lat === null || lng === null) return null;
+  const off = check?.offSite;
   return (
     <a
       href={`https://www.google.com/maps?q=${lat},${lng}`}
       target="_blank"
       rel="noopener noreferrer"
-      title={`${what} here${accuracy ? ` (within about ${Math.round(accuracy * 3.28084)} ft)` : ""} — opens a map`}
-      aria-label={`${what} location on a map`}
-      className="ml-0.5 inline-flex align-middle text-blue-600 hover:text-blue-800"
+      title={`${what} here${accuracy ? ` (within about ${Math.round(accuracy * 3.28084)} ft)` : ""}${check ? ` — ${fmtFeet(check.feet)} from the job site` : ""} — opens a map`}
+      aria-label={`${what} location on a map${off ? " (off site)" : ""}`}
+      className={cn("ml-0.5 inline-flex items-center gap-0.5 align-middle", off ? "text-amber-600 hover:text-amber-800" : "text-blue-600 hover:text-blue-800")}
     >
       <MapPin className="h-3.5 w-3.5" />
+      {off ? <span className="rounded bg-amber-50 px-1 text-[10px] font-semibold uppercase text-amber-800 ring-1 ring-inset ring-amber-200">off site</span> : null}
     </a>
   );
 }
@@ -39,7 +46,10 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
   const sp = await searchParams;
   const now = new Date();
   // Days, weeks and times on the company's clock.
-  const { key, monday, from, to, clock } = await weekOf(parseWeek(sp.week) ? sp.week! : now);
+  const { key, monday, from, to, clock, rules, dayOf } = await weekOf(parseWeek(sp.week) ? sp.week! : now);
+  const hrs = (h: number) => fmtHours(h, rules.hoursFormat);
+  const at = (punch: { lat: number | null; lng: number | null; accuracy: number | null }, job: { siteLat: number | null; siteLng: number | null }) =>
+    siteCheck(punch, { lat: job.siteLat, lng: job.siteLng }, rules.siteFeet);
   const { wall } = clock;
   const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
   const [entries, staff, burden, projects, costCodes, forgotten] = await Promise.all([
@@ -48,7 +58,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
       orderBy: { clockIn: "asc" },
       include: {
         user: { select: { id: true, name: true, payRate: true, salaried: true } },
-        project: { select: { id: true, number: true, name: true } },
+        project: { select: { id: true, number: true, name: true, siteLat: true, siteLng: true } },
         costCode: { select: { code: true, name: true } },
         editedBy: { select: { name: true } },
       },
@@ -67,18 +77,18 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
       orderBy: { clockIn: "asc" },
     }),
   ]);
-  const stuck = forgotten.filter((e) => looksForgotten(e, now));
+  const stuck = forgotten.filter((e) => looksForgotten(e, now, rules.longShiftHours ?? 14));
 
   const finished = entries.filter((e) => e.clockOut);
   const people = new Map<string, Person>([...staff, ...entries.map((e) => e.user)].map((u) => [u.id, { salaried: u.salaried, rate: loadedRate(u.payRate, burden) }]));
-  const costed = costWeek(finished, people);
+  const costed = costWeek(finished, people, rules, dayOf);
   const ids = [...new Set([...entries.map((e) => e.userId), ...staff.map((s) => s.id)])];
   const nameOf = new Map([...staff, ...entries.map((e) => e.user)].map((u) => [u.id, u.name]));
   const rows = ids
     .map((id) => {
       const list = entries.filter((e) => e.userId === id);
-      const hours = list.reduce((n, e) => n + entryHours(e, now), 0);
-      const overtime = list.reduce((n, e) => n + (costed.get(e.id)?.overtime ?? 0), 0);
+      const hours = list.reduce((n, e) => n + entryHours(e, now, rules), 0);
+      const overtime = list.reduce((n, e) => n + (costed.get(e.id)?.overtime ?? 0) + (costed.get(e.id)?.double ?? 0), 0);
       const cost = list.reduce((n, e) => n + (costed.get(e.id)?.cost ?? 0), 0);
       return { id, name: nameOf.get(id) ?? "?", list, hours, overtime, cost, person: people.get(id) };
     })
@@ -90,7 +100,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
   const editing = sp.edit ? entries.find((e) => e.id === sp.edit) : undefined;
   const adding = sp.add !== undefined;
   const range = `${monday.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${sunday.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
-  const thisWeek = key === weekKey(clock.now);
+  const thisWeek = key === weekKey(clock.now, rules.weekStart);
   const divisions = [...new Set(costCodes.map((c) => c.division))];
 
   const entryForm = (e?: (typeof entries)[number]) => (
@@ -167,7 +177,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
       <PageHeader
         breadcrumbs={[{ label: "Time clock", href: "/time" }, { label: "Timesheets" }]}
         title="Timesheets"
-        description={`Everyone's time, by week (${zoneLabel(clock.zone)} time). Hourly people's time past 40 hours is overtime (1.5×). Each job's labor posts to its Budget by cost code.`}
+        description={`Everyone's time, by week (${zoneLabel(clock.zone)} time). ${overtimeSentence(rules)} Each job's labor posts to its Budget by cost code.`}
         actions={
           <>
             <ButtonLink href={`${base}&add=`} variant="secondary" size="sm">
@@ -206,11 +216,11 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
       ) : null}
 
       <div className="flex flex-wrap items-center gap-2">
-        <ButtonLink href={`/time/sheets?week=${weekKey(nextWeek(monday, -1))}`} variant="secondary" size="sm" aria-label="Week before">
+        <ButtonLink href={`/time/sheets?week=${weekKey(nextWeek(monday, -1), rules.weekStart)}`} variant="secondary" size="sm" aria-label="Week before">
           <ChevronLeft className="h-4 w-4" />
         </ButtonLink>
         <span className="min-w-48 text-center text-sm font-semibold text-slate-900">{range}</span>
-        <ButtonLink href={`/time/sheets?week=${weekKey(nextWeek(monday))}`} variant="secondary" size="sm" aria-label="Week after">
+        <ButtonLink href={`/time/sheets?week=${weekKey(nextWeek(monday), rules.weekStart)}`} variant="secondary" size="sm" aria-label="Week after">
           <ChevronRight className="h-4 w-4" />
         </ButtonLink>
         {!thisWeek ? (
@@ -219,8 +229,8 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
           </Link>
         ) : null}
         <span className="ml-auto text-sm text-slate-600">
-          <span className="font-semibold text-slate-900">{fmtHours(totals.hours)}</span> hrs
-          {totals.overtime > 0.004 ? <> · {fmtHours(totals.overtime)} overtime</> : null} · <span className="font-semibold text-slate-900">{money(totals.cost)}</span> labor
+          <span className="font-semibold text-slate-900">{hrs(totals.hours)}</span> hrs
+          {totals.overtime > 0.004 ? <> · {hrs(totals.overtime)} overtime</> : null} · <span className="font-semibold text-slate-900">{money(totals.cost)}</span> labor
         </span>
       </div>
 
@@ -234,8 +244,8 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
       {noRate.length ? (
         <p className="rounded-md bg-amber-50 px-4 py-2 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
           No pay rate for {noRate.map((r) => r.name).join(", ")} — their hours count, but cost nothing on the Budget until one is set in{" "}
-          <Link href="/settings/team" className="font-medium underline">
-            Settings → Team
+          <Link href="/settings/time-clock#pay" className="font-medium underline">
+            Settings → Time clock
           </Link>
           .
         </p>
@@ -247,7 +257,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
             title={r.name}
             description={
               r.list.length
-                ? `${fmtHours(r.hours)} hrs${r.overtime > 0.004 ? ` · ${fmtHours(r.overtime)} overtime` : ""}${r.person?.rate != null ? ` · ${money(r.cost)}` : ""}${r.person?.salaried ? " · salaried" : ""}`
+                ? `${hrs(r.hours)} hrs${r.overtime > 0.004 ? ` · ${hrs(r.overtime)} overtime` : ""}${r.person?.rate != null ? ` · ${money(r.cost)}` : ""}${r.person?.salaried ? " · salaried" : ""}`
                 : "No time this week"
             }
             actions={
@@ -263,7 +273,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
                   .filter((e) => wall(e.clockIn).toDateString() === d.toDateString())
                   .map((e) => {
                     const c = costed.get(e.id);
-                    const hours = entryHours(e, now);
+                    const hours = entryHours(e, now, rules);
                     return (
                       <li key={e.id} className={cn("px-4 py-2.5 text-sm", editing?.id === e.id && "bg-blue-50/50")}>
                         {editing?.id === e.id ? (
@@ -273,7 +283,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
                               action={deleteTimeEntry}
                               hidden={{ id: e.id }}
                               variant="ghost"
-                              message={`Delete ${r.name}'s ${fmtHours(hours)} hours on ${d.toLocaleDateString("en-US", { weekday: "long" })}?`}
+                              message={`Delete ${r.name}'s ${hrs(hours)} hours on ${d.toLocaleDateString("en-US", { weekday: "long" })}?`}
                             >
                               <span className="text-xs text-rose-600">Delete this time</span>
                             </ConfirmForm>
@@ -288,20 +298,28 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
                             </span>
                             <span className="tabular-nums text-slate-600">
                               {timeOf(wall(e.clockIn))}
-                              <Pin lat={e.inLat} lng={e.inLng} accuracy={e.inAccuracy} what="Clocked in" /> –{" "}
+                              <Pin lat={e.inLat} lng={e.inLng} accuracy={e.inAccuracy} what="Clocked in" check={at({ lat: e.inLat, lng: e.inLng, accuracy: e.inAccuracy }, e.project)} /> –{" "}
                               {e.clockOut ? timeOf(wall(e.clockOut)) : <span className="font-medium text-emerald-700">on the clock</span>}
-                              <Pin lat={e.outLat} lng={e.outLng} accuracy={e.outAccuracy} what="Clocked out" />
+                              <Pin lat={e.outLat} lng={e.outLng} accuracy={e.outAccuracy} what="Clocked out" check={at({ lat: e.outLat, lng: e.outLng, accuracy: e.outAccuracy }, e.project)} />
                               {/* A real punch (not typed in by a manager) that came without a location says so. */}
                               {!e.editedBy && e.inLat === null && e.outLat === null ? (
                                 <span title="No location came with this punch (not shared, or no signal)" className="ml-0.5 inline-flex align-middle text-slate-300">
                                   <MapPinOff className="h-3.5 w-3.5" aria-label="No location" />
                                 </span>
                               ) : null}
-                              {e.breakMinutes ? <span className="text-xs text-slate-400"> · {e.breakMinutes} min break</span> : null}
+                              {e.breakMinutes ? (
+                                <span className="text-xs text-slate-400"> · {e.breakMinutes} min break</span>
+                              ) : rules.lunchMinutes && entryHours(e, now, { ...rules, lunchMinutes: 0 }) > rules.lunchAfter ? (
+                                <span className="text-xs text-slate-400" title="Settings → Time clock takes out a lunch on long shifts with no break typed in">
+                                  {" "}
+                                  · {rules.lunchMinutes} min lunch (automatic)
+                                </span>
+                              ) : null}
                             </span>
                             <span className="w-24 text-right tabular-nums font-medium text-slate-900">
-                              {fmtHours(hours)} hrs
-                              {c && c.overtime > 0.004 ? <span className="block text-[11px] font-normal text-amber-700">{fmtHours(c.overtime)} overtime</span> : null}
+                              {hrs(hours)} hrs
+                              {c && c.overtime > 0.004 ? <span className="block text-[11px] font-normal text-amber-700">{hrs(c.overtime)} overtime</span> : null}
+                              {c && c.double > 0.004 ? <span className="block text-[11px] font-normal text-rose-700">{hrs(c.double)} double time</span> : null}
                             </span>
                             <Link
                               href={`${base}&edit=${e.id}`}
@@ -321,20 +339,13 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
         </Card>
       ))}
 
-      <Card>
-        <CardHeader
-          title="Labor burden"
-          description="What each hour costs on top of pay — payroll taxes, workers' comp, insurance. Added to everyone's pay rate for job costs. Applies to time clocked from now on."
-        />
-        <CardBody>
-          <form action={saveLaborBurden} className="flex flex-wrap items-end gap-3">
-            <Field label="Burden %" htmlFor="burden">
-              <input id="burden" type="number" name="laborBurden" min={0} max={200} step="0.5" className="input w-32" defaultValue={burden} />
-            </Field>
-            <SubmitButton variant="secondary">Save</SubmitButton>
-          </form>
-        </CardBody>
-      </Card>
+      <p className="text-xs text-slate-500">
+        Overtime, rounding, lunch, the week, pay rates and labor burden ({burden}%) are set in{" "}
+        <Link href="/settings/time-clock" className="font-medium text-blue-700 hover:underline">
+          Settings → Time clock
+        </Link>
+        .
+      </p>
     </div>
   );
 }

@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin, requireStaff } from "@/lib/auth";
+import { requireAdmin, requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { boolField, intField, parseDateInput, str, strOrNull } from "@/lib/utils";
@@ -30,7 +30,7 @@ function revalidateCalendar() {
  * starts"), moving with it.
  */
 export const addReminder = friendly(async function addReminder(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const title = str(fd, "title");
   if (!title) throw new Error("What's the reminder?");
   const taskId = str(fd, "taskId");
@@ -101,7 +101,7 @@ export const addHoliday = friendly(async function addHoliday(fd: FormData) {
 
 /** Time off for a team member (you can add your own; admins anyone's). */
 export const addTimeOff = friendly(async function addTimeOff(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const userId = str(fd, "userId") || user.id;
   if (userId !== user.id && user.role !== "ADMIN") throw new Error("Only an admin can add time off for someone else");
   const startDate = parseDateInput(fd.get("start"));
@@ -128,7 +128,7 @@ export const addTimeOff = friendly(async function addTimeOff(fd: FormData) {
 
 /** Removes a holiday or time off (a holiday's moved work stays where it is). */
 export const deleteCalendarEvent = friendly(async function deleteCalendarEvent(fd: FormData) {
-  const user = await requireStaff();
+  const user = await requireEdit("field");
   const ev = await db.calendarEvent.findUnique({ where: { id: str(fd, "id") } });
   if (!ev) redirect(back(fd));
   if (user.role !== "ADMIN" && !(ev.kind === "TIME_OFF" && ev.userId === user.id)) throw new Error("Only an admin can remove that");

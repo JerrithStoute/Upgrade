@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { Plus, Printer, ShieldAlert } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { costCodeLabel, dateInput, fmtDate, fmtDateTime, money } from "@/lib/utils";
@@ -37,7 +37,7 @@ const MOVES: Record<string, { to: string; label: string; variant?: "primary" | "
 };
 
 export default async function PurchaseOrderPage({ params }: { params: Promise<{ id: string; poId: string }> }) {
-  await requireStaff();
+  await requireView("purchasing");
   const { dateTime } = await companyClock();
   const { id, poId } = await params;
   const project = await getProject(id);

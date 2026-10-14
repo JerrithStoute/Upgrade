@@ -7,6 +7,7 @@ import { costableItem, jobChoices, type QbEntry } from "@/lib/qb/match";
 import { disconnectQuickBooks, linkCostCode, linkJob, matchAgain, newQuickBooksPassword, setUpQuickBooks } from "./actions";
 import { LinkPicker, PasswordButton } from "./parts";
 import { companyClock } from "@/lib/company-zone";
+import { requireView } from "@/lib/auth";
 
 export const metadata = { title: "QuickBooks" };
 
@@ -14,6 +15,7 @@ export const metadata = { title: "QuickBooks" };
 const qbName = (fullName: string) => fullName.split(":").join(" › ");
 
 export default async function QuickBooksPage() {
+  await requireView("quickbooks");
   const { dateTime } = await companyClock();
   const [conn, list, projects, codes, vendorCount] = await Promise.all([
     db.qbConnection.findFirst(),

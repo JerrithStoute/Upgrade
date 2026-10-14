@@ -5,6 +5,7 @@ import { cn, money, titleCase } from "@/lib/utils";
 import { EmptyState, Stat } from "@/components/ui";
 import { PrintButton } from "../projects/[id]/_components/print-button";
 import { Chips, Explain, Signed, pctText } from "./_parts";
+import { requireView } from "@/lib/auth";
 
 const SHOW = [
   { value: "", label: "All sold jobs" },
@@ -14,6 +15,7 @@ const SHOW = [
 
 /** Profit by job: what you bid to make, and where each job is heading now. */
 export default async function JobProfitReport({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
+  await requireView("reports");
   const { show = "" } = await searchParams;
   const statuses = show === "active" ? ACTIVE : show === "done" ? ["COMPLETED"] : SOLD;
   const rows = await jobRows(statuses);

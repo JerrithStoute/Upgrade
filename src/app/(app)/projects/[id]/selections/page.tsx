@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { Palette, Plus } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { getProject } from "@/lib/projects";
 import { boardForViewer, scheduleOptions } from "@/lib/selections";
 import { deadlineState } from "@/lib/deadlines";
@@ -14,7 +14,7 @@ import { SelectionsBoard } from "./_components/selections-board";
  * text and allowances follow the estimate.
  */
 export default async function SelectionsPage({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireStaff();
+  const user = await requireView("selections");
   const { id } = await params;
   const project = await getProject(id);
   const [{ estimate, cards, others, profitDefault }, tasks] = await Promise.all([boardForViewer(project.id, user.id, false), scheduleOptions(project.id)]);

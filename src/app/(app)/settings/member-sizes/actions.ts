@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { MEMBER_KINDS, SOLD_AS, itemNameKey, parseStockLengths } from "@/lib/takeoff";
 import { boolField, numField, str, strOrNull } from "@/lib/utils";
@@ -34,7 +34,7 @@ async function sizeFields(fd: FormData, id?: string) {
 }
 
 export const createMemberSize = friendly(async function createMemberSize(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const data = await sizeFields(fd);
   const last = await db.memberSize.findFirst({ orderBy: { sortOrder: "desc" }, select: { sortOrder: true } });
   const size = await db.memberSize.create({ data: { ...data, sortOrder: (last?.sortOrder ?? -1) + 1 } });
@@ -44,7 +44,7 @@ export const createMemberSize = friendly(async function createMemberSize(fd: For
 
 /** Conditions using the size keep using it; their lumber lines update the next time the takeoff is opened. */
 export const updateMemberSize = friendly(async function updateMemberSize(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(fd, "id");
   if (!(await db.memberSize.findUnique({ where: { id }, select: { id: true } }))) throw new Error("Member size not found");
   const data = await sizeFields(fd, id);
@@ -62,7 +62,7 @@ export const updateMemberSize = friendly(async function updateMemberSize(fd: For
 
 /** Conditions that used it keep the size name but lose the link. */
 export const deleteMemberSize = friendly(async function deleteMemberSize(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(fd, "id");
   await db.memberSize.delete({ where: { id } });
   revalidatePath(PATH);

@@ -2,8 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { friendly } from "@/lib/friendly-action";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { asWholeCompany } from "@/lib/tenant";
 import { str } from "@/lib/utils";
 import { logActivity } from "@/lib/activity";
 import { hashQbPassword, newConnectionFields, newPassword } from "@/lib/qb/connection";
@@ -16,7 +17,7 @@ export type PasswordState = { password?: string; error?: string } | undefined;
 
 /** Sets up the connection. Its password is made at the step that needs it (newQuickBooksPassword). */
 export const setUpQuickBooks = friendly(async function setUpQuickBooks() {
-  const me = await requireAdmin();
+  const me = await requireEdit("quickbooks");
   if (await db.qbConnection.findFirst({ select: { id: true } })) return;
   // A password no one has seen: the Web Connector can't sign in until one is made for it.
   await db.qbConnection.create({ data: { ...newConnectionFields(), passwordHash: await hashQbPassword(newPassword()) } });
@@ -26,7 +27,7 @@ export const setUpQuickBooks = friendly(async function setUpQuickBooks() {
 
 /** A new Web Connector password (the old one stops working). */
 export async function newQuickBooksPassword(): Promise<PasswordState> {
-  await requireAdmin();
+  await requireEdit("quickbooks");
   const c = await db.qbConnection.findFirst({ select: { id: true } });
   if (!c) return { error: "Set up the connection first." };
   const password = newPassword();
@@ -36,7 +37,7 @@ export async function newQuickBooksPassword(): Promise<PasswordState> {
 
 /** Disconnect: the Web Connector can't sign in any more, and nothing here stays linked to QuickBooks. */
 export const disconnectQuickBooks = friendly(async function disconnectQuickBooks() {
-  const me = await requireAdmin();
+  const me = await requireEdit("quickbooks");
   await db.qbConnection.deleteMany({});
   await db.qbListItem.deleteMany({});
   await db.vendor.updateMany({ where: { qbListId: { not: null } }, data: { qbListId: null } });
@@ -53,7 +54,7 @@ const entry = (r: { listId: string; name: string; fullName: string; parentListId
 
 /** Picks a job's Customer:Job by hand (or unlinks it). */
 export const linkJob = friendly(async function linkJob(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("quickbooks");
   const projectId = str(fd, "projectId");
   const listId = str(fd, "listId") || null;
   const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true } });
@@ -62,7 +63,7 @@ export const linkJob = friendly(async function linkJob(fd: FormData) {
     const choices = jobChoices((await db.qbListItem.findMany({ where: { kind: "CUSTOMER" } })).map(entry));
     const pick = choices.find((c) => c.listId === listId);
     if (!pick) throw new Error("That isn't a QuickBooks customer or job any more — update the Web Connector and try again");
-    const other = await db.project.findFirst({ where: { qbListId: listId, id: { not: projectId } }, select: { name: true } });
+    const other = await asWholeCompany(() => db.project.findFirst({ where: { qbListId: listId, id: { not: projectId } }, select: { name: true } }));
     if (other) throw new Error(`“${pick.fullName}” is already linked to ${other.name}`);
   }
   await db.project.update({ where: { id: projectId }, data: { qbListId: listId } });
@@ -71,7 +72,7 @@ export const linkJob = friendly(async function linkJob(fd: FormData) {
 
 /** Picks a cost code's QuickBooks item by hand (or unlinks it). */
 export const linkCostCode = friendly(async function linkCostCode(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("quickbooks");
   const costCodeId = str(fd, "costCodeId");
   const listId = str(fd, "listId") || null;
   if (listId) {
@@ -86,7 +87,7 @@ export const linkCostCode = friendly(async function linkCostCode(fd: FormData) {
 
 /** Links by name again from what was last read from QuickBooks (no Web Connector needed). */
 export const matchAgain = friendly(async function matchAgain() {
-  await requireAdmin();
+  await requireEdit("quickbooks");
   await applyMatches();
   revalidatePath(PATH);
 });

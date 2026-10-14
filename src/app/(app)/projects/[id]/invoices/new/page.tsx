@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { addDays } from "date-fns";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, contractValue, nextInvoiceNumber } from "@/lib/projects";
 import { dateInput, money } from "@/lib/utils";
@@ -11,7 +11,7 @@ import { Card, CardBody, CardHeader, Field, FormGrid, SubmitButton, buttonClasse
 import { createInvoice } from "../actions";
 
 export default async function NewInvoicePage({ params }: { params: Promise<{ id: string }> }) {
-  await requireStaff();
+  await requireView("invoices");
   const { id } = await params;
   const project = await getProject(id);
   const [number, contract, approvedCOs, invoiceItems, billedIds, company] = await Promise.all([
@@ -39,7 +39,7 @@ export default async function NewInvoicePage({ params }: { params: Promise<{ id:
           <input type="hidden" name="projectId" value={project.id} />
           <FormGrid>
             {manual ? (
-              <Field label="Invoice number" htmlFor="inv-number" hint={`You number your invoices (Settings → Billing). Next unused: ${number}.`}>
+              <Field label="Invoice number" htmlFor="inv-number" hint={`You number your invoices (Settings → Invoices). Next unused: ${number}.`}>
                 <input id="inv-number" name="number" type="number" min={1} step={1} required className="input" defaultValue={number} />
               </Field>
             ) : null}

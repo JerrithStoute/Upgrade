@@ -1,6 +1,7 @@
 import "server-only";
 import { notFound } from "next/navigation";
 import { db } from "./db";
+import { asWholeCompany } from "./tenant";
 import { linePrice } from "./utils";
 import { changeOrderTotals } from "./change-orders";
 import { parseMarkupTable, tableExtras } from "./markup";
@@ -64,14 +65,15 @@ export async function projectFinancials(projectId: string, fallbackContract = 0)
 }
 
 export async function nextProjectNumber() {
-  const last = await db.project.findFirst({ orderBy: { number: "desc" }, select: { number: true } });
+  // Across every job — even for someone who sees only their own.
+  const last = await asWholeCompany(() => db.project.findFirst({ orderBy: { number: "desc" }, select: { number: true } }));
   return (last?.number ?? 1000) + 1;
 }
 
-/** The next invoice number: your starting number (Settings → Billing), or one past the highest used, whichever is more. */
+/** The next invoice number: your starting number (Settings → Invoices), or one past the highest used, whichever is more. */
 export async function nextInvoiceNumber() {
   const [last, company] = await Promise.all([
-    db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } }),
+    asWholeCompany(() => db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } })),
     db.company.findFirst({ select: { invoiceNextNumber: true } }),
   ]);
   return Math.max((last?.number ?? 1000) + 1, company?.invoiceNextNumber ?? 1001);

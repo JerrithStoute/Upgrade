@@ -8,6 +8,7 @@ import { vendorCodes } from "@/lib/vendors";
 import { COVERAGE_TYPES, coverageWarning, parseRequired, vendorsCoverage } from "@/lib/purchasing";
 import { fmtDate } from "@/lib/utils";
 import { createVendor, deleteVendor, importVendors, setRequiredCoverage, updateVendor } from "./actions";
+import { requireView } from "@/lib/auth";
 
 /** What the paste box shows before you paste. */
 const PASTE_EXAMPLE = ["Beaumont Lumber, Mike, mike@beaumontlumber.com, 409-555-0100", "BMC, bids@bmc.com"].join(String.fromCharCode(10));
@@ -52,6 +53,7 @@ function VendorForm({ action, values, codes }: { action: (fd: FormData) => Promi
 }
 
 export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ edit?: string; added?: string; updated?: string; same?: string; error?: string }> }) {
+  await requireView("lists");
   const { edit, added, updated, same, error } = await searchParams;
   const [vendors, costCodes, coverage, company] = await Promise.all([
     db.vendor.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { bids: true, logins: true } } } }),

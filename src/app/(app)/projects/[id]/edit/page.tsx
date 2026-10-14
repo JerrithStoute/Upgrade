@@ -3,23 +3,31 @@ import { db } from "@/lib/db";
 import { getProject, staffUsers } from "@/lib/projects";
 import { Card, CardBody, CardHeader, ConfirmForm } from "@/components/ui";
 import { ProjectForm } from "../../_components/project-form";
-import { deleteProject, updateProject } from "../../actions";
+import { deleteProject, setJobSite, updateProject } from "../../actions";
+import { JobSite } from "../../_components/job-site";
 
 export default async function EditProjectPage({ params }: { params: Promise<{ id: string }> }) {
   const me = await requireStaff();
   const { id } = await params;
-  const [project, clients, managers] = await Promise.all([
+  const [project, clients, managers, team] = await Promise.all([
     getProject(id),
     db.client.findMany({
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
       select: { id: true, firstName: true, lastName: true, company: true },
     }),
     staffUsers(),
+    db.projectMember.findMany({ where: { projectId: id }, select: { userId: true } }),
   ]);
 
   return (
     <div className="space-y-6">
-      <ProjectForm action={updateProject} project={project} clients={clients} managers={managers} />
+      <ProjectForm action={updateProject} project={project} clients={clients} managers={managers} teamIds={team.map((t) => t.userId)} />
+
+      <JobSite
+        site={project.siteLat != null && project.siteLng != null ? { lat: project.siteLat, lng: project.siteLng, from: project.siteFrom } : null}
+        hasAddress={!!project.address?.trim()}
+        set={setJobSite.bind(null, project.id)}
+      />
 
       {me.role === "ADMIN" && (
         <Card className="border-rose-200">

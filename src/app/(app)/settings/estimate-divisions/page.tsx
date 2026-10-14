@@ -1,4 +1,4 @@
-import { requireAdmin } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { activeCostCodes } from "@/lib/projects";
 import { loadEstimateCategories } from "@/lib/estimate-categories";
 import { codeDivisions } from "@/lib/cost-code-divisions";
@@ -7,7 +7,7 @@ import { DivisionsForm } from "@/components/estimate/divisions-form";
 export const metadata = { title: "Estimate divisions" };
 
 export default async function EstimateDivisionsPage() {
-  await requireAdmin();
+  await requireView("lists");
   const [cats, codes] = await Promise.all([loadEstimateCategories(), activeCostCodes()]);
   return (
     <DivisionsForm

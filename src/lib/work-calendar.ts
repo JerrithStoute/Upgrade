@@ -45,6 +45,6 @@ export async function refreshTaskReminders(projectId: string, cal?: WorkCal) {
 }
 
 /** Who may delay a job: admins, and team members you've allowed. */
-export function canDelay(user: { role: string; canDelay?: boolean | null }) {
-  return user.role === "ADMIN" || !!user.canDelay;
+export function canDelay(user: { role: string; access?: { delay: boolean } | null }) {
+  return user.role === "ADMIN" || !!user.access?.delay;
 }

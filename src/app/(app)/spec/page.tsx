@@ -1,7 +1,7 @@
 import Link from "@/components/link";
 import { addDays } from "date-fns";
 import { Calculator, Home } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { specPicture } from "@/lib/spec";
 import { carryToClosing, daysOnMarket, futureDrawInterest, offerMath, priceForProfit } from "@/lib/spec-math";
@@ -13,7 +13,7 @@ export const metadata = { title: "Spec homes" };
 
 /** Every spec house: what it's costing to hold, break-even, and profit at list — today. */
 export default async function SpecHomesPage() {
-  await requireStaff();
+  await requireView("budget");
   const today = new Date();
   const [houses, others] = await Promise.all([
     db.project.findMany({ where: { isSpec: true }, orderBy: { number: "desc" }, select: { id: true } }),

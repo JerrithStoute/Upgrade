@@ -7,7 +7,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { boolField, str } from "@/lib/utils";
 
-/** Settings → Billing: what flows on by itself, and how invoices are numbered. */
+/** Settings → Invoices: what flows on by itself, and how invoices are numbered. */
 export const saveBilling = friendly(async function saveBilling(fd: FormData) {
   await requireAdmin();
   const company = await db.company.findFirst({ select: { id: true } });
@@ -24,6 +24,6 @@ export const saveBilling = friendly(async function saveBilling(fd: FormData) {
       invoiceNextNumber: n,
     },
   });
-  revalidatePath("/settings/billing");
-  redirect("/settings/billing?saved=1");
+  revalidatePath("/settings/invoices");
+  redirect("/settings/invoices?saved=1");
 });

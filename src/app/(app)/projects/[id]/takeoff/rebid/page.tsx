@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { ArrowLeft, Lock, LockOpen } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { getProject } from "@/lib/projects";
 import { conditionTotals, loadConditions } from "@/lib/takeoff-data";
 import { syncAutoItems } from "@/lib/walls";
@@ -16,7 +16,7 @@ import { PriceReviewForm, type ReviewGroup } from "./price-review-form";
  * them all. On an unlocked job, it lists the items kept at "this job only".
  */
 export default async function PriceReviewPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ updated?: string }> }) {
-  await requireStaff();
+  await requireView("takeoffs");
   const { id } = await params;
   const { updated } = await searchParams;
   const project = await getProject(id);

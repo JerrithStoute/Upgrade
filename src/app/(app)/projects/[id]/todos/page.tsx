@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, staffUsers } from "@/lib/projects";
 import { TodoList } from "@/components/todos/todo-list";
@@ -12,7 +12,7 @@ export default async function ProjectTodosPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ show?: string; edit?: string }>;
 }) {
-  const user = await requireStaff();
+  const user = await requireView("field");
   const { id } = await params;
   const sp = await searchParams;
   const project = await getProject(id);

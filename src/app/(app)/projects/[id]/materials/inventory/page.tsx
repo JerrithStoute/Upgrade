@@ -1,6 +1,6 @@
 import Link from "@/components/link";
 import { AlertTriangle, PackageOpen, Undo2 } from "lucide-react";
-import { requireStaff } from "@/lib/auth";
+import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { buildMaterialList } from "@/lib/takeoff-materials";
@@ -17,7 +17,7 @@ import { pullFromInventory, returnLeftovers, undoInventoryMove } from "./actions
  * Leftovers go back the same way.
  */
 export default async function PullFromInventoryPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ pulled?: string }> }) {
-  await requireStaff();
+  await requireView("takeoffs");
   const { id } = await params;
   const { pulled: justPulled } = await searchParams;
   const project = await getProject(id);

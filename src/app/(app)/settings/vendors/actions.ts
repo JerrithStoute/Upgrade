@@ -4,7 +4,7 @@ import { friendly } from "@/lib/friendly-action";
 import ExcelJS from "exceljs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin, signOutEverywhere } from "@/lib/auth";
+import { signOutEverywhere, requireEdit } from "@/lib/auth";
 import { sendResetEmail } from "@/lib/account";
 import { cancelInvite, invite, resendInvite } from "@/lib/invites";
 import { db } from "@/lib/db";
@@ -39,7 +39,7 @@ async function vendorFields(fd: FormData, id?: string) {
 }
 
 export const createVendor = friendly(async function createVendor(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const v = await db.vendor.create({ data: await vendorFields(fd) });
   revalidatePath(PATH);
   redirect(`${PATH}#vendor-${v.id}`);
@@ -47,7 +47,7 @@ export const createVendor = friendly(async function createVendor(fd: FormData) {
 
 /** A new name goes everywhere the vendor is written (Item List items, bids). */
 export const updateVendor = friendly(async function updateVendor(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(fd, "id");
   const had = await db.vendor.findUnique({ where: { id }, select: { name: true } });
   if (!had) throw new Error("Vendor not found");
@@ -61,7 +61,7 @@ export const updateVendor = friendly(async function updateVendor(fd: FormData) {
 
 /** Their bids stay on the jobs, under the name they had. */
 export const deleteVendor = friendly(async function deleteVendor(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(fd, "id");
   const certs = await db.vendorInsurance.findMany({ where: { vendorId: id }, select: { storagePath: true } });
   await db.vendor.deleteMany({ where: { id } });
@@ -99,7 +99,7 @@ async function fileRows(file: File): Promise<string[][]> {
  * (an export from another program is fine). Ones you have already only get blanks filled in.
  */
 export const importVendors = friendly(async function importVendors(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const file = fd.get("file");
   const text = str(fd, "paste");
   let rows: string[][] = [];
@@ -128,7 +128,7 @@ function revalidateVendor(id: string) {
 
 /** Which coverage every sub needs (Company → requiredCoverage). */
 export const setRequiredCoverage = friendly(async function setRequiredCoverage(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const types = fd
     .getAll("type")
     .map(String)
@@ -142,7 +142,7 @@ export const setRequiredCoverage = friendly(async function setRequiredCoverage(f
 
 /** Need this vendor's insurance? auto (once they're on a PO for work) / yes / no. */
 export const setInsuranceRequired = friendly(async function setInsuranceRequired(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(fd, "vendorId");
   const v = str(fd, "value");
   await db.vendor.update({ where: { id }, data: { insuranceRequired: v === "yes" ? true : v === "no" ? false : null } });
@@ -152,7 +152,7 @@ export const setInsuranceRequired = friendly(async function setInsuranceRequired
 
 /** A certificate you got from them (confirmed — you entered it). */
 export const addInsurance = friendly(async function addInsurance(fd: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const vendorId = str(fd, "vendorId");
   const vendor = await db.vendor.findUnique({ where: { id: vendorId }, select: { id: true, name: true } });
   if (!vendor) throw new Error("Vendor not found");
@@ -180,7 +180,7 @@ export const addInsurance = friendly(async function addInsurance(fd: FormData) {
 
 /** One they uploaded from their portal: you checked it, so it counts. Dates can be fixed as you confirm. */
 export const confirmInsurance = friendly(async function confirmInsurance(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const cert = await db.vendorInsurance.findUnique({ where: { id: str(fd, "id") } });
   if (!cert) throw new Error("Certificate not found");
   const type = str(fd, "type");
@@ -197,7 +197,7 @@ export const confirmInsurance = friendly(async function confirmInsurance(fd: For
 });
 
 export const deleteInsurance = friendly(async function deleteInsurance(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const cert = await db.vendorInsurance.findUnique({ where: { id: str(fd, "id") } });
   if (!cert) throw new Error("Certificate not found");
   await db.vendorInsurance.delete({ where: { id: cert.id } });
@@ -208,7 +208,7 @@ export const deleteInsurance = friendly(async function deleteInsurance(fd: FormD
 
 /** Invites someone at the vendor to the vendor portal: they see their POs and schedule, upload bills and insurance. */
 export const createVendorLogin = friendly(async function createVendorLogin(fd: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const vendorId = str(fd, "vendorId");
   const vendor = await db.vendor.findUnique({ where: { id: vendorId }, select: { id: true, name: true } });
   if (!vendor) throw new Error("Vendor not found");
@@ -219,20 +219,20 @@ export const createVendorLogin = friendly(async function createVendorLogin(fd: F
 });
 
 export const resendVendorInvite = friendly(async function resendVendorInvite(fd: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   await resendInvite(str(fd, "inviteId"), admin);
   revalidateVendor(str(fd, "vendorId"));
 });
 
 export const cancelVendorInvite = friendly(async function cancelVendorInvite(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   await cancelInvite(str(fd, "inviteId"));
   revalidateVendor(str(fd, "vendorId"));
 });
 
 /** Emails a password-reset link, or turns the login on / off (off signs them out everywhere). */
 export const updateVendorLogin = friendly(async function updateVendorLogin(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const user = await db.user.findUnique({ where: { id: str(fd, "id") } });
   if (!user || user.role !== "VENDOR" || !user.vendorId) throw new Error("Login not found");
   if (str(fd, "reset") === "1") {
@@ -249,7 +249,7 @@ export const updateVendorLogin = friendly(async function updateVendorLogin(fd: F
 
 /** Removes a login; one that's uploaded something is turned off instead (its uploads keep who sent them). */
 export const deleteVendorLogin = friendly(async function deleteVendorLogin(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const user = await db.user.findUnique({ where: { id: str(fd, "id") } });
   if (!user || user.role !== "VENDOR" || !user.vendorId) throw new Error("Login not found");
   try {

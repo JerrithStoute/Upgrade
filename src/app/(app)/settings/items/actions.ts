@@ -3,7 +3,7 @@
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { requireAdmin } from "@/lib/auth";
+import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { UNITS } from "@/lib/constants";
@@ -57,7 +57,7 @@ async function itemFields(fd: FormData, id?: string) {
 }
 
 export const createMaterialItem = friendly(async function createMaterialItem(fd: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const data = await itemFields(fd);
   // Filed under a kind's category (your windows category, "Trim"…): it's that kind, so pickers find it,
   // and with no code picked it takes that kind's "all of them use …" code.
@@ -71,7 +71,7 @@ export const createMaterialItem = friendly(async function createMaterialItem(fd:
 
 /** Changes the master entry: unlocked jobs follow its price (job-prices.ts); locked jobs and pinned items keep theirs. */
 export const updateMaterialItem = friendly(async function updateMaterialItem(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const id = str(fd, "id");
   if (!(await db.materialItem.findUnique({ where: { id }, select: { id: true } }))) throw new Error("Item not found");
   await db.materialItem.update({ where: { id }, data: await itemFields(fd, id) });
@@ -124,7 +124,7 @@ function cellValue(item: Record<string, unknown>, field: ItemCell): string {
  * code also goes onto the takeoff lines using the item that have none yet.
  */
 export async function saveItemCells(ids: string[], field: ItemCell, value: string): Promise<{ error?: string; prev?: { id: string; value: string }[] }> {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   try {
     const items = await db.materialItem.findMany({ where: { id: { in: ids.slice(0, 2000) } } });
     if (!items.length) return { error: "Item not found" };
@@ -143,7 +143,7 @@ export async function saveItemCells(ids: string[], field: ItemCell, value: strin
 
 /** Undo for a fill: puts each item's old value back. */
 export async function restoreItemCells(field: ItemCell, prev: { id: string; value: string }[]): Promise<{ error?: string }> {
-  await requireAdmin();
+  await requireEdit("lists");
   try {
     for (const p of prev.slice(0, 2000)) {
       const data = field === "costCodeId" ? { costCodeId: await costCodeOrNull(p.value) } : cellData(field, p.value);
@@ -162,7 +162,7 @@ export async function restoreItemCells(field: ItemCell, prev: { id: string; valu
  * Returns how many items with no code were filled in.
  */
 export async function saveCategoryCode(group: string, value: string): Promise<{ error?: string; filled?: number }> {
-  await requireAdmin();
+  await requireEdit("lists");
   if (!(CODE_GROUP_KEYS as string[]).includes(group)) return { error: "Unknown group" };
   try {
     const g = group as CodeGroup;
@@ -184,7 +184,7 @@ export async function saveCategoryCode(group: string, value: string): Promise<{ 
  * its items still in the old place move there too. Returns how many moved.
  */
 export async function saveKindCategory(group: string, category: string, move: boolean): Promise<{ error?: string; moved?: number }> {
-  await requireAdmin();
+  await requireEdit("lists");
   if (!(CODE_GROUP_KEYS as string[]).includes(group)) return { error: "Unknown kind" };
   try {
     const moved = await saveCategoryRule(group as CodeGroup, category, move);
@@ -197,7 +197,7 @@ export async function saveKindCategory(group: string, category: string, move: bo
 
 /** Renames a category, or merges it into another (every item in it, and any kind filed there). */
 export const renameItemCategory = friendly(async function renameItemCategory(fd: FormData) {
-  await requireAdmin();
+  await requireEdit("lists");
   const from = str(fd, "from");
   const to = str(fd, "to");
   if (!from || !(await db.materialItem.findFirst({ where: { category: from }, select: { id: true } }))) throw new Error("Category not found");
@@ -209,7 +209,7 @@ export const renameItemCategory = friendly(async function renameItemCategory(fd:
 
 /** Removes the entry from the list. Assemblies that used it keep their lines (just unlinked). */
 export const deleteMaterialItem = friendly(async function deleteMaterialItem(fd: FormData) {
-  const admin = await requireAdmin();
+  const admin = await requireEdit("lists");
   const id = str(fd, "id");
   const item = await db.materialItem.findUnique({ where: { id } });
   if (!item) throw new Error("Item not found");
