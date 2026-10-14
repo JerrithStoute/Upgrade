@@ -211,7 +211,9 @@ export async function saveChoice(projectId: string, selectionId: string, raw: un
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the choice's fields" };
   const sel = await boardSelection(projectId, selectionId);
   const { id, ...c } = parsed.data;
-  const data = { name: c.name, description: c.description || null, price: c.price, cost: c.cost, vendor: c.vendor || null, modelNumber: c.modelNumber || null };
+  // Someone who doesn't see costs leaves the choice's cost as it is.
+  const cost = user.access.costs ? c.cost : (sel.options.find((o) => o.id === id)?.cost ?? null);
+  const data = { name: c.name, description: c.description || null, price: c.price, cost, vendor: c.vendor || null, modelNumber: c.modelNumber || null };
   if (id) {
     if (!sel.options.some((o) => o.id === id)) return { ok: false, error: "Choice not found" };
     await db.selectionOption.update({ where: { id }, data });

@@ -22,7 +22,7 @@ import {
 } from "./actions";
 import { companyClock } from "@/lib/company-zone";
 import { companyPositions } from "@/lib/positions";
-import { parseChanges, resolveAccess } from "@/lib/access";
+import { parseChanges, positionAccess, savedAccess, summarizeAccess } from "@/lib/access";
 import { AccessFields } from "@/components/settings/access-fields";
 
 export const metadata = { title: "Team" };
@@ -372,8 +372,8 @@ export default async function TeamSettingsPage({
             <form action={savePersonAccess} className="space-y-4 p-5">
               <input type="hidden" name="id" value={accessPerson.id} />
               <AccessFields
-                value={resolveAccess("STAFF", positions.find((p) => p.id === accessPerson.positionId)?.access, accessPerson.access)}
-                base={resolveAccess("STAFF", positions.find((p) => p.id === accessPerson.positionId)?.access, null)}
+                value={savedAccess(positions.find((p) => p.id === accessPerson.positionId)?.access, accessPerson.access)}
+                base={positionAccess(positions.find((p) => p.id === accessPerson.positionId)?.access)}
               />
               <div className="flex flex-wrap items-center gap-2">
                 <SubmitButton>Save access</SubmitButton>
@@ -400,16 +400,17 @@ export default async function TeamSettingsPage({
               <tr>
                 <Th>Position</Th>
                 <Th>People</Th>
-                <Th>Which jobs</Th>
                 <Th right>Actions</Th>
               </tr>
             </THead>
             <TBody>
               {positions.map((p) => (
                 <Tr key={p.id} className={p.id === openPosition?.id ? "bg-blue-50/40" : undefined}>
-                  <Td className="font-medium text-slate-900">{p.name}</Td>
+                  <Td>
+                    <span className="font-medium text-slate-900">{p.name}</span>
+                    <span className="block max-w-xl text-xs text-slate-500">{summarizeAccess(p.accessOf)}</span>
+                  </Td>
                   <Td>{p._count.users}</Td>
-                  <Td className="text-sm text-slate-600">{p.accessOf.jobs === "MINE" ? "Only their jobs" : "Every job"}</Td>
                   <Td right>
                     <div className="flex justify-end gap-1.5">
                       <ButtonLink href={`/settings/team?position=${p.id}#positions`} variant="secondary" size="sm">

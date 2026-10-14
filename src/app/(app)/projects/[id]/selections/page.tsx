@@ -17,7 +17,10 @@ export default async function SelectionsPage({ params }: { params: Promise<{ id:
   const user = await requireView("selections");
   const { id } = await params;
   const project = await getProject(id);
-  const [{ estimate, cards, others, profitDefault }, tasks] = await Promise.all([boardForViewer(project.id, user.id, false), scheduleOptions(project.id)]);
+  const [{ estimate, cards: all, others, profitDefault }, tasks] = await Promise.all([boardForViewer(project.id, user.id, false), scheduleOptions(project.id)]);
+  // Their position doesn't see costs and profit: none of it is sent to the page.
+  const showCosts = user.access.costs;
+  const cards = showCosts ? all : all.map((c) => ({ ...c, budget: null, choices: c.choices.map((x) => ({ ...x, cost: null })) }));
   const overdue = cards.filter((c) => deadlineState(c.deadline.date, c.status) === "overdue").length;
 
   const allowances = cards.reduce((n, c) => n + (c.allowance ?? 0), 0);
@@ -68,6 +71,7 @@ export default async function SelectionsPage({ params }: { params: Promise<{ id:
           cards={cards}
           profitDefault={profitDefault}
           tasks={tasks}
+          showCosts={showCosts}
         />
       )}
 

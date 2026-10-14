@@ -46,7 +46,7 @@ export default async function BidsPage({
     confirm?: string;
   }>;
 }) {
-  await requireView("estimates");
+  await requireView("estimates", { costs: "/dashboard" });
   const { id } = await params;
   const q = await searchParams;
   const project = await getProject(id);

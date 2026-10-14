@@ -6,6 +6,7 @@ import { SubmitButton } from "@/components/ui/submit-button";
 import { fmtClock } from "@/lib/time-math";
 import { cn } from "@/lib/utils";
 import { clockInAction, clockOutAction } from "../actions";
+import { Directions } from "@/components/maps/directions";
 
 /**
  * Where the phone is, right now — asked once, at the punch. Never holds a punch up: not shared,
@@ -36,7 +37,8 @@ const withSpot = (punch: (fd: FormData) => Promise<unknown>) => async (fd: FormD
 const clockInHere = withSpot(clockInAction);
 const clockOutHere = withSpot(clockOutAction);
 
-export type Job = { id: string; label: string; group: string };
+/** A job to clock in to — with where it is, for Directions. */
+export type Job = { id: string; label: string; group: string; to: { lat: number | null; lng: number | null; address: string } };
 export type Code = { id: string; label: string; division: string };
 
 /**
@@ -69,6 +71,7 @@ export function ClockPanel({
           <Running since={open.since} />
           <p className="mt-1 font-medium text-slate-900">{open.job}</p>
           <p className="text-sm text-slate-500">{open.code ?? "No cost code"}</p>
+          {jobs.find((j) => j.id === open.projectId) ? <Directions to={jobs.find((j) => j.id === open.projectId)!.to} small className="mt-1" /> : null}
           {!switching ? (
             <div className="mt-5 grid gap-2">
               <form action={clockOutHere}>
@@ -172,6 +175,7 @@ function Picker({
             </optgroup>
           ))}
         </select>
+        {jobs.find((j) => j.id === job) ? <Directions to={jobs.find((j) => j.id === job)!.to} small className="mt-1.5" /> : null}
       </label>
       <label className="block">
         <span className="label">Working on (cost code)</span>

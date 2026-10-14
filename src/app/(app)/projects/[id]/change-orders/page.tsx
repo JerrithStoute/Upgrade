@@ -8,7 +8,7 @@ import { changeOrderTotals } from "@/lib/change-orders";
 import { Badge, ButtonLink, EmptyState, Stat, Table, THead, TBody, Tr, Th, Td, TFoot } from "@/components/ui";
 
 export default async function ChangeOrdersPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireView("selections");
+  const user = await requireView("selections");
   const { id } = await params;
   const project = await getProject(id);
   const cos = await db.changeOrder.findMany({
@@ -31,11 +31,14 @@ export default async function ChangeOrdersPage({ params }: { params: Promise<{ i
           <h2 className="text-base font-semibold text-slate-900">Change orders</h2>
           <p className="text-sm text-slate-500">Scope changes priced and approved by the client.</p>
         </div>
-        <span className="flex flex-wrap items-center gap-2">
-          <ButtonLink href={newHref} size="sm">
-            <Plus className="h-4 w-4" /> New change order
-          </ButtonLink>
-        </span>
+        {/* Priced from costs: only someone who sees them starts one. */}
+        {user.access.costs ? (
+          <span className="flex flex-wrap items-center gap-2">
+            <ButtonLink href={newHref} size="sm">
+              <Plus className="h-4 w-4" /> New change order
+            </ButtonLink>
+          </span>
+        ) : null}
       </div>
 
       {rows.length === 0 ? (
@@ -44,9 +47,11 @@ export default async function ChangeOrdersPage({ params }: { params: Promise<{ i
           title="No change orders"
           description="Track scope additions and unforeseen conditions as priced change orders for client approval."
           action={
-            <ButtonLink href={newHref} size="sm">
-              <Plus className="h-4 w-4" /> New change order
-            </ButtonLink>
+            user.access.costs ? (
+              <ButtonLink href={newHref} size="sm">
+                <Plus className="h-4 w-4" /> New change order
+              </ButtonLink>
+            ) : undefined
           }
         />
       ) : (

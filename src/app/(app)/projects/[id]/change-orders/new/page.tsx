@@ -6,8 +6,9 @@ import { Card, CardBody, CardHeader, Field, FormGrid, SubmitButton, buttonClasse
 import { createChangeOrder } from "../actions";
 
 export default async function NewChangeOrderPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireView("selections");
   const { id } = await params;
+  // A change order is priced from costs: someone who doesn't see them can't start one.
+  await requireView("selections", { costs: `/projects/${id}/change-orders` });
   const project = await getProject(id);
   const number = await nextChangeOrderNumber(project.id);
 

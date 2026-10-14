@@ -154,20 +154,26 @@ export async function requireVendor(): Promise<VendorUser> {
   return { ...user, vendorId: user.vendorId };
 }
 
-/** A page in `area`: the team members whose position shows it (Can view or Can edit). Others go home. */
-export async function requireView(area: AreaKey): Promise<SessionUser> {
+/**
+ * A page in `area`: the team members whose position shows it (Can view or Can edit). Others go home.
+ * `costs`: a page that's your costs (the estimate sheet, a change order's working view, lumber bids) —
+ * someone who doesn't see costs and profit goes to the given page instead (the client's view).
+ */
+export async function requireView(area: AreaKey, opts?: { costs?: string }): Promise<SessionUser> {
   const user = await requireStaff();
   if (!allows(user.access, area, 1)) redirect("/dashboard");
+  if (opts?.costs && !user.access.costs) redirect(opts.costs);
   return user;
 }
 
-/** A change in `area`: the team members whose position may edit it. Others are told why. */
-export async function requireEdit(area: AreaKey): Promise<SessionUser> {
+/** A change in `area`: the team members whose position may edit it (and, with `costs`, sees costs and profit). Others are told why. */
+export async function requireEdit(area: AreaKey, opts?: { costs?: boolean }): Promise<SessionUser> {
   const user = await requireStaff();
   if (!allows(user.access, area, 2)) {
     const label = AREAS.find((a) => a.key === area)?.label ?? area;
     throw new Error(`Your position can't change ${label} — an admin can allow it in Settings → Team`);
   }
+  if (opts?.costs && !user.access.costs) throw new Error("Your position doesn't see costs and profit, so it can't change this — an admin can allow it in Settings → Team");
   return user;
 }
 

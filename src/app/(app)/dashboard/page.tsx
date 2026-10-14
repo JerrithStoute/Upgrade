@@ -2,6 +2,7 @@ import Link from "@/components/link";
 import { addDays } from "date-fns";
 import { AlertTriangle, FileInput, LayoutGrid, ShieldAlert, ShieldCheck } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
+import { allows } from "@/lib/access";
 import { db } from "@/lib/db";
 import { contractValue } from "@/lib/projects";
 import { scheduleProgressByProject } from "@/lib/project-progress";
@@ -67,7 +68,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const me = await db.user.findUnique({ where: { id: user.id }, select: { dashboardCards: true } });
   const layout = dashboardLayout(me?.dashboardCards, reports);
   const cards = layoutKeys(layout);
-  const want = (k: string) => cards.includes(k);
+  // Bills and insurance are purchasing: only for a position that shows it.
+  const want = (k: string) => cards.includes(k) && (k !== "vendors" || allows(user.access, "purchasing", 1));
   const now = (await companyClock()).now; // now, on the company's clock (for due / overdue)
 
   // Only what the picked cards need is loaded.
@@ -183,7 +185,8 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       );
     },
     vendors: () => {
-      const { insuranceWarnings, billsWaiting } = cardVendors!;
+      if (!cardVendors) return null; // purchasing hidden for this position
+      const { insuranceWarnings, billsWaiting } = cardVendors;
       const items = [
         ...(billsWaiting.length
           ? [

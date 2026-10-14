@@ -201,6 +201,8 @@ model Project {
   manager   User?   @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
   // The team on this job (besides its manager): people whose position shows only their jobs see it too.
   members   ProjectMember[]
+  // Subs and vendors picked to see where this job is (their portal's Jobs page, with directions).
+  siteVendors ProjectVendor[]
   // Where the job is on the map (time clock: on site or not). Found from the address, or set from a phone at the site.
   siteLat     Float?
   siteLng     Float?
@@ -948,6 +950,8 @@ model DailyLog {
   weather       String? // Sunny, Rain, ...
   tempHigh      Int?
   tempLow       Int?
+  // In their own words: rained out after lunch, too windy to set trusses…
+  weatherNotes  String?
   crewCount     Int      @default(0)
   hoursWorked   Float    @default(0)
   workCompleted String?
@@ -1489,6 +1493,7 @@ model Vendor {
 
   @@unique([companyId, qbListId])
   @@index([companyId])
+  siteJobs          ProjectVendor[]
 }
 
 /// A request for prices: one vendor, one job, the Material list items of the cost codes
@@ -2204,4 +2209,20 @@ model ProjectMember {
   @@unique([projectId, userId])
   @@index([companyId])
   @@index([userId])
+}
+
+/// A sub or vendor picked to see a job's location (and directions to it) in their portal.
+model ProjectVendor {
+  id        String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  vendorId  String
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, vendorId])
+  @@index([companyId])
+  @@index([vendorId])
 }

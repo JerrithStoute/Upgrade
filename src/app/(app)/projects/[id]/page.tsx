@@ -8,6 +8,9 @@ import { avgTaskProgress } from "@/lib/project-progress";
 import { fmtDate, money, num, timeAgo, titleCase } from "@/lib/utils";
 import { Badge, Card, CardBody, CardHeader, Progress, Stat } from "@/components/ui";
 import { companyClock } from "@/lib/company-zone";
+import { siteAddressOf } from "@/lib/job-site";
+import { JobsMap } from "@/components/maps/jobs-map";
+import { Directions } from "@/components/maps/directions";
 
 function TabLink({ href, children = "View all" }: { href: string; children?: React.ReactNode }) {
   return (
@@ -198,6 +201,24 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
         </div>
 
         <div className="space-y-6">
+          <Card>
+            <CardHeader title="Job site" actions={<Directions to={{ lat: project.siteLat, lng: project.siteLng, address: siteAddressOf(project) }} small />} />
+            <CardBody className="space-y-2">
+              {project.siteLat != null && project.siteLng != null ? (
+                <JobsMap pins={[{ id: project.id, name: project.name, address: siteAddressOf(project), lat: project.siteLat, lng: project.siteLng }]} className="h-56" />
+              ) : null}
+              <p className="text-sm text-slate-600">{siteAddressOf(project) || "No address yet"}</p>
+              {project.siteLat == null ? (
+                <p className="text-xs text-slate-500">
+                  Not on the map yet —{" "}
+                  <Link href={`${base}/edit`} className="font-medium text-blue-700 hover:underline">
+                    set the spot
+                  </Link>{" "}
+                  (from the address, or standing at the site).
+                </p>
+              ) : null}
+            </CardBody>
+          </Card>
           {sees("selections") ? (
             <Card>
               <CardHeader title="Client approvals" description={`${pendingSelections.length + pendingChangeOrders.length} waiting`} />

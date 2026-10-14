@@ -1,4 +1,4 @@
-import { AREAS, JOBS_LABEL, LEVELS, SWITCHES, type Access } from "@/lib/access";
+import { AREAS, COSTS_OFF_NOTE, JOBS_LABEL, LEVELS, SWITCHES, type Access } from "@/lib/access";
 
 /**
  * The access grid — one row per area (Hidden / Can view / Can edit), which jobs, and the two
@@ -55,6 +55,7 @@ export function AccessFields({ value, base, form }: { value: Access; base?: Acce
           </label>
         ))}
       </div>
+      <p className="-mt-2 text-xs text-slate-500">Sees costs and profit — {COSTS_OFF_NOTE}</p>
     </div>
   );
 }

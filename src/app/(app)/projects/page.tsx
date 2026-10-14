@@ -10,6 +10,20 @@ import { cn, fmtDate, money, titleCase } from "@/lib/utils";
 import { Badge, Button, ButtonLink, EmptyState, PageHeader, Progress, TBody, THead, Td, Th, Tr } from "@/components/ui";
 import { PROJECTS_COOKIE, projectsView } from "@/lib/projects-view";
 import { ProjectWidgets, type Widget } from "./_components/project-widgets";
+import { JobsMap } from "@/components/maps/jobs-map";
+import { siteAddressOf } from "@/lib/job-site";
+
+/** Pin colors on the map, by status. */
+const STATUS_COLOR: Record<string, string> = {
+  LEAD: "#94a3b8",
+  ESTIMATING: "#f59e0b",
+  PROPOSAL_SENT: "#f97316",
+  CONTRACTED: "#2563eb",
+  IN_PROGRESS: "#16a34a",
+  ON_HOLD: "#9333ea",
+  COMPLETED: "#334155",
+  CANCELLED: "#e11d48",
+};
 
 /** The three kinds of job, each its own widget (plus All projects). Additions, commercial and other jobs sit with Remodels. */
 const KINDS = [
@@ -139,7 +153,52 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       return { key: k.key, title: k.title, count: rows.length, total: sum(rows), newHref: `/projects/new?kind=${k.key}`, newLabel: k.newLabel, body: table(rows, k.empty) };
     }),
     { key: "all", title: "All projects", count: all.length, total: sum(all), body: table(all, "No projects yet.") },
+    jobsMap(),
   ];
+
+  /** Every job on one map (finished and cancelled ones only when that status is picked above). */
+  function jobsMap(): Widget {
+    const onMap = projects.filter((p) => status || !["COMPLETED", "CANCELLED"].includes(p.status));
+    const pinned = onMap.filter((p) => p.siteLat != null && p.siteLng != null);
+    const missing = onMap.filter((p) => p.siteLat == null);
+    const shown = [...new Set(pinned.map((p) => p.status))];
+    return {
+      key: "map",
+      title: "Map",
+      count: pinned.length,
+      total: missing.length ? `${missing.length} not on the map` : "all on the map",
+      body: (
+        <div className="space-y-2 p-3">
+          <JobsMap
+            className="h-[28rem]"
+            pins={pinned.map((p) => ({ id: p.id, name: `#${p.number} ${p.name}`, address: siteAddressOf(p), lat: p.siteLat!, lng: p.siteLng!, color: STATUS_COLOR[p.status], href: `/projects/${p.id}` }))}
+          />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
+            {shown.map((s) => (
+              <span key={s} className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-full" style={{ background: STATUS_COLOR[s] }} />
+                {titleCase(s)}
+              </span>
+            ))}
+          </div>
+          {missing.length ? (
+            <p className="text-xs text-slate-500">
+              Not on the map yet:{" "}
+              {missing.map((p, i) => (
+                <span key={p.id}>
+                  {i ? ", " : ""}
+                  <Link href={`/projects/${p.id}/edit`} className="text-blue-700 hover:underline">
+                    #{p.number} {p.name}
+                  </Link>
+                </span>
+              ))}{" "}
+              — set each one&apos;s spot on its Edit page.
+            </p>
+          ) : null}
+        </div>
+      ),
+    };
+  }
 
   return (
     <div className="space-y-6">

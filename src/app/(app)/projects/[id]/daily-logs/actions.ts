@@ -31,6 +31,7 @@ function readLogFields(fd: FormData) {
     weather: strOrNull(fd, "weather"),
     tempHigh,
     tempLow,
+    weatherNotes: strOrNull(fd, "weatherNotes"),
     crewCount: Math.max(0, intField(fd, "crewCount", 0)),
     hoursWorked: Math.max(0, numField(fd, "hoursWorked", 0)),
     workCompleted: strOrNull(fd, "workCompleted"),

@@ -5,7 +5,7 @@
  */
 
 export const PROJECTS_COOKIE = "upgrade_projects";
-export const WIDGET_KEYS = ["all", "spec", "custom", "remodel"] as const; // the default order: All projects on top
+export const WIDGET_KEYS = ["all", "spec", "custom", "remodel", "map"] as const; // the default order: All projects on top
 export type WidgetKey = (typeof WIDGET_KEYS)[number];
 
 export function projectsView(raw: string | undefined): { order: WidgetKey[]; collapsed: WidgetKey[] } {

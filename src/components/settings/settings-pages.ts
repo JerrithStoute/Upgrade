@@ -81,7 +81,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     ],
   },
   {
-    title: "Money",
+    title: "Financials",
     icon: Wallet,
     pages: [
       { href: "/settings/invoices", label: "Invoices", about: "Invoice numbers, and what moves onto invoices by itself", icon: Receipt },

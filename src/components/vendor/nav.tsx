@@ -2,13 +2,14 @@
 
 import Link from "@/components/link";
 import { usePathname } from "next/navigation";
-import { CalendarDays, ClipboardList, FileInput, Home, ShieldCheck, type LucideIcon } from "lucide-react";
+import { CalendarDays, ClipboardList, FileInput, Home, MapPin, ShieldCheck, type LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] = [
   { href: "/vendor", label: "Home", icon: Home, exact: true },
   { href: "/vendor/pos", label: "Purchase orders", icon: ClipboardList },
   { href: "/vendor/schedule", label: "Schedule", icon: CalendarDays },
+  { href: "/vendor/jobs", label: "Jobs", icon: MapPin },
   { href: "/vendor/bills", label: "Bills", icon: FileInput },
   { href: "/vendor/insurance", label: "Insurance", icon: ShieldCheck },
 ];

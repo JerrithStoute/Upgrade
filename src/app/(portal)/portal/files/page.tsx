@@ -161,6 +161,7 @@ export default async function PortalFilesPage({ searchParams }: { searchParams: 
                     </div>
                   </div>
                   {log.workCompleted ? <p className="mt-1.5 whitespace-pre-line text-sm text-slate-700">{log.workCompleted}</p> : null}
+                  {log.weatherNotes ? <p className="mt-1 whitespace-pre-line text-xs text-slate-500">Weather: {log.weatherNotes}</p> : null}
                   {log.issues ? (
                     <p className="mt-1.5 text-sm text-amber-800">
                       <span className="font-medium">Issues:</span> {log.issues}

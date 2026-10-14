@@ -8,6 +8,7 @@ import { costWeek, entryHours, fmtHours, sameDay, weekDays } from "@/lib/time-ma
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ClockPanel, type Code, type Job } from "./_components/clock-panel";
+import { siteAddressOf } from "@/lib/job-site";
 
 export const metadata = { title: "Time clock" };
 
@@ -23,7 +24,11 @@ export default async function TimeClockPage() {
   const today = clock.now;
   const [open, projects, costCodes, mine, me] = await Promise.all([
     openEntry(user.id),
-    db.project.findMany({ where: { status: { not: "CANCELLED" } }, select: { id: true, number: true, name: true, status: true }, orderBy: { number: "desc" } }),
+    db.project.findMany({
+      where: { status: { not: "CANCELLED" } },
+      select: { id: true, number: true, name: true, status: true, address: true, city: true, state: true, zip: true, siteLat: true, siteLng: true },
+      orderBy: { number: "desc" },
+    }),
     db.costCode.findMany({
       where: { active: true },
       select: { id: true, code: true, name: true, division: true },
@@ -45,11 +50,12 @@ export default async function TimeClockPage() {
   });
 
   const label = (p: { number: number; name: string }) => `#${p.number} ${p.name}`;
+  const siteOf = (p: (typeof projects)[number]) => ({ lat: p.siteLat, lng: p.siteLng, address: siteAddressOf(p) });
   const recentIds = [...new Set(mine.map((e) => e.projectId))].slice(0, 3);
   const jobs: Job[] = [
-    ...recentIds.flatMap((id) => projects.filter((p) => p.id === id).map((p) => ({ id: p.id, label: label(p), group: "Recent" }))),
-    ...projects.filter((p) => ACTIVE.includes(p.status)).map((p) => ({ id: p.id, label: label(p), group: "Active jobs" })),
-    ...projects.filter((p) => !ACTIVE.includes(p.status)).map((p) => ({ id: p.id, label: label(p), group: "Other jobs" })),
+    ...recentIds.flatMap((id) => projects.filter((p) => p.id === id).map((p) => ({ id: p.id, label: label(p), group: "Recent", to: siteOf(p) }))),
+    ...projects.filter((p) => ACTIVE.includes(p.status)).map((p) => ({ id: p.id, label: label(p), group: "Active jobs", to: siteOf(p) })),
+    ...projects.filter((p) => !ACTIVE.includes(p.status)).map((p) => ({ id: p.id, label: label(p), group: "Other jobs", to: siteOf(p) })),
   ];
   const codes: Code[] = costCodes.map((c) => ({ id: c.id, label: codeLabel(c), division: c.division }));
   const jobCodes: Record<string, string[]> = {};

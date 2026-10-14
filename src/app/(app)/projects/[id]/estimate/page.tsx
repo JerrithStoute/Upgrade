@@ -1,3 +1,4 @@
+import { redirect } from "next/navigation";
 import Link from "@/components/link";
 import { FileText, Plus, ExternalLink, Copy, FileStack, Lock, LockOpen, ChevronDown } from "lucide-react";
 import { requireView } from "@/lib/auth";
@@ -54,6 +55,11 @@ export default async function EstimatePage({ params, searchParams }: { params: P
     }),
     templateOptions(),
   ]);
+  // Someone who doesn't see costs and profit gets the estimate as the client sees it: the proposal.
+  if (!user.access.costs) {
+    const shown = estimates.find((e) => e.status === "APPROVED") ?? estimates[0];
+    redirect(shown ? `/projects/${project.id}/estimate/${shown.id}/proposal` : `/projects/${project.id}`);
+  }
 
   if (estimates.length === 0) {
     return (

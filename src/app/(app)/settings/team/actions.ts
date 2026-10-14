@@ -10,7 +10,7 @@ import { cancelInvite, invite, resendInvite } from "@/lib/invites";
 import { db, systemDb } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { str, strOrNull, boolField } from "@/lib/utils";
-import { accessFromForm, diffAccess, positionAccess, resolveAccess } from "@/lib/access";
+import { accessFromForm, diffAccess, positionAccess } from "@/lib/access";
 import { companyPositions, defaultPositionId } from "@/lib/positions";
 
 /**
@@ -232,7 +232,7 @@ export const savePersonAccess = friendly(async function savePersonAccess(formDat
   const id = str(formData, "id");
   const target = await db.user.findFirst({ where: { id, role: "STAFF" }, include: { position: { select: { access: true, name: true } } } });
   if (!target) throw new Error("Only team members in a position have access to change (admins have everything)");
-  const base = resolveAccess("STAFF", target.position?.access, null);
+  const base = positionAccess(target.position?.access);
   const changes = boolField(formData, "reset") ? {} : diffAccess(base, accessFromForm((k) => strOrNull(formData, k)));
   const n = Object.keys(changes).length;
   await db.user.update({ where: { id }, data: { access: n ? JSON.stringify(changes) : null } });

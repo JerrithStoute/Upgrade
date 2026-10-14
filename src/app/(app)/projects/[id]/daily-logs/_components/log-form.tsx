@@ -10,6 +10,7 @@ export function LogFields({
     weather?: string | null;
     tempHigh?: number | null;
     tempLow?: number | null;
+    weatherNotes?: string | null;
     crewCount?: number;
     hoursWorked?: number;
     workCompleted?: string | null;
@@ -38,6 +39,16 @@ export function LogFields({
       </Field>
       <Field label="Low °F" htmlFor="log-lo">
         <input id="log-lo" type="number" name="tempLow" className="input" defaultValue={values.tempLow ?? ""} />
+      </Field>
+      <Field label="Weather notes" htmlFor="log-weather-notes" className="col-span-2 md:col-span-6">
+        <textarea
+          id="log-weather-notes"
+          name="weatherNotes"
+          className="input"
+          rows={2}
+          defaultValue={values.weatherNotes ?? ""}
+          placeholder="e.g. Rained out after lunch, too windy to set trusses, ground too wet to pour"
+        />
       </Field>
       <Field label="Crew on site" htmlFor="log-crew" className="md:col-span-3">
         <input id="log-crew" type="number" min={0} name="crewCount" className="input" defaultValue={values.crewCount ?? 0} />

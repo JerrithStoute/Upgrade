@@ -1,7 +1,7 @@
 /**
  * Browser security rules sent with every page (see next.config.ts):
  * - everything (scripts, styles, pictures, plan files) comes from this site only (and the
- *   robot check from Cloudflare);
+ *   robot check from Cloudflare, and the street map pictures from OpenStreetMap);
  * - the program can't be shown inside another site's frame (no click-jacking);
  * - online, browsers only ever talk to it over HTTPS;
  * - no camera / microphone / payment access for pages (photo uploads use the file picker).
@@ -15,7 +15,8 @@ export function securityHeaders(production: boolean) {
     // Next.js puts small inline scripts in each page; pdf.js decodes plans with WebAssembly. Dev reload needs eval.
     `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${TURNSTILE}${production ? "" : " 'unsafe-eval'"}`,
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
+    // Street map tiles for job maps (src/components/maps/jobs-map.tsx).
+    "img-src 'self' data: blob: https://tile.openstreetmap.org",
     "font-src 'self' data:",
     "connect-src 'self'",
     "worker-src 'self' blob:",

@@ -5,7 +5,11 @@ import { z } from "zod";
  *
  * - Each AREA of the program is Hidden, Can view or Can edit.
  * - "Which jobs": every job, or only the jobs they manage or are on the team of.
- * - Two switches: may delay a job's schedule, may approve & pay bills.
+ * - Three switches: may delay a job's schedule, may approve & pay bills, sees costs and profit.
+ *   With costs and profit off, the screens that are mostly your costs are hidden (Takeoffs,
+ *   Budget, Purchasing, Reports, the Settings lists), estimates and change orders open as the
+ *   client sees them (the proposal, the change order document), and Selections and Timesheets
+ *   leave out cost and profit numbers.
  * - A person gets their position's access; an admin can change single areas for just them.
  * - Admins get everything, always. Company, team and billing settings stay admin-only —
  *   whoever can change the team could give themselves anything.
@@ -14,19 +18,19 @@ import { z } from "zod";
  */
 
 export const AREAS = [
-  { key: "leads", label: "Leads & clients", hint: "Leads, clients" },
-  { key: "estimates", label: "Estimates, proposals & bids", hint: "Estimate, proposal, lumber bids" },
-  { key: "takeoffs", label: "Takeoffs & Material List", hint: "Takeoff, Material list" },
-  { key: "selections", label: "Selections & change orders", hint: "Selections, change orders" },
-  { key: "field", label: "Schedule, daily logs & to-dos", hint: "Schedule, daily logs, to-dos" },
-  { key: "files", label: "Files, plans & messages", hint: "Files, plans, client messages" },
-  { key: "purchasing", label: "Purchasing, bills & inventory", hint: "POs, bills, inventory" },
-  { key: "budget", label: "Budget & spec sales", hint: "Budget, spec sale, spec homes" },
-  { key: "invoices", label: "Invoices", hint: "Client invoices and payments" },
-  { key: "reports", label: "Reports", hint: "Reports, money cards on the dashboard" },
-  { key: "time", label: "Everyone's time", hint: "Their own time clock always works; this is everyone else's hours and timesheets" },
-  { key: "lists", label: "Settings: lists & templates", hint: "Item List, cost codes, vendors, member sizes, span tables, templates" },
-  { key: "quickbooks", label: "Settings: QuickBooks", hint: "QuickBooks connection and matching" },
+  { key: "leads", label: "Leads & clients", short: "Leads", hint: "Leads, clients" },
+  { key: "estimates", label: "Estimates, proposals & bids", short: "Estimates", hint: "Estimate, proposal, lumber bids" },
+  { key: "takeoffs", label: "Takeoffs & Material List", short: "Takeoffs", hint: "Takeoff, Material list" },
+  { key: "selections", label: "Selections & change orders", short: "Selections & COs", hint: "Selections, change orders" },
+  { key: "field", label: "Schedule, daily logs & to-dos", short: "Schedule & logs", hint: "Schedule, daily logs, to-dos" },
+  { key: "files", label: "Files, plans & messages", short: "Files", hint: "Files, plans, client messages" },
+  { key: "purchasing", label: "Purchasing, bills & inventory", short: "Purchasing", hint: "POs, bills, inventory" },
+  { key: "budget", label: "Budget & spec sales", short: "Budget", hint: "Budget, spec sale, spec homes" },
+  { key: "invoices", label: "Invoices", short: "Invoices", hint: "Client invoices and payments" },
+  { key: "reports", label: "Reports", short: "Reports", hint: "Reports, money cards on the dashboard" },
+  { key: "time", label: "Everyone's time", short: "Everyone's time", hint: "Their own time clock always works; this is everyone else's hours and timesheets" },
+  { key: "lists", label: "Settings: lists & templates", short: "Settings lists", hint: "Item List, cost codes, vendors, member sizes, span tables, templates" },
+  { key: "quickbooks", label: "Settings: QuickBooks", short: "QuickBooks", hint: "QuickBooks connection and matching" },
 ] as const;
 
 export type AreaKey = (typeof AREAS)[number]["key"];
@@ -44,14 +48,22 @@ export const levelLabel = (l: Level) => LEVELS[l].label;
 export type Jobs = "ALL" | "MINE";
 export const JOBS_LABEL: Record<Jobs, string> = { ALL: "Every job", MINE: "Only their jobs (manager or on the job's team)" };
 
-export type Access = Record<AreaKey, Level> & { jobs: Jobs; delay: boolean; approveBills: boolean };
+export type Access = Record<AreaKey, Level> & { jobs: Jobs; delay: boolean; approveBills: boolean; costs: boolean };
 /** A person's changes from their position (only what differs). */
 export type AccessChanges = Partial<Access>;
 
 export const SWITCHES = [
   { key: "delay", label: "Can delay a job's schedule" },
   { key: "approveBills", label: "Can approve & pay bills" },
+  { key: "costs", label: "Sees costs and profit" },
 ] as const;
+
+/** What "Sees costs and profit" off does — said the same way wherever the switch is. */
+export const COSTS_OFF_NOTE =
+  "Off: Takeoffs, Budget, Purchasing, Reports and the Settings lists are hidden; estimates and change orders open as the client sees them; Selections and Timesheets leave out cost and profit.";
+
+/** The areas that are mostly your costs — hidden when costs and profit are. */
+const COST_AREAS: AreaKey[] = ["takeoffs", "budget", "purchasing", "reports", "lists"];
 
 const level = z.union([z.literal(0), z.literal(1), z.literal(2)]);
 const changesSchema = z
@@ -60,16 +72,17 @@ const changesSchema = z
     jobs: z.enum(["ALL", "MINE"]).optional(),
     delay: z.boolean().optional(),
     approveBills: z.boolean().optional(),
+    costs: z.boolean().optional(),
   })
   .strip();
 
 const areas = (l: Partial<Record<AreaKey, Level>>, rest: Level = 0) => Object.fromEntries(AREA_KEYS.map((k) => [k, l[k] ?? rest])) as Record<AreaKey, Level>;
 
 /** Admins: everything. */
-export const ADMIN_ACCESS: Access = { ...areas({}, 2), jobs: "ALL", delay: true, approveBills: true };
+export const ADMIN_ACCESS: Access = { ...areas({}, 2), jobs: "ALL", delay: true, approveBills: true, costs: true };
 
 /** Clients, vendors and people without a login: nothing inside the program. */
-export const NO_ACCESS: Access = { ...areas({}), jobs: "MINE", delay: false, approveBills: false };
+export const NO_ACCESS: Access = { ...areas({}), jobs: "MINE", delay: false, approveBills: false, costs: false };
 
 /** The positions every company starts with (all can be changed, renamed or removed). */
 export const STARTER_POSITIONS: { key: string; name: string; access: Access }[] = [
@@ -82,6 +95,7 @@ export const STARTER_POSITIONS: { key: string; name: string; access: Access }[] 
       jobs: "ALL",
       delay: false,
       approveBills: false,
+      costs: true,
     },
   },
   {
@@ -92,6 +106,7 @@ export const STARTER_POSITIONS: { key: string; name: string; access: Access }[] 
       jobs: "MINE",
       delay: true,
       approveBills: false,
+      costs: true,
     },
   },
   {
@@ -102,6 +117,7 @@ export const STARTER_POSITIONS: { key: string; name: string; access: Access }[] 
       jobs: "ALL",
       delay: false,
       approveBills: true,
+      costs: true,
     },
   },
   {
@@ -112,7 +128,14 @@ export const STARTER_POSITIONS: { key: string; name: string; access: Access }[] 
       jobs: "ALL",
       delay: false,
       approveBills: false,
+      costs: true,
     },
+  },
+  {
+    // In the field: the schedule, daily logs (and their photos), to-dos, plans and files — no money.
+    key: "FIELD",
+    name: "Field crew",
+    access: { ...areas({ field: 2, files: 1 }), jobs: "ALL", delay: false, approveBills: false, costs: false },
   },
 ];
 export const STAFF_ACCESS = STARTER_POSITIONS[0].access;
@@ -133,10 +156,44 @@ export function positionAccess(json: string | null | undefined): Access {
   return { ...STAFF_ACCESS, ...parseChanges(json) };
 }
 
-/** What someone may do: admins everything; others their position (Staff if none) plus their own changes. */
+/**
+ * What someone may do: admins everything; others their position (Staff if none) plus their own
+ * changes — and with costs and profit off, the mostly-cost areas hidden (COSTS_OFF_NOTE).
+ */
 export function resolveAccess(role: string, positionJson: string | null | undefined, changesJson: string | null | undefined): Access {
   if (role === "ADMIN") return ADMIN_ACCESS;
+  return withCostRule({ ...positionAccess(positionJson), ...parseChanges(changesJson) });
+}
+
+/** Costs and profit off: the areas that are mostly costs are hidden, whatever else they're set to. */
+export function withCostRule(a: Access): Access {
+  if (a.costs) return a;
+  const out = { ...a };
+  for (const k of COST_AREAS) out[k] = 0;
+  return out;
+}
+
+/** As the grid shows it (before the cost rule) — for editing a position or a person. */
+export function savedAccess(positionJson: string | null | undefined, changesJson: string | null | undefined): Access {
   return { ...positionAccess(positionJson), ...parseChanges(changesJson) };
+}
+
+/** A position (or person) in a line: "Edits: Estimates, Takeoffs · Views: Budget · Every job · No costs or profit". */
+export function summarizeAccess(raw: Access): string {
+  const a = withCostRule(raw);
+  const names = (l: Level) => AREAS.filter((x) => a[x.key] === l).map((x) => x.short);
+  const edits = names(2);
+  const views = names(1);
+  const parts = [
+    edits.length ? `Edits: ${edits.join(", ")}` : "",
+    views.length ? `Views: ${views.join(", ")}` : "",
+    !edits.length && !views.length ? "Only their own time clock and to-dos" : "",
+    a.jobs === "MINE" ? "Only their jobs" : "Every job",
+    a.costs ? "" : "No costs or profit",
+    a.delay ? "Can delay" : "",
+    a.approveBills ? "Approves bills" : "",
+  ];
+  return parts.filter(Boolean).join(" · ");
 }
 
 /** Only what `access` changes from `base` — what's saved for a person. */
@@ -154,6 +211,7 @@ export function accessFromForm(get: (name: string) => string | null): Access {
     jobs: get("jobs") === "MINE" ? "MINE" : "ALL",
     delay: get("delay") === "on",
     approveBills: get("approveBills") === "on",
+    costs: get("costs") === "on",
   };
 }
 

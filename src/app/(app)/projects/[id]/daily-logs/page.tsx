@@ -81,6 +81,12 @@ export default async function DailyLogsPage({ params }: { params: Promise<{ id: 
                     </ButtonLink>
                   </div>
                 </div>
+                {log.weatherNotes ? (
+                  <p className="flex gap-1.5 text-sm text-slate-600">
+                    <CloudSun className="mt-0.5 h-4 w-4 shrink-0 text-slate-400" />
+                    <span className="whitespace-pre-line">{log.weatherNotes}</span>
+                  </p>
+                ) : null}
                 {log.workCompleted ? <p className="whitespace-pre-line text-sm text-slate-700">{log.workCompleted}</p> : <p className="text-sm italic text-slate-400">No work summary.</p>}
                 {log.issues ? (
                   <div className="flex gap-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900 ring-1 ring-inset ring-amber-200">

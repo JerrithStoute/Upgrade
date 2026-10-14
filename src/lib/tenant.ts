@@ -38,7 +38,8 @@ async function signedIn(): Promise<{ companyId: string; jobsOf: string | null } 
   const user = await getCurrentUser();
   if (!user) return null;
   if (bySession.size > 5000) bySession.clear();
-  const row = { companyId: user.companyId, jobsOf: user.access.jobs === "MINE" ? user.id : null, at: Date.now() };
+  // Only team members have positions: clients and vendors see their own things by their own rules (portal pages).
+  const row = { companyId: user.companyId, jobsOf: user.role === "STAFF" && user.access.jobs === "MINE" ? user.id : null, at: Date.now() };
   bySession.set(token, row);
   return row;
 }

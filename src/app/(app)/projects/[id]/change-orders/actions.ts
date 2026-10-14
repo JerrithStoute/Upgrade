@@ -46,7 +46,7 @@ const err = (e: unknown): Result => ({ ok: false, error: (e as Error).message })
 
 /** New change order: title from the form; intro, closing text, terms, profit and "if declined" from your defaults. */
 export const createChangeOrder = friendly(async function createChangeOrder(formData: FormData) {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   const projectId = str(formData, "projectId");
   const project = await db.project.findUnique({ where: { id: projectId } });
   if (!project) throw new Error("Project not found");
@@ -93,7 +93,7 @@ const day = (s: string) => (s ? new Date(`${s}T12:00:00`) : null);
 
 /** Saves changes to a draft change order (any of its fields). */
 export async function saveChangeOrder(projectId: string, coId: string, raw: unknown): Promise<Result> {
-  await requireEdit("selections");
+  await requireEdit("selections", { costs: true });
   const parsed = fields.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the fields" };
   try {
@@ -128,7 +128,7 @@ export async function saveChangeOrder(projectId: string, coId: string, raw: unkn
 
 /** "Use as default": new change orders start with this value. */
 export async function saveCoDefault(field: keyof CoDefaults, value: string | number | null): Promise<Result> {
-  await requireEdit("selections");
+  await requireEdit("selections", { costs: true });
   if (!["introText", "closingText", "terms", "ifDeclined", "profitMode", "profitValue", "profitShown"].includes(field)) return { ok: false, error: "Unknown default" };
   const company = await db.company.findFirst({ select: { id: true, changeOrderDefaults: true } });
   if (!company) return { ok: false, error: "Set up your company first (Settings)." };
@@ -141,7 +141,7 @@ export async function saveCoDefault(field: keyof CoDefaults, value: string | num
 
 /** Adds client choices (not on a change order yet) as lines: Client Price − Allowance = Difference. */
 export async function addChoicesToChangeOrder(projectId: string, coId: string, selectionIds: string[]): Promise<Result> {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   try {
     const co = await draftCO(projectId, coId);
     const open = (await unaddedChoices(projectId)).filter((c) => selectionIds.includes(c.selectionId));
@@ -185,7 +185,7 @@ const lineInput = z.object({
 
 /** An item ("New Item", its client price) or an extra charge (e.g. a change order fee). */
 export async function saveChangeOrderLine(projectId: string, coId: string, raw: unknown): Promise<Result> {
-  await requireEdit("selections");
+  await requireEdit("selections", { costs: true });
   const parsed = lineInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the line" };
   try {
@@ -219,7 +219,7 @@ export async function saveChangeOrderLine(projectId: string, coId: string, raw: 
 
 /** An item's cost code — your bookkeeping (the budget uses it), so it can change even after approval. Clients never see it. */
 export async function setChangeOrderLineCode(projectId: string, coId: string, itemId: string, costCodeId: string | null): Promise<Result> {
-  await requireEdit("selections");
+  await requireEdit("selections", { costs: true });
   const item = await db.changeOrderItem.findFirst({ where: { id: itemId, changeOrder: { id: coId, projectId } }, select: { id: true } });
   if (!item) return { ok: false, error: "Line not found" };
   const code = costCodeId ? await db.costCode.findUnique({ where: { id: costCodeId }, select: { id: true } }) : null;
@@ -232,7 +232,7 @@ export async function setChangeOrderLineCode(projectId: string, coId: string, it
 
 /** A line's own profit (draft only): CO follows the change order's; NONE, PCT (a %) or AMOUNT (a $). */
 export async function setChangeOrderLineProfit(projectId: string, coId: string, itemId: string, mode: string, value: number): Promise<Result> {
-  await requireEdit("selections");
+  await requireEdit("selections", { costs: true });
   if (!["CO", "NONE", "PCT", "AMOUNT"].includes(mode) || !Number.isFinite(value) || Math.abs(value) > 1e9) return { ok: false, error: "Check the profit" };
   try {
     const co = await draftCO(projectId, coId);
@@ -247,7 +247,7 @@ export async function setChangeOrderLineProfit(projectId: string, coId: string, 
 
 /** Taxed or not (draft only): you pay sales tax on it at the change order's rate. */
 export async function setChangeOrderLineTax(projectId: string, coId: string, itemId: string, taxed: boolean): Promise<Result> {
-  await requireEdit("selections");
+  await requireEdit("selections", { costs: true });
   try {
     const co = await draftCO(projectId, coId);
     if (!co.items.some((i) => i.id === itemId)) return { ok: false, error: "Line not found" };
@@ -260,7 +260,7 @@ export async function setChangeOrderLineTax(projectId: string, coId: string, ite
 }
 
 export async function removeChangeOrderLine(projectId: string, coId: string, itemId: string): Promise<Result> {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   try {
     const co = await draftCO(projectId, coId);
     const item = co.items.find((i) => i.id === itemId);
@@ -275,7 +275,7 @@ export async function removeChangeOrderLine(projectId: string, coId: string, ite
 }
 
 export const sendChangeOrder = friendly(async function sendChangeOrder(formData: FormData) {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const co = await loadCO(projectId, id);
@@ -297,7 +297,7 @@ export const sendChangeOrder = friendly(async function sendChangeOrder(formData:
 
 /** Records the client's approval (signed on paper, by email…). Approved once every listed team member has too. */
 export const approveChangeOrder = friendly(async function approveChangeOrder(formData: FormData) {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const co = await loadCO(projectId, id);
@@ -312,7 +312,7 @@ export const approveChangeOrder = friendly(async function approveChangeOrder(for
 
 /** A listed team member approves. */
 export async function teamApproveChangeOrder(projectId: string, coId: string): Promise<Result> {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   const co = await loadCO(projectId, coId);
   if (co.status !== "PENDING_APPROVAL") return { ok: false, error: "Change order is not waiting for approval" };
   const done = parseApprovals(co.teamApprovals);
@@ -325,7 +325,7 @@ export async function teamApproveChangeOrder(projectId: string, coId: string): P
 }
 
 export const declineChangeOrder = friendly(async function declineChangeOrder(formData: FormData) {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const co = await loadCO(projectId, id);
@@ -339,7 +339,7 @@ export const declineChangeOrder = friendly(async function declineChangeOrder(for
 });
 
 export const voidChangeOrder = friendly(async function voidChangeOrder(formData: FormData) {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const co = await loadCO(projectId, id);
@@ -351,7 +351,7 @@ export const voidChangeOrder = friendly(async function voidChangeOrder(formData:
 });
 
 export const deleteChangeOrder = friendly(async function deleteChangeOrder(formData: FormData) {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
   const co = await loadCO(projectId, id);
@@ -365,7 +365,7 @@ export const deleteChangeOrder = friendly(async function deleteChangeOrder(formD
 // --- Files --------------------------------------------------------------------
 
 export async function addChangeOrderFiles(projectId: string, coId: string, fd: FormData): Promise<Result> {
-  const user = await requireEdit("selections");
+  const user = await requireEdit("selections", { costs: true });
   try {
     const co = await loadCO(projectId, coId);
     for (const file of fd.getAll("files").filter((f): f is File => f instanceof File && f.size > 0)) {
@@ -381,7 +381,7 @@ export async function addChangeOrderFiles(projectId: string, coId: string, fd: F
 }
 
 export async function removeChangeOrderFile(projectId: string, fileId: string): Promise<Result> {
-  await requireEdit("selections");
+  await requireEdit("selections", { costs: true });
   const file = await db.fileAsset.findFirst({ where: { id: fileId, projectId, changeOrderId: { not: null } } });
   if (!file) return { ok: false, error: "File not found" };
   await db.fileAsset.delete({ where: { id: file.id } });

@@ -11,7 +11,7 @@ const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
  * ids are the bid's own, so whichever copy comes back imports onto this bid.
  */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string; bidId: string }> }) {
-  await requireView("estimates");
+  await requireView("estimates", { costs: "/dashboard" });
   const { id, bidId } = await params;
   const project = await getProject(id);
   const [bid, company] = await Promise.all([

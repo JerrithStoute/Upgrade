@@ -35,7 +35,7 @@ const UNIT_WORDS: Record<string, string> = {
  * Their prices are typed in afterwards with "Prices" on the bid.
  */
 export default async function BidPrintPage({ params }: { params: Promise<{ id: string; bidId: string }> }) {
-  await requireView("estimates");
+  await requireView("estimates", { costs: "/dashboard" });
   const { id, bidId } = await params;
   const project = await getProject(id);
   const [bid, company, brand] = await Promise.all([

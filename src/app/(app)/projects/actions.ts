@@ -155,3 +155,21 @@ export async function setJobSite(projectId: string, spot: { lat: number; lng: nu
   revalidatePath(`/projects/${projectId}/edit`);
   return { ok: true };
 }
+
+/** The subs and vendors who see this job's location in their portal (picked on the job's Edit page). */
+export const saveJobVendors = friendly(async function saveJobVendors(projectId: string, fd: FormData) {
+  const user = await requireStaff();
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  if (!project) throw new Error("Project not found.");
+  const picked = fd.getAll("vendorIds").map(String);
+  const vendors = await db.vendor.findMany({ where: { id: { in: picked } }, select: { id: true, name: true } });
+  await db.project.update({ where: { id: projectId }, data: { siteVendors: { deleteMany: {}, create: vendors.map((v) => ({ vendorId: v.id })) } } });
+  await logActivity({
+    projectId,
+    userId: user.id,
+    type: "project.updated",
+    description: vendors.length ? `Job location shared with ${vendors.map((v) => v.name).join(", ")}` : "Job location shared with no subs or vendors",
+  });
+  revalidatePath(`/projects/${projectId}/edit`);
+  redirect(`/projects/${projectId}`);
+});

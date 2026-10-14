@@ -48,6 +48,8 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
   // Days, weeks and times on the company's clock.
   const { key, monday, from, to, clock, rules, dayOf } = await weekOf(parseWeek(sp.week) ? sp.week! : now);
   const hrs = (h: number) => fmtHours(h, rules.hoursFormat);
+  // Labor dollars and pay only for someone whose position sees costs and profit.
+  const seesCosts = user.access.costs;
   const at = (punch: { lat: number | null; lng: number | null; accuracy: number | null }, job: { siteLat: number | null; siteLng: number | null }) =>
     siteCheck(punch, { lat: job.siteLat, lng: job.siteLng }, rules.siteFeet);
   const { wall } = clock;
@@ -230,7 +232,13 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
         ) : null}
         <span className="ml-auto text-sm text-slate-600">
           <span className="font-semibold text-slate-900">{hrs(totals.hours)}</span> hrs
-          {totals.overtime > 0.004 ? <> · {hrs(totals.overtime)} overtime</> : null} · <span className="font-semibold text-slate-900">{money(totals.cost)}</span> labor
+          {totals.overtime > 0.004 ? <> · {hrs(totals.overtime)} overtime</> : null}
+          {seesCosts ? (
+            <>
+              {" "}
+              · <span className="font-semibold text-slate-900">{money(totals.cost)}</span> labor
+            </>
+          ) : null}
         </span>
       </div>
 
@@ -241,7 +249,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
         </Card>
       ) : null}
 
-      {noRate.length ? (
+      {seesCosts && noRate.length ? (
         <p className="rounded-md bg-amber-50 px-4 py-2 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
           No pay rate for {noRate.map((r) => r.name).join(", ")} — their hours count, but cost nothing on the Budget until one is set in{" "}
           <Link href="/settings/time-clock#pay" className="font-medium underline">
@@ -257,7 +265,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
             title={r.name}
             description={
               r.list.length
-                ? `${hrs(r.hours)} hrs${r.overtime > 0.004 ? ` · ${hrs(r.overtime)} overtime` : ""}${r.person?.rate != null ? ` · ${money(r.cost)}` : ""}${r.person?.salaried ? " · salaried" : ""}`
+                ? `${hrs(r.hours)} hrs${r.overtime > 0.004 ? ` · ${hrs(r.overtime)} overtime` : ""}${seesCosts && r.person?.rate != null ? ` · ${money(r.cost)}` : ""}${r.person?.salaried ? " · salaried" : ""}`
                 : "No time this week"
             }
             actions={
@@ -340,7 +348,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
       ))}
 
       <p className="text-xs text-slate-500">
-        Overtime, rounding, lunch, the week, pay rates and labor burden ({burden}%) are set in{" "}
+        Overtime, rounding, lunch, the week{seesCosts ? `, pay rates and labor burden (${burden}%)` : ""} are set in{" "}
         <Link href="/settings/time-clock" className="font-medium text-blue-700 hover:underline">
           Settings → Time clock
         </Link>

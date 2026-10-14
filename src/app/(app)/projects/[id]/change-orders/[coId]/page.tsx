@@ -19,8 +19,9 @@ import { ClientEmailNote } from "@/components/client-email-note";
  * files, closing text and approvals.
  */
 export default async function ChangeOrderDetailPage({ params }: { params: Promise<{ id: string; coId: string }> }) {
-  const user = await requireView("selections");
   const { id, coId } = await params;
+  // Someone who doesn't see costs and profit gets the change order as the client sees it.
+  const user = await requireView("selections", { costs: `/projects/${id}/change-orders/${coId}/print` });
   const project = await getProject(id);
   const [co, open, team, files, company, others, base, costCodes] = await Promise.all([
     db.changeOrder.findFirst({ where: { id: coId, projectId: project.id }, include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } }),

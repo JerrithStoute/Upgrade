@@ -13,7 +13,7 @@ export const metadata = { title: "Bid" };
 
 /** One bid's lines as sent, with the vendor's prices — typed in here when they came another way. */
 export default async function BidPage({ params, searchParams }: { params: Promise<{ id: string; bidId: string }>; searchParams: Promise<{ saved?: string }> }) {
-  await requireView("estimates");
+  await requireView("estimates", { costs: "/dashboard" });
   const { id, bidId } = await params;
   const { saved } = await searchParams;
   const project = await getProject(id);

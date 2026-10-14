@@ -76,7 +76,7 @@ test("every server action checks who is signed in", () => {
 
 /** The area (src/lib/access.ts) an action's folder belongs to, if any. */
 const areaOf = (file: string) => areaForPath("/" + file.replace(/^\(app\)\//, "").replace("projects/[id]/", "projects/x/").replace(/\/[^/]*$/, ""));
-const asksFor = (body: string, area: string) => new RegExp(`\\brequireEdit\\(\\s*"${area}"\\s*\\)`).test(body);
+const asksFor = (body: string, area: string) => new RegExp(`\\brequireEdit\\(\\s*"${area}"\\s*[,)]`).test(body);
 
 test("Settings actions are for administrators — or a position allowed that part of Settings", () => {
   const loose = serverActions().filter((a) => {

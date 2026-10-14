@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { ADMIN_ACCESS, NO_ACCESS, STAFF_ACCESS, STARTER_POSITIONS, accessFromForm, allows, areaForPath, diffAccess, navPages, positionAccess, resolveAccess } from "./access";
+import { ADMIN_ACCESS, NO_ACCESS, STAFF_ACCESS, STARTER_POSITIONS, accessFromForm, allows, areaForPath, diffAccess, navPages, positionAccess, resolveAccess, savedAccess, summarizeAccess } from "./access";
 
 const pm = STARTER_POSITIONS.find((p) => p.key === "PM")!.access;
 
@@ -89,5 +89,36 @@ describe("which area a page is in", () => {
   it("clients and vendors have nothing inside the program", () => {
     assert.equal(allows(NO_ACCESS, "estimates", 1), false);
     assert.equal(allows(NO_ACCESS, null, 1), true); // pages for everyone still check the role first (requireStaff)
+  });
+});
+
+describe("costs and profit", () => {
+  it("everyone saw them before positions, and positions saved without the switch still do", () => {
+    assert.equal(STAFF_ACCESS.costs, true);
+    assert.equal(positionAccess(JSON.stringify({ leads: 2 })).costs, true);
+  });
+
+  it("off hides the areas that are mostly costs, whatever they're set to — the grid keeps what was set", () => {
+    const pm = JSON.stringify(STARTER_POSITIONS.find((p) => p.key === "PM")!.access);
+    const a = resolveAccess("STAFF", pm, JSON.stringify({ costs: false }));
+    assert.deepEqual([a.takeoffs, a.budget, a.purchasing, a.reports, a.lists], [0, 0, 0, 0, 0]);
+    assert.equal(a.estimates, 2); // estimates open as the proposal (the page sends them there)
+    assert.equal(a.selections, 2);
+    assert.equal(savedAccess(pm, JSON.stringify({ costs: false })).budget, 2);
+  });
+
+  it("Field crew: the schedule, logs and to-dos, files to look at — no money", () => {
+    const f = resolveAccess("STAFF", JSON.stringify(STARTER_POSITIONS.find((p) => p.key === "FIELD")!.access), null);
+    assert.equal(f.field, 2);
+    assert.equal(f.files, 1);
+    assert.equal(f.costs, false);
+    assert.equal(f.invoices, 0);
+    assert.equal(summarizeAccess(f), "Edits: Schedule & logs · Views: Files · Every job · No costs or profit");
+  });
+
+  it("a position in a line", () => {
+    assert.equal(summarizeAccess(STAFF_ACCESS), "Edits: Leads, Estimates, Takeoffs, Selections & COs, Schedule & logs, Files, Purchasing, Budget, Invoices · Every job");
+    assert.equal(summarizeAccess(NO_ACCESS), "Only their own time clock and to-dos · Only their jobs · No costs or profit");
+    assert.match(summarizeAccess(ADMIN_ACCESS), /Can delay · Approves bills$/);
   });
 });

@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import Link from "@/components/link";
-import { ChevronDown, GripVertical, Hammer, Home, KeyRound, List, Plus } from "lucide-react";
+import { ChevronDown, GripVertical, Hammer, Home, KeyRound, List, Map as MapIcon, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { PROJECTS_COOKIE } from "@/lib/projects-view";
 
-const ICONS = { spec: KeyRound, custom: Home, remodel: Hammer, all: List } as const;
+const ICONS = { spec: KeyRound, custom: Home, remodel: Hammer, all: List, map: MapIcon } as const;
 
 export type Widget = { key: keyof typeof ICONS; title: string; count: number; total: string; newHref?: string; newLabel?: string; body: React.ReactNode };
 

@@ -7,7 +7,10 @@ import { AlertTriangle, CalendarClock, ChevronDown, ChevronRight, Paperclip, Pen
 import { cn, fmtDate, money } from "@/lib/utils";
 import { daysUntil, deadlineState } from "@/lib/deadlines";
 import { buttonClasses } from "@/components/ui";
-import type { ViewerCard as SelectionCard } from "@/lib/selections";
+import type { ViewerCard } from "@/lib/selections";
+
+/** A card as the board gets it: without the original budget for someone who doesn't see costs. */
+type SelectionCard = Omit<ViewerCard, "budget"> & { budget: ViewerCard["budget"] | null };
 import { ChoiceFiles, ChoicePicture, CommentsBox, FilesBox } from "@/components/selections/extras";
 import {
   addChoiceFiles,
@@ -48,11 +51,14 @@ export function SelectionsBoard({
   cards,
   profitDefault,
   tasks,
+  showCosts = true,
 }: {
   projectId: string;
   estimateHref: string;
   cards: SelectionCard[];
   profitDefault: boolean;
+  /** The person sees costs and profit (their position): the original budget and each choice's cost. */
+  showCosts?: boolean;
   /** The job's schedule items, for "Requested by". */
   tasks: Task[];
 }) {
@@ -90,7 +96,7 @@ export function SelectionsBoard({
         <section key={d} id={anchor(d)} className="scroll-mt-4 space-y-3">
           <h2 className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-semibold uppercase tracking-wide text-slate-700">{d}</h2>
           {list.map((c) => (
-            <Card key={c.selectionId} projectId={projectId} estimateHref={estimateHref} c={c} profitDefault={profitDefault} tasks={tasks} />
+            <Card key={c.selectionId} projectId={projectId} estimateHref={estimateHref} c={c} profitDefault={profitDefault} tasks={tasks} showCosts={showCosts} />
           ))}
         </section>
       ))}
@@ -99,7 +105,21 @@ export function SelectionsBoard({
   );
 }
 
-function Card({ projectId, estimateHref, c, profitDefault, tasks }: { projectId: string; estimateHref: string; c: SelectionCard; profitDefault: boolean; tasks: Task[] }) {
+function Card({
+  projectId,
+  estimateHref,
+  c,
+  profitDefault,
+  tasks,
+  showCosts,
+}: {
+  projectId: string;
+  estimateHref: string;
+  c: SelectionCard;
+  profitDefault: boolean;
+  tasks: Task[];
+  showCosts: boolean;
+}) {
   const [editDeadline, setEditDeadline] = useState(false);
   const state = deadlineState(c.deadline.date ? new Date(c.deadline.date) : null, c.status);
   const router = useRouter();
@@ -189,38 +209,42 @@ function Card({ projectId, estimateHref, c, profitDefault, tasks }: { projectId:
           />
         </div>
         <div>
-          <button
-            type="button"
-            onClick={() => setBudgetOpen((o) => !o)}
-            className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
-          >
-            <span className="flex items-center gap-1.5 font-medium text-slate-800">
-              {budgetOpen ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
-              Original budget
-            </span>
-            <span className="tabular-nums text-slate-600">{money(c.budget.total)}</span>
-          </button>
-          {budgetOpen ? (
-            <table className="mt-1 w-full text-sm">
-              <tbody className="divide-y divide-slate-100">
-                {c.budget.lines.map((l) => (
-                  <tr key={l.id}>
-                    <td className="py-1 pr-2 text-slate-700">{l.description || "—"}</td>
-                    <td className="py-1 text-right tabular-nums text-slate-700">{money(l.cost)}</td>
-                  </tr>
-                ))}
-                <tr>
-                  <td className="py-1 pr-2 text-slate-500">Profit</td>
-                  <td className="py-1 text-right tabular-nums text-slate-500">{money(c.budget.profit)}</td>
-                </tr>
-                <tr className="font-semibold">
-                  <td className="py-1 pr-2">Total</td>
-                  <td className="py-1 text-right tabular-nums">{money(c.budget.total)}</td>
-                </tr>
-              </tbody>
-            </table>
+          {showCosts && c.budget ? (
+            <>
+              <button
+                type="button"
+                onClick={() => setBudgetOpen((o) => !o)}
+                className="flex w-full items-center justify-between rounded-lg border border-slate-200 px-3 py-2 text-left text-sm hover:bg-slate-50"
+              >
+                <span className="flex items-center gap-1.5 font-medium text-slate-800">
+                  {budgetOpen ? <ChevronDown className="h-4 w-4 text-slate-400" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
+                  Original budget
+                </span>
+                <span className="tabular-nums text-slate-600">{money(c.budget!.total)}</span>
+              </button>
+              {budgetOpen ? (
+                <table className="mt-1 w-full text-sm">
+                  <tbody className="divide-y divide-slate-100">
+                    {c.budget!.lines.map((l) => (
+                      <tr key={l.id}>
+                        <td className="py-1 pr-2 text-slate-700">{l.description || "—"}</td>
+                        <td className="py-1 text-right tabular-nums text-slate-700">{money(l.cost)}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td className="py-1 pr-2 text-slate-500">Profit</td>
+                      <td className="py-1 text-right tabular-nums text-slate-500">{money(c.budget!.profit)}</td>
+                    </tr>
+                    <tr className="font-semibold">
+                      <td className="py-1 pr-2">Total</td>
+                      <td className="py-1 text-right tabular-nums">{money(c.budget!.total)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              ) : null}
+              <p className="mt-1 text-[11px] text-slate-400">Only your team sees this.</p>
+            </>
           ) : null}
-          <p className="mt-1 text-[11px] text-slate-400">Only your team sees this.</p>
           <div className="mt-3">
             <CommentsBox team comments={c.comments} log={c.log} onPost={(body, internal) => commentOnSelection(projectId, c.selectionId, body, internal)} />
           </div>
@@ -255,6 +279,7 @@ function Card({ projectId, estimateHref, c, profitDefault, tasks }: { projectId:
               <ChoiceForm
                 key={x.id}
                 initial={x}
+                showCost={showCosts}
                 busy={busy}
                 onCancel={() => setEditing(null)}
                 onSave={(v, files) =>
@@ -297,9 +322,9 @@ function Card({ projectId, estimateHref, c, profitDefault, tasks }: { projectId:
                     {c.chosenId === x.id ? <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">Chosen</span> : null}
                   </span>
                   {x.description ? <span className="mt-0.5 block whitespace-pre-line text-sm text-slate-600">{x.description}</span> : null}
-                  {x.vendor || x.modelNumber || x.cost !== null ? (
+                  {x.vendor || x.modelNumber || (showCosts && x.cost !== null) ? (
                     <span className="mt-1 block text-xs text-slate-500">
-                      {[x.vendor, x.modelNumber && `Model ${x.modelNumber}`, x.cost !== null && `Your cost ${money(x.cost)}`].filter(Boolean).join(" · ")}
+                      {[x.vendor, x.modelNumber && `Model ${x.modelNumber}`, showCosts && x.cost !== null && `Your cost ${money(x.cost)}`].filter(Boolean).join(" · ")}
                     </span>
                   ) : null}
                   <ChoiceFiles files={x.files} showSeen onAdd={(fd) => addChoiceFiles(projectId, c.selectionId, x.id, fd)} onRemove={(id) => removeSelectionFile(projectId, id)} />
@@ -337,6 +362,7 @@ function Card({ projectId, estimateHref, c, profitDefault, tasks }: { projectId:
           )}
           {editing === "new" ? (
             <ChoiceForm
+              showCost={showCosts}
               busy={busy}
               onCancel={() => setEditing(null)}
               onSave={(v, files) =>
@@ -397,11 +423,14 @@ type ChoiceValues = { name: string; description: string; price: number; cost: nu
 
 function ChoiceForm({
   initial,
+  showCost,
   busy,
   onSave,
   onCancel,
 }: {
   initial?: { name: string; description: string | null; price: number; cost: number | null; vendor: string | null; modelNumber: string | null };
+  /** Their position sees costs (otherwise the choice keeps whatever cost it has). */
+  showCost: boolean;
   busy: boolean;
   onSave: (v: ChoiceValues, files: File[]) => void;
   onCancel: () => void;
@@ -422,7 +451,7 @@ function ChoiceForm({
   const ok = v.name.trim() && Number.isFinite(num(v.price || "0")) && (v.cost === "" || Number.isFinite(num(v.cost)));
   return (
     <div className="space-y-2 bg-blue-50/40 px-4 py-3">
-      <div className="grid gap-2 sm:grid-cols-[1fr_8rem_8rem]">
+      <div className={cn("grid gap-2", showCost ? "sm:grid-cols-[1fr_8rem_8rem]" : "sm:grid-cols-[1fr_8rem]")}>
         <input
           className="input"
           placeholder="Choice, e.g. Flooring with wood floors"
@@ -439,14 +468,16 @@ function ChoiceForm({
           onChange={(e) => setV({ ...v, price: e.target.value })}
           aria-label="Client price"
         />
-        <input
-          className="input text-right"
-          inputMode="decimal"
-          placeholder="Your cost"
-          value={v.cost}
-          onChange={(e) => setV({ ...v, cost: e.target.value })}
-          aria-label="Your cost"
-        />
+        {showCost ? (
+          <input
+            className="input text-right"
+            inputMode="decimal"
+            placeholder="Your cost"
+            value={v.cost}
+            onChange={(e) => setV({ ...v, cost: e.target.value })}
+            aria-label="Your cost"
+          />
+        ) : null}
       </div>
       <textarea
         className="input"
