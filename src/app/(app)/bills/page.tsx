@@ -6,6 +6,7 @@ import { cn, dateInput, fmtDate, money } from "@/lib/utils";
 import { BILL_STATUS_LABEL, billTotal, canApproveBills } from "@/lib/purchasing";
 import { Badge, Button, EmptyState, PageHeader, Stat, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
 import { decideBill } from "../projects/[id]/purchasing/actions";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Bills" };
 
@@ -29,7 +30,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
   const sum = (s: string) => rows.filter((r) => r.b.status === s).reduce((n, r) => n + r.total, 0);
   const count = (s: string[]) => rows.filter((r) => s.includes(r.b.status)).length;
   const visible = rows.filter((r) => view.statuses.includes(r.b.status));
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const mayDecide = canApproveBills(user);
   const back = `/bills${view.key ? `?view=${view.key}` : ""}`;
 

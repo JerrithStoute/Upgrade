@@ -8,11 +8,13 @@ import { SetupForm } from "../login/two-step/forms";
 import { PasswordForm, TwoStepOnForms } from "./forms";
 import { setMorningEmail, signOutAll } from "./actions";
 import { isPlatformAdmin } from "@/lib/builder-invites";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Your account" };
 
 export default async function AccountPage({ searchParams }: { searchParams: Promise<{ twostep?: string; setup?: string }> }) {
   const me = await requireUser();
+  const { dateTime } = await companyClock();
   const sp = await searchParams;
   const [user, company] = await Promise.all([
     systemDb.user.findUniqueOrThrow({ where: { id: me.id }, select: { email: true, name: true, totpEnabledAt: true, morningEmail: true, backupCodes: true, passwordChangedAt: true, lastSignInAt: true } }),
@@ -53,7 +55,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           <h2 className="mb-1 flex items-center gap-2 font-semibold text-slate-900">
             <KeyRound className="h-4 w-4 text-slate-400" /> Password
           </h2>
-          <p className="mb-4 text-sm text-slate-500">{user.passwordChangedAt ? `Last changed ${fmtDateTime(user.passwordChangedAt)}.` : "Changing it signs out your other devices."}</p>
+          <p className="mb-4 text-sm text-slate-500">{user.passwordChangedAt ? `Last changed ${dateTime(user.passwordChangedAt)}.` : "Changing it signs out your other devices."}</p>
           <PasswordForm />
         </section>
 
@@ -64,7 +66,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           {user.totpEnabledAt ? (
             <>
               <p className="mb-4 text-sm text-slate-500">
-                <span className="font-medium text-emerald-700">On</span> since {fmtDateTime(user.totpEnabledAt)} — signing in asks for a code from your authenticator app. {backupLeft} backup
+                <span className="font-medium text-emerald-700">On</span> since {dateTime(user.totpEnabledAt)} — signing in asks for a code from your authenticator app. {backupLeft} backup
                 code{backupLeft === 1 ? "" : "s"} left.
               </p>
               <TwoStepOnForms canTurnOff={!(company?.requireTwoStep && team)} />
@@ -109,7 +111,7 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           </h2>
           <p className="mb-4 text-sm text-slate-500">
             Signs you out on every phone and computer, including this one — for a lost phone or a shared computer.{" "}
-            {user.lastSignInAt ? `Last sign-in ${fmtDateTime(user.lastSignInAt)}.` : ""}
+            {user.lastSignInAt ? `Last sign-in ${dateTime(user.lastSignInAt)}.` : ""}
           </p>
           <form action={signOutAll}>
             <button type="submit" className="rounded-md border border-rose-200 bg-white px-3.5 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50">

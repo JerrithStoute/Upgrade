@@ -7,11 +7,13 @@ import { cn, fmtDateTime, timeAgo } from "@/lib/utils";
 import { Avatar, Card, CardBody, CardHeader, Collapsible, EmptyState, Field, SubmitButton } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
 import { createThread, replyToThread } from "../actions";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Messages" };
 
 export default async function PortalMessagesPage({ searchParams }: { searchParams: Promise<{ project?: string; thread?: string }> }) {
   const user = await requireClient();
+  const { dateTime } = await companyClock();
   const { project: projectParam, thread: threadParam } = await searchParams;
   const { projects, project } = await portalContext(user.clientId, projectParam);
 
@@ -95,7 +97,7 @@ export default async function PortalMessagesPage({ searchParams }: { searchParam
 
             {active ? (
               <Card className="flex min-w-0 flex-col">
-                <CardHeader title={active.subject} description={`Started ${fmtDateTime(active.createdAt)}`} />
+                <CardHeader title={active.subject} description={`Started ${dateTime(active.createdAt)}`} />
                 <CardBody className="flex-1 space-y-4">
                   {active.messages.map((m) => {
                     const mine = m.author?.id === user.id;
@@ -107,7 +109,7 @@ export default async function PortalMessagesPage({ searchParams }: { searchParam
                             <span className="font-medium text-slate-700">{m.author?.name ?? "Team"}</span>
                             {m.author && m.author.role !== "CLIENT" ? <span className="ml-1 rounded bg-slate-100 px-1 text-[10px] uppercase text-slate-500">Team</span> : null}
                             {" · "}
-                            {fmtDateTime(m.createdAt)}
+                            {dateTime(m.createdAt)}
                           </p>
                           <div
                             className={cn(

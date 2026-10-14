@@ -3,6 +3,7 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, staffUsers } from "@/lib/projects";
 import { TodoList } from "@/components/todos/todo-list";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function ProjectTodosPage({
   params,
@@ -30,6 +31,7 @@ export default async function ProjectTodosPage({
     <div className="space-y-4">
       <h2 className="text-base font-semibold text-slate-900">To-dos</h2>
       <TodoList
+        today={(await companyClock()).now}
         todos={todos}
         staff={staff}
         basePath={`/projects/${project.id}/todos`}

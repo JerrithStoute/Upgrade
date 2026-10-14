@@ -3,11 +3,12 @@ import { requireVendor } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cn, fmtDate } from "@/lib/utils";
 import { EmptyState, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
+import { companyClock } from "@/lib/company-zone";
 
 /** Their work on every job's schedule: what, where, when. */
 export default async function VendorSchedulePage() {
   const user = await requireVendor();
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const tasks = await db.scheduleTask.findMany({
     where: { vendorId: user.vendorId },

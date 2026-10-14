@@ -14,6 +14,7 @@ import { applyDateUpdates, canDelay, jobLinks, loadWorkCal, reflowJob, refreshTa
 import { applyScheduleTemplate, saveScheduleAsTemplate } from "@/lib/schedule-templates";
 import { groupByPhase } from "@/lib/schedule";
 import { addToDailyLog } from "@/lib/daily-log-auto";
+import { companyClock } from "@/lib/company-zone";
 
 function schedulePath(projectId: string) {
   return `/projects/${projectId}/schedule`;
@@ -174,7 +175,7 @@ export const delayJob = friendly(async function delayJob(fd: FormData) {
   const user = await requireStaff();
   if (!canDelay(user)) throw new Error("You don't have permission to delay jobs — an admin can allow it in Settings → Team");
   const project = await getProject(str(fd, "projectId"));
-  const date = parseDateInput(fd.get("date")) ?? new Date();
+  const date = parseDateInput(fd.get("date")) ?? (await companyClock()).now;
   const days = Math.max(1, Math.min(60, intField(fd, "days", 1)));
   const reasonId = str(fd, "reasonId");
   const reason = (reasonId ? (await db.delayReason.findUnique({ where: { id: reasonId } }))?.name : null) ?? (str(fd, "reasonOther") || "Other");
@@ -280,7 +281,7 @@ export const deleteSchedule = friendly(async function deleteSchedule(fd: FormDat
 
 /** A task under way: "Started: Framing & header" in today's daily log, under Work completed. */
 async function logStarted(projectId: string, name: string, userId: string) {
-  await addToDailyLog({ projectId, date: new Date(), authorId: userId, field: "workCompleted", line: `Started: ${name}`, clientVisible: true });
+  await addToDailyLog({ projectId, date: (await companyClock()).now, authorId: userId, field: "workCompleted", line: `Started: ${name}`, clientVisible: true });
 }
 
 /** "Mark started": a task not started yet is under way (1%), and today's daily log says so. */
@@ -301,5 +302,5 @@ export const startTask = friendly(async function startTask(fd: FormData) {
 
 /** A task finished: "Completed: Framing & header" in today's daily log, under Work completed. */
 async function logCompleted(projectId: string, name: string, userId: string) {
-  await addToDailyLog({ projectId, date: new Date(), authorId: userId, field: "workCompleted", line: `Completed: ${name}`, clientVisible: true });
+  await addToDailyLog({ projectId, date: (await companyClock()).now, authorId: userId, field: "workCompleted", line: `Completed: ${name}`, clientVisible: true });
 }

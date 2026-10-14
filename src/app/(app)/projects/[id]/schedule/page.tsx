@@ -36,6 +36,7 @@ import { TaskFields } from "./_components/task-form";
 import { ScheduleReorder } from "./_components/schedule-reorder";
 import { startTask, deleteSchedule, createTask, updateTask, deleteTask, shiftTask, completeTask, delayJob, startFromTemplate, saveAsScheduleTemplate } from "./actions";
 import { addReminder } from "../../../schedule/actions";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function SchedulePage({
   params,
@@ -62,7 +63,7 @@ export default async function SchedulePage({
     loadWorkCal(),
     db.vendor.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const base = `/projects/${project.id}/schedule`;
   const editing = taskId ? tasks.find((t) => t.id === taskId) : undefined;
   // "Insert a task above / below" one: the new task starts in its phase, beside it.

@@ -1,13 +1,26 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { costWeek, entryHours, fmtHours, loadedRate, nextWeek, parseWeek, weekKey, type Person } from "@/lib/time-math";
+import { companyClock } from "@/lib/company-zone";
 
 /**
  * The time clock: who's on the clock where, and the labor it costs each job. Finished time
  * is posted to each job's Budget as one LABOR cost per cost code per week ("Crew labor"),
  * worked out again whenever any time in that week changes — so overtime (which depends on
  * the whole week) always lands right.
+ *
+ * Days and weeks are the company's (its time zone): a punch belongs to the day and the
+ * Monday-to-Sunday week its clock-in falls in on the company's clock.
  */
+
+export type Spot = { lat: number; lng: number; accuracy: number | null };
+
+/** The week a moment falls in on the company's clock: its key ("2026-10-12"), Monday (wall date) and the real moments it runs between. */
+export async function weekOf(at: Date | string) {
+  const clock = await companyClock();
+  const monday = typeof at === "string" ? parseWeek(at)! : parseWeek(weekKey(clock.wall(at)))!;
+  return { key: weekKey(monday), monday, from: clock.real(monday), to: clock.real(nextWeek(monday)), clock };
+}
 
 export const LABOR_VENDOR = "Crew labor (time clock)";
 
@@ -35,18 +48,23 @@ export function openEntry(userId: string) {
 }
 
 /** Start the clock on a job (ending whatever they were on, if anything — that's a switch). */
-export async function clockIn(userId: string, projectId: string, costCodeId: string | null, notes: string | null, at = new Date()) {
+export async function clockIn(userId: string, projectId: string, costCodeId: string | null, notes: string | null, spot: Spot | null = null, at = new Date()) {
   const open = await db.timeEntry.findFirst({ where: { userId, clockOut: null } });
-  if (open) await clockOut(userId, at);
+  if (open) await clockOut(userId, spot, at);
   const rate = await currentRate(userId);
-  return db.timeEntry.create({ data: { userId, projectId, costCodeId, notes, clockIn: at, rate } });
+  return db.timeEntry.create({
+    data: { userId, projectId, costCodeId, notes, clockIn: at, rate, ...(spot ? { inLat: spot.lat, inLng: spot.lng, inAccuracy: spot.accuracy } : {}) },
+  });
 }
 
 /** Stop the clock. Returns the finished stretch (null when they weren't on the clock). */
-export async function clockOut(userId: string, at = new Date()) {
+export async function clockOut(userId: string, spot: Spot | null = null, at = new Date()) {
   const open = await db.timeEntry.findFirst({ where: { userId, clockOut: null }, orderBy: { clockIn: "desc" } });
   if (!open) return null;
-  const done = await db.timeEntry.update({ where: { id: open.id }, data: { clockOut: at < open.clockIn ? open.clockIn : at } });
+  const done = await db.timeEntry.update({
+    where: { id: open.id },
+    data: { clockOut: at < open.clockIn ? open.clockIn : at, ...(spot ? { outLat: spot.lat, outLng: spot.lng, outAccuracy: spot.accuracy } : {}) },
+  });
   await postLabor([done.clockIn]);
   return done;
 }
@@ -56,17 +74,16 @@ let chain: Promise<unknown> = Promise.resolve();
 
 /** Work out the labor costs again for the weeks these dates fall in. */
 export function postLabor(dates: Date[]) {
-  const weeks = [...new Set(dates.map((d) => weekKey(d)))];
   const run = chain.then(async () => {
-    for (const w of weeks) await postWeek(w);
+    const { wall } = await companyClock();
+    for (const w of new Set(dates.map((d) => weekKey(wall(d))))) await postWeek(w);
   });
   chain = run.catch(() => {});
   return run;
 }
 
 async function postWeek(key: string) {
-  const from = parseWeek(key)!;
-  const to = nextWeek(from);
+  const { monday, from, to } = await weekOf(key);
   const [entries, burden, posted] = await Promise.all([
     db.timeEntry.findMany({
       where: { clockIn: { gte: from, lt: to }, clockOut: { not: null } },
@@ -93,7 +110,7 @@ async function postWeek(key: string) {
     lines.set(k, line);
   }
 
-  const weekLabel = from.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const weekLabel = monday.toLocaleDateString("en-US", { month: "short", day: "numeric" });
   const keep = new Set<string>();
   for (const line of lines.values()) {
     const amount = Math.round(line.cost * 100) / 100;
@@ -134,7 +151,7 @@ export function shortName(name: string) {
 
 /** Hours so far for a person this week (finished + the stretch they're on). */
 export async function hoursThisWeek(userId: string, now = new Date()) {
-  const from = parseWeek(weekKey(now))!;
-  const entries = await db.timeEntry.findMany({ where: { userId, clockIn: { gte: from, lt: nextWeek(from) } } });
+  const { from, to } = await weekOf(now);
+  const entries = await db.timeEntry.findMany({ where: { userId, clockIn: { gte: from, lt: to } } });
   return entries.reduce((n, e) => n + entryHours(e, now), 0);
 }

@@ -3,8 +3,8 @@ import { ClipboardList } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ACTIVE } from "@/lib/reports";
-import { canManageTime, openEntry } from "@/lib/time-clock";
-import { entryHours, fmtHours, nextWeek, OVERTIME_AFTER, parseWeek, sameDay, weekDays, weekKey } from "@/lib/time-math";
+import { canManageTime, openEntry, weekOf } from "@/lib/time-clock";
+import { entryHours, fmtHours, OVERTIME_AFTER, sameDay, weekDays } from "@/lib/time-math";
 import { Card, CardBody, CardHeader, PageHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { ClockPanel, type Code, type Job } from "./_components/clock-panel";
@@ -17,7 +17,10 @@ const codeLabel = (c: { code: string | null; name: string }) => (c.code ? `${c.c
 export default async function TimeClockPage() {
   const user = await requireStaff();
   const now = new Date();
-  const monday = parseWeek(weekKey(now))!;
+  // Days and times on the company's clock.
+  const { monday, from, to, clock } = await weekOf(now);
+  const { wall } = clock;
+  const today = clock.now;
   const [open, projects, costCodes, mine, me] = await Promise.all([
     openEntry(user.id),
     db.project.findMany({ where: { status: { not: "CANCELLED" } }, select: { id: true, number: true, name: true, status: true }, orderBy: { number: "desc" } }),
@@ -60,7 +63,7 @@ export default async function TimeClockPage() {
   const lastCode: Record<string, string> = {};
   for (const e of mine) if (e.costCodeId && !(e.projectId in lastCode)) lastCode[e.projectId] = e.costCodeId;
 
-  const week = mine.filter((e) => e.clockIn >= monday && e.clockIn < nextWeek(monday)).reverse();
+  const week = mine.filter((e) => e.clockIn >= from && e.clockIn < to).reverse();
   const total = week.reduce((n, e) => n + entryHours(e, now), 0);
   const overtime = me?.salaried ? 0 : Math.max(0, total - OVERTIME_AFTER);
 
@@ -92,16 +95,16 @@ export default async function TimeClockPage() {
         <CardBody className="p-0">
           <ul className="divide-y divide-slate-100">
             {weekDays(monday)
-              .filter((d) => d <= now)
+              .filter((d) => d <= today)
               .reverse()
               .map((d) => {
-                const day = week.filter((e) => sameDay(e.clockIn, d));
+                const day = week.filter((e) => sameDay(wall(e.clockIn), d));
                 const hours = day.reduce((n, e) => n + entryHours(e, now), 0);
                 return (
                   <li key={d.toISOString()} className="px-4 py-3">
                     <p className="flex items-baseline justify-between text-sm">
-                      <span className={cn("font-medium", sameDay(d, now) ? "text-slate-900" : "text-slate-700")}>
-                        {sameDay(d, now) ? "Today" : d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
+                      <span className={cn("font-medium", sameDay(d, today) ? "text-slate-900" : "text-slate-700")}>
+                        {sameDay(d, today) ? "Today" : d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}
                       </span>
                       <span className={cn("tabular-nums", hours ? "font-medium text-slate-900" : "text-slate-400")}>{hours ? `${fmtHours(hours)} hrs` : "—"}</span>
                     </p>
@@ -114,7 +117,7 @@ export default async function TimeClockPage() {
                               {e.costCode ? ` · ${codeLabel(e.costCode)}` : ""}
                             </span>
                             <span className="shrink-0 tabular-nums">
-                              {timeOf(e.clockIn)} – {e.clockOut ? timeOf(e.clockOut) : <span className="font-medium text-emerald-700">now</span>}
+                              {timeOf(wall(e.clockIn))} – {e.clockOut ? timeOf(wall(e.clockOut)) : <span className="font-medium text-emerald-700">now</span>}
                             </span>
                           </li>
                         ))}

@@ -6,6 +6,7 @@ import { sendCompanyMail, vendorContacts } from "./notify";
 import { coverageLabel, coverageWarning, vendorsCoverage } from "./purchasing";
 import { fmtDate } from "./utils";
 import { insuranceStage, morningWindow, ymd } from "./morning-rules";
+import { companyClock } from "@/lib/company-zone";
 
 /**
  * The morning email: once a day, each team member gets one email with what's theirs today —
@@ -15,7 +16,7 @@ import { insuranceStage, morningWindow, ymd } from "./morning-rules";
  *
  * The same morning run emails subs whose insurance is about to lapse (30 days, 7 days, the day).
  *
- * Checked hourly from the server (startMorningEmails); what already went out is remembered in
+ * Checked hourly from the server (startMorningEmails), each company at 6 am on its own clock; what already went out is remembered in
  * the database (User.morningEmailOn, VendorInsurance.reminded), so a restart never sends twice.
  */
 
@@ -149,10 +150,11 @@ export function startMorningEmails() {
   const g = globalThis as unknown as { __morningTimer?: ReturnType<typeof setInterval> };
   if (g.__morningTimer) return; // dev reloads re-run register()
   const check = async () => {
-    const now = new Date();
-    if (!morningWindow(now)) return;
     for (const { id } of await systemDb.company.findMany({ select: { id: true } }).catch(() => []))
       await runAsCompany(id, async () => {
+        // Each company's own morning: its clock, its day.
+        const now = (await companyClock()).now;
+        if (!morningWindow(now)) return;
         const subs = await sendInsuranceReminders(now);
         const team = await sendMorningEmails(now);
         if (subs || team) console.log(`[morning email] company ${id}: ${team} to the team, ${subs} to subs about insurance`);

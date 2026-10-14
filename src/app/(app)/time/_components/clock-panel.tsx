@@ -7,6 +7,35 @@ import { fmtClock } from "@/lib/time-math";
 import { cn } from "@/lib/utils";
 import { clockInAction, clockOutAction } from "../actions";
 
+/**
+ * Where the phone is, right now — asked once, at the punch. Never holds a punch up: not shared,
+ * no signal, or no answer in a few seconds, and the punch goes through without it.
+ */
+function locate(): Promise<GeolocationPosition | null> {
+  if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const giveUp = setTimeout(() => resolve(null), 9000);
+    const done = (p: GeolocationPosition | null) => {
+      clearTimeout(giveUp);
+      resolve(p);
+    };
+    navigator.geolocation.getCurrentPosition(done, () => done(null), { enableHighAccuracy: true, timeout: 8000, maximumAge: 60_000 });
+  });
+}
+
+/** A punch with the phone's location added to it. */
+const withSpot = (punch: (fd: FormData) => Promise<unknown>) => async (fd: FormData) => {
+  const at = await locate();
+  if (at) {
+    fd.set("lat", String(at.coords.latitude));
+    fd.set("lng", String(at.coords.longitude));
+    fd.set("accuracy", String(at.coords.accuracy));
+  }
+  await punch(fd);
+};
+const clockInHere = withSpot(clockInAction);
+const clockOutHere = withSpot(clockOutAction);
+
 export type Job = { id: string; label: string; group: string };
 export type Code = { id: string; label: string; division: string };
 
@@ -42,7 +71,7 @@ export function ClockPanel({
           <p className="text-sm text-slate-500">{open.code ?? "No cost code"}</p>
           {!switching ? (
             <div className="mt-5 grid gap-2">
-              <form action={clockOutAction}>
+              <form action={clockOutHere}>
                 <SubmitButton pendingText="Clocking out…" className="h-14 w-full bg-rose-600 text-base hover:bg-rose-700">
                   <LogOut className="h-5 w-5" /> Clock out
                 </SubmitButton>
@@ -70,6 +99,9 @@ export function ClockPanel({
           onCancel={open ? () => setSwitching(false) : undefined}
         />
       ) : null}
+      <p className="border-t border-slate-100 px-5 py-2.5 text-center text-[11px] leading-snug text-slate-400">
+        Your location is noted when you clock in and out — only at that moment, and only for whoever does timesheets. Not sharing it doesn&apos;t stop the clock.
+      </p>
     </div>
   );
 }
@@ -114,7 +146,7 @@ function Picker({
   if (!jobs.length) return <p className="px-5 py-6 text-center text-sm text-slate-500">No jobs to clock in to yet — add a project first.</p>;
 
   return (
-    <form action={clockInAction} className="space-y-4 px-5 py-5">
+    <form action={clockInHere} className="space-y-4 px-5 py-5">
       {switching ? <p className="text-sm font-medium text-slate-900">Switch to</p> : null}
       <label className="block">
         <span className="label">Job</span>

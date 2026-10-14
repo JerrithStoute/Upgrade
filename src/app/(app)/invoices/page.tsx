@@ -7,6 +7,7 @@ import { INVOICE_STATUSES } from "@/lib/constants";
 import { cn, fmtDate, money, titleCase } from "@/lib/utils";
 import { invoiceTotal, isOverdue, paymentsTotal } from "@/lib/finance";
 import { Badge, EmptyState, PageHeader, Stat, Table, THead, TBody, Tr, Th, Td, TFoot } from "@/components/ui";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   await requireStaff();
@@ -17,7 +18,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
     orderBy: [{ issueDate: "desc" }, { number: "desc" }],
     include: { items: true, payments: true, project: { select: { id: true, number: true, name: true, client: { select: { firstName: true, lastName: true } } } } },
   });
-  const now = new Date();
+  const now = (await companyClock()).now; // now, on the company's clock (for due / overdue)
   const rows = invoices.map((inv) => {
     const total = invoiceTotal(inv.items);
     const paid = paymentsTotal(inv.payments);

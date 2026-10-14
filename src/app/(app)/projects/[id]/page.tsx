@@ -6,6 +6,7 @@ import { getProject, projectFinancials } from "@/lib/projects";
 import { avgTaskProgress } from "@/lib/project-progress";
 import { fmtDate, money, num, timeAgo, titleCase } from "@/lib/utils";
 import { Badge, Card, CardBody, CardHeader, Progress, Stat } from "@/components/ui";
+import { companyClock } from "@/lib/company-zone";
 
 function TabLink({ href, children = "View all" }: { href: string; children?: React.ReactNode }) {
   return (
@@ -24,7 +25,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
   const { id } = await params;
   const project = await getProject(id);
   const base = `/projects/${project.id}`;
-  const now = new Date();
+  const now = (await companyClock()).now; // now, on the company's clock (for due / overdue)
 
   const [financials, tasks, pendingSelections, pendingChangeOrders, openTodos, dailyLogs, activities] = await Promise.all([
     projectFinancials(project.id, project.contractAmount),

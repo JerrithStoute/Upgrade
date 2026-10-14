@@ -3,6 +3,7 @@ import { db } from "./db";
 import { getBrand } from "./company-brand";
 import { approvedEstimateTotal } from "./projects";
 import { changeOrderTotals, effectOnContract, parseApprovals, parseIds } from "./change-orders";
+import { companyClock } from "@/lib/company-zone";
 
 /** Everything the printed change order shows: your letterhead, the client and job, lines, totals, effect on contract, signatures. */
 export async function loadChangeOrderDoc(projectId: string, coId: string) {
@@ -29,8 +30,11 @@ export async function loadChangeOrderDoc(projectId: string, coId: string) {
   const client = project.client;
   const cityLine = (c: { city: string | null; state: string | null; zip: string | null } | null | undefined) =>
     c ? [[c.city, c.state].filter(Boolean).join(", "), c.zip].filter(Boolean).join(" ") : "";
+  // Signed / declined at: shown on the company's clock.
+  const { wall } = await companyClock();
+  const onWall = (d: Date | null) => (d ? wall(d) : null);
   return {
-    co,
+    co: { ...co, decidedAt: onWall(co.decidedAt) },
     lines: co.items.map((i) => ({
       id: i.id,
       kind: i.kind,
@@ -56,9 +60,9 @@ export async function loadChangeOrderDoc(projectId: string, coId: string) {
     files,
     // Your team first, then the client.
     signers: [
-      ...approvers.map((a) => ({ role: "Builder", name: a.name, approvedAt: approvals[a.id] ? new Date(approvals[a.id]) : null, as: null as string | null })),
+      ...approvers.map((a) => ({ role: "Builder", name: a.name, approvedAt: approvals[a.id] ? wall(new Date(approvals[a.id])) : null, as: null as string | null })),
       ...(co.clientApproval
-        ? [{ role: "Client", name: client ? `${client.firstName} ${client.lastName}`.trim() : "Client", approvedAt: co.clientApprovedAt, as: co.decidedBy }]
+        ? [{ role: "Client", name: client ? `${client.firstName} ${client.lastName}`.trim() : "Client", approvedAt: onWall(co.clientApprovedAt), as: co.decidedBy }]
         : []),
     ],
   };

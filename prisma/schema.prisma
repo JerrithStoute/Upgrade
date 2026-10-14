@@ -59,6 +59,8 @@ model Company {
   requireTwoStep      Boolean  @default(false)
   // Time clock: percent added on top of pay for payroll taxes, workers' comp and insurance.
   laborBurden         Float    @default(0)
+  // The company's clock (IANA name; src/lib/zone.ts): time clock days and weeks, times shown, the morning email.
+  timeZone            String   @default("America/Chicago")
   // Where backups go (a folder path, e.g. on another drive or OneDrive); null = BACKUP_DIR or ./backups.
   backupDir           String?
   createdAt           DateTime @default(now())
@@ -2046,6 +2048,13 @@ model TimeEntry {
   clockIn      DateTime
   clockOut     DateTime? // null = still on the clock
   breakMinutes Int       @default(0)
+  // Where the phone was at each punch (GPS, read once at that moment; accuracy in meters). Null: not shared or no signal.
+  inLat        Float?
+  inLng        Float?
+  inAccuracy   Float?
+  outLat       Float?
+  outLng       Float?
+  outAccuracy  Float?
   notes        String?
   // Cost per hour when it was worked (pay + burden), so a raise later doesn't rewrite old jobs.
   // null = no pay rate was set then; the person's current rate is used.

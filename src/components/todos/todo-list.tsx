@@ -89,6 +89,7 @@ export function TodoList({
   assigneeFilter,
   currentUserId,
   projectId,
+  today,
 }: {
   todos: TodoRow[];
   staff: Staff;
@@ -104,8 +105,9 @@ export function TodoList({
   currentUserId: string;
   /** Fixed project for the project tab. */
   projectId?: string;
+  /** Today on the company's clock (for overdue). */
+  today: Date;
 }) {
-  const today = new Date();
   const qs = (extra: Record<string, string | undefined>) => {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries({ ...query, ...extra })) if (v) params.set(k, v);

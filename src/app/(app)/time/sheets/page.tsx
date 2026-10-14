@@ -1,10 +1,11 @@
 import Link from "@/components/link";
 import { redirect } from "next/navigation";
-import { AlertTriangle, ChevronLeft, ChevronRight, Download, Pencil, Plus } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Download, MapPin, MapPinOff, Pencil, Plus } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canManageTime, laborBurden } from "@/lib/time-clock";
+import { canManageTime, laborBurden, weekOf } from "@/lib/time-clock";
 import { costWeek, entryHours, fmtHours, loadedRate, looksForgotten, nextWeek, parseWeek, weekDays, weekKey, type Person } from "@/lib/time-math";
+import { zoneLabel } from "@/lib/zone";
 import { ButtonLink, Card, CardBody, CardHeader, ConfirmForm, Field, PageHeader, SubmitButton } from "@/components/ui";
 import { cn, dateInput, money } from "@/lib/utils";
 import { clockOutFor, deleteTimeEntry, saveLaborBurden, saveTimeEntry } from "../actions";
@@ -15,17 +16,35 @@ const timeOf = (d: Date) => d.toLocaleTimeString("en-US", { hour: "numeric", min
 const hhmm = (d: Date | null) => (d ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : "");
 const codeLabel = (c: { code: string | null; name: string }) => (c.code ? `${c.code} ${c.name}` : c.name);
 
+/** Where the phone was at a punch: a pin that opens the spot on a map. Only on Timesheets (people who manage time). */
+function Pin({ lat, lng, accuracy, what }: { lat: number | null; lng: number | null; accuracy: number | null; what: string }) {
+  if (lat === null || lng === null) return null;
+  return (
+    <a
+      href={`https://www.google.com/maps?q=${lat},${lng}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={`${what} here${accuracy ? ` (within about ${Math.round(accuracy * 3.28084)} ft)` : ""} — opens a map`}
+      aria-label={`${what} location on a map`}
+      className="ml-0.5 inline-flex align-middle text-blue-600 hover:text-blue-800"
+    >
+      <MapPin className="h-3.5 w-3.5" />
+    </a>
+  );
+}
+
 export default async function TimesheetsPage({ searchParams }: { searchParams: Promise<{ week?: string; edit?: string; add?: string }> }) {
   const user = await requireStaff();
   if (!canManageTime(user)) redirect("/time");
   const sp = await searchParams;
   const now = new Date();
-  const monday = parseWeek(sp.week) ?? parseWeek(weekKey(now))!;
-  const key = weekKey(monday);
+  // Days, weeks and times on the company's clock.
+  const { key, monday, from, to, clock } = await weekOf(parseWeek(sp.week) ? sp.week! : now);
+  const { wall } = clock;
   const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
   const [entries, staff, burden, projects, costCodes, forgotten] = await Promise.all([
     db.timeEntry.findMany({
-      where: { clockIn: { gte: monday, lt: nextWeek(monday) } },
+      where: { clockIn: { gte: from, lt: to } },
       orderBy: { clockIn: "asc" },
       include: {
         user: { select: { id: true, name: true, payRate: true, salaried: true } },
@@ -71,7 +90,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
   const editing = sp.edit ? entries.find((e) => e.id === sp.edit) : undefined;
   const adding = sp.add !== undefined;
   const range = `${monday.toLocaleDateString("en-US", { month: "short", day: "numeric" })} – ${sunday.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}`;
-  const thisWeek = key === weekKey(now);
+  const thisWeek = key === weekKey(clock.now);
   const divisions = [...new Set(costCodes.map((c) => c.division))];
 
   const entryForm = (e?: (typeof entries)[number]) => (
@@ -119,13 +138,13 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
           </select>
         </Field>
         <Field label="Day" htmlFor="te-date" className="col-span-2">
-          <input id="te-date" type="date" name="date" className="input" required defaultValue={dateInput(e?.clockIn ?? (thisWeek ? now : monday))} />
+          <input id="te-date" type="date" name="date" className="input" required defaultValue={dateInput(e ? wall(e.clockIn) : thisWeek ? clock.now : monday)} />
         </Field>
         <Field label="Started" htmlFor="te-in">
-          <input id="te-in" type="time" name="in" className="input" required defaultValue={e ? hhmm(e.clockIn) : "07:00"} />
+          <input id="te-in" type="time" name="in" className="input" required defaultValue={e ? hhmm(wall(e.clockIn)) : "07:00"} />
         </Field>
         <Field label="Stopped" htmlFor="te-out" hint={e && !e.clockOut ? "Blank = still on the clock" : undefined}>
-          <input id="te-out" type="time" name="out" className="input" defaultValue={e ? hhmm(e.clockOut) : "15:30"} />
+          <input id="te-out" type="time" name="out" className="input" defaultValue={e ? hhmm(e.clockOut ? wall(e.clockOut) : null) : "15:30"} />
         </Field>
         <Field label="Break (min)" htmlFor="te-break">
           <input id="te-break" type="number" min={0} step={5} name="breakMinutes" className="input" defaultValue={e?.breakMinutes ?? 30} />
@@ -148,7 +167,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
       <PageHeader
         breadcrumbs={[{ label: "Time clock", href: "/time" }, { label: "Timesheets" }]}
         title="Timesheets"
-        description="Everyone's time, by week. Hourly people's time past 40 hours is overtime (1.5×). Each job's labor posts to its Budget by cost code."
+        description={`Everyone's time, by week (${zoneLabel(clock.zone)} time). Hourly people's time past 40 hours is overtime (1.5×). Each job's labor posts to its Budget by cost code.`}
         actions={
           <>
             <ButtonLink href={`${base}&add=`} variant="secondary" size="sm">
@@ -171,7 +190,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
                 <AlertTriangle className="h-4 w-4 text-amber-600" />
                 <span className="font-medium text-slate-900">{e.user.name}</span>
                 <span className="text-slate-500">
-                  #{e.project.number} {e.project.name} · since {e.clockIn.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} {timeOf(e.clockIn)}
+                  #{e.project.number} {e.project.name} · since {wall(e.clockIn).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })} {timeOf(wall(e.clockIn))}
                 </span>
                 <span className="ml-auto flex items-center gap-2">
                   <label className="text-xs text-slate-500" htmlFor={`out-${e.id}`}>
@@ -241,7 +260,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
             <ul className="divide-y divide-slate-100">
               {weekDays(monday).flatMap((d) =>
                 r.list
-                  .filter((e) => e.clockIn.toDateString() === d.toDateString())
+                  .filter((e) => wall(e.clockIn).toDateString() === d.toDateString())
                   .map((e) => {
                     const c = costed.get(e.id);
                     const hours = entryHours(e, now);
@@ -268,7 +287,16 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
                               {e.notes ? <span className="block text-xs text-slate-500">{e.notes}</span> : null}
                             </span>
                             <span className="tabular-nums text-slate-600">
-                              {timeOf(e.clockIn)} – {e.clockOut ? timeOf(e.clockOut) : <span className="font-medium text-emerald-700">on the clock</span>}
+                              {timeOf(wall(e.clockIn))}
+                              <Pin lat={e.inLat} lng={e.inLng} accuracy={e.inAccuracy} what="Clocked in" /> –{" "}
+                              {e.clockOut ? timeOf(wall(e.clockOut)) : <span className="font-medium text-emerald-700">on the clock</span>}
+                              <Pin lat={e.outLat} lng={e.outLng} accuracy={e.outAccuracy} what="Clocked out" />
+                              {/* A real punch (not typed in by a manager) that came without a location says so. */}
+                              {!e.editedBy && e.inLat === null && e.outLat === null ? (
+                                <span title="No location came with this punch (not shared, or no signal)" className="ml-0.5 inline-flex align-middle text-slate-300">
+                                  <MapPinOff className="h-3.5 w-3.5" aria-label="No location" />
+                                </span>
+                              ) : null}
                               {e.breakMinutes ? <span className="text-xs text-slate-400"> · {e.breakMinutes} min break</span> : null}
                             </span>
                             <span className="w-24 text-right tabular-nums font-medium text-slate-900">

@@ -19,6 +19,7 @@ import { LEAD_STAGES, OPEN_STAGES, winRate } from "@/lib/leads-math";
 import { CustomizeDashboard } from "./customize";
 import { DashboardBoard } from "./board";
 import { MoreList } from "@/components/more-list";
+import { companyClock } from "@/lib/company-zone";
 
 /** A compact dashboard card: title, a short note and a link in one line, then its content. */
 function Panel({ title, note, href, link, children }: { title: string; note?: React.ReactNode; href?: string; link?: string; children: React.ReactNode }) {
@@ -67,7 +68,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const layout = dashboardLayout(me?.dashboardCards, reports);
   const cards = layoutKeys(layout);
   const want = (k: string) => cards.includes(k);
-  const now = new Date();
+  const now = (await companyClock()).now; // now, on the company's clock (for due / overdue)
 
   // Only what the picked cards need is loaded.
   const [cardStats, cardProjects, cardVendors, cardAttention, cardTodos, cardSchedule, cardActivity, cardProfit, cardCash, cardAging, cardSales] = await Promise.all([

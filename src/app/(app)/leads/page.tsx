@@ -7,6 +7,7 @@ import { OPEN_STAGES, daysBetween, stageLabel, winRate } from "@/lib/leads-math"
 import { cn, fmtDate, money } from "@/lib/utils";
 import { Badge, ButtonLink, EmptyState, PageHeader, Stat } from "@/components/ui";
 import { LeadBoard, type BoardCard } from "./_components/board";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Leads" };
 
@@ -28,7 +29,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const user = await requireStaff();
   const q = await searchParams;
   await syncLeadStages();
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const yearAgo = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate());
   const [leads, staff] = await Promise.all([
     db.lead.findMany({

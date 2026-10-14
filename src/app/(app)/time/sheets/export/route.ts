@@ -1,17 +1,20 @@
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { canManageTime, laborBurden } from "@/lib/time-clock";
-import { costWeek, entryHours, loadedRate, nextWeek, parseWeek, weekKey, type Person } from "@/lib/time-math";
+import { canManageTime, laborBurden, weekOf } from "@/lib/time-clock";
+import { costWeek, entryHours, loadedRate, parseWeek, type Person } from "@/lib/time-math";
 
 /** A week's time as a spreadsheet (CSV) for payroll: one row per stretch on the clock. */
 export async function GET(req: Request) {
   const user = await getCurrentUser();
   if (!user || !canManageTime(user)) return new Response("Not allowed", { status: 403 });
   const url = new URL(req.url);
-  const monday = parseWeek(url.searchParams.get("week")) ?? parseWeek(weekKey(new Date()))!;
+  const asked = parseWeek(url.searchParams.get("week"));
+  // The company's week and clock: the dates and times in the file are the ones on their wall.
+  const { key, from, to, clock } = await weekOf(asked ? url.searchParams.get("week")! : new Date());
+  const { wall } = clock;
   const [entries, burden] = await Promise.all([
     db.timeEntry.findMany({
-      where: { clockIn: { gte: monday, lt: nextWeek(monday) } },
+      where: { clockIn: { gte: from, lt: to } },
       orderBy: [{ user: { name: "asc" } }, { clockIn: "asc" }],
       include: {
         user: { select: { name: true, payRate: true, salaried: true } },
@@ -40,11 +43,11 @@ export async function GET(req: Request) {
     lines.push(
       [
         e.user.name,
-        day(e.clockIn),
+        day(wall(e.clockIn)),
         `#${e.project.number} ${e.project.name}`,
         e.costCode ? (e.costCode.code ? `${e.costCode.code} ${e.costCode.name}` : e.costCode.name) : "",
-        time(e.clockIn),
-        time(e.clockOut),
+        time(wall(e.clockIn)),
+        time(e.clockOut ? wall(e.clockOut) : null),
         e.breakMinutes,
         round(hours),
         round(hours - ot),
@@ -57,6 +60,6 @@ export async function GET(req: Request) {
     );
   }
   return new Response(lines.join("\r\n") + "\r\n", {
-    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="timesheets-week-of-${weekKey(monday)}.csv"` },
+    headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="timesheets-week-of-${key}.csv"` },
   });
 }

@@ -6,6 +6,7 @@ import { cn, fmtDate } from "@/lib/utils";
 import { Card, CardHeader, Collapsible, EmptyState, Progress, Stat } from "@/components/ui";
 import { Gantt } from "@/components/schedule/gantt";
 import { PortalPageHeader } from "@/components/portal/page-header";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Schedule" };
 
@@ -66,7 +67,7 @@ export default async function PortalSchedulePage({ searchParams }: { searchParam
         ) : (
           <>
             <Collapsible summary="Timeline view" defaultOpen>
-              <Gantt tasks={tasks} compact taskHref={(t) => `#task-${t.id}`} />
+              <Gantt tasks={tasks} today={(await companyClock()).now} compact taskHref={(t) => `#task-${t.id}`} />
             </Collapsible>
 
             {milestones.length ? (

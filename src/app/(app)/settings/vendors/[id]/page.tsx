@@ -7,6 +7,7 @@ import { COVERAGE_TYPES, PO_STATUS_LABEL, SOON_DAYS, coverageLabel, coverageWarn
 import { Badge, Button, Card, CardBody, CardHeader, ConfirmForm, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
 import { addInsurance, cancelVendorInvite, confirmInsurance, createVendorLogin, deleteInsurance, deleteVendorLogin, resendVendorInvite, setInsuranceRequired, updateVendorLogin } from "../actions";
 import { openInvites } from "@/lib/invites";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function VendorPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,7 +25,7 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
   const [coverage, company] = await Promise.all([vendorCoverage(vendor.id), db.company.findFirst({ select: { requiredCoverage: true } })]);
   const workPos = vendor.purchaseOrders.filter((p) => !p.bidId && p.status !== "VOID").length;
   const autoNeeds = workPos > 0 || vendor.insurance.length > 0;
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const soon = new Date(day.getTime() + SOON_DAYS * 86400000);
   const required = (company?.requiredCoverage ?? "").split(",").filter(Boolean);

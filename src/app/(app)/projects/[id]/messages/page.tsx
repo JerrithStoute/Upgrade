@@ -6,6 +6,7 @@ import { getProject } from "@/lib/projects";
 import { cn, fmtDateTime, timeAgo } from "@/lib/utils";
 import { Badge, Avatar, SubmitButton, ConfirmForm, Collapsible, Field, EmptyState } from "@/components/ui";
 import { createThread, replyToThread, deleteThread } from "./actions";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function MessagesPage({
   params,
@@ -14,6 +15,7 @@ export default async function MessagesPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ thread?: string }>;
 }) {
+  const { dateTime } = await companyClock();
   const user = await requireStaff();
   const { id } = await params;
   const { thread: threadParam } = await searchParams;
@@ -120,7 +122,7 @@ export default async function MessagesPage({
                     ) : null}
                   </h2>
                   <p className="text-xs text-slate-500">
-                    {selected.messages.length} message{selected.messages.length === 1 ? "" : "s"} · started {fmtDateTime(selected.createdAt)}
+                    {selected.messages.length} message{selected.messages.length === 1 ? "" : "s"} · started {dateTime(selected.createdAt)}
                     {selected.clientVisible ? " · visible in client portal" : " · team only"}
                   </p>
                 </div>
@@ -141,7 +143,7 @@ export default async function MessagesPage({
                         <div className={cn("mb-1 flex items-center gap-1.5 text-[11px] text-slate-500", mine && "justify-end")}>
                           <span className="font-medium text-slate-700">{name}</span>
                           {m.author ? <Badge status={m.author.role} className="px-1.5 py-0 text-[10px]" /> : null}
-                          <span title={fmtDateTime(m.createdAt)}>{timeAgo(m.createdAt)}</span>
+                          <span title={dateTime(m.createdAt)}>{timeAgo(m.createdAt)}</span>
                         </div>
                         <div
                           className={cn(

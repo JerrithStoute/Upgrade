@@ -9,12 +9,14 @@ import { cn, dateInput, fmtDate, fmtDateTime, money, titleCase } from "@/lib/uti
 import { Badge, Button, Card, CardBody, CardHeader, Collapsible, ConfirmForm, SubmitButton } from "@/components/ui";
 import { LeadForm } from "../_components/lead-form";
 import { addLeadEntry, completeFollowUp, deleteLead, moveLeadForm, setFollowUp, setMeeting, updateLead } from "../actions";
+import { companyClock } from "@/lib/company-zone";
 
 const KIND_ICON = { CALL: Phone, EMAIL: Mail, MEETING: Users, NOTE: StickyNote, STAGE: Briefcase } as const;
 const KIND_LABEL: Record<string, string> = { CALL: "Call", EMAIL: "Email", MEETING: "Meeting", NOTE: "Note", STAGE: "" };
 
 export default async function LeadPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ note?: string; next?: string }> }) {
   const user = await requireStaff();
+  const { dateTime } = await companyClock();
   const { id } = await params;
   const { note, next } = await searchParams;
   await syncLeadStages();
@@ -33,7 +35,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
     db.user.findMany({ where: { role: { in: ["ADMIN", "STAFF"] }, active: true }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   const name = leadName(lead);
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const day0 = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const isOpen = lead.stage !== "WON" && lead.stage !== "LOST";
   const followUps = lead.todos.filter((t) => !t.title.startsWith("Meeting:"));
@@ -205,7 +207,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
                           {e.text}
                         </p>
                         <p className="text-xs text-slate-500">
-                          {fmtDateTime(e.createdAt)}
+                          {dateTime(e.createdAt)}
                           {e.user ? ` · ${e.user.name}` : ""}
                         </p>
                       </div>

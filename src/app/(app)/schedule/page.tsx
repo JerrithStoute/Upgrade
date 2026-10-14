@@ -7,10 +7,11 @@ import { fmtDate, cn } from "@/lib/utils";
 import { isTaskOverdue, overlapsRange } from "@/lib/schedule";
 import { Gantt } from "@/components/schedule/gantt";
 import { Card, CardHeader, CardBody, Badge, Table, THead, TBody, Tr, Th, Td, EmptyState, Progress, Avatar } from "@/components/ui";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function GlobalSchedulePage() {
   await requireStaff();
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const weekStart = startOfWeek(startOfDay(today), { weekStartsOn: 1 });
   const weekEnd = startOfDay(endOfWeek(today, { weekStartsOn: 1 }));
   const windowStart = weekStart;

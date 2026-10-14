@@ -6,6 +6,7 @@ import { openInvites } from "@/lib/invites";
 import { fmtDate, fmtDateTime } from "@/lib/utils";
 import { Badge, Button, ButtonLink, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
 import { addNoLoginMember, cancelTeamInvite, deleteTeamMember, inviteTeamMember, resendTeamInvite, sendPasswordReset, setRequireTwoStep, toggleTeamMemberActive, updateTeamMember } from "./actions";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Team" };
 
@@ -18,6 +19,7 @@ function roleLabel(r: (typeof ROLES)[number]) {
 
 export default async function TeamSettingsPage({ searchParams }: { searchParams: Promise<{ edit?: string; invited?: string; reset?: string }> }) {
   const admin = await requireAdmin();
+  const { dateTime } = await companyClock();
   const { edit, invited, reset } = await searchParams;
 
   const [company, waiting, team, clients, securityLog] = await Promise.all([
@@ -459,7 +461,7 @@ export default async function TeamSettingsPage({ searchParams }: { searchParams:
               <TBody>
                 {securityLog.map((e) => (
                   <Tr key={e.id}>
-                    <Td className="whitespace-nowrap text-slate-500">{fmtDateTime(e.createdAt)}</Td>
+                    <Td className="whitespace-nowrap text-slate-500">{dateTime(e.createdAt)}</Td>
                     <Td className={e.type === "security.failed" ? "font-medium text-amber-800" : undefined}>{e.description}</Td>
                   </Tr>
                 ))}

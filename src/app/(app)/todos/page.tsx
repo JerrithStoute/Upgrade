@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { staffUsers } from "@/lib/projects";
 import { PageHeader } from "@/components/ui";
 import { TodoList } from "@/components/todos/todo-list";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function TodosPage({ searchParams }: { searchParams: Promise<{ show?: string; assignee?: string; edit?: string }> }) {
   const user = await requireStaff();
@@ -26,6 +27,7 @@ export default async function TodosPage({ searchParams }: { searchParams: Promis
     <div>
       <PageHeader title="To-Dos" description="Action items across every project." />
       <TodoList
+        today={(await companyClock()).now}
         todos={todos}
         staff={staff}
         projects={projects}

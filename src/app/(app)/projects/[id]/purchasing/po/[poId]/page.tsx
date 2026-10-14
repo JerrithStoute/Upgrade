@@ -10,6 +10,7 @@ import { Badge, Button, ButtonLink, Card, CardBody, CardHeader, ConfirmForm, Tab
 import { vendorContacts } from "@/lib/notify";
 import { PoEditor } from "../../_components/po-editor";
 import { deletePurchaseOrder, setPurchaseOrderStatus } from "../../actions";
+import { companyClock } from "@/lib/company-zone";
 
 /** The status buttons each PO status offers (to → label). */
 const MOVES: Record<string, { to: string; label: string; variant?: "primary" | "secondary" | "danger" | "success"; confirm?: string; note?: boolean }[]> = {
@@ -37,6 +38,7 @@ const MOVES: Record<string, { to: string; label: string; variant?: "primary" | "
 
 export default async function PurchaseOrderPage({ params }: { params: Promise<{ id: string; poId: string }> }) {
   await requireStaff();
+  const { dateTime } = await companyClock();
   const { id, poId } = await params;
   const project = await getProject(id);
   const base = `/projects/${project.id}/purchasing`;
@@ -84,7 +86,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
             To {po.vendorName} · created {fmtDate(po.createdAt)}
             {createdBy ? ` by ${createdBy.name}` : ""}
             {po.sentAt ? ` · sent ${fmtDate(po.sentAt)}` : ""}
-            {po.respondedAt ? ` · ${po.status === "DECLINED" ? "declined" : "accepted"} ${fmtDateTime(po.respondedAt)}` : ""}
+            {po.respondedAt ? ` · ${po.status === "DECLINED" ? "declined" : "accepted"} ${dateTime(po.respondedAt)}` : ""}
             {po.bidId ? " · from a bid you took" : ""}
           </p>
           {po.responseNote ? <p className="mt-1 text-sm text-slate-700">Their note: “{po.responseNote}”</p> : null}

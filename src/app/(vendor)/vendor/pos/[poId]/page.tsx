@@ -9,9 +9,11 @@ import { BILL_STATUS_LABEL, PO_STATUS_LABEL, billTotal, poBilling } from "@/lib/
 import { Badge, Button, ButtonLink, buttonClasses } from "@/components/ui";
 import { PoDocument } from "@/components/po-document";
 import { respondToPo } from "../../actions";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function VendorPoPage({ params }: { params: Promise<{ poId: string }> }) {
   const user = await requireVendor();
+  const { dateTime } = await companyClock();
   const { poId } = await params;
   const doc = await loadPoDoc({ id: poId, vendorId: user.vendorId });
   if (!doc || doc.po.status === "DRAFT") notFound();
@@ -33,7 +35,7 @@ export default async function VendorPoPage({ params }: { params: Promise<{ poId:
           </h1>
           {po.respondedAt ? (
             <p className="text-xs text-slate-500">
-              {po.status === "DECLINED" ? "Declined" : "Accepted"} {fmtDateTime(po.respondedAt)}
+              {po.status === "DECLINED" ? "Declined" : "Accepted"} {dateTime(po.respondedAt)}
               {po.responseNote ? ` — “${po.responseNote}”` : ""}
             </p>
           ) : null}

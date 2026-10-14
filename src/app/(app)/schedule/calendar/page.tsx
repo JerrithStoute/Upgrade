@@ -9,6 +9,7 @@ import { dayKey, isWorkday, workdaysBetween } from "@/lib/workdays";
 import { loadWorkCal } from "@/lib/work-calendar";
 import { Card, CardBody, CardHeader, Field, FormGrid, SubmitButton, Table, TBody, THead, Td, Th, Tr } from "@/components/ui";
 import { addHoliday, addReminder, addTimeOff, deleteCalendarEvent } from "../actions";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Calendar" };
 
@@ -26,7 +27,7 @@ export default async function CalendarPage({
 }) {
   const user = await requireStaff();
   const q = await searchParams;
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const week = q.view === "week";
   // The month (or the week of the picked day) shown.
   const anchor = q.day && /^\d{4}-\d{2}-\d{2}$/.test(q.day) ? noonOf(q.day) : q.month && /^\d{4}-\d{2}$/.test(q.month) ? noonOf(`${q.month}-01`) : today;

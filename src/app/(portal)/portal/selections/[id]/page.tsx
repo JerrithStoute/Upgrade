@@ -6,11 +6,13 @@ import { getPortalProject, portalHref } from "@/lib/portal";
 import { cn, fmtDate, fmtDateTime, money } from "@/lib/utils";
 import { Badge, Card, CardBody, CardHeader, PageHeader, SubmitButton, EmptyState } from "@/components/ui";
 import { chooseOption, approveSelection } from "../../actions";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Selection" };
 
 export default async function PortalSelectionDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireClient();
+  const { dateTime } = await companyClock();
   const { id } = await params;
   const selection = await db.selection.findFirst({
     where: { id, project: { clientId: user.clientId } },
@@ -56,7 +58,7 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
                   You chose <span className="font-semibold">{chosen.name}</span> · {money(chosen.price)}
                 </p>
                 <p className="text-xs text-slate-500">
-                  Chosen {fmtDateTime(selection.chosenAt)}.
+                  Chosen {dateTime(selection.chosenAt)}.
                   {diff !== null && Math.abs(diff) > 0.005
                     ? diff > 0
                       ? ` This is ${money(diff)} over your allowance and will be billed as a change.`

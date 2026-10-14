@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { fmtDateTime } from "./utils";
 import { noteChange } from "./selection-activity";
+import { companyClock } from "@/lib/company-zone";
 
 /**
  * Proof a client saw a file: the first time they open it (its link — a thumbnail on a
@@ -26,6 +27,7 @@ export async function recordClientView(file: { id: string; name: string; selecti
 export async function fileSeen(fileIds: string[], viewer: { id: string; forClient: boolean }) {
   const seen = new Map<string, string>();
   if (!fileIds.length) return seen;
+  const { dateTime } = await companyClock();
   const views = await db.fileView.findMany({
     where: { fileId: { in: fileIds }, ...(viewer.forClient ? { userId: viewer.id } : { user: { role: "CLIENT" } }) },
     orderBy: { viewedAt: "asc" },
@@ -33,7 +35,7 @@ export async function fileSeen(fileIds: string[], viewer: { id: string; forClien
   });
   for (const v of views) {
     if (seen.has(v.fileId)) continue;
-    seen.set(v.fileId, viewer.forClient ? v.viewedAt.toISOString() : `${v.user.name} viewed ${fmtDateTime(v.viewedAt)}`);
+    seen.set(v.fileId, viewer.forClient ? v.viewedAt.toISOString() : `${v.user.name} viewed ${dateTime(v.viewedAt)}`);
   }
   return seen;
 }

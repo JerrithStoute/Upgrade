@@ -56,7 +56,7 @@ export function SideScroll({ box }: { box: React.RefObject<HTMLDivElement | null
       style={at ? { left: at.left, width: at.width } : undefined}
       onScroll={(e) => {
         const el = box.current;
-        if (el && Math.abs(el.scrollLeft - e.currentTarget.scrollLeft) > 1) el.scrollLeft = e.currentTarget.scrollLeft;
+        if (el && Math.abs(el.scrollLeft - e.currentTarget.scrollLeft) > 1) el.scrollTo({ left: e.currentTarget.scrollLeft });
       }}
     >
       <div style={{ width: at?.inner ?? 0, height: 1 }} />

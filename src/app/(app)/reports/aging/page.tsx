@@ -7,10 +7,11 @@ import { cn, fmtDate, money } from "@/lib/utils";
 import { EmptyState, Stat } from "@/components/ui";
 import { PrintButton } from "../../projects/[id]/_components/print-button";
 import { Explain } from "../_parts";
+import { companyClock } from "@/lib/company-zone";
 
 /** What clients owe you, by how late it is. */
 export default async function AgingReport() {
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const rows = await agingRows(today);
   const sum = (key: string, list = rows) => list.filter((r) => r.bucket === key).reduce((n, r) => n + r.balance, 0);
   const total = rows.reduce((n, r) => n + r.balance, 0);

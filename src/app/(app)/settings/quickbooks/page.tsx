@@ -6,6 +6,7 @@ import { Card, CardBody, CardHeader, Collapsible, ConfirmForm, SubmitButton, but
 import { costableItem, jobChoices, type QbEntry } from "@/lib/qb/match";
 import { disconnectQuickBooks, linkCostCode, linkJob, matchAgain, newQuickBooksPassword, setUpQuickBooks } from "./actions";
 import { LinkPicker, PasswordButton } from "./parts";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "QuickBooks" };
 
@@ -13,6 +14,7 @@ export const metadata = { title: "QuickBooks" };
 const qbName = (fullName: string) => fullName.split(":").join(" › ");
 
 export default async function QuickBooksPage() {
+  const { dateTime } = await companyClock();
   const [conn, list, projects, codes, vendorCount] = await Promise.all([
     db.qbConnection.findFirst(),
     db.qbListItem.findMany({ orderBy: { fullName: "asc" } }),
@@ -68,7 +70,7 @@ export default async function QuickBooksPage() {
           description={
             synced ? (
               <span className="flex items-center gap-1.5 text-emerald-700">
-                <CheckCircle2 className="h-4 w-4" /> Connected to {conn.qbCompany ?? "QuickBooks"} · last update {fmtDateTime(conn.lastSyncAt)}
+                <CheckCircle2 className="h-4 w-4" /> Connected to {conn.qbCompany ?? "QuickBooks"} · last update {dateTime(conn.lastSyncAt)}
               </span>
             ) : (
               "Waiting for the Web Connector — follow the steps below."

@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { str, strOrNull, numField } from "@/lib/utils";
 import { DEFAULT_BRAND, isHexColor } from "@/lib/brand";
+import { isZone } from "@/lib/zone";
 import { saveLogo } from "@/lib/company-brand";
 import { deleteUpload } from "@/lib/uploads";
 
@@ -26,6 +27,7 @@ export const saveCompany = friendly(async function saveCompany(formData: FormDat
     website: strOrNull(formData, "website"),
     licenseNumber: strOrNull(formData, "licenseNumber"),
     allowanceProfit: str(formData, "allowanceProfit") === "in",
+    ...(isZone(str(formData, "timeZone")) ? { timeZone: str(formData, "timeZone") } : {}),
   };
   const existing = await db.company.findFirst();
   if (existing) await db.company.update({ where: { id: existing.id }, data });

@@ -10,9 +10,11 @@ import { Badge, Button, Card, CardBody, CardHeader, Collapsible, ConfirmForm, Ta
 import { BillForm } from "../../_components/bill-form";
 import { billChoices } from "../../_data";
 import { decideBill, deleteBill, updateBill } from "../../actions";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function BillPage({ params }: { params: Promise<{ id: string; billId: string }> }) {
   const user = await requireStaff();
+  const { dateTime } = await companyClock();
   const { id, billId } = await params;
   const project = await getProject(id);
   const base = `/projects/${project.id}/purchasing`;
@@ -58,7 +60,7 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
           Dated {fmtDate(bill.billDate)}
           {bill.dueDate ? ` · due ${fmtDate(bill.dueDate)}` : ""}
           {bill.fromPortal ? " · uploaded from their portal" : ""}
-          {bill.approvedAt ? ` · approved ${fmtDateTime(bill.approvedAt)}${bill.approvedBy ? ` by ${bill.approvedBy.name}` : ""}` : ""}
+          {bill.approvedAt ? ` · approved ${dateTime(bill.approvedAt)}${bill.approvedBy ? ` by ${bill.approvedBy.name}` : ""}` : ""}
           {bill.paidAt ? ` · paid ${fmtDate(bill.paidAt)}${bill.paidMethod ? ` by ${bill.paidMethod}` : ""}${bill.paidReference ? ` (${bill.paidReference})` : ""}` : ""}
         </p>
         {bill.notes ? <p className="mt-1 text-sm text-slate-700">{bill.notes}</p> : null}

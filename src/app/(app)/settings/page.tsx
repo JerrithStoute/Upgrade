@@ -9,6 +9,8 @@ import { BrandingForm } from "./branding-form";
 import { getBrand } from "@/lib/company-brand";
 import { backupDir, backupHealth, backupsInCloud, companyDefaultDir, listBackups } from "@/lib/backup";
 import { fmtDateTime, timeAgo } from "@/lib/utils";
+import { DEFAULT_ZONE, ZONES, isZone } from "@/lib/zone";
+import { companyClock } from "@/lib/company-zone";
 
 export const metadata = { title: "Company settings" };
 
@@ -19,7 +21,15 @@ export default async function CompanySettingsPage({
 }) {
   await requireAdmin();
   const { saved, backup, branding, restored, undo } = await searchParams;
-  const [company, { last, overdue: stale }, brand, folder, backups] = await Promise.all([db.company.findFirst(), backupHealth(), getBrand(), backupDir(), listBackups()]);
+  const { dateTime } = await companyClock();
+  const [company, { last, overdue: stale }, brand, folder, backups, punches] = await Promise.all([
+    db.company.findFirst(),
+    backupHealth(),
+    getBrand(),
+    backupDir(),
+    listBackups(),
+    db.timeEntry.count(),
+  ]);
   const ownFolder = await companyDefaultDir();
   const inCloud = backupsInCloud();
   // Same drive as the program? Then one failed disk takes both.
@@ -61,7 +71,7 @@ export default async function CompanySettingsPage({
           <p className={stale ? "font-medium text-amber-700" : "text-slate-700"}>
             {last ? (
               <>
-                Last backup {timeAgo(last.at)} ({fmtDateTime(last.at)}) · {(last.bytes / 1024 / 1024).toFixed(1)} MB
+                Last backup {timeAgo(last.at)} ({dateTime(last.at)}) · {(last.bytes / 1024 / 1024).toFixed(1)} MB
               </>
             ) : (
               "No backup yet — one runs about a minute after the program starts, or click Back up now."
@@ -188,6 +198,23 @@ export default async function CompanySettingsPage({
               </Field>
               <Field label="License number" htmlFor="licenseNumber">
                 <input id="licenseNumber" name="licenseNumber" className="input" defaultValue={company?.licenseNumber ?? ""} />
+              </Field>
+              <Field
+                label="Time zone"
+                htmlFor="timeZone"
+                hint={
+                  punches
+                    ? "The time clock, the times shown and the 6 am morning email follow it. Changing it moves the days and weeks your existing time-clock punches fall in."
+                    : "The time clock, the times shown and the 6 am morning email follow it."
+                }
+              >
+                <select id="timeZone" name="timeZone" className="input" defaultValue={isZone(company?.timeZone) ? company.timeZone : DEFAULT_ZONE}>
+                  {ZONES.map((z) => (
+                    <option key={z.value} value={z.value}>
+                      {z.label}
+                    </option>
+                  ))}
+                </select>
               </Field>
               <Field label="Allowances start with" htmlFor="allowanceProfit" hint="You can switch any allowance on its selection or in the estimate.">
                 <select id="allowanceProfit" name="allowanceProfit" className="input" defaultValue={company?.allowanceProfit ? "in" : "out"}>

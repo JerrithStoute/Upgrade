@@ -1,4 +1,5 @@
 import type { WEATHER } from "./constants";
+import { zoneOffset } from "./zone";
 
 /**
  * A day's weather for a daily log, boiled down from the weather service's hourly readings
@@ -24,16 +25,6 @@ export function skyOf(text: string): Sky | null {
   if (/clear|sunny|fair/.test(t)) return "Sunny";
   if (/wind|breez|blust/.test(t)) return "Windy";
   return null;
-}
-
-/** Offset (ms) of a time zone from UTC at that moment. */
-function zoneOffset(at: Date, timeZone: string) {
-  const p = Object.fromEntries(
-    new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
-      .formatToParts(at)
-      .map((x) => [x.type, x.value]),
-  );
-  return Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second) - Math.floor(at.getTime() / 1000) * 1000;
 }
 
 /** A calendar day ("2026-10-13") where the job is: when it starts and ends. */

@@ -5,6 +5,7 @@ import { cn, fmtDate } from "@/lib/utils";
 import { COVERAGE_TYPES, SOON_DAYS, coverageLabel, coverageWarning, vendorCoverage } from "@/lib/purchasing";
 import { Card, CardBody, CardHeader, SubmitButton } from "@/components/ui";
 import { uploadVendorInsurance } from "../actions";
+import { companyClock } from "@/lib/company-zone";
 
 /** Their certificates with you, and a place to upload a new one. */
 export default async function VendorInsurancePage({ searchParams }: { searchParams: Promise<{ sent?: string }> }) {
@@ -14,7 +15,7 @@ export default async function VendorInsurancePage({ searchParams }: { searchPara
     db.vendorInsurance.findMany({ where: { vendorId: user.vendorId }, orderBy: [{ type: "asc" }, { expiresAt: "desc" }] }),
     vendorCoverage(user.vendorId),
   ]);
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const soon = new Date(day.getTime() + SOON_DAYS * 86400000);
   return (

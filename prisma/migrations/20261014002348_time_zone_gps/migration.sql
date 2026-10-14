@@ -1,0 +1,11 @@
+-- AlterTable
+ALTER TABLE "Company" ADD COLUMN     "timeZone" TEXT NOT NULL DEFAULT 'America/Chicago';
+
+-- AlterTable
+ALTER TABLE "TimeEntry" ADD COLUMN     "inAccuracy" DOUBLE PRECISION,
+ADD COLUMN     "inLat" DOUBLE PRECISION,
+ADD COLUMN     "inLng" DOUBLE PRECISION,
+ADD COLUMN     "outAccuracy" DOUBLE PRECISION,
+ADD COLUMN     "outLat" DOUBLE PRECISION,
+ADD COLUMN     "outLng" DOUBLE PRECISION;
+

@@ -5,10 +5,11 @@ import { db } from "@/lib/db";
 import { fmtDate, money } from "@/lib/utils";
 import { billTotal, coverageWarning, poTotal, vendorCoverage } from "@/lib/purchasing";
 import { Card, CardBody, CardHeader } from "@/components/ui";
+import { companyClock } from "@/lib/company-zone";
 
 export default async function VendorHome() {
   const user = await requireVendor();
-  const today = new Date();
+  const today = (await companyClock()).now; // today, on the company's clock
   const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const [waiting, tasks, bills, coverage] = await Promise.all([
     db.purchaseOrder.findMany({ where: { vendorId: user.vendorId, status: "SENT" }, include: { lines: true, project: { select: { name: true } } }, orderBy: { sentAt: "asc" } }),
