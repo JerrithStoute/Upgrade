@@ -80,7 +80,9 @@ import { searchSheet } from "./symbol-search";
 import { TakeoffMenu, type TakeoffMenuData } from "./takeoff-menu";
 import { RevisionOverlay, type DiffMap } from "./revision-overlay";
 import { BringForwardPanel, ComparePanel, type RevisionInfo } from "./revision-panels";
-import { NO_ALIGN, alignFromPairs, composeAlign, pairSheets, parseAlign, type Align } from "@/lib/revisions";
+import { NO_ALIGN, alignAngle, alignFromPairs, alignScale, applyAlign, composeAlign, pairSheets, parseAlign, type Align } from "@/lib/revisions";
+import { middleOf, parseUpperFloor, pickFloor, placedWalls, placement, snapPlacement, type UpperFloor } from "@/lib/upper-floor";
+import { UpperFloorButton, UpperFloorLayer, UpperFloorPlacing } from "./upper-floor";
 import { cropGray, type Box } from "@/lib/symbol-match";
 import { buildSnapIndex, findSnap, type SnapHit } from "./snap";
 import { ConditionDrawer, type DrawerCondition } from "./condition-drawer";
@@ -108,6 +110,8 @@ import {
   restoreShapes,
   reorderConditions,
   pullFromLibrary,
+  saveUpperFloor,
+  sheetWalls,
 } from "../../actions";
 
 type ViewerCondition = {
@@ -457,6 +461,7 @@ export function PlanViewer({
     scaleLabel: string | null;
     prevSheetId: string | null; // the sheet it replaces in the previous revision
     align: string | null; // how that old sheet lines up with this one
+    upperFloor: string | null; // the floor above, laid over this sheet (src/lib/upper-floor.ts)
   } | null;
   sheets: {
     id: string;
@@ -707,6 +712,21 @@ export function PlanViewer({
   const [aligning, setAligning] = useState<{ old: Pt[]; now: Pt[] } | null>(null);
   const [diff, setDiff] = useState<DiffMap | null>(null);
   const [forward, setForward] = useState(false);
+  // The floor above, laid over this sheet to draw its floor joists here (src/lib/upper-floor.ts):
+  // where it sits (saved, or just changed), shown or not (remembered per sheet), picking / placing it.
+  const savedUpper = useMemo(() => parseUpperFloor(sheet?.upperFloor), [sheet?.upperFloor]);
+  const [upperLocal, setUpperLocal] = useState<{ sheetId: string; value: UpperFloor | null } | null>(null);
+  const upper = upperLocal && upperLocal.sheetId === sheet?.id ? upperLocal.value : savedUpper;
+  const [upperShownFor, setUpperShownFor] = useState<{ id: string | undefined; on: boolean } | null>(null);
+  const upperShown = upperShownFor && upperShownFor.id === sheet?.id ? upperShownFor.on : readUpperShown(sheet?.id);
+  const showUpper = (on: boolean) => {
+    setUpperShownFor({ id: sheet?.id, on });
+    try {
+      if (sheet) localStorage.setItem(`takeoff.upper.${sheet.id}`, on ? "1" : "0");
+    } catch {}
+  };
+  const [upperPicking, setUpperPicking] = useState(false);
+  const [upperPlacing, setUpperPlacing] = useState<{ sourceSheetId: string; walls: Pt[][]; scale: number; turns: number; align: Align; snapped: Pt | null } | null>(null);
 
   // The Takeoff tab opens the sheet you were last on (per job).
   useEffect(() => {
@@ -744,6 +764,50 @@ export function PlanViewer({
   }, [flash]);
 
   const condById = useMemo(() => new Map(conditions.map((c) => [c.id, c])), [conditions]);
+  // This floor's traced walls (the floor above snaps to them), and the floor above where it sits.
+  const thisFloorWalls = useMemo(() => measurements.filter((m) => condById.get(m.conditionId)?.type === "WALL").map((m) => m.points as Pt[]), [measurements, condById]);
+  const upperWalls = upper && upperShown ? placedWalls(upper.walls as Pt[][], upper.align) : null;
+  const startUpperPlacing = (sourceSheetId: string, walls: Pt[][], scale: number, at: Pt | null) => {
+    resetDraft();
+    setSelectedId(null);
+    setUpperPicking(false);
+    setUpperPlacing({ sourceSheetId, walls, scale, turns: 0, align: placement(walls, scale, 0, at ?? pointerPage.current ?? middleOf(walls)), snapped: null });
+  };
+  const turnUpper = () =>
+    setUpperPlacing((u) => u && { ...u, turns: u.turns + 1, snapped: null, align: placement(u.walls, u.scale, u.turns + 1, applyAlign(u.align, middleOf(u.walls))) });
+  const saveUpper = (value: UpperFloor | null) => {
+    if (!sheet) return;
+    const id = sheet.id;
+    setUpperLocal({ sheetId: id, value });
+    startTransition(async () => {
+      try {
+        await saveUpperFloor(projectId, id, value);
+      } catch (err) {
+        setUpperLocal(null);
+        setError(err instanceof Error ? err.message : "Couldn't save the floor above");
+      }
+    });
+  };
+  const pickUpperSheet = (sourceId: string) => {
+    setError(null);
+    startTransition(async () => {
+      try {
+        const r = await sheetWalls(projectId, sourceId);
+        if (!r.walls.length) return setError("Nothing's traced on that sheet's walls yet — trace them first (Find walls does it in a click).");
+        if (!r.unitsPerFoot || !unitsPerFoot) return setError("Set the scale on both sheets first, so the floors line up.");
+        startUpperPlacing(sourceId, r.walls as Pt[][], unitsPerFoot / r.unitsPerFoot, null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Couldn't read that sheet");
+      }
+    });
+  };
+  const moveUpper = () => {
+    if (!upper) return;
+    resetDraft();
+    setSelectedId(null);
+    const turns = Math.round(alignAngle(upper.align) / (Math.PI / 2));
+    setUpperPlacing({ sourceSheetId: upper.sourceSheetId, walls: upper.walls as Pt[][], scale: alignScale(upper.align), turns, align: upper.align, snapped: null });
+  };
 
   // The takeoff list's order: a dragged takeoff shows in its new place right away; the
   // order is saved in the background. Alt + ↑ / ↓ moves the one you're on.
@@ -1121,6 +1185,8 @@ export function PlanViewer({
     if (!snapOn || altHeld || shiftHeld) return null;
     const vertices: Pt[] = [...draft, ...calib];
     for (const m of shapes) if (m.id !== excludeId) vertices.push(...m.points);
+    // The floor above's corners: a joist area drawn here follows its outline.
+    if (upperWalls) for (const w of upperWalls) vertices.push(...w);
     return findSnap(snapIndex, vertices, raw, SNAP_PX / zoom);
   };
 
@@ -1693,6 +1759,13 @@ export function PlanViewer({
         return;
       }
       if (e.type !== "keydown") return;
+      if (upperPlacing || upperPicking) {
+        if (e.key === "Escape") {
+          setUpperPlacing(null);
+          setUpperPicking(false);
+        } else if (upperPlacing && e.key.toLowerCase() === "r") turnUpper();
+        return;
+      }
       if (dirFor) {
         const k = e.key.toLowerCase();
         if (k === "h") finishDirection(sideways ? Math.PI / 2 : 0);
@@ -1783,7 +1856,7 @@ export function PlanViewer({
     };
     // The edit helpers (runHistory, copy/paste) are recreated each render; listening with the latest is intended.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, selectedId, selected, multi, finishDraft, removeShape, active, zoom, zoomAt, dirFor, finishDirection, tool]);
+  }, [draft, selectedId, selected, multi, finishDraft, removeShape, active, zoom, zoomAt, dirFor, finishDirection, tool, upperPlacing, upperPicking]);
 
   // --- Framing direction chooser ---------------------------------------------------------
   // The outline being aimed, its default direction, and what the preview shows right now.
@@ -1899,6 +1972,16 @@ export function PlanViewer({
     if (!svgRef.current) return;
     const raw = toPage(e.clientX, e.clientY);
     pointerPage.current = raw;
+    if (upperPlacing) {
+      // The floor above follows the pointer, and snaps to this floor's walls when it's close (Alt: no snap).
+      const al = placement(upperPlacing.walls, upperPlacing.scale, upperPlacing.turns, raw);
+      // Not to its own walls (both floors on one page): only this floor's.
+      const own = new Set(upperPlacing.walls.map((w) => JSON.stringify(w)));
+      const below = thisFloorWalls.filter((w) => !own.has(JSON.stringify(w)));
+      const s = snapOn && !altHeld ? snapPlacement(al, upperPlacing.walls, below, (SNAP_PX * 1.5) / zoom) : { align: al, snapped: null };
+      setUpperPlacing({ ...upperPlacing, align: s.align, snapped: s.snapped });
+      return;
+    }
     if (autoBox) {
       setAutoBox({ ...autoBox, b: raw });
       return;
@@ -2019,6 +2102,28 @@ export function PlanViewer({
       return;
     }
     if (panning) return;
+    if (upperPlacing) {
+      // Double-click sets it where it is.
+      if (e.detail >= 2) {
+        saveUpper({ sourceSheetId: upperPlacing.sourceSheetId, walls: upperPlacing.walls, align: upperPlacing.align });
+        showUpper(true);
+        setUpperPlacing(null);
+      }
+      return;
+    }
+    if (upperPicking && sheet) {
+      // Both floors on this page: one of the floor above's walls picks that floor (its traced walls, or Find walls).
+      const p = toPage(e.clientX, e.clientY);
+      let walls = pickFloor(thisFloorWalls, p, (SNAP_PX * 1.5) / zoom, unitsPerFoot ? unitsPerFoot * 0.75 : 12 / zoom);
+      if (!walls && vectors?.length && unitsPerFoot) {
+        const r = findWalls(vectors, p, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom });
+        if (r.ok) walls = r.runs as Pt[][];
+      }
+      if (!walls) return setError("No wall there — click right on one of the floor above's walls (or trace them first with Find walls).");
+      setError(null);
+      startUpperPlacing(sheet.id, walls, 1, p);
+      return;
+    }
     if (tool === "autocount") return;
     if (aligning) {
       const p = toPage(e.clientX, e.clientY);
@@ -3009,6 +3114,24 @@ export function PlanViewer({
           >
             <Magnet className="h-3.5 w-3.5" /> Snap {snapOn ? "on" : "off"}
           </button>
+          {sheet && !superseded ? (
+            <UpperFloorButton
+              placed={!!upper}
+              shown={upperShown}
+              busy={saving}
+              sheets={sheets.filter((x) => x.id !== sheet.id).map((x) => ({ id: x.id, label: `Sheet ${x.pageNumber} — ${x.name}`, count: x.count }))}
+              onToggle={() => showUpper(!upperShown)}
+              onPickHere={() => {
+                resetDraft();
+                setSelectedId(null);
+                setUpperPlacing(null);
+                setUpperPicking(true);
+              }}
+              onPickSheet={pickUpperSheet}
+              onMove={moveUpper}
+              onRemove={() => window.confirm("Take the floor above off this sheet?") && saveUpper(null)}
+            />
+          ) : null}
           <div className="mx-1 h-6 w-px bg-slate-200" />
           <ToolButton onClick={() => runHistory("undo")} disabled={historyCounts.undo === 0} title="Undo (Ctrl+Z)">
             <Undo2 className="h-3.5 w-3.5" /> Undo
@@ -3598,6 +3721,22 @@ export function PlanViewer({
               <span className="rounded bg-emerald-600 px-2.5 py-1 font-medium text-white shadow">{flash}</span>
             </div>
           ) : null}
+          {upperPlacing || upperPicking ? (
+            <div className="pointer-events-none absolute inset-x-0 top-3 z-30 flex justify-center px-3">
+              {upperPlacing ? (
+                <UpperFloorPlacing onTurn={turnUpper} onCancel={() => setUpperPlacing(null)} />
+              ) : (
+                <div className="pointer-events-auto flex items-center gap-2 rounded-lg bg-violet-700 px-3 py-2 text-xs text-white shadow-lg">
+                  <span>
+                    <b>Click one of the floor above&apos;s walls</b> on this sheet.
+                  </span>
+                  <button type="button" onClick={() => setUpperPicking(false)} className="rounded bg-white/15 px-2 py-1 font-semibold hover:bg-white/25">
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
           {readout && !dirFor ? (
             <span
               className={cn(
@@ -3684,6 +3823,11 @@ export function PlanViewer({
                       }}
                     >
                       {shapes.map(renderShape)}
+                      {upperPlacing ? (
+                        <UpperFloorLayer walls={placedWalls(upperPlacing.walls, upperPlacing.align)} zoom={zoom} placing snapped={upperPlacing.snapped} />
+                      ) : upperWalls ? (
+                        <UpperFloorLayer walls={upperWalls} zoom={zoom} />
+                      ) : null}
                       {changedShapes.map(({ m, box }) => (
                         <rect
                           key={`chg-${m.id}`}
@@ -4699,4 +4843,13 @@ function ToolButton({ active, children, ...props }: React.ButtonHTMLAttributes<H
       {children}
     </button>
   );
+}
+
+/** Whether the floor above shows on a sheet (remembered in this browser; on unless switched off). */
+function readUpperShown(sheetId: string | undefined) {
+  try {
+    return !sheetId || localStorage.getItem(`takeoff.upper.${sheetId}`) !== "0";
+  } catch {
+    return true;
+  }
 }

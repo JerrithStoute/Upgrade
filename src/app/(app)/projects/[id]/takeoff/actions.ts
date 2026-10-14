@@ -33,6 +33,7 @@ async function supportsChanged(projectId: string, rows: { type: string; sheetId:
 }
 import { applyListPrices, lockJobPrices, setItemPin, setItemPrice, unlockJobPrices } from "@/lib/job-prices";
 import { NO_ALIGN, alignAngle, alignScale, applyAlign, isNoAlign, parseAlign, type Align } from "@/lib/revisions";
+import { upperFloorSchema } from "@/lib/upper-floor";
 import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { assignItemCodes, newItemPlacement, saveCodeRule } from "@/lib/item-codes";
 import { assemblyFields, conditionFields, type AssemblyFields } from "@/lib/takeoff-forms";
@@ -646,6 +647,42 @@ async function assertMeasurable(sheetIds: string[]) {
  * Which sheet of the previous revision this sheet replaces, and how they line up
  * (from matching points clicked on both; null = as they are).
  */
+/**
+ * The floor above, laid over a sheet (or taken off it: null). Its walls are a copy — a picture to
+ * draw the floor joists by, never counted.
+ */
+export async function saveUpperFloor(projectId: string, sheetId: string, raw: unknown) {
+  await requireEdit("takeoffs");
+  const sheet = await db.takeoffSheet.findFirst({ where: { id: sheetId, plan: { projectId } }, select: { id: true } });
+  if (!sheet) throw new Error("Sheet not found");
+  if (raw === null) {
+    await db.takeoffSheet.update({ where: { id: sheet.id }, data: { upperFloor: null } });
+  } else {
+    const data = upperFloorSchema.parse(raw);
+    if (!(await db.takeoffSheet.findFirst({ where: { id: data.sourceSheetId, plan: { projectId } }, select: { id: true } }))) throw new Error("That sheet isn't on this job");
+    if (alignScale(data.align) < 0.05 || alignScale(data.align) > 20) throw new Error("The two sheets' scales don't line up — check both are set");
+    await db.takeoffSheet.update({ where: { id: sheet.id }, data: { upperFloor: JSON.stringify(data) } });
+  }
+  revalidate(projectId);
+}
+
+/** The walls traced on a sheet (to lay that floor over another), with its scale. */
+export async function sheetWalls(projectId: string, sheetId: string): Promise<{ walls: [number, number][][]; unitsPerFoot: number | null }> {
+  await requireEdit("takeoffs");
+  const sheet = await db.takeoffSheet.findFirst({ where: { id: sheetId, plan: { projectId } }, select: { id: true, unitsPerFoot: true } });
+  if (!sheet) throw new Error("Sheet not found");
+  const shapes = await db.takeoffMeasurement.findMany({ where: { sheetId: sheet.id, condition: { type: "WALL" } }, select: { points: true } });
+  const walls = shapes.flatMap((m) => {
+    try {
+      const pts = JSON.parse(m.points) as [number, number][];
+      return Array.isArray(pts) && pts.length >= 2 ? [pts] : [];
+    } catch {
+      return [];
+    }
+  });
+  return { walls, unitsPerFoot: sheet.unitsPerFoot };
+}
+
 export async function saveSheetAlign(input: { projectId: string; sheetId: string; prevSheetId: string | null; align: Align | null }) {
   await requireEdit("takeoffs");
   const data = z

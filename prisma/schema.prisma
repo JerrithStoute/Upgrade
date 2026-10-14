@@ -1105,6 +1105,10 @@ model TakeoffSheet {
   nextSheets  TakeoffSheet[] @relation("SheetRevisions")
   align       String?
 
+  // The floor above, laid over this sheet to draw the floor joists on (src/lib/upper-floor.ts):
+  // JSON {sourceSheetId, walls, align}. A picture only — nothing in it is counted. Null = none.
+  upperFloor  String?
+
   measurements TakeoffMeasurement[]
 
   @@unique([planId, pageNumber])

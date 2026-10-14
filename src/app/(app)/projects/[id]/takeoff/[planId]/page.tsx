@@ -219,7 +219,7 @@ export default async function PlanViewerPage({
                 : null
       }
       pageNumber={pageNumber}
-      sheet={sheet ? { id: sheet.id, name: sheet.name, unitsPerFoot: sheet.unitsPerFoot, scaleLabel: sheet.scaleLabel, prevSheetId: sheet.prevSheetId, align: sheet.align } : null}
+      sheet={sheet ? { id: sheet.id, name: sheet.name, unitsPerFoot: sheet.unitsPerFoot, scaleLabel: sheet.scaleLabel, prevSheetId: sheet.prevSheetId, align: sheet.align, upperFloor: sheet.upperFloor } : null}
       sheets={plan.sheets.map((s) => ({ id: s.id, prevSheetId: s.prevSheetId, pageNumber: s.pageNumber, name: s.name, scaled: !!s.unitsPerFoot, count: s._count.measurements }))}
       countMarkers={conditions
         .filter((c) => isCountType(c.type))
