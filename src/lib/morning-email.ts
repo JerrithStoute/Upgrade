@@ -7,6 +7,7 @@ import { coverageLabel, coverageWarning, vendorsCoverage } from "./purchasing";
 import { fmtDate } from "./utils";
 import { insuranceStage, morningWindow, ymd } from "./morning-rules";
 import { companyClock } from "@/lib/company-zone";
+import { sendSelectionReminders } from "./notify-client";
 
 /**
  * The morning email: once a day, each team member gets one email with what's theirs today —
@@ -14,7 +15,8 @@ import { companyClock } from "@/lib/company-zone";
  * insurance running out. Nothing due: no email. Each person can turn theirs off on their
  * Account page.
  *
- * The same morning run emails subs whose insurance is about to lapse (30 days, 7 days, the day).
+ * The same morning run emails subs whose insurance is about to lapse (30 days, 7 days, the day),
+ * and clients whose selections are coming due (a week out, and the day).
  *
  * Checked hourly from the server (startMorningEmails), each company at 6 am on its own clock; what already went out is remembered in
  * the database (User.morningEmailOn, VendorInsurance.reminded), so a restart never sends twice.
@@ -156,8 +158,9 @@ export function startMorningEmails() {
         const now = (await companyClock()).now;
         if (!morningWindow(now)) return;
         const subs = await sendInsuranceReminders(now);
+        const clients = await sendSelectionReminders(now);
         const team = await sendMorningEmails(now);
-        if (subs || team) console.log(`[morning email] company ${id}: ${team} to the team, ${subs} to subs about insurance`);
+        if (subs || team || clients) console.log(`[morning email] company ${id}: ${team} to the team, ${subs} to subs about insurance, ${clients} to clients about selections`);
       }).catch((err) => console.error(`[morning email] company ${id} failed:`, err));
   };
   setTimeout(check, 90_000); // let the server finish starting

@@ -37,6 +37,7 @@ import { parseProposalOptions } from "@/lib/proposal-options";
 import { PriceWarnings, zeroLineNames } from "@/components/estimate/price-warnings";
 import { bidComparison, overWarnings } from "@/lib/bids";
 import { addDays } from "date-fns";
+import { ClientEmailNote } from "@/components/client-email-note";
 
 export default async function EstimatePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ estimate?: string }> }) {
   const user = await requireStaff();
@@ -172,9 +173,11 @@ export default async function EstimatePage({ params, searchParams }: { params: P
             <>
               Created {fmtDate(estimate.createdAt)}
               {estimate.sentAt ? ` · Sent ${fmtDate(estimate.sentAt)}` : ""}
-              {estimate.approvedAt ? ` · Approved ${fmtDate(estimate.approvedAt)}` : ""}
+              {estimate.approvedAt ? ` · Approved ${fmtDate(estimate.approvedAt)}${estimate.signedBy && estimate.status === "APPROVED" ? ` (signed ${estimate.signedBy})` : ""}` : ""}
+              {estimate.status === "DECLINED" && estimate.decidedAt ? ` · Declined by ${estimate.signedBy ?? "the client"} ${fmtDate(estimate.decidedAt)}${estimate.decisionNote ? `: “${estimate.decisionNote}”` : ""}` : ""}
               {` · New lines start at ${pct(estimate.defaultMarkup, 1)} markup`}
               {isDraft ? "" : " · Changes save as a new version"}
+              {!project.isSpec && estimate.status === "DRAFT" ? <ClientEmailNote clientId={project.clientId} button="Mark sent" /> : null}
             </>
           }
           actions={

@@ -239,27 +239,73 @@ export function ProposalView({
         </div>
       </aside>
 
-      <article className="proposal-doc mx-auto w-full min-w-0 max-w-4xl flex-1 rounded-xl border border-slate-200 bg-white p-10 text-slate-900 shadow-sm print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
-        {o.cover ? <CoverPage cover={cover} /> : null}
-        {/* Wrapped so the server-made header/footer are each an only child (no key needed). */}
-        <div>{header}</div>
-        {intro?.trim() ? (
-          // The estimate's notes open the proposal, like a letter.
-          <section className="mt-10 break-inside-avoid">
-            {o.intro.titled && o.intro.title.trim() ? <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-600">{o.intro.title.trim()}</h2> : null}
-            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-800">{intro.trim()}</p>
-          </section>
-        ) : null}
-        <ProposalBody doc={doc} heading={o.heading || "Proposal"} basePrice={basePrice} />
-        <div>{footer}</div>
-        {o.validDays > 0 ? (
-          <p className="mt-10 text-sm text-slate-700 break-inside-avoid">
-            Pricing in this proposal is good for {o.validDays} days, through {fmtDate(addDays(localDay(pricedOn), o.validDays))}.
-          </p>
-        ) : null}
-        <Signatures signer={o.signer.trim() || companyName} client={o.clientSignature ? (cover.clientName ?? "Client") : null} />
-      </article>
+      <ProposalPaper
+        doc={doc}
+        o={o}
+        basePrice={basePrice}
+        pricedOn={pricedOn}
+        companyName={companyName}
+        cover={cover}
+        intro={intro}
+        header={header}
+        footer={footer}
+      />
     </div>
+  );
+}
+
+/** What decides how the paper reads (from the proposal's settings). */
+export type PaperOptions = Pick<ProposalOptions, "cover" | "intro" | "heading" | "validDays" | "signer" | "clientSignature">;
+
+/**
+ * The proposal as a document — what prints, and what the client opens in their portal.
+ * It's handed the finished numbers (`doc`), never the cost lines behind them.
+ */
+export function ProposalPaper({
+  doc,
+  o,
+  basePrice,
+  pricedOn,
+  companyName,
+  cover,
+  intro,
+  header,
+  footer,
+  signing,
+}: {
+  doc: ProposalDoc;
+  o: PaperOptions;
+  basePrice: number | null;
+  pricedOn: string;
+  companyName: string;
+  cover: Cover;
+  intro: string | null;
+  header: React.ReactNode;
+  footer: React.ReactNode;
+  /** In place of the blank signature lines (the client's Approve / Decline, or their signed approval). */
+  signing?: React.ReactNode;
+}) {
+  return (
+  <article className="proposal-doc mx-auto w-full min-w-0 max-w-4xl flex-1 rounded-xl border border-slate-200 bg-white p-10 text-slate-900 shadow-sm print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
+      {o.cover ? <CoverPage cover={cover} /> : null}
+      {/* Wrapped so the server-made header/footer are each an only child (no key needed). */}
+      <div>{header}</div>
+      {intro?.trim() ? (
+        // The estimate's notes open the proposal, like a letter.
+        <section className="mt-10 break-inside-avoid">
+          {o.intro.titled && o.intro.title.trim() ? <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-600">{o.intro.title.trim()}</h2> : null}
+          <p className="whitespace-pre-line text-sm leading-relaxed text-slate-800">{intro.trim()}</p>
+        </section>
+      ) : null}
+      <ProposalBody doc={doc} heading={o.heading || "Proposal"} basePrice={basePrice} />
+      <div>{footer}</div>
+      {o.validDays > 0 ? (
+        <p className="mt-10 text-sm text-slate-700 break-inside-avoid">
+          Pricing in this proposal is good for {o.validDays} days, through {fmtDate(addDays(localDay(pricedOn), o.validDays))}.
+        </p>
+      ) : null}
+      {signing ?? <Signatures signer={o.signer.trim() || companyName} client={o.clientSignature ? (cover.clientName ?? "Client") : null} />}
+    </article>
   );
 }
 

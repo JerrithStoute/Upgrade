@@ -12,6 +12,7 @@ import { money, numField, parseDateInput, str, strOrNull } from "@/lib/utils";
 import { deriveInvoiceStatus, invoiceTotal, paymentsTotal } from "@/lib/finance";
 import { changeOrderTotals } from "@/lib/change-orders";
 import { billedChangeOrderIds, syncInvoiceTax } from "@/lib/billing-flow";
+import { emailInvoiceToClient } from "@/lib/notify-client";
 
 function invoicePath(projectId: string, invoiceId?: string) {
   return `/projects/${projectId}/invoices${invoiceId ? `/${invoiceId}` : ""}`;
@@ -138,7 +139,13 @@ export const markInvoiceSent = friendly(async function markInvoiceSent(formData:
   if (inv.status !== "DRAFT") throw new Error("Only draft invoices can be sent");
   await db.invoice.update({ where: { id }, data: { status: "SENT" } });
   await syncStatus(id);
-  await logActivity({ projectId, userId: user.id, type: "invoice.sent", description: `Invoice #${inv.number} sent (${money(invoiceTotal(inv.items))})` });
+  const emailed = await emailInvoiceToClient(id, user);
+  await logActivity({
+    projectId,
+    userId: user.id,
+    type: "invoice.sent",
+    description: `Invoice #${inv.number} sent (${money(invoiceTotal(inv.items))})${emailed.length ? ` — emailed to ${emailed.join(", ")}` : " — not emailed (no email address for the client)"}`,
+  });
   revalidate(projectId, id);
   redirect(invoicePath(projectId, id));
 });

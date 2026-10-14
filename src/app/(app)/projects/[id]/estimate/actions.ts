@@ -20,6 +20,9 @@ import { markupTableSchema } from "@/lib/markup";
 import { lockJobPrices } from "@/lib/job-prices";
 import { clearJobNumbers } from "@/lib/template-numbers";
 import { fillFromTakeoff, lockAfterAutoChanges } from "@/lib/takeoff-data";
+import { loadProposal } from "@/lib/proposal-data";
+import { buildProposal } from "@/lib/proposal-options";
+import { emailProposalToClient } from "@/lib/notify-client";
 
 function estimatePath(projectId: string, estimateId?: string) {
   return `/projects/${projectId}/estimate${estimateId ? `?estimate=${estimateId}` : ""}`;
@@ -160,14 +163,22 @@ export const markEstimateSent = friendly(async function markEstimateSent(formDat
   const id = str(formData, "id");
   const est = await loadEstimate(projectId, id);
   if (est.status !== "DRAFT") throw new Error("Only draft estimates can be sent");
-  await db.estimate.update({ where: { id }, data: { status: "SENT", sentAt: new Date() } });
+  await db.estimate.update({ where: { id }, data: { status: "SENT", sentAt: new Date(), sentById: user.id } });
   // The client has a number now: the job's prices stop following the Item List.
   await lockJobPrices(projectId);
   const project = await loadProject(projectId);
   if (project.status === "LEAD" || project.status === "ESTIMATING") {
     await db.project.update({ where: { id: projectId }, data: { status: "PROPOSAL_SENT" } });
   }
-  await logActivity({ projectId, userId: user.id, type: "estimate.sent", description: `Estimate "${est.name}" v${est.version} marked sent` });
+  // It's in the client's portal now, and they're emailed (when there's an address for them).
+  const shown = await loadProposal(projectId, id);
+  const emailed = shown ? await emailProposalToClient(id, buildProposal(shown.specs, shown.options, shown.estimate.basePrice, shown.extras).total, user) : [];
+  await logActivity({
+    projectId,
+    userId: user.id,
+    type: "estimate.sent",
+    description: `Estimate "${est.name}" v${est.version} marked sent${emailed.length ? ` — proposal emailed to ${emailed.join(", ")}` : " — not emailed (no email address for the client)"}`,
+  });
   revalidate(projectId);
   redirect(estimatePath(projectId, id));
 });

@@ -1,3 +1,4 @@
+import { ClientEmailNote } from "@/components/client-email-note";
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Pencil, Printer } from "lucide-react";
@@ -82,6 +83,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
             <>
               Issued {fmtDate(inv.issueDate)} · Due {fmtDate(inv.dueDate)}
               {project.client ? ` · Bill to ${project.client.firstName} ${project.client.lastName}` : ""}
+              {isDraft ? <ClientEmailNote clientId={project.clientId} button="Mark sent" /> : null}
             </>
           }
           actions={

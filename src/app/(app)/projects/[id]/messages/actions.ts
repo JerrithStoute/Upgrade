@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
 import { boolField, str } from "@/lib/utils";
+import { emailMessageToClient } from "@/lib/notify-client";
 
 function messagesPath(projectId: string) {
   return `/projects/${projectId}/messages`;
@@ -35,6 +36,7 @@ export const createThread = friendly(async function createThread(fd: FormData) {
     },
   });
   await logActivity({ projectId: project.id, userId: user.id, type: "message.thread_created", description: `Started conversation "${subject}"` });
+  await emailMessageToClient(thread.id, body, user); // only when the client can see the conversation
   revalidate(project.id);
   redirect(`${messagesPath(project.id)}?thread=${thread.id}`);
 });
@@ -51,6 +53,7 @@ export const replyToThread = friendly(async function replyToThread(fd: FormData)
   await db.message.create({ data: { threadId: thread.id, authorId: user.id, body, createdAt: now } });
   await db.messageThread.update({ where: { id: thread.id }, data: { lastMessageAt: now } });
   await logActivity({ projectId: project.id, userId: user.id, type: "message.sent", description: `Replied in "${thread.subject}"` });
+  await emailMessageToClient(thread.id, body, user);
   revalidate(project.id);
   redirect(`${messagesPath(project.id)}?thread=${thread.id}`);
 });

@@ -245,3 +245,36 @@ export function buildProposal(specs: ProposalSpec[], o: ProposalOptions, basePri
     totalOnly: o.totalOnly,
   };
 }
+
+/**
+ * The proposal as the client's browser gets it: only what's shown on the page. Categories
+ * you hid, prices you hid and item quantities you hid are taken out of the data itself —
+ * not just left off the screen. The page reads the same.
+ */
+export function clientCopy(doc: ProposalDoc): ProposalDoc {
+  const foot = !doc.totalOnly && !!(doc.fee || doc.tax);
+  const categories = doc.categories
+    .map((c) => ({
+      name: doc.showCategories ? c.name : "",
+      amount: doc.showCategories && doc.showCategoryAmounts ? c.amount : 0,
+      divisions: c.divisions
+        .filter((d) => d.show || d.items?.length)
+        .map((d) => ({
+          ...d,
+          name: d.show ? d.name : "",
+          specText: d.show && doc.showSpecText ? d.specText : null,
+          amount: d.show && d.showPrice ? d.amount : 0,
+          items: d.items?.map((i) => ({ ...i, amount: doc.showItemPrices ? i.amount : 0, quantity: doc.showItemQty ? i.quantity : 0, unit: doc.showItemQty ? i.unit : "" })) ?? null,
+        })),
+    }))
+    .filter((c) => doc.showCategories || c.divisions.length)
+    // Unnamed (hidden) division headings still need something to tell them apart.
+    .map((c, i) => (c.name ? c : { ...c, name: `\u200b${i}` }));
+  return {
+    ...doc,
+    categories,
+    subtotal: foot ? doc.subtotal : 0,
+    fee: doc.totalOnly ? null : doc.fee,
+    optional: doc.optional.map((i) => ({ ...i, amount: doc.totalOnly ? 0 : i.amount })),
+  };
+}

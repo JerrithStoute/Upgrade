@@ -163,6 +163,8 @@ export async function acceptInvite(_prev: FormState, fd: FormData): Promise<Form
       },
     });
     if (invite.kind === "CLIENT") await db.client.update({ where: { id: invite.clientId! }, data: { userId: user.id } });
+    // Any other links waiting for this email are done with.
+    await db.invite.deleteMany({ where: { email: invite.email, acceptedAt: null } });
     await logActivity({ userId: user.id, type: "user.joined", description: `${name} accepted an invitation (${invite.email})` });
     return user.id;
   }).catch((e: Error) => e);

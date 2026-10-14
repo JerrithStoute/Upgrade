@@ -312,6 +312,12 @@ model Estimate {
   markupTable     String?
   sentAt          DateTime?
   approvedAt      DateTime?
+  // The proposal in the client's portal: who sent it (they hear the answer), and the client's answer —
+  // their typed signature on approving, their note on declining.
+  sentById        String?
+  signedBy        String?
+  decidedAt       DateTime?
+  decisionNote    String?
   // Locked by hand: no automatic updates from the takeoff, no edits, until unlocked.
   lockedAt        DateTime?
   // "What changed": automatic updates from the takeoff since the last save (JSON, see takeoff-changes.ts).
@@ -591,6 +597,8 @@ model Selection {
   // "Requested by": a date, or a schedule item (leadDays before it starts). dueDate is
   // always the resolved date (kept in step with the schedule).
   dueDate        DateTime?
+  // The last deadline email sent to the client for it: 7 (a week out) or 0 (due).
+  clientReminded Int?
   scheduleTaskId String?
   scheduleTask   ScheduleTask? @relation(fields: [scheduleTaskId], references: [id], onDelete: SetNull)
   leadDays       Int           @default(0)
@@ -704,6 +712,7 @@ model ChangeOrder {
   showPrices         Boolean   @default(true)
   scheduleImpactDays Int       @default(0)
   sentAt             DateTime?
+  sentById           String? // who sent it — they hear when the client answers
   decidedAt          DateTime?
   decidedBy          String? // name of approver
   decisionNote       String?

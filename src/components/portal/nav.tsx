@@ -5,6 +5,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import {
   Home,
   ListChecks,
+  FileText,
   FileDiff,
   CalendarDays,
   Receipt,
@@ -16,6 +17,7 @@ import { cn } from "@/lib/utils";
 
 const NAV: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] = [
   { href: "/portal", label: "Home", icon: Home, exact: true },
+  { href: "/portal/proposals", label: "Proposals", icon: FileText },
   { href: "/portal/selections", label: "Selections", icon: ListChecks },
   { href: "/portal/change-orders", label: "Change Orders", icon: FileDiff },
   { href: "/portal/schedule", label: "Schedule", icon: CalendarDays },

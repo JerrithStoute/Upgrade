@@ -58,10 +58,13 @@ export async function resendInvite(id: string, from: { id: string; name: string 
 }
 
 export async function cancelInvite(id: string) {
-  await db.invite.deleteMany({ where: { id, acceptedAt: null } });
+  // Every waiting link for that email (an emailed proposal or invoice may have added more).
+  const row = await db.invite.findFirst({ where: { id, acceptedAt: null }, select: { email: true } });
+  if (row) await db.invite.deleteMany({ where: { email: row.email, acceptedAt: null } });
 }
 
 /** Invitations still waiting to be accepted (of one kind, or for one client / vendor). */
 export function openInvites(where: { kind?: string; clientId?: string; vendorId?: string } = {}) {
-  return db.invite.findMany({ where: { acceptedAt: null, ...where }, orderBy: { createdAt: "desc" }, include: { invitedBy: { select: { name: true } } } });
+  // One row per email (the newest): several links can be waiting for the same person.
+  return db.invite.findMany({ where: { acceptedAt: null, ...where }, orderBy: { createdAt: "desc" }, distinct: ["email"], include: { invitedBy: { select: { name: true } } } });
 }

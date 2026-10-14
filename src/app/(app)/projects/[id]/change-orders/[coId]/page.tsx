@@ -10,6 +10,7 @@ import { unaddedChoices } from "@/lib/change-orders-server";
 import { Badge, Card, CardBody, CardHeader, ConfirmForm, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { approveChangeOrder, declineChangeOrder, deleteChangeOrder, sendChangeOrder, voidChangeOrder } from "../actions";
 import { ChangeOrderEditor } from "./change-order-editor";
+import { ClientEmailNote } from "@/components/client-email-note";
 
 /**
  * A change order, laid out like your CoConstruct change orders: intro text, line
@@ -62,6 +63,7 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
               {co.sentAt ? ` · Sent ${fmtDate(co.sentAt)}` : ""}
               {co.clientApprovedAt ? ` · Client approved ${fmtDate(co.clientApprovedAt)}${co.decidedBy ? ` (${co.decidedBy})` : ""}` : ""}
               {co.decidedAt ? ` · ${co.status === "DECLINED" ? "Declined" : "Approved"} ${fmtDate(co.decidedAt)}` : ""}
+              {co.status === "DRAFT" && co.clientApproval ? <ClientEmailNote clientId={project.clientId} button="Send for approval" /> : null}
             </>
           }
           actions={

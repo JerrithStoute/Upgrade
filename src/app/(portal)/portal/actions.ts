@@ -13,6 +13,8 @@ import { applyDecline, finalizeIfApproved } from "@/lib/change-orders-server";
 import { syncSelectionChangeOrder } from "@/lib/billing-flow";
 import { fileSeen, requiredFiles } from "@/lib/file-views";
 import { headers } from "next/headers";
+import { clientApprovesProposal, clientDeclinesProposal } from "@/lib/estimate-decide";
+import { emailChangeOrderAnswered, emailMessageFromClient, emailProposalAnswered, emailSelectionChosen } from "@/lib/notify-client";
 
 function revalidatePortal(projectId: string) {
   revalidatePath("/portal", "layout");
@@ -76,6 +78,7 @@ export const chooseOption = friendly(async function chooseOption(formData: FormD
     description: `Client chose "${option.name}" for ${selection.title}`,
   });
   await syncSelectionChangeOrder(selection.id, user);
+  await emailSelectionChosen(selection.id);
   revalidatePortal(selection.projectId);
   redirect(`/portal/selections/${selection.id}`);
 });
@@ -135,6 +138,7 @@ export async function clientMakeChoice(selectionId: string, choice: string | nul
   }
   await logActivity({ projectId: sel.projectId, userId: user.id, type: "selection.chosen", description: `Client made a choice for ${sel.title}` });
   await syncSelectionChangeOrder(sel.id, user);
+  await emailSelectionChosen(sel.id);
   revalidatePortal(sel.projectId);
   return { ok: true };
 }
@@ -214,6 +218,7 @@ export const approveChangeOrder = friendly(async function approveChangeOrder(for
     type: "change_order.approved",
     description: `Client approved change order #${co.number} "${co.title}" (signed ${signature})`,
   });
+  await emailChangeOrderAnswered(co.id);
   revalidatePortal(co.projectId);
   redirect(`/portal/change-orders/${co.id}`);
 });
@@ -236,8 +241,33 @@ export const declineChangeOrder = friendly(async function declineChangeOrder(for
     type: "change_order.declined",
     description: `Client declined change order #${co.number} "${co.title}"${note ? `: ${note}` : ""}`,
   });
+  await emailChangeOrderAnswered(co.id);
   revalidatePortal(co.projectId);
   redirect(`/portal/change-orders/${co.id}`);
+});
+
+// ---------------------------------------------------------------------------
+// Proposals
+// ---------------------------------------------------------------------------
+
+export const approveProposal = friendly(async function approveProposal(formData: FormData) {
+  const user = await requireClient();
+  await stopIfPreview(user);
+  const signature = str(formData, "signature");
+  if (!signature) throw new Error("Type your name to sign");
+  const est = await clientApprovesProposal(user, str(formData, "id"), signature);
+  await emailProposalAnswered(est.id);
+  revalidatePortal(est.projectId);
+  redirect(`/portal/proposals/${est.id}`);
+});
+
+export const declineProposal = friendly(async function declineProposal(formData: FormData) {
+  const user = await requireClient();
+  await stopIfPreview(user);
+  const est = await clientDeclinesProposal(user, str(formData, "id"), strOrNull(formData, "note"));
+  await emailProposalAnswered(est.id);
+  revalidatePortal(est.projectId);
+  redirect(`/portal/proposals/${est.id}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -264,6 +294,7 @@ export const replyToThread = friendly(async function replyToThread(formData: For
     type: "message.sent",
     description: `Client replied in "${thread.subject}"`,
   });
+  await emailMessageFromClient(thread.id, body, user.name);
   revalidatePortal(thread.projectId);
   redirect(`/portal/messages?project=${thread.projectId}&thread=${thread.id}`);
 });
@@ -293,6 +324,7 @@ export const createThread = friendly(async function createThread(formData: FormD
     type: "message.created",
     description: `Client started conversation "${subject}"`,
   });
+  await emailMessageFromClient(thread.id, body, user.name);
   revalidatePortal(project.id);
   redirect(`/portal/messages?project=${project.id}&thread=${thread.id}`);
 });

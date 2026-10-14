@@ -13,6 +13,7 @@ import { applyDecline, coTotal, finalizeIfApproved, unaddedChoices } from "@/lib
 import { newChangeOrder } from "@/lib/billing-flow";
 import { noteChange } from "@/lib/selection-activity";
 import { deleteUpload, saveUpload } from "@/lib/uploads";
+import { emailChangeOrderToClient } from "@/lib/notify-client";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -279,8 +280,15 @@ export const sendChangeOrder = friendly(async function sendChangeOrder(formData:
   const id = str(formData, "id");
   const co = await loadCO(projectId, id);
   if (co.status !== "DRAFT") throw new Error("Only draft change orders can be sent");
-  await db.changeOrder.update({ where: { id }, data: { status: "PENDING_APPROVAL", sentAt: new Date() } });
-  await logActivity({ projectId, userId: user.id, type: "change_order.sent", description: `Change Order #${co.number} sent for approval` });
+  await db.changeOrder.update({ where: { id }, data: { status: "PENDING_APPROVAL", sentAt: new Date(), sentById: user.id } });
+  // The client is emailed when it needs their approval (and there's an address for them).
+  const emailed = await emailChangeOrderToClient(id, user);
+  await logActivity({
+    projectId,
+    userId: user.id,
+    type: "change_order.sent",
+    description: `Change Order #${co.number} sent for approval${emailed.length ? ` — emailed to ${emailed.join(", ")}` : co.clientApproval ? " — not emailed (no email address for the client)" : ""}`,
+  });
   // Nothing left to approve (no client, no team members listed)? It's approved now.
   await finalizeIfApproved(co.id, user);
   revalidate(projectId, id);
