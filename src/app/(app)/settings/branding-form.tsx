@@ -260,7 +260,7 @@ export function BrandingForm({ color, logoUrl, companyName }: { color: string | 
       <div className="flex items-center justify-end gap-3">
         {hex.toLowerCase() !== DEFAULT_BRAND ? (
           <button type="button" onClick={() => setHex(DEFAULT_BRAND)} className="text-xs text-slate-500 hover:underline">
-            Back to the original blue
+            Back to Builder Station black
           </button>
         ) : null}
         <SubmitButton pendingText="Saving…">Save branding</SubmitButton>

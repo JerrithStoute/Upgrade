@@ -1,13 +1,32 @@
 /**
- * Branding colors. The app's main color is Tailwind's "blue" scale (buttons are
- * blue-700, links blue-700, highlights blue-50…); a company's brand color replaces
- * that whole scale, so everything follows from one color. Pure (server and client).
+ * Branding colors. The app's main color is the "blue" scale in the code (buttons are
+ * blue-700, links blue-700, highlights blue-50…) — a name from when the program was blue.
+ * Out of the box that scale is The Builder Station's own: black ink for buttons and links,
+ * quiet gray for highlights, and the logo's yellow for markers (the tab you're on, the menu
+ * item you're on, the box you're typing in). A company's brand color replaces the whole
+ * scale, so everything follows from one color. Pure (server and client).
  */
 
-export const DEFAULT_BRAND = "#1d4ed8"; // Tailwind blue-700
+export const DEFAULT_BRAND = "#111827"; // The Builder Station's black
+
+/** The Builder Station's own scale (the same values are the defaults in globals.css). */
+export const STATION_SHADES = {
+  50: "#f1f5f9",
+  100: "#e2e8f0",
+  200: "#cbd5e1",
+  300: "#fcd34d",
+  400: "#fbbf24", // the logo's yellow
+  500: "#f59e0b",
+  600: "#1f2937",
+  700: "#111827", // the logo's black
+  800: "#374151",
+  900: "#111827",
+  950: "#030712",
+} as const;
 
 /** Ready-made colors to click. */
 export const BRAND_PRESETS: { name: string; hex: string }[] = [
+  { name: "Builder Station black", hex: "#111827" },
   { name: "Blue", hex: "#1d4ed8" },
   { name: "Navy", hex: "#1e3a8a" },
   { name: "Teal", hex: "#0f766e" },
@@ -59,6 +78,7 @@ export const SHADES = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as 
  * too light for white text, with lighter tints above and darker shades below.
  */
 export function brandShades(hex: string): Record<(typeof SHADES)[number], string> {
+  if ((isHexColor(hex) ? hex : DEFAULT_BRAND).toLowerCase() === DEFAULT_BRAND) return { ...STATION_SHADES };
   const [h, s, l] = toHsl(isHexColor(hex) ? hex : DEFAULT_BRAND);
   const L7 = Math.max(20, Math.min(50, l)); // readable white text on buttons (the original blue sits at ~48)
   const tint = Math.min(s, 90);
@@ -80,7 +100,7 @@ export function brandShades(hex: string): Record<(typeof SHADES)[number], string
   return out;
 }
 
-/** CSS that swaps the app's blue for the brand color (empty for the built-in blue). */
+/** CSS that swaps the program's own colors for the brand color (empty when the company hasn't picked one). */
 export function brandCss(hex: string | null | undefined) {
   if (!isHexColor(hex) || hex.toLowerCase() === DEFAULT_BRAND) return "";
   const shades = brandShades(hex);

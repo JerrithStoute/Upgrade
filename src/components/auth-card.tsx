@@ -1,3 +1,4 @@
+import { StationBlock } from "@/components/station-logo";
 import Link from "@/components/link";
 
 /** The plain card the sign-in-type pages share (sign up, forgot password, invitations…). */
@@ -5,8 +6,8 @@ export function AuthCard({ title, intro, children, footer }: { title: string; in
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center bg-slate-100 p-6">
       <div className="w-full max-w-sm">
-        <Link href="/login" className="mb-6 block text-center text-2xl font-semibold tracking-tight text-slate-900">
-          The Builder Station
+        <Link href="/login" className="mb-6 block" aria-label="The Builder Station — sign in">
+          <StationBlock />
         </Link>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="mb-1 text-lg font-semibold">{title}</h1>

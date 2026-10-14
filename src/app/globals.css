@@ -3,7 +3,26 @@
 :root {
   --background: #f6f7f9;
   --foreground: #0f172a;
-  --brand: #1d4ed8;
+  --brand: #111827;
+}
+
+/*
+ * The program's main color scale ("blue" in the code — see src/lib/brand.ts): The Builder
+ * Station's black ink, gray highlights and the logo's yellow for markers. A company's own
+ * brand color replaces these (the same values are STATION_SHADES in brand.ts).
+ */
+@theme {
+  --color-blue-50: #f1f5f9;
+  --color-blue-100: #e2e8f0;
+  --color-blue-200: #cbd5e1;
+  --color-blue-300: #fcd34d;
+  --color-blue-400: #fbbf24;
+  --color-blue-500: #f59e0b;
+  --color-blue-600: #1f2937;
+  --color-blue-700: #111827;
+  --color-blue-800: #374151;
+  --color-blue-900: #111827;
+  --color-blue-950: #030712;
 }
 
 @theme inline {

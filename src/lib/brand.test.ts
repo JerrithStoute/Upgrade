@@ -20,8 +20,13 @@ describe("brand colors", () => {
     assert.ok(lightness(brandShades("#fde047")[700]) <= 0.51);
   });
 
-  it("leaves the original blue exactly as it is", () => {
+  it("out of the box it's The Builder Station's own black, with the logo's yellow as the marker", () => {
     assert.equal(brandShades(DEFAULT_BRAND)[700], DEFAULT_BRAND);
+    assert.equal(brandShades(DEFAULT_BRAND)[400], "#fbbf24");
+  });
+
+  it("a builder can still pick the old blue", () => {
+    assert.match(brandCss("#1d4ed8"), /--color-blue-700:#1d4ed8;/);
   });
 
   it("only writes CSS for a real, non-default color", () => {

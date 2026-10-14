@@ -116,7 +116,7 @@ function SidebarContent({
               href={item.href}
               className={cn(
                 "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                active ? "bg-blue-50 text-blue-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                active ? "bg-blue-50 text-blue-800 shadow-[inset_3px_0_0_var(--color-blue-400)]" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
               )}
             >
               <item.icon className={cn("h-4 w-4", active ? "text-blue-700" : "text-slate-400")} />
