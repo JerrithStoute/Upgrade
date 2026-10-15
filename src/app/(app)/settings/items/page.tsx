@@ -233,14 +233,7 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
         >
           <Truck className="h-3.5 w-3.5" /> For a vendor…
         </Link>
-        <Link href={listHref({ category: null })} className={chip(!category)}>
-          All · {all.length}
-        </Link>
-        {categories.map((c) => (
-          <Link key={c} href={listHref({ category: c })} className={chip(category === c)}>
-            {c} · {all.filter((i) => i.category === c).length}
-          </Link>
-        ))}
+        {/* What still needs attention first, where it's seen — then the categories. */}
         {missing || noCode ? (
           <Link
             href={listHref({ noCode: !noCode })}
@@ -265,6 +258,14 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
             {noPrice ? "✕ " : ""}Needs a price · {unpricedCount}
           </Link>
         ) : null}
+        <Link href={listHref({ category: null })} className={chip(!category)}>
+          All · {all.length}
+        </Link>
+        {categories.map((c) => (
+          <Link key={c} href={listHref({ category: c })} className={chip(category === c)}>
+            {c} · {all.filter((i) => i.category === c).length}
+          </Link>
+        ))}
       </div>
       {category && categories.includes(category) ? (
         // Tidy up categories: rename one, or type / pick another to merge it in.

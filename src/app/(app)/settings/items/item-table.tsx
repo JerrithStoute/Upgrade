@@ -197,7 +197,14 @@ export function ItemTable({
                         <div className="flex items-center justify-end gap-1">
                           {mark(i.id, "unitCost")}
                           <span className="text-slate-400">$</span>
-                          <NumberCell label={`Unit cost for ${i.name}`} value={i.unitCost} min="0" width="!w-20" onSave={(v) => save(i.id, "unitCost", v)} />
+                          <NumberCell
+                            label={`Unit cost for ${i.name}`}
+                            value={i.unitCost}
+                            min="0"
+                            width="!w-20"
+                            warn={i.unitCost === 0 ? "No price yet" : undefined}
+                            onSave={(v) => save(i.id, "unitCost", v)}
+                          />
                           <span className="text-slate-400">/</span>
                           <select
                             key={i.unit}
@@ -307,15 +314,31 @@ function editKeys(e: React.KeyboardEvent<HTMLInputElement>, original: string) {
   }
 }
 
-function NumberCell({ label, value, min, width = "!w-20", onSave }: { label: string; value: number; min?: string; width?: string; onSave: (v: string) => void }) {
+/** `warn`: the box stands out (amber) with this as its tooltip — a $0 price, say. */
+function NumberCell({
+  label,
+  value,
+  min,
+  width = "!w-20",
+  warn,
+  onSave,
+}: {
+  label: string;
+  value: number;
+  min?: string;
+  width?: string;
+  warn?: string;
+  onSave: (v: string) => void;
+}) {
   const original = String(value);
   // A plain box (no up / down arrows): the arrow keys move between cells instead.
   return (
     <input
       key={original}
       inputMode="decimal"
-      aria-label={label}
-      className={cn("input text-right tabular-nums", width, cell)}
+      aria-label={warn ? `${label} (${warn})` : label}
+      title={warn}
+      className={cn("input text-right tabular-nums", width, cell, warn && "!border-amber-400 !bg-amber-50 font-medium text-amber-800")}
       defaultValue={original}
       onFocus={(e) => e.currentTarget.select()}
       onKeyDown={(e) => editKeys(e, original)}
