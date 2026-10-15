@@ -1,0 +1,210 @@
+import type { HelpArticle } from "../types";
+
+export const ESTIMATES: HelpArticle[] = [
+  {
+    slug: "estimate",
+    title: "The estimate",
+    group: "Estimates",
+    area: "estimates",
+    pages: ["/projects/*/estimate"],
+    what: "The estimate is the job's price, built line by line. It's organized as **Division → Category → Item**: divisions are big groups (Excavation and Foundation), categories are what the client sees and picks (Kitchen Cabinets), and items are your cost lines under them. Your takeoff fills in its costs by itself. When it's ready, it becomes the client's proposal.",
+    how: [
+      "Open the job and click the **Estimate** tab. With no estimate yet, pick **Blank estimate** or a template and click **Create estimate**. The takeoff comes in by itself.",
+      "Add categories with **Add from cost codes** (or drag cost codes in from the **Cost codes** list), and items with **+ Add item** on a category.",
+      "Type quantities and unit costs. Set your markup with **Markup & tax**.",
+      "Click **Save changes**. Nothing is saved until you do.",
+      "Click **View proposal** to see what the client gets, then **Mark sent** to send it.",
+    ],
+    sections: [
+      {
+        heading: "The top of the estimate",
+        items: [
+          { name: "Name / Rename / vN", what: "The estimate's name and version number (v1, v2…), with its status: Draft, Sent, Approved, Declined." },
+          { name: "Mark sent", what: "Sends the proposal: emails the client, puts it in their portal, locks the job's prices, and moves the job to Proposal Sent. If some items are $0, it asks first." },
+          { name: "Mark approved / Mark declined", what: "Records the client's answer when they give it outside the portal. Approved moves the job to Contracted." },
+          { name: "Use as the budget", what: "Spec homes only (no client): makes this estimate the house's budget and locks its prices." },
+          { name: "View proposal", what: "The proposal as the client sees it, with the settings for what it shows." },
+          { name: "Lock / Unlock", what: "Drafts only: a locked estimate gets no automatic updates (from the takeoff or the Item List) and no edits until you unlock it." },
+          { name: "New version", what: "**Copy vN**: every line, price and parameter of this version, for a revision on the same plans. **Start fresh**: blank or from a template, for other plans." },
+          { name: "Delete", what: "Deletes a draft version." },
+          { name: "Add from template / Save as template", what: "Adds a template's categories and items to this draft. Admins can save this estimate as a template; **Clear this job's numbers** starts the template's quantities at 0." },
+          { name: "Proposal introduction, terms & starting markup %", what: "The thank-you at the top of the proposal, the terms at the end, and the markup new lines start with." },
+        ],
+      },
+      {
+        heading: "Warnings you may see",
+        items: [
+          { name: "N takeoff items have no price", what: "They count as $0. Give them a price on the Material list or in the Item List." },
+          { name: "N items are $0 on this estimate", what: "Give them a cost, delete them, or make them optional." },
+          { name: "Item List prices changed for N items", what: "Since the job's prices were locked. Open **Price review** to bring them in." },
+          { name: "Updated from the takeoff since you last saved", what: "Lines the takeoff changed, with the change in cost. If you already gave this price, **Put back what I bid & lock** undoes them; **Keep these & lock** keeps them." },
+        ],
+      },
+      {
+        heading: "The sheet's toolbar",
+        items: [
+          { name: "+ Division", what: "Adds a division." },
+          { name: "Expand all / Collapse all", what: "Opens or closes every division and category." },
+          { name: "Divisions", what: "Admins: your divisions and which categories go in each (same as Settings)." },
+          { name: "Add from cost codes", what: "Tick cost codes to add: each cost code group becomes a category and each code an item." },
+          { name: "Cost codes", what: "A list beside the sheet.", how: "Click a code to add it, or drag it where you want it." },
+          { name: "Markup & tax", what: "Your profit, overhead and sales tax for this estimate. See below." },
+          { name: "Parameters", what: "Numbers like heated sq. ft. that quantities can use in a formula." },
+          { name: "Columns", what: "Shows or hides columns: Qty, Units, Unit cost, Ext. cost, Cost type, Cost code, Tax, Markup %, Profit $, Total price, $ / sq. ft., % of total, Notes." },
+        ],
+      },
+      {
+        heading: "Lines on the sheet",
+        items: [
+          { name: "Division row", what: "Its name (click to rename), how many categories, and totals. **…** adds a category or deletes the division." },
+          { name: "Category row", what: "Its name; click it for its details (below). Icons show an allowance, a selection, urgent, and the requested-by date. **+ Add item** adds a line. **…** has edit, duplicate, make optional, Item List options and delete." },
+          { name: "Item row", what: "A cost line: description, Qty, Units, Unit cost, Cost type (Material, Labor, Subcontractor, Equipment, Other), Cost code, Tax, Markup %, Notes. A ruler icon means it comes from the takeoff; click it to see the takeoff items behind it." },
+          { name: "Formulas", what: "Type = in Qty or Unit cost for a formula with your parameters, like =roundup([Wall area] / 32). The ƒ button picks a parameter for you. An amber ƒ means a value is missing." },
+          { name: "From takeoff", what: "On a takeoff line: **on** means its quantity and cost come from the takeoff; switch it **off** to type your own, and the takeoff leaves it alone." },
+          { name: "Make optional", what: "Takes an item out of the price. It's greyed out and listed under **Not included** on the proposal." },
+          { name: "Moving things", what: "Drag items, categories and divisions to reorder or move them. Arrow keys move between boxes." },
+          { name: "Ticking lines", what: "Tick several lines to set their cost type, cost code or markup at once, or delete them." },
+        ],
+      },
+      {
+        heading: "The bar at the bottom",
+        items: [
+          { name: "Total sq. ft.", what: "The job's size, for $ per square foot." },
+          { name: "Est. cost / Sales tax / Est. profit / Overhead / Est. total", what: "The estimate's totals. Sales tax is the tax you pay, part of the cost." },
+          { name: "Base price / Use estimate total", what: "The price that goes on the proposal. It can match the estimate total or be your own number; it tells you how far off the estimate it is and your profit at that price." },
+          { name: "Discard", what: "Throws away every change since the last save." },
+          { name: "Save changes", what: "Saves. On a draft you choose **Save over vN** or **Save as new version**. A sent version stays as it was; your changes become the next version." },
+          { name: "Sideways scrollbar", what: "Pinned just above the bottom bar, so you can scroll across the columns from anywhere." },
+        ],
+      },
+      {
+        heading: "A category's details",
+        text: ["Click a category's name to open them."],
+        items: [
+          { name: "Name / Division", what: "Its name and which division it's in." },
+          { name: "Type: Specification / Selection", what: "**Specification**: you decide what goes here. **Selection**: the client picks, and it shows on the Selections tab." },
+          { name: "Specifications", what: "What's included, in words. Clients and trade partners both see it." },
+          { name: "What's in this price", what: "Its items with quantity, cost, markup and price. Change a number here and it changes on the estimate." },
+          { name: "Allowance", what: "Tick when the client's choice is measured against an amount. Choose whether the allowance includes your profit." },
+          { name: "Client notes / Trade partner notes", what: "Notes only the client, or only your subs and vendors, see." },
+          { name: "Urgent / Requested by", what: "Flags it and sets when the client's decision is needed." },
+          { name: "On the proposal", what: "Show or hide this category, its price, and its items, or follow the proposal's settings (**Like the rest**)." },
+        ],
+      },
+      {
+        heading: "Markup & tax",
+        items: [
+          { name: "Profit rows", what: "Fill each line's **Markup %** by cost type. A line you changed by hand keeps yours." },
+          { name: "Overhead / Other rows", what: "Add to the estimate total as a percent of cost (markup) or of the selling price (margin)." },
+          { name: "Tax", what: "The sales tax you pay. It's part of the line's cost, so profit is figured on cost with tax." },
+          { name: "Figured as: Markup / Margin", what: "**Markup** is a percent on top of cost. **Margin** is a percent of the selling price; it's turned into the matching markup." },
+          { name: "Cost code / In allow.", what: "Which Budget line the amount shows on, and whether it's included in allowance amounts." },
+          { name: "Save as my default", what: "Admins: new estimates and templates start with this table." },
+        ],
+      },
+    ],
+    tips: [
+      "Draft estimates update themselves from the takeoff when opened. Sent and approved ones never change.",
+      "Leaving with unsaved changes asks first. Parameter values save when you close the Parameters panel.",
+      "People whose position doesn't see costs open the proposal instead of the estimate.",
+    ],
+    related: ["proposal", "selections", "takeoff-screen", "estimate-settings"],
+  },
+  {
+    slug: "proposal",
+    title: "The proposal",
+    group: "Estimates",
+    area: "estimates",
+    pages: ["/projects/*/estimate/*/proposal"],
+    what: "The proposal is the estimate as your client sees it: your cover, introduction, divisions and categories, allowances, total and signature lines. Your costs, markup and cost codes never appear on it. The panel beside it sets what it shows.",
+    how: [
+      "On the estimate, click **View proposal**.",
+      "Use the panel on the side (**What the client sees**) to choose what shows.",
+      "Click **Save for this estimate**, or **Save as my default** to use these settings on every proposal.",
+      "**Print / Save PDF** to print it. **Mark sent** on the estimate sends it to the client's portal.",
+    ],
+    sections: [
+      {
+        heading: "What the client sees",
+        items: [
+          { name: "Page", what: "The heading, a **Cover page with a picture** (drop in a rendering of the front elevation), and a title over the introduction." },
+          { name: "Divisions", what: "Show divisions, and their totals." },
+          { name: "Categories", what: "Show categories, their prices, specification text, \"Allowance: $X\" under allowances, and \"Choice – To be specified by client\" under selections." },
+          { name: "Items", what: "Show items, with or without quantities and prices." },
+          { name: "Totals", what: "**Final total only** hides every other price. **Allowance Summary page** lists the allowances at the end." },
+          { name: "Profit", what: "**Built into the prices**, or a **Separate fee line** with prices at cost (an open-book look), named as you like, with or without the %." },
+          { name: "Sales tax", what: "The tax you pay is in the total either way: built into the prices, or its own line." },
+          { name: "Pricing good for N days", what: "Prints how long the price holds. Leave it blank to leave it off." },
+          { name: "Signatures", what: "How the builder signs, and whether the client signs too." },
+          { name: "Save for this estimate / Save as my default / Use my default instead", what: "Keep these settings for this estimate only, make them everyone's default (admins), or go back to the default." },
+        ],
+      },
+    ],
+    tips: ["Optional items print under **Not included**.", "Your company's default proposal settings are in **Settings → Proposals**."],
+    related: ["estimate", "estimate-settings"],
+  },
+  {
+    slug: "estimate-settings",
+    title: "Settings: divisions, parameters, templates and cost codes",
+    group: "Estimates",
+    area: "lists",
+    pages: ["/settings/estimate-divisions", "/settings/estimate-parameters", "/settings/estimate-templates", "/settings/estimate-templates/*", "/settings/cost-codes"],
+    what: "The Settings pages behind your estimates: **Estimate divisions** (your big groups and the categories in each), **Estimate parameters** (numbers like heated sq. ft. that formulas use), **Estimate templates** (ready-made estimates to start jobs from) and **Cost codes** (your codes for kinds of work).",
+    how: ["Go to **Settings** and open the page.", "Make your changes and click **Save changes** (or **Save**)."],
+    sections: [
+      {
+        heading: "Estimate divisions",
+        items: [
+          { name: "Divisions", what: "Your big groups, like Excavation and Foundation, in order. Each holds categories.", how: "Type a name, use the arrows to reorder, **+ Add a category…** to place one, **+ Add division** for a new one." },
+          { name: "Not in a division yet", what: "Categories you haven't placed. They go in General." },
+        ],
+        text: ["Arranging categories on an estimate and saving it updates this list too."],
+      },
+      {
+        heading: "Estimate parameters",
+        items: [{ name: "Parameters", what: "Each has a name (like Heated sq. ft.) and a unit. Every estimate fills in its own values, and item formulas use them: =[Heated sq. ft.] * 1.1.", how: "**+ Add parameter**, then **Save changes**. Deleting one that's used makes those formulas count it as 0." }],
+      },
+      {
+        heading: "Estimate templates",
+        items: [
+          { name: "New template", what: "A blank estimate with your usual line items, allowances, notes and terms, to start new jobs from." },
+          { name: "Edit / Duplicate / Delete", what: "Opens a template (same sheet as the estimate), copies it, or deletes it. Estimates already made from it aren't affected." },
+        ],
+      },
+      {
+        heading: "Cost codes",
+        items: [
+          { name: "Starter list", what: "A standard (NAHB-style) set of codes you can add all at once or tick by tick." },
+          { name: "Import from CSV", what: "Replaces all your cost codes from a spreadsheet: column A the group, column B the code and name. A preview shows what changes first. It can't be undone." },
+          { name: "Add cost code", what: "A code (optional), a name, a group, and a sort order." },
+          { name: "Active / Inactive", what: "Only active codes show on estimates. Click to switch." },
+          { name: "Delete / Deactivate", what: "A code that's in use can't be deleted; deactivate it instead." },
+        ],
+      },
+    ],
+    related: ["estimate", "proposal"],
+  },
+  {
+    slug: "proposal-markup-settings",
+    title: "Settings: proposals and markup",
+    group: "Estimates",
+    area: "admin",
+    pages: ["/settings/proposals", "/settings/markup"],
+    what: "Two admin pages: **Proposals** sets what every proposal shows by default, and **Markup** sets the markup, margin and tax table new estimates start with, and whether allowances include your profit.",
+    how: ["Go to **Settings → Proposals** or **Settings → Markup**.", "Set your defaults and click **Save**."],
+    sections: [
+      {
+        heading: "Proposals",
+        text: ["The same choices as the panel beside a proposal: page, divisions, categories, items, totals, profit, sales tax, pricing and signatures. Proposals follow these unless an estimate has its own."],
+      },
+      {
+        heading: "Markup",
+        items: [
+          { name: "Markup, margin & tax table", what: "The table new estimates and templates start with. Each estimate can change its own with **Markup & tax**." },
+          { name: "Allowances start with", what: "Whether allowances include your profit (**Profit in**) or not (**Profit out (at cost)**)." },
+        ],
+      },
+    ],
+    related: ["estimate", "proposal"],
+  },
+];

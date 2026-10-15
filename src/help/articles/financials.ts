@@ -1,0 +1,324 @@
+import type { HelpArticle } from "../types";
+
+export const FINANCIALS: HelpArticle[] = [
+  {
+    slug: "purchasing",
+    title: "Purchasing: purchase orders and bills",
+    group: "Financials",
+    area: "purchasing",
+    pages: ["/projects/*/purchasing", "/projects/*/purchasing/po/*", "/projects/*/purchasing/po/*/print", "/projects/*/purchasing/bills/new", "/projects/*/purchasing/bills/*", "/bills"],
+    what: "A job's **Purchasing** tab is where you send purchase orders (POs) to subs and vendors and record the bills they send you. A PO says what you agreed to pay for; a bill is what they charged. Once a bill is approved, it becomes the job's actual cost on the **Budget**.",
+    how: [
+      "Open the job and click the **Purchasing** tab.",
+      "Under **New purchase order**, pick where it comes from: a bid you took, the budget, or blank. Fill in who it's to, then click **Create PO**.",
+      "On the PO, check the lines and prices, add the scope of work, and click **Save PO**.",
+      "Click **Mark sent**. The PO is emailed to the vendor (if you have their email), and they can accept it from their portal.",
+      "When their bill comes in, open the PO and click **Enter a bill for this PO** (or they upload it from their portal).",
+      "Someone who can approve bills opens the bill and clicks **Approve**. The cost lands on the job's Budget. When you pay it, click **Mark paid**.",
+    ],
+    sections: [
+      {
+        heading: "The Purchasing tab",
+        items: [
+          { name: "Enter a bill", what: "Records a bill a sub or vendor sent you, with or without a PO.", how: "Click it, fill in who it's from, the date and the lines, attach their PDF or a photo, then **Save bill**." },
+          {
+            name: "On POs / Waiting for approval / Approved — not paid / Paid",
+            what: "The totals across the job: what's on purchase orders (not counting void or declined ones), bills waiting for someone to approve them (amber when there are any), bills approved but not yet paid, and bills paid.",
+          },
+          {
+            name: "New purchase order",
+            what: "Starts a PO. It opens by itself when the job has none yet.",
+            how: "Pick one of the three tabs. **From a bid you took** sends the PO to that vendor with their quoted items and prices (greyed out until you take a bid). **From the budget** builds the lines from the cost codes you tick, at cost (needs an estimate). **Blank** starts empty. Type **To (sub / vendor)** (it suggests your vendors), an optional **Title** such as \"Rough plumbing\", and click **Create PO**.",
+          },
+          {
+            name: "Purchase orders (table)",
+            what: "Every PO on the job: number, who it's to, title, status, total, how much has been billed, and what's left. **Left** turns red when a PO has been billed more than its total.",
+            how: "Click the PO number or title to open it. An amber note under a vendor's name means their insurance is expired or missing.",
+          },
+          { name: "Bills (table)", what: "Every bill on the job. \"(from their portal)\" means the vendor uploaded it themselves.", how: "Click the date or the vendor to open the bill." },
+        ],
+      },
+      {
+        heading: "A purchase order",
+        text: [
+          "A PO moves through **Draft → Sent → Accepted → Closed**. It can also be **Declined** by the vendor or **Void** (cancelled).",
+        ],
+        items: [
+          { name: "Print / PDF", what: "The PO as a page to print or save as a PDF, for vendors you don't email." },
+          {
+            name: "Mark sent",
+            what: "Marks a draft PO sent and emails it to the vendor. The note under the header says where it will go. If there's no email on file it won't be emailed, so print it or add their email in Settings → Vendors.",
+            how: "Click it once the lines are right. The vendor can accept or decline in their portal, or you can mark it yourself.",
+          },
+          { name: "Mark accepted / Mark declined", what: "Records the vendor's answer when they tell you some other way. **Mark declined** lets you note why." },
+          { name: "Back to draft", what: "Takes a sent PO back to draft so you can change it." },
+          { name: "Send again", what: "Sends a declined PO again, after you've changed it." },
+          { name: "Close (all done)", what: "Marks an accepted PO finished. **Reopen** brings it back." },
+          { name: "Void", what: "Cancels the PO. Its bills stay. **Reopen as draft** brings a void PO back." },
+          { name: "Delete", what: "Removes the PO completely. Only shows on a draft with no bills." },
+          {
+            name: "Title / To (sub / vendor) / Needed by / Scope of work / notes",
+            what: "The PO's details. The scope prints on the PO: what's included, what's not, cleanup, schedule.",
+          },
+          {
+            name: "Lines",
+            what: "What you're buying: item, cost code, quantity, unit, unit price and total.",
+            how: "Type into the boxes. **Add line** adds one (it copies the last line's cost code); the trash can removes one. Click **Save PO**. Until you do, \"Not saved yet\" shows next to the button.",
+          },
+          {
+            name: "Bills on this PO",
+            what: "The bills against this PO and how much is left: \"$X billed of $Y · $Z left\" (red when it's over).",
+            how: "**Enter a bill for this PO** fills in the vendor and the lines still left to bill. It only shows once the PO has been sent.",
+          },
+        ],
+      },
+      {
+        heading: "Entering a bill",
+        items: [
+          { name: "For PO", what: "The PO this bill is against, or **No PO**. Picking one fills in the vendor and the PO's remaining lines." },
+          { name: "From / Their bill # / Bill date / Due", what: "Who sent it, their invoice number, the date on it, and when it's due." },
+          { name: "Their bill (PDF or photo)", what: "Attach their bill so anyone can look at it later." },
+          { name: "Lines", what: "What the bill is for, the cost code and the amount. The cost code decides where it lands on the Budget.", how: "**Add line** for more; the trash can removes one. If the bill is more than what's left on the PO, an amber warning tells you by how much." },
+        ],
+      },
+      {
+        heading: "Approving and paying a bill",
+        text: [
+          "A bill is **Waiting for approval** until someone allowed to approve bills looks at it. Admins can, and anyone whose position has **Can approve & pay bills** turned on (Settings → Team). Everyone else sees a note saying it's waiting.",
+        ],
+        items: [
+          { name: "Approve — add $X to the job's cost", what: "Approves the bill; its amount becomes the job's actual cost on the Budget. If it puts the PO over, it warns you first: approve only if the extra was agreed." },
+          { name: "Reject", what: "Sends the bill back with an optional reason. A rejected bill can be changed and approved, or deleted." },
+          { name: "Mark paid", what: "Records the payment: the date, how (Check, ACH, Card, Cash, Other) and the check number or reference." },
+          { name: "Un-approve", what: "Puts an approved or paid bill back to waiting. Its cost comes off the job's actuals." },
+          { name: "Change this bill / Delete bill", what: "Fix or remove a bill that's waiting or rejected. Approved bills are locked; un-approve first." },
+        ],
+      },
+      {
+        heading: "Bills on every job",
+        text: ["**Bills** in the main menu lists the bills on all your jobs, so whoever pays the bills has one place to work from."],
+        items: [
+          { name: "To approve / Approved — to pay / Paid / Rejected", what: "Filters the list by where each bill stands. It opens on **To approve**." },
+          { name: "Approve", what: "Approves a bill right from the list (if you're allowed to approve bills)." },
+          { name: "Check # and Paid today", what: "On an approved bill: type the check number and click **Paid today** to mark it paid with today's date." },
+        ],
+      },
+    ],
+    tips: [
+      "Only approved bills count as the job's cost. A bill waiting for approval doesn't show on the Budget yet.",
+      "The quickest PO is **From a bid you took**: take the vendor's bid first (Material list → **Send to vendors**), and the PO comes with their prices.",
+      "Keep vendor insurance up to date in Settings → Vendors. Expired or missing coverage shows in amber on their POs and bills.",
+    ],
+    related: ["bids", "invoices", "estimate", "item-list"],
+  },
+  {
+    slug: "bids",
+    title: "Sending lists to vendors for prices (bids)",
+    group: "Financials",
+    area: "estimates",
+    pages: ["/projects/*/bids", "/projects/*/bids/*", "/projects/*/bids/*/print"],
+    what: "The bids page sends parts of your Material list to vendors for prices, brings their prices back in, lets you compare them side by side, and takes the best one for each cost code. A bid you take sets the prices on the job and can become a purchase order.",
+    how: [
+      "On the job's **Material list** tab, click **Send to vendors**.",
+      "Under **What to send**, tick the cost codes (click one to untick single items), then tick the **Vendors**.",
+      "Click **Send to N vendors**. This makes the bid files; it does not email anything.",
+      "For each vendor under **Sent**, click **Email** to open the email in your own email program with the Excel file attached, and send it.",
+      "When a vendor sends the Excel file back, click **Import…** on their row (or **Import returned file…**). Their prices come in by themselves.",
+      "In **Compare and take**, pick a bid for each cost code and click **Take the picked bids**.",
+    ],
+    sections: [
+      {
+        heading: "What to send, and who to",
+        items: [
+          { name: "What to send", what: "Your Material list by cost code. Quantities include waste.", how: "Tick the cost codes (**All** / **None** to speed it up). Click a cost code's name to open it and untick single items." },
+          { name: "Vendors", what: "Who gets the list. Vendors who bid these cost codes before are ticked for you until you change the ticks. \"no email\" means you'll need to send it another way." },
+          { name: "New vendor", what: "Adds a vendor right here: name, email, phone, contact. They're added to Settings → Vendors too." },
+          { name: "Also ask a price on every length", what: "For lumber that comes in several lengths: asks the vendor to price each length, not just the ones on your list. On by default." },
+          { name: "Note to the vendor (optional)", what: "A line printed on the request, such as \"Please quote by Friday. Deliver to the job site.\"" },
+          { name: "Send to N vendors", what: "Makes a bid for each vendor ticked. It does not email them; that's the next step." },
+        ],
+      },
+      {
+        heading: "Sent",
+        items: [
+          { name: "Excel file / Print / PDF", what: "The bid as an Excel file (prices typed into it come back in by themselves) or as a page to print." },
+          { name: "Email", what: "Shows the email before it goes: To, Subject and Message, all editable.", how: "Attach the Excel file, then click **Open in my email** (or **Copy the email**). Nothing is sent from the program; your own email sends it." },
+          { name: "Import… / Import returned file…", what: "Brings a vendor's filled-in Excel file back. Their prices go on their bid." },
+          { name: "Prices", what: "The bid's lines, where you can type prices a vendor gave you by phone or on paper.", how: "Type each **Unit price** and click **Save prices**." },
+          { name: "Delete", what: "Removes the bid. A returned file stays in the job's Files." },
+        ],
+      },
+      {
+        heading: "Compare and take",
+        items: [
+          { name: "The comparison", what: "One row per cost code: what the job has now, then each vendor's total. Green is the lowest complete bid. A cell can say how many lines were priced, how many substitutes the vendor offered, or how it compares to the bid you took." },
+          { name: "Put the prices on", what: "Where the prices you take go: **This job only**, or **The Item List — every job**." },
+          { name: "Take the picked bids", what: "Takes the bid you picked for each cost code: its prices go on the job, and you can start a PO from it. If a vendor offered a substitute item, you choose per line: **Use theirs** or **Keep mine**." },
+        ],
+      },
+    ],
+    tips: ["Once the proposal has been sent, the job's prices are locked. You'll see a **Prices locked** note; bring new prices in with **Price review** instead."],
+    related: ["purchasing", "material-list", "item-list"],
+  },
+  {
+    slug: "invoices",
+    title: "Invoices",
+    group: "Financials",
+    area: "invoices",
+    pages: ["/projects/*/invoices", "/projects/*/invoices/*", "/projects/*/invoices/*/print", "/projects/*/invoices/new", "/invoices"],
+    what: "Invoices are what you bill your client: progress draws, change orders, anything else. You make them on a job's **Invoices** tab, send them to the client (by email and in their portal), and record their payments. **Invoices** in the main menu shows every job's invoices in one list.",
+    how: [
+      "Open the job and click the **Invoices** tab, then **New invoice**.",
+      "Give it a **Title** (\"Draw 4 — Cabinets installed\"), check the dates, and add lines. Use **Quick add** to bill a percent of the contract or approved change orders.",
+      "Click **Create invoice**. It starts as a draft so you can still change it.",
+      "When it's right, click **Mark sent**. It's emailed to the client.",
+      "When they pay, open **Record payment**, type the amount, date and method, and click **Record payment**.",
+    ],
+    sections: [
+      {
+        heading: "The job's Invoices tab",
+        items: [
+          { name: "Contract value", what: "The approved estimate plus approved change orders: what you're billing against." },
+          { name: "Invoiced / Paid / Balance due / Remaining to invoice", what: "What's been billed (void invoices don't count), paid, still owed, and how much of the contract is left to bill (red if you've billed more than the contract)." },
+          { name: "New invoice", what: "Starts an invoice for this job." },
+        ],
+      },
+      {
+        heading: "A new invoice",
+        items: [
+          { name: "Title / Issue date / Due date", what: "What it's for, and its dates. The due date starts 14 days out." },
+          { name: "Invoice number", what: "Only shows if you number invoices yourself (Settings → Invoices). It tells you the next unused number." },
+          { name: "Notes (shown on invoice)", what: "A message printed on the invoice." },
+          { name: "Approved change orders not yet invoiced", what: "Tick change orders to bill them on this invoice. A change order is never billed twice." },
+          { name: "Percent of contract", what: "Adds a \"Progress draw (X%)\" line for that percent of the contract. This is how you bill a draw." },
+          { name: "Line items", what: "Anything else: description, quantity, unit price." },
+        ],
+      },
+      {
+        heading: "An invoice",
+        text: ["An invoice goes **Draft → Sent → Partial → Paid** (or **Void**). It turns Partial and Paid by itself as payments are recorded. A sent invoice past its due date shows **Overdue**."],
+        items: [
+          { name: "Mark sent", what: "Sends a draft: emails it to the client and shows it in their portal. If the client has no portal sign-in yet, the email includes a link to set one up. The note under the header says who it will go to." },
+          { name: "Print / PDF", what: "The invoice as a page to print or save as a PDF." },
+          { name: "Void", what: "Cancels the invoice. It stops counting toward what's been invoiced." },
+          { name: "Delete", what: "Removes a draft invoice for good." },
+          { name: "Edit / Delete (on a line)", what: "Change or remove a line. Lines are locked once the invoice is sent." },
+          { name: "Add tax", what: "Adds a sales tax line with your label and rate. Usually not needed: the sales tax you pay is already in your estimate's prices. Use it only for something billed without it." },
+          { name: "Add line item", what: "Adds a line to a draft." },
+          { name: "Record payment", what: "Records money received: amount (starts at the balance), date, method (check, ACH, card, cash, other) and a reference such as the check number. **Remove** takes a payment back off." },
+          { name: "Edit invoice details", what: "Change the title, dates and notes, and the number while it's still a draft." },
+        ],
+      },
+      {
+        heading: "Invoices on every job",
+        text: ["**Invoices** in the main menu lists all invoices with **Outstanding**, **Overdue** and **Paid, last 30 days** totals. Filter by status with the chips. New invoices are always started from a job."],
+      },
+    ],
+    tips: [
+      "Settings → Invoices can put approved change orders on the job's next invoice by themselves, and choose whether the program numbers your invoices or you type the numbers (to carry on from QuickBooks).",
+    ],
+    related: ["change-orders", "purchasing", "estimate"],
+  },
+  {
+    slug: "time-clock",
+    title: "Time clock",
+    group: "Field",
+    area: null,
+    pages: ["/time"],
+    what: "The time clock is where everyone on your team clocks in and out of jobs, from a phone or a computer. Hours go to the job's Budget as labor cost, by cost code.",
+    how: [
+      "Open **Time clock** from the menu.",
+      "Pick the **Job** and, if you like, what you're **Working on (cost code)** and a note.",
+      "Click **Clock in**. A timer runs while you're on the clock.",
+      "Moving to another job or task? Click **Switch job or task**, pick it, and click **Switch**.",
+      "At the end of the day, click **Clock out**.",
+    ],
+    sections: [
+      {
+        heading: "Clocking in and out",
+        items: [
+          { name: "Job", what: "The job you're working on. Jobs you used recently are at the top." },
+          { name: "Directions", what: "Opens your maps app with directions from where you are to the job. Shows when the job has an address or a spot on the map." },
+          { name: "Working on (cost code)", what: "The kind of work, so the hours land on the right line of the Budget. The job's estimate codes come first, and it remembers the last one you used on that job." },
+          { name: "Note (optional)", what: "A word about the work, such as \"Punch list, upstairs\"." },
+          { name: "Clock in / Clock out", what: "Starts and stops your time." },
+          { name: "Switch job or task", what: "Ends the current stretch and starts the next one in one step." },
+          { name: "This week", what: "Your hours this week, overtime, and each stretch by day." },
+        ],
+      },
+      {
+        heading: "Location",
+        text: [
+          "When you clock in or out, the phone's location is noted at that moment only, and only whoever does timesheets sees it. Not sharing your location never stops the clock; the punch goes through anyway.",
+        ],
+      },
+    ],
+    tips: ["Your own time clock always works, whatever your position. Seeing and fixing everyone else's time is the **Timesheets** page."],
+    related: ["timesheets", "time-clock-settings"],
+  },
+  {
+    slug: "timesheets",
+    title: "Timesheets",
+    group: "Field",
+    area: "time",
+    pages: ["/time/sheets"],
+    what: "Timesheets show everyone's time, a week at a time: hours, overtime, where each punch happened, and the labor cost. This is where you fix a forgotten clock-out, add time someone didn't punch, and download the week for payroll.",
+    how: [
+      "From **Time clock**, click **Timesheets**.",
+      "Use **‹** and **›** to move between weeks (**This week** jumps back).",
+      "Fix anything that's off with the pencil next to a stretch, or **+ Add** time for someone.",
+      "Click **Download for payroll** to get the week as a spreadsheet file.",
+    ],
+    sections: [
+      {
+        heading: "The week",
+        items: [
+          { name: "Still on the clock — forgot to clock out?", what: "People who've been on the clock too long. Type when they really stopped and click **Clock out** for them." },
+          { name: "Add time", what: "Adds a stretch someone didn't punch: person, job, cost code, day, start, stop, break and note." },
+          { name: "Download for payroll", what: "A spreadsheet (CSV) of the week: person, date, job, cost code, start and stop, break, hours, regular, overtime and double time (and pay rate, if you see costs)." },
+          { name: "One card per person", what: "Their hours, overtime and labor cost for the week, and each stretch with its job, cost code, note and times." },
+          { name: "Map pins", what: "Where they clocked in and out; click to open a map. **OFF SITE** in amber means farther from the job than your setting allows. A grey crossed-out pin means no location came with that punch." },
+          { name: "Lunch (automatic)", what: "A lunch the program took out of a long shift because no break was typed in (Settings → Time clock)." },
+          { name: "Pencil (Fix this time)", what: "Opens the stretch to change its job, cost code, day, times, break or note, or **Delete this time**. It shows who changed it last." },
+        ],
+      },
+    ],
+    tips: [
+      "Changing other people's time needs **Can edit** for Everyone's time in Settings → Team. With **Can view**, you see the timesheets but can't change them.",
+      "Someone with no pay rate still gets their hours counted, but costs nothing on the Budget until a rate is set in Settings → Time clock.",
+    ],
+    related: ["time-clock", "time-clock-settings"],
+  },
+  {
+    slug: "time-clock-settings",
+    title: "Settings: Time clock",
+    group: "Settings",
+    area: "admin",
+    pages: ["/settings/time-clock"],
+    what: "Your company's rules for time: when the week starts, overtime, rounding, automatic lunches, long-shift emails, how far from the job a punch can be, and each person's pay rate.",
+    how: ["Go to **Settings → Time clock**.", "Set the rules for your company and click **Save**.", "Under **Pay**, type each person's rate and click **Save pay**."],
+    sections: [
+      {
+        heading: "Rules",
+        items: [
+          { name: "Work week starts on", what: "The day your pay week begins." },
+          { name: "Show hours as", what: "Hours as decimals (7.5 hrs) or hours and minutes (7:30 hrs)." },
+          { name: "Overtime", what: "For hourly people only (salaried people never get overtime): weekly overtime after so many hours, daily overtime after so many hours in a day, double time after so many hours in a day, and what each pays (1.5×, 2×). Tick each one you use. The example shows what a 12-hour day comes to." },
+          { name: "Rounding", what: "Counts punches to the nearest 5, 6 or 15 minutes, or as punched. Only the hours counted change; the real punch times still show." },
+          { name: "Lunch & long shifts", what: "Take out a lunch on long shifts when no break was typed in, and email the person (and whoever fixes time) after so many hours on the clock, once per shift." },
+          { name: "Job sites", what: "How far from the job a punch can be before it's flagged **OFF SITE** on Timesheets. Punches are never blocked." },
+        ],
+      },
+      {
+        heading: "Pay",
+        items: [
+          { name: "Pay / hr", what: "Each person's hourly pay, for job costs. New time uses the new rate; time already worked keeps the rate it was worked at." },
+          { name: "Salaried (no overtime)", what: "Tick for people who don't get overtime." },
+          { name: "Labor burden %", what: "Payroll taxes, workers' comp and insurance, added on top of everyone's pay for job costs." },
+        ],
+      },
+    ],
+    tips: ["After you save new rules, labor on every job's Budget is worked out again by them."],
+    related: ["time-clock", "timesheets"],
+  },
+];
