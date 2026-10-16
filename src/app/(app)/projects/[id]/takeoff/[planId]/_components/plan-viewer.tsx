@@ -3180,8 +3180,9 @@ export function PlanViewer({
           >
             <Pencil className="mr-1 h-3.5 w-3.5 text-slate-400" />
             <input
-              aria-label="Sheet name"
-              className="w-40 rounded border border-transparent px-1.5 py-1 text-xs hover:border-slate-300 focus:border-blue-500 focus:outline-none"
+              aria-label="Page name"
+              title="This page's name — type over it to rename the page"
+              className="w-40 rounded border border-slate-300 px-1.5 py-1 text-xs hover:border-slate-400 focus:border-blue-500 focus:outline-none"
               value={sheetName}
               onChange={(e) => setSheetName(e.target.value)}
               onBlur={(e) => e.currentTarget.form?.requestSubmit()}

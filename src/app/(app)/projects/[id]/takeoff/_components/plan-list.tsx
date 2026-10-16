@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils";
 import { ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";
 import { deletePlan, renamePlan, togglePlanClientVisible } from "../actions";
 import { RevisionUpload } from "./revision-upload";
+import { SheetNames } from "./sheet-names";
 
 export type PlanListPlan = {
   id: string;
@@ -94,19 +95,7 @@ export function PlanList({ projectId, plans, renamePlanId, here }: { projectId: 
             </div>
           </div>
           {plan.sheets.length > 0 ? (
-            <div className="flex flex-wrap gap-1.5">
-              {plan.sheets.map((sh) => (
-                <Link
-                  key={sh.id}
-                  href={`${base}/${plan.id}?page=${sh.pageNumber}`}
-                  className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:border-blue-300 hover:bg-blue-50"
-                >
-                  <span className="font-medium">{sh.name}</span>
-                  <span className={cn("ml-1.5", sh.unitsPerFoot ? "text-slate-500" : "text-amber-700")}>{sh.unitsPerFoot ? sh.scaleLabel : "no scale"}</span>
-                  {sh._count.measurements ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 text-[11px] text-slate-600">{sh._count.measurements}</span> : null}
-                </Link>
-              ))}
-            </div>
+            <SheetNames projectId={projectId} planId={plan.id} sheets={plan.sheets} />
           ) : null}
         </li>
       ))}

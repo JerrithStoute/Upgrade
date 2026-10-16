@@ -24,7 +24,7 @@ export const TAKEOFF: HelpArticle[] = [
         items: [
           { name: "Plans", what: "Back to all the plan sets for this job." },
           { name: "Sheet picker (‹ dropdown ›)", what: "Moves between sheets. The list holds every sheet of every plan set. \"(no scale)\" means that sheet needs a scale; the number after a sheet is how many measurements it has.", how: "Use the arrows for the sheet before or after, or pick one from the list." },
-          { name: "Sheet name", what: "The name of this sheet, like \"Floor Plan\".", how: "Click the pencil, type, and press Enter." },
+          { name: "Page name", what: "The name of this page, like \"First Floor Plan\" — the box beside the page picker.", how: "Type over it and press Enter. Step to the next page with the arrow and do the same. To rename every page at once, use **Rename pages** on the Plans tab." },
           { name: "Scale / Calibrate / all sheets", what: "Sets how big the drawing is in real life, so lengths and areas come out right.", how: "See the **Scale and Calibrate** article." },
           { name: "Select (arrow)", what: "Picks shapes you've drawn so you can move, change or delete them. Keyboard: V." },
           { name: "Pan (hand)", what: "Drags the plan around. You can also hold the Space bar, or drag with the right mouse button." },
@@ -113,6 +113,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "View / Download", what: "Opens the original PDF in a new tab, or downloads it." },
           { name: "Print", what: "Prints the measured sheets with the takeoff drawn on them." },
           { name: "Rename / Delete", what: "Change the set's name, or delete it. Deleting removes every measurement on it too." },
+          { name: "Rename pages", what: "Every page of the set in a list, each name in a box to type over. It saves when you click away; Enter moves to the next page. The ↗ beside a page opens it in a new tab so you can see what it is. **Done** goes back to the chips." },
           { name: "Sheet chips", what: "Each sheet with its scale (\"no scale\" in amber) and how many measurements it has.", how: "Click a chip to open that sheet." },
         ],
       },
