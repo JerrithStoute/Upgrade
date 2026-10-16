@@ -30,26 +30,6 @@ export const createCostCode = friendly(async function createCostCode(formData: F
   redirect("/settings/cost-codes");
 });
 
-export const updateCostCode = friendly(async function updateCostCode(formData: FormData) {
-  const admin = await requireEdit("lists");
-  const id = str(formData, "id");
-  const code = strOrNull(formData, "code");
-  const name = str(formData, "name");
-  const division = str(formData, "division") || "General";
-  if (!name) throw new Error("Name is required");
-  const current = await db.costCode.findUnique({ where: { id } });
-  if (!current) throw new Error("Cost code not found");
-  if (code && code !== current.code) {
-    const clash = await db.costCode.findFirst({ where: { code } });
-    if (clash) throw new Error(`Cost code ${code} already exists`);
-  }
-
-  await db.costCode.update({ where: { id }, data: { code, name, division, sortOrder: intField(formData, "sortOrder", current.sortOrder), ...recheckFields(formData) } });
-  await logActivity({ userId: admin.id, type: "cost_code.updated", description: `Updated cost code ${costCodeLabel({ code, name }, " ")}` });
-  done();
-  redirect("/settings/cost-codes");
-});
-
 export const toggleCostCodeActive = friendly(async function toggleCostCodeActive(formData: FormData) {
   await requireEdit("lists");
   const id = str(formData, "id");
@@ -150,3 +130,49 @@ export const addStarterCostCodes = friendly(async function addStarterCostCodes(f
   done();
   redirect(`/settings/cost-codes?starter=${picked.length}`);
 });
+
+/** Fields that can be changed right in the cost code table. */
+export type CostCodeCell = "code" | "name" | "division" | "sortOrder" | "recheck";
+
+/**
+ * Saves a box changed right in the cost code table — on one code, or (group and recheck time)
+ * on every ticked row. `recheck` is "3|weeks", or "" for never.
+ */
+export async function saveCostCodeCell(ids: string[], field: CostCodeCell, value: string): Promise<{ error?: string }> {
+  await requireEdit("lists");
+  try {
+    const v = value.trim();
+    const codes = await db.costCode.findMany({ where: { id: { in: ids.slice(0, 2000) } }, select: { id: true, code: true } });
+    if (!codes.length) return { error: "Cost code not found" };
+    if (field === "code" || field === "name" || field === "sortOrder") {
+      const id = codes[0].id;
+      if (field === "name") {
+        if (!v) return { error: "Name is required" };
+        await db.costCode.update({ where: { id }, data: { name: v } });
+      } else if (field === "code") {
+        if (v && v !== codes[0].code && (await db.costCode.findFirst({ where: { code: v } }))) return { error: `Cost code ${v} already exists` };
+        await db.costCode.update({ where: { id }, data: { code: v || null } });
+      } else {
+        const n = Math.round(Number(v));
+        if (!Number.isFinite(n)) return { error: "Sort order is a number" };
+        await db.costCode.update({ where: { id }, data: { sortOrder: n } });
+      }
+    } else {
+      const data =
+        field === "division"
+          ? { division: v.replace(/\s+/g, " ") || "General" }
+          : (() => {
+              const [every, unit] = v.split("|");
+              const fd = new FormData();
+              fd.set("priceRecheckEvery", every ?? "");
+              fd.set("priceRecheckUnit", unit ?? "");
+              return recheckFields(fd);
+            })();
+      await db.costCode.updateMany({ where: { id: { in: codes.map((c) => c.id) } }, data });
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Couldn't save" };
+  }
+  done();
+  return {};
+}
