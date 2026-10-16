@@ -12,7 +12,8 @@ import { deleteUpload } from "@/lib/uploads";
 import { boolField, money, str, strOrNull } from "@/lib/utils";
 import { resolveMaterialItem } from "@/lib/material-items";
 import { syncAutoItems } from "@/lib/walls";
-import { copyTakeoff, placeBySpan, resizeFamily, resizeSheet } from "@/lib/span-sizing";
+import { copyTakeoff, familyTakeoffFor, placeBySpan, resizeFamily, resizeSheet } from "@/lib/span-sizing";
+import { changeSections, parseSections, sectionsJson } from "@/lib/joist-sections";
 import { refreshLater } from "@/lib/takeoff-background";
 
 /** Sheets whose span-table joists need sizing again because these walls / beams changed. */
@@ -961,6 +962,39 @@ export async function updateMeasurement(input: {
   await followUp(data.projectId, data.points || data.conditionId ? [{ type: m.condition.type, sheetId: m.sheetId }] : [], !!placed || !!data.conditionId || hasAutoLines(m.condition.type));
   revalidate(data.projectId);
   return { ok: true, conditionId: placed?.conditionId ?? conditionId ?? m.conditionId, sizeNote: placed?.pick?.reason ?? null };
+}
+
+/**
+ * Your call on single bays of a joist / rafter area (joist-sections.ts), without redrawing it:
+ * a size for some bays (null = back to the span table, or the takeoff's size), or a wall the
+ * joists run through as one board (or are broken on again).
+ */
+export async function setJoistSections(input: { projectId: string; id: string; sections?: string[]; size?: string | null; wall?: string; through?: boolean }) {
+  await requireEdit("takeoffs");
+  const data = z
+    .object({
+      projectId: z.string(),
+      id: z.string(),
+      sections: z.array(z.string().max(200)).max(200).optional(),
+      size: z.string().trim().max(80).nullable().optional(),
+      wall: z.string().max(60).optional(),
+      through: z.boolean().optional(),
+    })
+    .parse(input);
+  const m = await db.takeoffMeasurement.findFirst({ where: { id: data.id, sheet: { plan: { projectId: data.projectId } } }, include: { condition: true } });
+  if (!m) throw new Error("Measurement not found");
+  if (m.condition.type !== "FRAMING") throw new Error("Only joists and rafters have bays");
+  let s = parseSections(m.sections);
+  if (data.wall !== undefined && data.through !== undefined) s = changeSections(s, { wall: data.wall, through: data.through });
+  if (data.sections?.length && data.size !== undefined) {
+    // The size's takeoff in the family ("Floor Joists 2x8"), made the first time it's needed.
+    if (data.size) await familyTakeoffFor(data.projectId, m.conditionId, data.size);
+    for (const section of data.sections) s = changeSections(s, { section, size: data.size || null });
+  }
+  await db.takeoffMeasurement.update({ where: { id: m.id }, data: { sections: sectionsJson(s) } });
+  await followUp(data.projectId, [{ type: m.condition.type, sheetId: m.sheetId }], true);
+  revalidate(data.projectId);
+  return { ok: true };
 }
 
 export async function deleteMeasurement(input: { projectId: string; id: string }) {

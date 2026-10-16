@@ -1,5 +1,6 @@
 import { DEFAULT_STOCK_LENGTHS, framingMembers, framingOptions, memberThickness, parseStockLengths, shapePath, slopeFactor, stockPieces, type ConditionCalc, type LengthPrices, type MeasurementShape, type Pt } from "./takeoff";
-import { memberBreaks } from "./span-tables";
+import { memberCrossings } from "./span-tables";
+import { EDGE } from "./joist-sections";
 
 /**
  * Joists and rafters broken where they're held up: a joist that crosses a wall or beam traced on
@@ -16,21 +17,32 @@ import { memberBreaks } from "./span-tables";
 
 export const MIN_PIECE_FT = 4;
 
-/** One piece of a joist: where it runs along the joist (0…1), its span, and the length ordered (lap, overhang and pitch in). */
-export type JoistPiece = { a: number; b: number; spanFt: number; lengthFt: number };
+/**
+ * One piece of a joist: where it runs along the joist (0…1), its span, and the length ordered (lap,
+ * overhang and pitch in). `from` / `to`: the supports at its two ends (a wall or beam's key, or
+ * "edge") — the bay it's in (joist-sections.ts).
+ */
+export type JoistPiece = { a: number; b: number; spanFt: number; lengthFt: number; from: string; to: string; over?: string[] };
 
 /** A joist as one continuous board, not broken at the walls: its longest span and the length ordered. */
 export type WholeJoist = { spanFt: number; lengthFt: number };
 
-/** A piece as the plan draws it: where it runs, the takeoff (size) it's ordered under, its length. */
-export type MemberPiece = { a: number; b: number; owner: string; length: number };
+/**
+ * A piece as the plan draws it: where it runs, the takeoff (size) it's ordered under, its length.
+ * `section`: its bay; `span`: its span (feet); `tableSize`: what the span table calls for (when
+ * there is one); `picked`: its size is yours, not the table's.
+ */
+export type MemberPiece = { a: number; b: number; owner: string; length: number; section?: string; span?: number; tableSize?: string | null; picked?: boolean; over?: string[] };
 
 export function joistPieces(
   c: Pick<ConditionCalc, "type" | "spacing" | "overhang" | "pitch" | "memberSize" | "memberWidthIn" | "options">,
   m: Pick<MeasurementShape, "points" | "arcs" | "angle" | "pitch">,
   unitsPerFoot: number,
   supports: [Pt, Pt][],
+  /** Which wall or beam each support is part of (parallel to `supports`), and the ones joists run through, not broken on. */
+  opts: { keys?: string[]; through?: Iterable<string> } = {},
 ): { members: [Pt, Pt][]; pieces: JoistPiece[][]; whole: WholeJoist[] } {
+  const through = new Set(opts.through ?? []);
   const upf = unitsPerFoot;
   const members = framingMembers(shapePath(c.type, m), m.angle, (c.spacing / 12) * upf, memberThickness(c.memberSize, upf, c.memberWidthIn));
   const factor = slopeFactor(m.pitch ?? c.pitch);
@@ -41,37 +53,81 @@ export function joistPieces(
   const pieces = members.map((member) => {
     const len = Math.hypot(member[1][0] - member[0][0], member[1][1] - member[0][1]);
     // A joist within 4" of a wall running alongside it sits on that wall: no span of its own, one piece.
-    const at = memberBreaks(member, supports, (4 / 12) * upf);
+    const crossings = memberCrossings(member, supports, opts.keys, (4 / 12) * upf);
+    const at = crossings?.map((x) => x.at) ?? null;
     const full = (len / upf + overhang) * factor;
     let longest = 0;
     for (let k = 1; k < (at?.length ?? 0); k++) longest = Math.max(longest, at![k] - at![k - 1]);
     whole.push({ spanFt: longest / upf, lengthFt: full });
-    if (!at || !(len > 0)) return [{ a: 0, b: 1, spanFt: 0, lengthFt: full }];
-    // Breaks that would leave a piece too short to be its own board are left out (the joist runs on).
-    const kept = [0];
-    for (const x of at.slice(1, -1)) if (x - kept[kept.length - 1] >= minPiece - 1e-9 && len - x >= minPiece - 1e-9) kept.push(x);
-    kept.push(len);
+    if (!crossings || !at || !(len > 0)) return [{ a: 0, b: 1, spanFt: 0, lengthFt: full, from: EDGE, to: EDGE }];
+    // Breaks that would leave a piece too short to be its own board are left out (the joist runs on),
+    // and so are the walls you run it through. They still hold it up (its span), just don't cut it.
+    const kept = [crossings[0]];
+    for (const x of crossings.slice(1, -1)) if (!through.has(x.key) && x.at - kept[kept.length - 1].at >= minPiece - 1e-9 && len - x.at >= minPiece - 1e-9) kept.push(x);
+    kept.push(crossings[crossings.length - 1]);
     const n = kept.length - 1;
     return Array.from({ length: n }, (_, i) => {
-      const plan = (kept[i + 1] - kept[i]) / upf;
+      const plan = (kept[i + 1].at - kept[i].at) / upf;
       // Half the lap past each wall it meets; the overhang shared by the two outside ends.
       const laps = ((i > 0 ? 1 : 0) + (i < n - 1 ? 1 : 0)) * (lap / 2);
       const hang = n === 1 ? overhang : (i === 0 ? 1 : 0) * (overhang / 2) + (i === n - 1 ? 1 : 0) * (overhang / 2);
       // Its span: the longest stretch between supports within it (a short end it kept adds to its run).
-      const inner = at.filter((x) => x >= kept[i] - 1e-9 && x <= kept[i + 1] + 1e-9);
+      const inner = at.filter((x) => x >= kept[i].at - 1e-9 && x <= kept[i + 1].at + 1e-9);
       let span = 0;
       for (let k = 1; k < inner.length; k++) span = Math.max(span, inner[k] - inner[k - 1]);
-      return { a: kept[i] / len, b: kept[i + 1] / len, spanFt: span / upf, lengthFt: (plan + laps + hang) * factor };
+      // The walls you run it through, within it.
+      const over = crossings.filter((x) => through.has(x.key) && x.at > kept[i].at + 1e-9 && x.at < kept[i + 1].at - 1e-9).map((x) => x.key);
+      return { a: kept[i].at / len, b: kept[i + 1].at / len, spanFt: span / upf, lengthFt: (plan + laps + hang) * factor, from: kept[i].key, to: kept[i + 1].key, ...(over.length ? { over } : {}) };
     });
   });
   return { members, pieces, whole };
 }
 
 /**
+ * Each piece's bay (joist-sections.ts): a run of side-by-side joists with the same walls on each
+ * side and the same span-table size — what the plan labels as one group. Named by its walls, and
+ * numbered when the area has more than one run between the same two (the joists running edge to
+ * edge on each side of a short wall): "edge|wall-a|1", "edge|edge|2".
+ */
+/** How far apart (of the joist's length) two joists' ends on a wall can be and still be one bay. */
+const END_SLACK = 0.04;
+
+export function bayKeys(split: Pick<JoistPiece, "from" | "to" | "a" | "b">[][], tableSizes: (string | null)[][] | null): string[][] {
+  const runs = new Map<string, number>();
+  let prev: { key: string; a: number; b: number }[] = [];
+  return split
+    .map((row, i) => {
+      const keys = row.map((p, j) => {
+        const base = `${p.from}|${p.to}`;
+        const size = tableSizes?.[i]?.[j] ?? "";
+        // Carries on the run in the joist before when that one has a piece between the same walls, the
+        // same size, lined up with this one (side by side, not off in another room on the same long wall).
+        // A wall end has to land at the same spot too: one wall line can jog (the pantry's corner),
+        // and a joist ending on another stretch of it is in another bay.
+        const before = prev.find((q) => {
+          if (!q.key.startsWith(`${base}|`) || !q.key.endsWith(`~${size}`)) return false;
+          const overlap = Math.min(q.b, p.b) - Math.max(q.a, p.a);
+          if (!(overlap > 0.5 * Math.min(q.b - q.a, p.b - p.a))) return false;
+          if (p.from !== EDGE && Math.abs(q.a - p.a) > END_SLACK) return false;
+          if (p.to !== EDGE && Math.abs(q.b - p.b) > END_SLACK) return false;
+          return true;
+        });
+        if (before) return { key: before.key, a: p.a, b: p.b };
+        const n = (runs.get(base) ?? 0) + 1;
+        runs.set(base, n);
+        return { key: `${base}|${n}~${size}`, a: p.a, b: p.b };
+      });
+      prev = keys;
+      return keys.map((k) => k.key);
+    })
+    .map((row) => row.map((k) => k.slice(0, k.lastIndexOf("~"))));
+}
+
+/**
  * Each piece's size from its own span. A joist lying on a wall (no span) takes the size of the
  * joists beside it — the one before, or (at the start) the one after.
  */
-export function sizePieces(pieces: JoistPiece[][], sizeFor: (spanFt: number) => string | null): (string | null)[][] {
+export function sizePieces(pieces: Pick<JoistPiece, "spanFt">[][], sizeFor: (spanFt: number) => string | null): (string | null)[][] {
   const sizes: (string | null | undefined)[][] = pieces.map((row) => row.map((p) => (p.spanFt > 0 ? sizeFor(p.spanFt) : undefined)));
   const known = (row: (string | null | undefined)[]) => row.find((x) => x !== undefined);
   for (let i = 0; i < sizes.length; i++) if (sizes[i].some((x) => x === undefined) && i > 0) sizes[i] = sizes[i].map((x) => (x === undefined ? known(sizes[i - 1]) : x));

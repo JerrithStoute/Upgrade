@@ -418,6 +418,24 @@ export const TAKEOFF: HelpArticle[] = [
         ],
       },
       {
+        heading: "Changing one bay",
+        text: [
+          "An area drawn across walls is broken into **bays**, one between each pair of walls or beams, and each bay gets the size its span calls for: the cheapest way. You can change any bay on its own without redrawing, such as a bigger size for an attic you walk or for strongbacks, or one board over a wall so there are fewer to hang.",
+        ],
+        steps: [
+          "Click a bay on the plan (inside the joist area). It's outlined, and a small chip pops up right there: **▼ 2x6 ▲**. Once the area is picked, the bay under your mouse shows a dashed outline so you can see what a click will pick.",
+          "Click **▲** to go up a size or **▼** to go down. The label gets a ✎ so you can tell your size from the table's. **↺** goes back to the span table. Shift+click more bays to change them together.",
+          "To join joists over a wall, click right where they meet over it (the break). A chip says **Run through**: one board over that wall instead of two lapped pieces. The wall still holds them up, so the span doesn't change.",
+          "To break them there again, double-click that wall, or click it and pick **Break here**.",
+        ],
+        items: [
+          { name: "✂ Break", what: "Shows on the chip when the joist you clicked is one board over a wall: because you ran it through, or because **Packing: Cheapest** found one long board cheaper than two short ones. Click it to split it on that wall, and it stays split." },
+          { name: "Can't run through — needs …", what: "One board over that wall would be longer than the lengths you buy, so the joists stay broken there." },
+          { name: "Your choices stay put", what: "They're tied to the walls on each side of the bay, so they stay when you nudge the outline or a wall. Deleting a wall takes its choices with it." },
+          { name: "The box at the corner", what: "It's still there for the whole area: which takeoff it is, direction, rotate, pitch, duplicate and delete." },
+        ],
+      },
+      {
         heading: "A picked joist area",
         items: [
           { name: "Sized by <table>", what: "The span table picked the size from the longest stretch a joist runs between supports.", how: "Pick another size in **This is** to choose it yourself; **Back to auto** returns it to the table." },

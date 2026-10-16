@@ -50,7 +50,8 @@ import { usesTakeoffWaste,
   type Metrics,
 } from "./takeoff";
 import { pickSize, spanSpec } from "./span-tables";
-import { boardCost, joistPieces, sizePieces, wholeIsCheaper, type MemberPiece } from "./joist-pieces";
+import { bayKeys, boardCost, joistPieces, sizePieces, wholeIsCheaper, type MemberPiece } from "./joist-pieces";
+import { parseSections } from "./joist-sections";
 
 /**
  * Conditions with their measurements (and each measurement's sheet scale) and assembly items,
@@ -71,7 +72,8 @@ export type BandExtra = { sheet: Awaited<ReturnType<typeof findConditions>>[numb
  * traced on its sheet is ordered as a piece on each side, lapped over it. On a span table each
  * piece gets the size its own span calls for, and is counted in that size's takeoff of the family
  * (one takeoff per size: "Joists 2x8", "Joists 2x10") — the area sits in the takeoff of its
- * biggest size. Shapes you sized yourself keep their size (still broken at the walls).
+ * biggest size. Shapes you sized yourself keep their size (still broken at the walls). Your calls on
+ * single bays (joist-sections.ts) go on top: a bay's size, and walls the joists run through.
  * `bandSplit.own`: a shape's pieces that stay in its takeoff (lengths, by measurement id);
  * `bandSplit.extra`: pieces other areas give this takeoff; `bandSplit.pieces`: every piece of a
  * shape and the takeoff it's under, for the plan to draw and label.
@@ -80,23 +82,29 @@ function withSizeBands<T extends Awaited<ReturnType<typeof findConditions>>[numb
   const empty = { own: new Map<string, number[]>(), extra: [] as BandExtra[], pieces: new Map<string, MemberPiece[][]>() };
   if (!conditions.some((c) => c.type === "FRAMING")) return conditions.map((c) => ({ ...c, bandSplit: empty }));
 
-  // What holds joists up, sheet by sheet: the walls and beams traced on it.
+  // What holds joists up, sheet by sheet: the walls and beams traced on it (and which each piece is part of).
   const supports = new Map<string, [Pt, Pt][]>();
+  const supportKeys = new Map<string, string[]>();
   for (const c of conditions) {
     if (c.type !== "WALL" && c.type !== "BEAM") continue;
     for (const m of c.measurements) {
       if (m.isDeduction) continue;
       const path = arcPath(parsePoints(m.points), parseArcs(m.points), false);
       const list = supports.get(m.sheetId) ?? [];
-      for (let i = 1; i < path.length; i++) list.push([path[i - 1], path[i]]);
+      const keys = supportKeys.get(m.sheetId) ?? [];
+      for (let i = 1; i < path.length; i++) {
+        list.push([path[i - 1], path[i]]);
+        keys.push(m.id);
+      }
       supports.set(m.sheetId, list);
+      supportKeys.set(m.sheetId, keys);
     }
   }
   if (!supports.size) return conditions.map((c) => ({ ...c, bandSplit: empty }));
 
-  // Span-table families: each size's takeoff, by size.
+  // Families: each size's takeoff, by size (span-table families, and sizes you picked for single bays).
   const families = new Map<string, T[]>();
-  for (const c of conditions) if (c.type === "FRAMING" && c.spanTable) families.set(c.sizeGroup ?? c.id, [...(families.get(c.sizeGroup ?? c.id) ?? []), c]);
+  for (const c of conditions) if (c.type === "FRAMING") families.set(c.sizeGroup ?? c.id, [...(families.get(c.sizeGroup ?? c.id) ?? []), c]);
 
   const own = new Map<string, number[]>();
   const extra = new Map<string, BandExtra[]>();
@@ -104,7 +112,7 @@ function withSizeBands<T extends Awaited<ReturnType<typeof findConditions>>[numb
   for (const c of conditions) {
     if (c.type !== "FRAMING") continue;
     const calc = withMemberSize(c, c.memberSizeRef);
-    const family = c.spanTable ? (families.get(c.sizeGroup ?? c.id) ?? []) : [];
+    const family = families.get(c.sizeGroup ?? c.id) ?? [];
     const bySize = new Map(family.filter((f) => f.memberSize).map((f) => [itemNameKey(f.memberSize!), f]));
     const table = c.spanTable ? spanSpec(c.spanTable) : null;
     for (const m of c.measurements) {
@@ -112,20 +120,34 @@ function withSizeBands<T extends Awaited<ReturnType<typeof findConditions>>[numb
       const held = supports.get(m.sheetId);
       if (!upf || m.isDeduction || !held?.length) continue;
       const shape = { points: parsePoints(m.points), arcs: parseArcs(m.points), angle: m.angle, pitch: m.pitch };
-      const { pieces: split, whole } = joistPieces(calc, shape, upf, held);
+      const mine = parseSections(m.sections);
+      const { pieces: split, whole } = joistPieces(calc, shape, upf, held, { keys: supportKeys.get(m.sheetId), through: mine.through });
       const sizeFor = (span: number) => (table && !m.sizeLocked ? pickSize(table, span, c.spacing).size : null);
-      const sizes = table && !m.sizeLocked ? sizePieces(split, (span) => sizeFor(span)) : null;
+      const auto = table && !m.sizeLocked ? sizePieces(split, (span) => sizeFor(span)) : null;
+      // What the table calls for, then your size for a bay over it.
+      const tableSizes = table ? sizePieces(split, (span) => pickSize(table, span, c.spacing).size) : null;
+      // Each piece's bay (a run of joists between the same walls, at the same table size), and your size for it.
+      const bays = bayKeys(split, tableSizes);
+      const picked: (string | null)[][] = bays.map((row) => row.map((k) => mine.sizes[k] ?? null));
+      const anyPicked = picked.some((row) => row.some((x) => x));
+      const sizes: (string | null)[][] | null = auto || anyPicked ? split.map((row, i) => row.map((_, j) => picked[i][j] ?? auto?.[i][j] ?? c.memberSize ?? null)) : null;
       // Packing by cheapest: a joist that crosses a wall is one continuous board when that costs less
       // than the pieces broken on it (at real prices only — joist-pieces.ts).
       if (c.packMode === "CHEAPEST") {
         const takeoffOf = (size: string | null) => (size ? bySize.get(itemNameKey(size)) : undefined) ?? c;
         const priced = (f: (typeof conditions)[number]) => ({ stockLengths: f.stockLengths, soldAs: f.memberSizeRef?.soldAs, lengthPrices: f.lengthPrices });
         split.forEach((row, i) => {
-          if (row.length < 2) return;
+          // A joist with a bay you sized yourself, or broken on a wall you said to break on, stays as you set it.
+          if (row.length < 2 || picked[i].some((x) => x) || row.slice(0, -1).some((p) => mine.breaks.includes(p.to))) return;
           const wholeSize = table && !m.sizeLocked ? sizeFor(whole[i].spanFt) : null;
           const costs = row.map((p, j) => boardCost(p.lengthFt, priced(takeoffOf(sizes ? sizes[i][j] : null))));
           if (!wholeIsCheaper(costs, boardCost(whole[i].lengthFt, priced(takeoffOf(wholeSize))))) return;
-          split[i] = [{ a: 0, b: 1, spanFt: whole[i].spanFt, lengthFt: whole[i].lengthFt }];
+          // One board over the walls it crossed: they show as walls it runs through (Break splits it there again).
+          const over = [...new Set([...row.flatMap((p) => p.over ?? []), ...row.slice(0, -1).map((p) => p.to)])];
+          split[i] = [{ a: 0, b: 1, spanFt: whole[i].spanFt, lengthFt: whole[i].lengthFt, from: row[0].from, to: row[row.length - 1].to, over }];
+          picked[i] = [null];
+          bays[i] = [bays[i][0]];
+          if (tableSizes) tableSizes[i] = [wholeSize];
           if (sizes) sizes[i] = [wholeSize];
         });
       }
@@ -134,19 +156,31 @@ function withSizeBands<T extends Awaited<ReturnType<typeof findConditions>>[numb
         : split.map((row) => row.map(() => c.id));
       // Whole joists, all this size: nothing to change.
       if (split.every((row) => row.length === 1) && owners.every((row) => row[0] === c.id)) continue;
-      const mine: number[] = [];
+      const kept: number[] = [];
       const away = new Map<string, number[]>();
       split.forEach((row, i) =>
         row.forEach((p, j) => {
           const to = owners[i][j];
-          if (to === c.id) mine.push(p.lengthFt);
+          if (to === c.id) kept.push(p.lengthFt);
           else away.set(to, [...(away.get(to) ?? []), p.lengthFt]);
         }),
       );
-      own.set(m.id, mine);
+      own.set(m.id, kept);
       pieces.set(
         m.id,
-        split.map((row, i) => row.map((p, j) => ({ a: p.a, b: p.b, owner: owners[i][j], length: p.lengthFt }))),
+        split.map((row, i) =>
+          row.map((p, j) => ({
+            a: p.a,
+            b: p.b,
+            owner: owners[i][j],
+            length: p.lengthFt,
+            section: bays[i][j],
+            span: p.spanFt,
+            tableSize: tableSizes?.[i][j] ?? null,
+            picked: !!picked[i][j],
+            ...(p.over ? { over: p.over } : {}),
+          })),
+        ),
       );
       for (const [to, ls] of away) extra.set(to, [...(extra.get(to) ?? []), { sheet: m.sheet, angle: m.angle, pitch: m.pitch, lengths: ls }]);
     }

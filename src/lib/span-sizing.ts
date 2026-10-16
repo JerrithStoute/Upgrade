@@ -4,6 +4,7 @@ import { syncAutoItems } from "./walls";
 import { CONDITION_COLORS, arcPath, framingMembers, isLumberMetric, itemNameKey, memberThickness, parseArcs, parsePoints, parseMemberSize, shapePath, type Pt } from "./takeoff";
 import { longestUnsupported, pickSize, spanSpec, type SizePick } from "./span-tables";
 import { joistPieces, sizePieces } from "./joist-pieces";
+import { parseSections } from "./joist-sections";
 
 function without<T extends object, K extends keyof T>(row: T, ...keys: K[]): Omit<T, K> {
   const out = { ...row };
@@ -183,7 +184,8 @@ export async function placeBySpan(projectId: string, measurementId: string, opts
   // ordered under that size's takeoff: make sure the family has one for each (takeoff-data hands them over).
   const shape = { points: parsePoints(m.points), arcs: parseArcs(m.points), angle: m.angle, pitch: m.pitch };
   const { pieces } = joistPieces({ ...c, memberWidthIn: c.memberSizeRef?.widthIn }, shape, upf, supports);
-  const sizes = sizePieces(pieces, (span) => pickSize(table, span, c.spacing).size).flat();
+  // …and for the sizes you picked for single bays.
+  const sizes = [...sizePieces(pieces, (span) => pickSize(table, span, c.spacing).size).flat(), ...Object.values(parseSections(m.sections).sizes)];
   const have = new Set([...family.map((f) => f.memberSize), target.memberSize].filter((x): x is string => !!x).map(itemNameKey));
   for (const name of new Set(sizes.filter((x): x is string => !!x))) {
     if (have.has(itemNameKey(name))) continue;
@@ -204,6 +206,32 @@ export async function placeBySpan(projectId: string, measurementId: string, opts
   // The job's lumber lines follow — unless the caller does that once for many shapes.
   if (opts.sync !== false) await syncAutoItems(projectId);
   return { conditionId: target.id, size: pick.size, pick, spanFt };
+}
+
+/**
+ * The takeoff of a joist / rafter family for a size — "Floor Joists 2x8" beside "Floor Joists" —
+ * made (a copy, items and all) the first time it's needed: for a size you pick for a single bay
+ * (joist-sections.ts). Plain takeoffs become the family's first member.
+ */
+export async function familyTakeoffFor(projectId: string, conditionId: string, sizeName: string) {
+  const c = await db.takeoffCondition.findFirst({ where: { id: conditionId, projectId } });
+  if (!c || c.type !== "FRAMING") throw new Error("Takeoff not found");
+  const group = c.sizeGroup ?? c.id;
+  if (!c.sizeGroup) await db.takeoffCondition.update({ where: { id: c.id }, data: { sizeGroup: group } });
+  const family = await db.takeoffCondition.findMany({ where: { projectId, OR: [{ sizeGroup: group }, { id: group }] }, orderBy: { sortOrder: "asc" } });
+  const key = itemNameKey(sizeName);
+  const found = family.find((f) => f.memberSize && itemNameKey(f.memberSize) === key);
+  if (found) return found;
+  const size = await memberSizeFor(sizeName);
+  const made = await copyTakeoff(projectId, c.id, {
+    name: familyName(c.name, c.memberSize, size.name),
+    memberSize: size.name,
+    memberSizeId: size.id,
+    sizeGroup: group,
+    color: size.color ?? (await freshColor(projectId, family.map((f) => f.color))),
+  });
+  await distinctFamilyColors(projectId, group);
+  return made;
 }
 
 /** Walls or beams on a sheet changed: the span-table joists/rafters on it are sized again. */

@@ -1191,6 +1191,9 @@ model TakeoffMeasurement {
   cased          Boolean? // Windows: trimmed (cased) or not; null = cased
   // Joists/rafters on a span table: you picked this shape's size yourself — the table leaves it be.
   sizeLocked     Boolean          @default(false)
+  // Joists/rafters broken at walls: your calls on single bays (src/lib/joist-sections.ts) — JSON
+  // { sizes: { "<wall>|<wall>": "2x8" }, through: ["<wall id>"] }. Null = the table's / the takeoff's.
+  sections       String?
   createdAt      DateTime         @default(now())
 
   @@index([companyId])

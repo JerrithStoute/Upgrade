@@ -169,13 +169,28 @@ export function longestUnsupported(members: [P, P][], supports: [P, P][], onWall
  * `onWall`) — held up all along, no span of its own.
  */
 export function memberBreaks([a, b]: [P, P], supports: [P, P][], onWall = 0): number[] | null {
+  return memberCrossings([a, b], supports, undefined, onWall)?.map((x) => x.at) ?? null;
+}
+
+/**
+ * The same, with which support each break is: `keys[i]` names `supports[i]` (the wall or beam it's
+ * part of); the two ends are "edge". Sorted along the member.
+ */
+export function memberCrossings([a, b]: [P, P], supports: [P, P][], keys?: string[], onWall = 0): { at: number; key: string }[] | null {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const len = Math.hypot(dx, dy);
-  if (!(len > 0)) return [0, 0];
+  if (!(len > 0)) return [
+    { at: 0, key: "edge" },
+    { at: 0, key: "edge" },
+  ];
   if (onWall > 0 && lyingOn([a, b], supports, onWall)) return null;
-  const at = [0, len];
-  for (const [c, d] of supports) {
+  const at = [
+    { at: 0, key: "edge" },
+    { at: len, key: "edge" },
+  ];
+  for (let i = 0; i < supports.length; i++) {
+    const [c, d] = supports[i];
     const ex = d[0] - c[0];
     const ey = d[1] - c[1];
     const cross = dx * ey - dy * ex;
@@ -183,9 +198,9 @@ export function memberBreaks([a, b]: [P, P], supports: [P, P][], onWall = 0): nu
     const t = ((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / cross; // along the joist, 0…1
     const u = ((c[0] - a[0]) * dy - (c[1] - a[1]) * dx) / cross; // along the support, 0…1
     // A wall stopping just shy of the joist (where its traced line ends) still counts — 1% of its length.
-    if (t > 0 && t < 1 && u >= -0.01 && u <= 1.01) at.push(t * len);
+    if (t > 0 && t < 1 && u >= -0.01 && u <= 1.01) at.push({ at: t * len, key: keys?.[i] ?? "wall" });
   }
-  return at.sort((x, y) => x - y);
+  return at.sort((x, y) => x.at - y.at);
 }
 
 /** A joist lying along a wall (within `tol`) for most of its length. */

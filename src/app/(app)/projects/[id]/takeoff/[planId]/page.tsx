@@ -268,6 +268,7 @@ export default async function PlanViewerPage({
           .filter((m) => m.sheetId === sheet?.id)
           .map((m) => ({
             memberPieces: c.bandSplit.pieces.get(m.id),
+            sections: m.sections,
             id: m.id,
             conditionId: c.id,
             points: parsePoints(m.points),

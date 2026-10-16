@@ -48,6 +48,8 @@ import {
   CONDITION_TYPE_LABELS,
   PDF_UNITS_PER_INCH,
   PRESET_SCALES,
+  DEFAULT_STOCK_LENGTHS,
+  parseMemberSize,
   centroid,
   dist,
   feetInches,
@@ -75,7 +77,7 @@ import { PlanCanvas, renderSheetGray } from "./plan-canvas";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { FoundWalls, WallFindPanel, type WallFind } from "./wall-find";
 import { findWalls } from "@/lib/wall-detect";
-import { areaJoists, joistGroupText, pieceLine } from "./joist-labels";
+import { areaJoists, bayAt, bayOutline, breakAt, joistGroupText, pieceLine, throughAt } from "./joist-labels";
 import type { MemberPiece } from "@/lib/joist-pieces";
 import { searchSheet } from "./symbol-search";
 import { TakeoffMenu, type TakeoffMenuData } from "./takeoff-menu";
@@ -113,7 +115,9 @@ import {
   pullFromLibrary,
   saveUpperFloor,
   sheetWalls,
+  setJoistSections,
 } from "../../actions";
+import { JoistChip, type ChipState } from "./joist-chip";
 
 type ViewerCondition = {
   id: string;
@@ -163,6 +167,8 @@ type ViewerMeasurement = {
   sizeLocked?: boolean; // span-table joists/rafters: you picked its size yourself
   /** Joists broken at walls / split by size: each joist's pieces and the takeoff each is ordered under (joist-pieces.ts). */
   memberPieces?: MemberPiece[][];
+  /** Joists: your calls on single bays (joist-sections.ts). */
+  sections?: string | null;
   pending?: boolean;
 };
 
@@ -574,6 +580,17 @@ export function PlanViewer({
   };
   const [cursor, setCursor] = useState<Pt | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Joist bays picked inside the selected joist area (joist-sections.ts), and where the last press on a shape was (a drag isn't a click).
+  const [bays, setBays] = useState<{ id: string; keys: string[] } | null>(null);
+  // The bay under the pointer in the picked joist area — outlined lightly, so you see what a click picks.
+  const [hoverBay, setHoverBay] = useState<string | null>(null);
+  // The little control on the plan where you clicked a joist area: a bay's size, or a break (joist-chip.tsx).
+  const [chip, setChip] = useState<(ChipState & { id: string }) | null>(null);
+  const pressAt = useRef<[number, number] | null>(null);
+  useEffect(() => {
+    if (bays && bays.id !== selectedId) setBays(null);
+    if (chip && chip.id !== selectedId) setChip(null);
+  }, [bays, chip, selectedId]);
   // Several shapes at once (drag a box, or Shift+click). One shape picked is `selectedId` (it can be edited).
   const [multi, setMulti] = useState<string[]>([]);
   const [boxSel, setBoxSel] = useState<{ a: Pt; b: Pt; add: boolean } | null>(null);
@@ -2460,6 +2477,113 @@ export function PlanViewer({
     readout = `${num(dm.members, 0)} members · ${num(dm.member_lf)} lf`;
   }
 
+  // The sheet's walls and beams, by id (a wall the joists run through is found by where you click).
+  const supportWalls = new Map(
+    measurements
+      .filter((x) => {
+        const t = condById.get(x.conditionId)?.type;
+        return t === "WALL" || t === "BEAM";
+      })
+      .map((x) => [x.id, x.points] as [string, Pt[]]),
+  );
+  /**
+   * A click on a joist area's break (joists lapped over a wall) or on a wall its joists run through:
+   * the little control for it, right there. True when it was one.
+   */
+  const joistBreakClick = (id: string, p: Pt) => {
+    const m = measurements.find((x) => x.id === id);
+    const c = m ? condById.get(m.conditionId) : undefined;
+    if (!m || !c || c.type !== "FRAMING" || !unitsPerFoot || m.pending) return false;
+    const brk = breakAt(c, m, p, unitsPerFoot);
+    const thru = brk ? null : throughAt(c, m, p, unitsPerFoot, supportWalls);
+    if (!brk && !thru) return false;
+    setBays(null);
+    if (brk) {
+      const max = Math.min(
+        ...brk.owners.map((o) => {
+          const oc = condById.get(o) ?? c;
+          return (oc.soldAs ?? "STOCK") === "STOCK" ? Math.max(...(parseStockLengths(oc.stockLengths) ?? DEFAULT_STOCK_LENGTHS)) : Infinity;
+        }),
+      );
+      setChip({ id, kind: "break", at: brk.at, wall: brk.wall, tooLong: brk.joinedFt > max + 1e-6 ? { needs: brk.joinedFt, max } : null });
+    } else if (thru) setChip({ id, kind: "through", at: thru.at, wall: thru.wall });
+    return true;
+  };
+  /** Your call on a joist area's bays (joist-sections.ts), saved. */
+  const saveJoists = (id: string, change: { sections?: string[]; size?: string | null; wall?: string; through?: boolean }) =>
+    startTransition(async () => {
+      try {
+        await setJoistSections({ projectId, id, ...change });
+        // Running through (or breaking again) remakes the bays: pick again after.
+        if (change.wall) {
+          setBays(null);
+          setChip(null);
+        }
+        router.refresh();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not change the joists");
+      }
+    });
+  const renderChip = () => {
+    if (!chip) return null;
+    const m = measurements.find((x) => x.id === chip.id);
+    const c = m ? condById.get(m.conditionId) : undefined;
+    if (!m || !c) return null;
+    const keys = chip.kind === "size" && bays?.id === m.id ? bays.keys : [];
+    const inBay = (m.memberPieces ?? []).flat().filter((p) => p.section && keys.includes(p.section));
+    const owners = [...new Set(inBay.map((p) => p.owner))].map((id) => condById.get(id) ?? c);
+    const current = owners.length === 1 ? (owners[0].memberSize ?? owners[0].name) : "Mixed";
+    const tableSizes = [...new Set(inBay.map((p) => p.tableSize).filter((x): x is string => !!x))];
+    const group = c.sizeGroup ?? c.id;
+    const depth = (x: string) => parseMemberSize(x)?.w ?? 99;
+    const named = [
+      ...conditions.filter((x) => x.type === "FRAMING" && (x.sizeGroup ?? x.id) === group).map((x) => x.memberSize),
+      ...tableSizes,
+      ...(editor?.memberSizes ?? []).map((x) => x.name),
+    ].filter((x): x is string => !!x?.trim());
+    const choices = [...new Set(named)].sort((a, b) => depth(a) - depth(b) || a.localeCompare(b));
+    const at = choices.indexOf(current);
+    // Walls this bay's joists run through as one board — the chip's Break splits them there again.
+    const overWalls = [...new Set(inBay.flatMap((p) => p.over ?? []))];
+    // A step that lands on what the table calls for goes back to the table.
+    const step = (d: number) => {
+      const next = choices[at + d];
+      if (next) saveJoists(m.id, { sections: keys, size: tableSizes.length === 1 && tableSizes[0] === next ? null : next });
+    };
+    return (
+      <JoistChip
+        chip={chip}
+        zoom={zoom}
+        rotation={rotation}
+        busy={saving}
+        size={current}
+        picked={inBay.some((p) => p.picked)}
+        canDown={at > 0}
+        canUp={at >= 0 && at < choices.length - 1}
+        onDown={() => step(-1)}
+        onUp={() => step(1)}
+        onReset={() => saveJoists(m.id, { sections: keys, size: null })}
+        onRunThrough={() => chip.kind === "break" && saveJoists(m.id, { wall: chip.wall, through: true })}
+        onBreak={() => chip.kind === "through" && saveJoists(m.id, { wall: chip.wall, through: false })}
+        onSplit={
+          overWalls.length
+            ? () =>
+                startTransition(async () => {
+                  try {
+                    for (const wall of overWalls) await setJoistSections({ projectId, id: m.id, wall, through: false });
+                    setBays(null);
+                    setChip(null);
+                    router.refresh();
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : "Could not break the joists");
+                  }
+                })
+            : undefined
+        }
+      />
+    );
+  };
+
   const renderShape = (m: ViewerMeasurement) => {
     const c = condById.get(m.conditionId);
     if (!c || !hiddenReady) return null;
@@ -2470,17 +2594,66 @@ export function PlanViewer({
     const color = c.color;
     const common = {
       "data-shape": m.id,
+      onPointerDown: (e: React.PointerEvent) => {
+        pressAt.current = [e.clientX, e.clientY];
+      },
+      onPointerMove:
+        c.type === "FRAMING" && m.id === selectedId && tool === "select" && unitsPerFoot
+          ? (e: React.PointerEvent) => {
+              const key = bayAt(c, m, toPage(e.clientX, e.clientY), unitsPerFoot);
+              if (key !== hoverBay) setHoverBay(key);
+            }
+          : undefined,
+      onPointerLeave: c.type === "FRAMING" && hoverBay ? () => setHoverBay(null) : undefined,
       onClick: (e: React.MouseEvent) => {
         if (tool !== "select" || panning || dirFor) return;
         e.stopPropagation();
+        const still0 = !pressAt.current || Math.hypot(e.clientX - pressAt.current[0], e.clientY - pressAt.current[1]) < 5;
+        if (still0 && !e.shiftKey && selectedId && selectedId !== m.id && joistBreakClick(selectedId, toPage(e.clientX, e.clientY))) return;
+        // A click on a joist area picks it and the bay under the click (Shift adds more bays) —
+        // to change just that bay. A drag (moving the area) isn't a click.
+        const still = !pressAt.current || Math.hypot(e.clientX - pressAt.current[0], e.clientY - pressAt.current[1]) < 5;
+        if (c.type === "FRAMING" && still && unitsPerFoot && !m.pending && (m.id === selectedId || !e.shiftKey)) {
+          const p = toPage(e.clientX, e.clientY);
+          // On a break (joists lapped over a wall): run them through? On a wall they run through: break again?
+          if (!e.shiftKey && joistBreakClick(m.id, p)) {
+            setMulti([]);
+            setSelectedId(m.id);
+            return;
+          }
+          const key = bayAt(c, m, p, unitsPerFoot);
+          if (key) {
+            setMulti([]);
+            setSelectedId(m.id);
+            setBays((prev) =>
+              e.shiftKey && prev?.id === m.id
+                ? { id: m.id, keys: prev.keys.includes(key) ? prev.keys.filter((k) => k !== key) : [...prev.keys, key] }
+                : { id: m.id, keys: [key] },
+            );
+            setChip({ id: m.id, kind: "size", at: p });
+            return;
+          }
+        }
         // Shift+click adds it to (or takes it out of) the shapes picked.
         if (e.shiftKey) return selectSet(picked.includes(m.id) ? picked.filter((x) => x !== m.id) : [...picked, m.id]);
         setMulti([]);
         setSelectedId(m.id);
       },
-      onDoubleClick: isSel ? onDoubleClickShape : undefined,
+      onDoubleClick: (e: React.MouseEvent) => {
+        // Double-click a wall the picked joist area's joists run through (the wall may be drawn on top): broken there again.
+        const area = selectedId ? measurements.find((x) => x.id === selectedId) : undefined;
+        const ac = area ? condById.get(area.conditionId) : undefined;
+        const thru = area && ac?.type === "FRAMING" && unitsPerFoot ? throughAt(ac, area, toPage(e.clientX, e.clientY), unitsPerFoot, supportWalls) : null;
+        if (thru && area) {
+          e.stopPropagation();
+          saveJoists(area.id, { wall: thru.wall, through: false });
+          return;
+        }
+        if (isSel) onDoubleClickShape(e);
+      },
       style: {
-        cursor: tool === "select" ? (isSel ? "move" : "pointer") : undefined,
+        // Joist areas are clicked for their bays and breaks: a plain pointer, not the move cross.
+        cursor: tool === "select" ? (isSel && c.type !== "FRAMING" ? "move" : "pointer") : undefined,
       },
       opacity: m.pending ? 0.5 : 1,
     };
@@ -2639,7 +2812,7 @@ export function PlanViewer({
         const uy = (b[1] - a[1]) / len;
         const s0 = j > 0 ? gap / 2 : 0;
         const s1 = j < row.length - 1 ? gap / 2 : 0;
-        return { key: `${i}.${j}`, owner: p.owner, a: [a[0] + ux * s0, a[1] + uy * s0] as Pt, b: [b[0] - ux * s1, b[1] - uy * s1] as Pt };
+        return { key: `${i}.${j}`, owner: p.owner, section: p.section, a: [a[0] + ux * s0, a[1] + uy * s0] as Pt, b: [b[0] - ux * s1, b[1] - uy * s1] as Pt };
       }),
     );
     return (
@@ -2688,6 +2861,28 @@ export function PlanViewer({
           if (!owner) return null;
           return <line key={key} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeWidth={owners ? 2 : 1.25} {...stroke} />;
         })}
+        {/* The bay under the pointer (lightly) and the bays you picked (clearly), outlined. */}
+        {isSel && unitsPerFoot && split
+          ? [...new Set([...(bays?.id === m.id ? bays.keys : []), ...(hoverBay ? [hoverBay] : [])])].map((key) => {
+              const outline = bayOutline(members, split, key, ((c.spacing / 12) * unitsPerFoot) / 2);
+              if (outline.length < 3) return null;
+              const picked = bays?.id === m.id && bays.keys.includes(key);
+              return (
+                <polygon
+                  key={`bay-${key}`}
+                  points={outline.map((p) => p.join(",")).join(" ")}
+                  fill="#2563eb"
+                  fillOpacity={picked ? 0.12 : 0.05}
+                  stroke="#2563eb"
+                  strokeWidth={picked ? 3 : 1.5}
+                  strokeDasharray={picked ? undefined : "6 4"}
+                  strokeLinejoin="round"
+                  pointerEvents="none"
+                  {...stroke}
+                />
+              );
+            })
+          : null}
         {c.type === "FRAMING" && m.points.length >= 3 && !(dirFor && "id" in dirFor && dirFor.id === m.id) ? (
           <>
             {ownShowing ? directionArrow(centroid(m.points), m.angle, color) : null}
@@ -4162,6 +4357,7 @@ export function PlanViewer({
                       ) : null}
                     </svg>
                   ) : null}
+                  {chip && size ? renderChip() : null}
                 </div>
               </div>
             </div>
@@ -4796,6 +4992,9 @@ export function PlanViewer({
                     </>
                   )}
                 </p>
+              ) : null}
+              {sel.c.type === "FRAMING" && !sel.m.pending && sel.m.memberPieces?.some((row) => row.some((p) => p.section)) ? (
+                <p className="mt-1 text-[11px] text-slate-500">Click a bay on the plan to size it up or down · click a break to run the joists through.</p>
               ) : null}
               {hasShapePitch(sel.c.type) && !sel.m.pending ? renderPitchEditor(sel.m, sel.c) : null}
               {sel.c.type === "LINEAR" && !sel.m.pending ? renderHeightEditor(sel.m, sel.c) : null}
