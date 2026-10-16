@@ -208,3 +208,31 @@ export function throughAt(c: Cond, m: MeasurementShape & { memberPieces?: Member
   }
   return best;
 }
+
+/**
+ * The joist or rafter (one piece of it, where they're broken at walls) under a point: its length as
+ * ordered (lap, overhang and pitch in) and the size takeoff it's ordered under — for the hover tag.
+ */
+export function memberAt(c: Cond, m: MeasurementShape & { memberPieces?: MemberPiece[][] }, p: Pt, unitsPerFoot: number): { length: number; owner: string } | null {
+  const members = areaMembers(c, m, unitsPerFoot);
+  if (!members.length) return null;
+  const split = m.memberPieces && m.memberPieces.length === members.length ? m.memberPieces : null;
+  const lengths = split ? null : framingLengths(c, { ...m, memberLengths: null }, unitsPerFoot);
+  const rows: MemberPiece[][] = split ?? members.map((_, i) => [{ a: 0, b: 1, owner: c.id, length: lengths?.[i] ?? 0 }]);
+  let best: { length: number; owner: string } | null = null;
+  let bestD = ((c.spacing / 12) * unitsPerFoot) / 2;
+  rows.forEach((row, i) =>
+    row.forEach((piece) => {
+      const [a, b] = pieceLine(members[i], piece);
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy || 1)));
+      const d = Math.hypot(p[0] - (a[0] + dx * t), p[1] - (a[1] + dy * t));
+      if (d < bestD) {
+        bestD = d;
+        best = { length: piece.length, owner: piece.owner };
+      }
+    }),
+  );
+  return best;
+}

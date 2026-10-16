@@ -66,6 +66,7 @@ import {
   shapePath,
   memberThickness,
   parseStockLengths,
+  stockPieces,
   measurementMetrics,
   metricUnit,
   polylineLength,
@@ -77,7 +78,7 @@ import { PlanCanvas, renderSheetGray } from "./plan-canvas";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { FoundWalls, WallFindPanel, type WallFind } from "./wall-find";
 import { findWalls } from "@/lib/wall-detect";
-import { areaJoists, bayAt, bayOutline, breakAt, joistGroupText, pieceLine, throughAt } from "./joist-labels";
+import { areaJoists, bayAt, bayOutline, breakAt, joistGroupText, memberAt, pieceLine, throughAt } from "./joist-labels";
 import type { MemberPiece } from "@/lib/joist-pieces";
 import { searchSheet } from "./symbol-search";
 import { TakeoffMenu, type TakeoffMenuData } from "./takeoff-menu";
@@ -586,6 +587,8 @@ export function PlanViewer({
   const [hoverBay, setHoverBay] = useState<string | null>(null);
   // The little control on the plan where you clicked a joist area: a bay's size, or a break (joist-chip.tsx).
   const [chip, setChip] = useState<(ChipState & { id: string }) | null>(null);
+  // The length of the member under the mouse (a rafter, hip, beam, wall…) — a small tag that follows it.
+  const [hoverTip, setHoverTip] = useState<{ text: string; at: Pt } | null>(null);
   const pressAt = useRef<[number, number] | null>(null);
   useEffect(() => {
     if (bays && bays.id !== selectedId) setBays(null);
@@ -2584,6 +2587,26 @@ export function PlanViewer({
     );
   };
 
+  /** What the hover tag says: one member's length (a joist or rafter, a hip or valley, a beam, a wall run, a line). */
+  const lengthTip = (c: ViewerCondition, m: ViewerMeasurement, at: Pt): string | null => {
+    if (!unitsPerFoot || m.points.length < 2) return null;
+    const run = polylineLength(m.points) / unitsPerFoot;
+    if (c.type === "FRAMING") {
+      const piece = memberAt(c, m, at, unitsPerFoot);
+      if (!piece) return null;
+      const o = condById.get(piece.owner) ?? c;
+      const kind = (m.pitch ?? c.pitch) > 0 ? "rafter" : "joist";
+      const boards = stockPieces(piece.length, parseStockLengths(o.stockLengths), o.soldAs);
+      const from = boards.length === 1 && Math.abs(boards[0] - piece.length) > 1e-6 ? ` · from a ${Number.isInteger(boards[0]) ? `${boards[0]}'` : feetInches(boards[0])}` : boards.length > 1 ? ` · ${boards.length} boards` : "";
+      return `${o.memberSize?.trim() || o.name} ${kind} · ${feetInches(piece.length)}${from}`;
+    }
+    if (c.type === "HIP_VALLEY") return `${c.memberSize?.trim() || c.name} · ${feetInches(hipLength(c, m, unitsPerFoot).length)} true length`;
+    if (c.type === "BEAM") return beamLabel(c, m, unitsPerFoot);
+    if (c.type === "OPENING") return `${c.name} · ${inchesText(run * 12)} wide`;
+    if (c.type === "WALL" || c.type === "LINEAR") return `${c.name} · ${feetInches(run)}`;
+    return null;
+  };
+
   const renderShape = (m: ViewerMeasurement) => {
     const c = condById.get(m.conditionId);
     if (!c || !hiddenReady) return null;
@@ -2598,13 +2621,21 @@ export function PlanViewer({
         pressAt.current = [e.clientX, e.clientY];
       },
       onPointerMove:
-        c.type === "FRAMING" && m.id === selectedId && tool === "select" && unitsPerFoot
+        tool === "select" && unitsPerFoot && !drag
           ? (e: React.PointerEvent) => {
-              const key = bayAt(c, m, toPage(e.clientX, e.clientY), unitsPerFoot);
-              if (key !== hoverBay) setHoverBay(key);
+              const at = toPage(e.clientX, e.clientY);
+              if (c.type === "FRAMING" && m.id === selectedId) {
+                const key = bayAt(c, m, at, unitsPerFoot);
+                if (key !== hoverBay) setHoverBay(key);
+              }
+              const text = lengthTip(c, m, at);
+              setHoverTip(text ? { text, at } : null);
             }
           : undefined,
-      onPointerLeave: c.type === "FRAMING" && hoverBay ? () => setHoverBay(null) : undefined,
+      onPointerLeave: () => {
+        if (hoverBay) setHoverBay(null);
+        setHoverTip(null);
+      },
       onClick: (e: React.MouseEvent) => {
         if (tool !== "select" || panning || dirFor) return;
         e.stopPropagation();
@@ -4358,6 +4389,14 @@ export function PlanViewer({
                     </svg>
                   ) : null}
                   {chip && size ? renderChip() : null}
+                  {hoverTip && size && !chip ? (
+                    <div
+                      className="pointer-events-none absolute z-20 whitespace-nowrap rounded bg-slate-900/90 px-1.5 py-0.5 text-xs font-medium text-white shadow"
+                      style={{ left: hoverTip.at[0] * zoom, top: hoverTip.at[1] * zoom, transform: `rotate(${-rotation}deg) translate(12px, -130%)`, transformOrigin: "0 0" }}
+                    >
+                      {hoverTip.text}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             </div>

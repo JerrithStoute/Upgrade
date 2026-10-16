@@ -65,6 +65,7 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "Mouse and keyboard",
         items: [
+          { name: "Hover for a length", what: "Rest the mouse on one joist or rafter, a hip or valley, a beam, a wall or a line, and a small tag shows its length: a joist or rafter piece as ordered, and the board it's cut from (\"2x8 rafter · 13'-6\" · from a 14'\"); hips and valleys at their true sloped length." },
           { name: "Zoom", what: "Mouse wheel zooms at the pointer; + and − keys too." },
           { name: "Move around", what: "Right-drag, middle-drag, or hold Space and drag." },
           { name: "Esc", what: "Cancels the shape you're drawing, or un-picks shapes." },
