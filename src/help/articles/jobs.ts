@@ -165,7 +165,12 @@ export const JOBS: HelpArticle[] = [
       },
       {
         heading: "Other selections",
-        text: ["Selections that aren't on the estimate: added by hand with **+ New selection**, or left from a category since removed. Each has its own page with its choices and the steps **Approve**, **Mark ordered** and **Mark installed**."],
+        text: [
+          "Things the client picks that **aren't on your estimate**, like house numbers, a mailbox or a doorbell. Use them when you don't want to add a line to the estimate for it.",
+          "Add one with **+ New selection**: a title, category, location, cost code, allowance, due date and description. Then add its choices on its page, and walk it through **Approve**, **Mark ordered** and **Mark installed**.",
+          "When you delete a category from the estimate, its selection goes too — unless the client already made choices, or there are comments, files or change orders on it. Then it lands here, so nothing is lost.",
+          "One with no choices on it has a **Remove** button right in this list.",
+        ],
       },
     ],
     tips: [

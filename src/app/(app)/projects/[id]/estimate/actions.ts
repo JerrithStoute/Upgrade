@@ -9,7 +9,7 @@ import { currentCompanyId } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { money, numField, str, strOrNull } from "@/lib/utils";
 import { lineTotals } from "@/lib/finance";
-import { copyIntoEstimate, copyIntoTemplate, createProjectEstimate, ensureEstimateSpecs, loadTemplate, nextSortOrder, saveEstimateSheet } from "@/lib/estimate-lines";
+import { copyIntoEstimate, copyIntoTemplate, createProjectEstimate, ensureEstimateSpecs, loadTemplate, nextSortOrder, pruneSelections, saveEstimateSheet } from "@/lib/estimate-lines";
 import { saveSheetInput } from "@/lib/estimate-sheet";
 import { learnDivisions } from "@/lib/estimate-categories";
 import { estimateValues, saveEstimateValues, templateValues } from "@/lib/estimate-parameters";
@@ -284,7 +284,15 @@ export const deleteEstimate = friendly(async function deleteEstimate(formData: F
   const id = str(formData, "id");
   const est = await loadEstimate(projectId, id);
   if (est.status !== "DRAFT") throw new Error("Only draft estimates can be deleted");
-  await db.estimate.delete({ where: { id } });
+  // Its selections go with it unless another version has them, or something was done on them.
+  const links = await db.estimateSpec.findMany({ where: { estimateId: id }, select: { selectionId: true } });
+  await db.$transaction(async (tx) => {
+    await tx.estimate.delete({ where: { id } });
+    await pruneSelections(
+      tx,
+      links.map((l) => l.selectionId),
+    );
+  });
   await logActivity({ projectId, userId: user.id, type: "estimate.deleted", description: `Estimate v${est.version} deleted` });
   revalidate(projectId);
   redirect(estimatePath(projectId));

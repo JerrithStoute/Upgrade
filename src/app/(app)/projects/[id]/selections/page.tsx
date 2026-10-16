@@ -7,6 +7,9 @@ import { deadlineState } from "@/lib/deadlines";
 import { money } from "@/lib/utils";
 import { Badge, ButtonLink, EmptyState, Stat } from "@/components/ui";
 import { SelectionsBoard } from "./_components/selections-board";
+import { HelpLink } from "@/components/help/help-link";
+import { ConfirmForm } from "@/components/ui";
+import { deleteSelection } from "./actions";
 
 /**
  * The job's selections, from its estimate: every category marked Selection or with
@@ -80,8 +83,13 @@ export default async function SelectionsPage({ params, searchParams }: { params:
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h3 className="text-sm font-semibold text-slate-900">Other selections</h3>
-            <p className="text-xs text-slate-500">Selections that aren&apos;t on the estimate (added by hand, or from a category since removed).</p>
+            <h3 className="flex items-center gap-1 text-sm font-semibold text-slate-900">
+              Other selections <HelpLink slug="selections" section="Other selections" />
+            </h3>
+            <p className="text-xs text-slate-600">
+              Things the client picks that aren&apos;t on your estimate, like house numbers or a mailbox. Add one with <strong>New selection</strong>. (A selection taken off the
+              estimate after choices were made lands here too, so its choices aren&apos;t lost.)
+            </p>
           </div>
           <ButtonLink href={`/projects/${project.id}/selections/new`} variant="secondary" size="sm">
             <Plus className="h-3.5 w-3.5" /> New selection
@@ -97,6 +105,16 @@ export default async function SelectionsPage({ params, searchParams }: { params:
                 <span className="flex items-center gap-2 text-xs text-slate-500">
                   {s.allowance ? `Allowance ${money(s.allowance)}` : null}
                   <Badge status={s.status} />
+                  {s.options.length === 0 && s.status === "PENDING" ? (
+                    <ConfirmForm
+                      action={deleteSelection}
+                      hidden={{ projectId: project.id, id: s.id }}
+                      message={`Remove "${s.title}"? It has no choices on it.`}
+                      variant="ghost"
+                    >
+                      Remove
+                    </ConfirmForm>
+                  ) : null}
                 </span>
               </li>
             ))}

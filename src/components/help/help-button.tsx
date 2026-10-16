@@ -14,6 +14,7 @@ import {
   visibleArticles,
 } from "@/help/find";
 import { HelpArticleView, Rich } from "./help-article";
+import { OPEN_HELP, type OpenHelp } from "./help-link";
 
 type View =
   { kind: "toc" } | { kind: "article"; slug: string; section?: string | null };
@@ -46,15 +47,14 @@ export function HelpButton({ role, access }: { role: string; access: Access }) {
   );
   const hits = useMemo(() => searchHelp(articles, query), [articles, query]);
 
-  const show = async () => {
+  /** Opens the panel: to the article for this page, or (a HelpLink's ?) to the article and part asked for. */
+  const show = async (to?: OpenHelp) => {
     setOpen(true);
     const list = all ?? (await import("@/help")).ARTICLES;
     if (!all) setAll(list);
-    const page = articlesForPath(
-      visibleArticles(list, role, access),
-      pathname,
-    )[0];
-    setView(page ? { kind: "article", slug: page.slug } : { kind: "toc" });
+    const visible = visibleArticles(list, role, access);
+    const page = to && visible.some((a) => a.slug === to.slug) ? visible.find((a) => a.slug === to.slug) : articlesForPath(visible, pathname)[0];
+    setView(page ? { kind: "article", slug: page.slug, section: to?.section ?? null } : { kind: "toc" });
     setBack([]);
     setQuery("");
     setTimeout(() => search.current?.focus(), 0);
@@ -82,7 +82,13 @@ export function HelpButton({ role, access }: { role: string; access: Access }) {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    // A ? beside a heading (HelpLink): straight to its part of the manual.
+    const onAsk = (e: Event) => void show((e as CustomEvent<OpenHelp>).detail);
+    window.addEventListener(OPEN_HELP, onAsk);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener(OPEN_HELP, onAsk);
+    };
   });
 
   // Opening an article: to the top, or to the part a search found.

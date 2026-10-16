@@ -354,6 +354,27 @@ async function existingIds(tx: Tx, input: SaveSheetInput) {
 }
 
 /**
+ * Selections whose estimate category is gone (deleted from the estimate, or its version deleted):
+ * removed too when nothing was ever done on them — no choices, comments, files or change orders,
+ * and no other version still has the category. Ones with something on them stay (under Other
+ * selections), so nothing the client did is lost.
+ */
+export async function pruneSelections(tx: Tx, selectionIds: (string | null | undefined)[]) {
+  const ids = [...new Set(selectionIds.filter((x): x is string => !!x))];
+  for (const id of ids) {
+    const [specs, options, comments, files, coLines, sel] = await Promise.all([
+      tx.estimateSpec.count({ where: { selectionId: id } }),
+      tx.selectionOption.count({ where: { selectionId: id } }),
+      tx.selectionComment.count({ where: { selectionId: id } }),
+      tx.fileAsset.count({ where: { selectionId: id } }),
+      tx.changeOrderItem.count({ where: { selectionId: id } }),
+      tx.selection.findUnique({ where: { id }, select: { status: true } }),
+    ]);
+    if (sel && sel.status === "PENDING" && !specs && !options && !comments && !files && !coLines) await tx.selection.delete({ where: { id } });
+  }
+}
+
+/**
  * Writes the sheet into an estimate. `sourceId` is the estimate the sheet was
  * loaded from; `targetId` is the same estimate ("save over") or a new version.
  * Saving over updates rows in place (so takeoff and selection links survive),
@@ -390,7 +411,14 @@ export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: stri
     const goneLines = input.knownLineIds.filter((id) => !keepLines.has(id) && itemById.has(id));
     const goneSpecs = input.knownSpecIds.filter((id) => !keepSpecs.has(id) && specById.has(id));
     if (goneLines.length) await tx.estimateItem.deleteMany({ where: { id: { in: goneLines }, estimateId: sourceId } });
-    if (goneSpecs.length) await tx.estimateSpec.deleteMany({ where: { id: { in: goneSpecs }, estimateId: sourceId } });
+    if (goneSpecs.length) {
+      await tx.estimateSpec.deleteMany({ where: { id: { in: goneSpecs }, estimateId: sourceId } });
+      // A category taken off the estimate takes its (untouched) selection with it.
+      await pruneSelections(
+        tx,
+        goneSpecs.map((id) => specById.get(id)?.selectionId),
+      );
+    }
   }
 
   // The takeoff can update the estimate while the sheet is open (it's opened, or refreshed). The
