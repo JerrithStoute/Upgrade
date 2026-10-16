@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "@/components/link";
-import { AlertTriangle, CalendarClock, ChevronDown, ChevronRight, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
+import { AlertTriangle, ArrowRightLeft, CalendarClock, ChevronDown, ChevronRight, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { daysUntil, deadlineState } from "@/lib/deadlines";
 import { buttonClasses } from "@/components/ui";
@@ -17,6 +17,7 @@ import {
   addSelectionFiles,
   commentOnSelection,
   makeChoice,
+  moveChoice,
   removeChoice,
   removeSelectionFile,
   saveChoice,
@@ -40,10 +41,11 @@ const draftOf = (c: SelectionCard): DeadlineDraft => ({
 const DECLINE = "DECLINED";
 
 /**
- * Selections grouped by division, like the estimate. Each card: the spec text and
- * client notes, the original budget (staff only), the allowance (profit in or out,
- * your call each time) and the numbered choices with "I do not want this
- * selection". Pick one and Make Choice; the card shows how far over / under it is.
+ * Selections, one at a time: the list on the left (by division, like the estimate — each with its
+ * cost codes, where it stands and when it's due), and only the one you open on the right. So a
+ * choice always goes on the selection you meant. Each selection: the spec text and client notes,
+ * the original budget (staff only), the allowance, and the numbered choices with "I do not want
+ * this selection". Pick one and Make Choice; it shows how far over / under it is.
  */
 export function SelectionsBoard({
   projectId,
@@ -52,10 +54,13 @@ export function SelectionsBoard({
   profitDefault,
   tasks,
   showCosts = true,
+  initialId,
 }: {
   projectId: string;
   estimateHref: string;
   cards: SelectionCard[];
+  /** The selection to open first (?s= in the address). */
+  initialId?: string;
   profitDefault: boolean;
   /** The person sees costs and profit (their position): the original budget and each choice's cost. */
   showCosts?: boolean;
@@ -63,52 +68,90 @@ export function SelectionsBoard({
   tasks: Task[];
 }) {
   const [bulk, setBulk] = useState(false);
+  // The one that's open: from the address (?s=), else the first still waiting on a choice.
+  const [openId, setOpenId] = useState<string>(() =>
+    initialId && cards.some((c) => c.selectionId === initialId) ? initialId : ((cards.find((c) => c.status === "PENDING") ?? cards[0])?.selectionId ?? ""),
+  );
+  const open = (id: string) => {
+    setOpenId(id);
+    const u = new URL(window.location.href);
+    u.searchParams.set("s", id);
+    window.history.replaceState(null, "", u);
+  };
   const divisions: [string, SelectionCard[]][] = [];
   for (const c of cards) {
     const g = divisions.find(([d]) => d === c.division);
     if (g) g[1].push(c);
     else divisions.push([c.division, [c]]);
   }
-  const anchor = (d: string) => `division-${d.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+  const current = cards.find((c) => c.selectionId === openId) ?? cards[0];
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setBulk(true)}>
-          <CalendarClock className="h-3.5 w-3.5" /> Change deadlines
-        </button>
-        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
-          Jump to
-          <select
-            className="input !h-9 !w-64 !py-0"
-            value=""
-            onChange={(e) => e.target.value && document.getElementById(anchor(e.target.value))?.scrollIntoView({ behavior: "smooth", block: "start" })}
-          >
-            <option value="">Choose a division…</option>
-            {divisions.map(([d, list]) => (
-              <option key={d} value={d}>
-                {d} ({list.length})
-              </option>
-            ))}
-          </select>
-        </label>
+    <div className="grid items-start gap-4 lg:grid-cols-[17rem_1fr]">
+      <aside className="space-y-2 rounded-xl border border-slate-300 bg-white p-2 shadow-sm lg:sticky lg:top-28 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
+        <div className="flex items-center justify-between gap-2 px-1.5 pt-1">
+          <p className="text-sm font-semibold text-slate-900">Selections · {cards.length}</p>
+          <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline" onClick={() => setBulk(true)}>
+            <CalendarClock className="h-3.5 w-3.5" /> Deadlines
+          </button>
+        </div>
+        {divisions.map(([d, list]) => (
+          <div key={d}>
+            <p className="px-1.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-600">{d}</p>
+            <ul className="space-y-0.5">
+              {list.map((c) => {
+                const st = deadlineState(c.deadline.date ? new Date(c.deadline.date) : null, c.status);
+                const on = c.selectionId === current?.selectionId;
+                return (
+                  <li key={c.selectionId}>
+                    <button
+                      type="button"
+                      onClick={() => open(c.selectionId)}
+                      className={cn("w-full rounded-lg px-2 py-1.5 text-left", on ? "bg-blue-600 text-white" : "text-slate-900 hover:bg-slate-100")}
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <span className={cn("h-2 w-2 shrink-0 rounded-full", c.status === "PENDING" ? (st === "overdue" ? "bg-rose-500" : "bg-amber-400") : "bg-emerald-500")} />
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">{c.name}</span>
+                        {c.updated ? <span className={cn("rounded px-1 text-[10px] font-bold", on ? "bg-white/20" : "bg-emerald-600 text-white")}>NEW</span> : null}
+                      </span>
+                      <span className={cn("block truncate pl-3.5 text-xs", on ? "text-blue-100" : "text-slate-600")}>
+                        {[c.costCodes.join(", "), st === "overdue" ? "Overdue" : c.deadline.date ? `Due ${fmtDate(c.deadline.date, "MMM d")}` : null].filter(Boolean).join(" · ") ||
+                          statusWord(c.status)}
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ))}
+      </aside>
+      <div className="min-w-0">
+        {current ? (
+          <Card
+            key={current.selectionId}
+            projectId={projectId}
+            estimateHref={estimateHref}
+            c={current}
+            others={cards.filter((x) => x.selectionId !== current.selectionId)}
+            profitDefault={profitDefault}
+            tasks={tasks}
+            showCosts={showCosts}
+          />
+        ) : null}
       </div>
-      {divisions.map(([d, list]) => (
-        <section key={d} id={anchor(d)} className="scroll-mt-4 space-y-3">
-          <h2 className="rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-semibold uppercase tracking-wide text-slate-700">{d}</h2>
-          {list.map((c) => (
-            <Card key={c.selectionId} projectId={projectId} estimateHref={estimateHref} c={c} profitDefault={profitDefault} tasks={tasks} showCosts={showCosts} />
-          ))}
-        </section>
-      ))}
       {bulk ? <BulkDeadlines projectId={projectId} cards={cards} tasks={tasks} onClose={() => setBulk(false)} /> : null}
     </div>
   );
 }
 
+const statusWord = (status: string) =>
+  ({ PENDING: "Waiting on a choice", CHOSEN: "Chosen", DECLINED: "Not wanted", APPROVED: "Approved", ORDERED: "Ordered", INSTALLED: "Installed" })[status] ?? status;
+
 function Card({
   projectId,
   estimateHref,
   c,
+  others,
   profitDefault,
   tasks,
   showCosts,
@@ -116,6 +159,8 @@ function Card({
   projectId: string;
   estimateHref: string;
   c: SelectionCard;
+  /** The job's other selections — a choice can be moved to one. */
+  others: SelectionCard[];
   profitDefault: boolean;
   tasks: Task[];
   showCosts: boolean;
@@ -132,6 +177,7 @@ function Card({
   const [editing, setEditing] = useState<string | "new" | null>(null);
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [dropOn, setDropOn] = useState<string | null>(null);
+  const [moving, setMoving] = useState<string | null>(null);
   // Save the choice, then put the files from the form on it.
   const saveWithFiles = async (saving: ReturnType<typeof saveChoice>, files: File[]) => {
     const r = await saving;
@@ -163,8 +209,9 @@ function Card({
         )}
       >
         <div className="min-w-0">
-          <h3 className="text-base font-semibold text-slate-900">{c.name}</h3>
-          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+          <h3 className="text-lg font-semibold text-slate-900">{c.name}</h3>
+          {c.costCodes.length ? <p className="text-sm font-medium text-slate-700">{c.costCodes.join(" · ")}</p> : null}
+          <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
             {c.kind === "SELECTION" ? <Tag className="bg-violet-50 text-violet-800 ring-violet-200">Selection</Tag> : null}
             {c.isAllowance ? <Tag className="bg-amber-50 text-amber-800 ring-amber-200">Allowance</Tag> : null}
             <StatusTag status={c.status} />
@@ -177,7 +224,7 @@ function Card({
               <Tag className="bg-amber-50 text-amber-800 ring-amber-200">{dueIn(new Date(c.deadline.date))}</Tag>
             ) : null}
           </p>
-          <p className="mt-1 text-xs text-slate-600">
+          <p className="mt-1 text-xs text-slate-700">
             <RequestedBy c={c} />{" "}
             <button type="button" className="ml-1 font-medium text-blue-700 hover:underline" onClick={() => setEditDeadline((o) => !o)}>
               {c.deadline.date ? "Change" : "Set a deadline"}
@@ -242,7 +289,7 @@ function Card({
                   </tbody>
                 </table>
               ) : null}
-              <p className="mt-1 text-[11px] text-slate-400">Only your team sees this.</p>
+              <p className="mt-1 text-[11px] text-slate-500">Only your team sees this.</p>
             </>
           ) : null}
           <div className="mt-3">
@@ -255,20 +302,23 @@ function Card({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h4 className="text-sm font-semibold text-slate-900">Choices</h4>
           {c.allowance !== null ? (
-            <span className="flex items-center gap-2 text-sm">
-              <span className="text-slate-600">Allowance:</span>
-              <span className="font-semibold tabular-nums">{money(c.allowance)}</span>
+            // How the allowance is figured from the estimate, in dollars: what the items cost you, or that plus your markup.
+            <span className="flex flex-wrap items-center justify-end gap-2 text-sm">
+              <span className="font-medium text-slate-800">Allowance</span>
               <select
-                className="input !h-7 !w-auto !py-0 text-xs"
-                aria-label="Allowance profit"
+                className="input !h-8 !w-auto !py-0 text-sm font-semibold"
+                aria-label="Allowance figured as"
                 value={c.allowanceProfit === null ? "" : c.allowanceProfit ? "in" : "out"}
                 disabled={busy}
                 onChange={(e) => run(() => setAllowanceProfit(projectId, c.specId, e.target.value === "" ? null : e.target.value === "in"))}
               >
-                <option value="out">Profit out (at cost)</option>
-                <option value="in">Profit in</option>
-                <option value="">Company default (profit {profitDefault ? "in" : "out"})</option>
+                <option value="out">{money(c.allowanceWays?.atCost ?? c.allowance)} — your cost, no markup</option>
+                <option value="in">{money(c.allowanceWays?.withMarkup ?? c.allowance)} — with your markup</option>
+                <option value="">
+                  {money(profitDefault ? (c.allowanceWays?.withMarkup ?? c.allowance) : (c.allowanceWays?.atCost ?? c.allowance))} — company default ({profitDefault ? "with markup" : "your cost"})
+                </option>
               </select>
+              <span className="basis-full text-right text-xs text-slate-600">Over / under is measured against this amount.</span>
             </span>
           ) : null}
         </div>
@@ -321,9 +371,9 @@ function Card({
                     {x.name}
                     {c.chosenId === x.id ? <span className="ml-2 rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-800">Chosen</span> : null}
                   </span>
-                  {x.description ? <span className="mt-0.5 block whitespace-pre-line text-sm text-slate-600">{x.description}</span> : null}
+                  {x.description ? <span className="mt-0.5 block whitespace-pre-line text-sm text-slate-700">{x.description}</span> : null}
                   {x.vendor || x.modelNumber || (showCosts && x.cost !== null) ? (
-                    <span className="mt-1 block text-xs text-slate-500">
+                    <span className="mt-1 block text-xs text-slate-600">
                       {[x.vendor, x.modelNumber && `Model ${x.modelNumber}`, showCosts && x.cost !== null && `Your cost ${money(x.cost)}`].filter(Boolean).join(" · ")}
                     </span>
                   ) : null}
@@ -333,10 +383,47 @@ function Card({
                   <span className="block text-sm font-semibold tabular-nums text-slate-900">{money(x.price)}</span>
                   <Diff value={diff(x.price)} />
                 </span>
-                <span className="flex shrink-0 gap-0.5">
+                <span className="flex shrink-0 items-start gap-0.5">
+                  {moving === x.id ? (
+                    <select
+                      autoFocus
+                      className="input !h-7 !w-44 !py-0 text-xs"
+                      aria-label={`Move ${x.name} to`}
+                      value=""
+                      onClick={(e) => e.preventDefault()}
+                      onBlur={() => setMoving(null)}
+                      onChange={(e) => {
+                        const to = e.target.value;
+                        if (!to) return;
+                        setMoving(null);
+                        run(() => moveChoice(projectId, c.selectionId, x.id, to));
+                      }}
+                    >
+                      <option value="">Move to…</option>
+                      {others.map((o) => (
+                        <option key={o.selectionId} value={o.selectionId}>
+                          {o.name}
+                          {o.costCodes.length ? ` (${o.costCodes[0]})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : others.length ? (
+                    <button
+                      type="button"
+                      className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
+                      aria-label={`Move ${x.name} to another selection`}
+                      title="Move to another selection"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setMoving(x.id);
+                      }}
+                    >
+                      <ArrowRightLeft className="h-3.5 w-3.5" />
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    className="rounded p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800"
                     aria-label={`Edit ${x.name}`}
                     onClick={(e) => {
                       e.preventDefault();
@@ -347,7 +434,7 @@ function Card({
                   </button>
                   <button
                     type="button"
-                    className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
+                    className="rounded p-1 text-slate-500 hover:bg-rose-50 hover:text-rose-700"
                     aria-label={`Delete ${x.name}`}
                     onClick={(e) => {
                       e.preventDefault();
@@ -362,6 +449,7 @@ function Card({
           )}
           {editing === "new" ? (
             <ChoiceForm
+              forName={c.name}
               showCost={showCosts}
               busy={busy}
               onCancel={() => setEditing(null)}
@@ -423,12 +511,15 @@ type ChoiceValues = { name: string; description: string; price: number; cost: nu
 
 function ChoiceForm({
   initial,
+  forName,
   showCost,
   busy,
   onSave,
   onCancel,
 }: {
   initial?: { name: string; description: string | null; price: number; cost: number | null; vendor: string | null; modelNumber: string | null };
+  /** A new choice: the selection it's going on, said at the top. */
+  forName?: string;
   /** Their position sees costs (otherwise the choice keeps whatever cost it has). */
   showCost: boolean;
   busy: boolean;
@@ -450,7 +541,12 @@ function ChoiceForm({
   const num = (s: string) => Number(s.replace(/[$,\s]/g, ""));
   const ok = v.name.trim() && Number.isFinite(num(v.price || "0")) && (v.cost === "" || Number.isFinite(num(v.cost)));
   return (
-    <div className="space-y-2 bg-blue-50/40 px-4 py-3">
+    <div className="space-y-2 bg-blue-50 px-4 py-3">
+      {forName ? (
+        <p className="text-sm font-semibold text-blue-900">
+          New choice for <span className="underline decoration-blue-300 underline-offset-2">{forName}</span>
+        </p>
+      ) : null}
       <div className={cn("grid gap-2", showCost ? "sm:grid-cols-[1fr_8rem_8rem]" : "sm:grid-cols-[1fr_8rem]")}>
         <input
           className="input"
@@ -586,7 +682,7 @@ function Tag({ className, children }: { className: string; children: React.React
 
 function Box({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-slate-200 p-3 text-sm text-slate-700">
+    <div className="rounded-lg border border-slate-300 p-3 text-sm text-slate-800">
       <p className="mb-1 font-semibold text-slate-900">{title}</p>
       {children}
     </div>
@@ -594,7 +690,7 @@ function Box({ title, children }: { title: string; children: React.ReactNode }) 
 }
 
 function Empty({ children }: { children: React.ReactNode }) {
-  return <p className="text-slate-400">{children}</p>;
+  return <p className="text-slate-500">{children}</p>;
 }
 
 function dueIn(d: Date) {
@@ -617,7 +713,7 @@ function RequestedBy({ c }: { c: SelectionCard }) {
         Requested by <span className="font-medium text-slate-800">{fmtDate(c.deadline.date, "EEE, MMM d, yyyy")}</span>
       </>
     );
-  return <span className="text-slate-400">No deadline</span>;
+  return <span className="text-slate-500">No deadline</span>;
 }
 
 /** One selection's "Requested by": none, a date, or a schedule item (n days before it starts). */

@@ -8,6 +8,7 @@ import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { str, strOrNull } from "@/lib/utils";
 import { DEFAULT_BRAND, isHexColor } from "@/lib/brand";
+import { brandStyleJson } from "@/lib/brand-style";
 import { isZone } from "@/lib/zone";
 import { saveLogo } from "@/lib/company-brand";
 import { deleteUpload } from "@/lib/uploads";
@@ -81,9 +82,18 @@ export const saveBranding = friendly(async function saveBranding(formData: FormD
   const company = await db.company.findFirst();
   if (!company) throw new Error("Save the company profile first");
   const color = str(formData, "brandColor").toLowerCase();
-  const data: { brandColor: string | null; logoPath?: string | null; logoType?: string | null } = {
+  const data: { brandColor: string | null; brandStyle: string | null; logoPath?: string | null; logoType?: string | null } = {
     // The original blue is stored as "none", so it follows any future default.
     brandColor: isHexColor(color) && color !== DEFAULT_BRAND ? color : null,
+    // The work screens' look, for everyone on the team (brand-style.ts).
+    brandStyle: brandStyleJson({
+      accent: str(formData, "accent") || null,
+      menu: str(formData, "menu") === "brand" ? "brand" : "light",
+      screen: str(formData, "screen") === "soft" ? "soft" : str(formData, "screen") === "color" ? "color" : "bright",
+      background: str(formData, "background") || null,
+      intensity: Number(str(formData, "intensity")),
+      planDim: Number(str(formData, "planDim")) || 0,
+    }),
   };
   const logo = formData.get("logo");
   if (logo instanceof File && logo.size > 0) Object.assign(data, await saveLogo(logo, company.logoPath));

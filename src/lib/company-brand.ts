@@ -4,16 +4,19 @@ import { cache } from "react";
 import { db } from "./db";
 import { tryCompanyId } from "./tenant";
 import { deleteUpload, writeUpload } from "./uploads";
+import { parseBrandStyle } from "./brand-style";
 
-/** The company's branding for this request: name, main color, logo address (or null). */
+/** The company's branding for this request: name, main color, logo address (or null), and the work screens' look (brand-style.ts). */
 export const getBrand = cache(async () => {
   // Before sign-in (the sign-in page) there's no company yet: The Builder Station's own look.
-  const c = (await tryCompanyId()) ? await db.company.findFirst({ select: { name: true, brandColor: true, logoPath: true, updatedAt: true } }) : null;
+  const c = (await tryCompanyId()) ? await db.company.findFirst({ select: { id: true, name: true, brandColor: true, brandStyle: true, logoPath: true, updatedAt: true } }) : null;
   return {
     name: c?.name ?? "Your Company",
     color: c?.brandColor ?? null,
-    // Versioned so a new logo shows right away despite caching.
-    logoUrl: c?.logoPath ? `/api/company/logo?v=${c.updatedAt.getTime()}` : null,
+    style: parseBrandStyle(c?.brandStyle),
+    // Versioned so a new logo shows right away despite caching. The company's id in it: the logo loads
+    // without a sign-in (the browser fetches the tab icon on its own; a logo isn't private).
+    logoUrl: c?.logoPath ? `/api/company/logo?c=${c.id}&v=${c.updatedAt.getTime()}` : null,
   };
 });
 

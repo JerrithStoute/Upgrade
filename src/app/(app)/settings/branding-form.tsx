@@ -4,16 +4,23 @@ import { useEffect, useRef, useState } from "react";
 import { Check, Crop, HardHat, ImageUp } from "lucide-react";
 import { SubmitButton } from "@/components/ui";
 import { BRAND_PRESETS, DEFAULT_BRAND, brandShades, isHexColor } from "@/lib/brand";
+import { ACCENT_PRESETS, BACKGROUND_PRESETS, PLAN_DIM_MAX, accentShades, backgroundAdjusted, screenPalette, usableBackground, type BrandStyle } from "@/lib/brand-style";
 import { cn } from "@/lib/utils";
 import { saveBranding } from "./actions";
 import { LogoEditor } from "./logo-editor";
 
 /**
- * Logo and main color. The preview shows the picked color as the app will use it
- * (buttons, links, the highlighted menu item) before saving.
+ * Logo, main color, and the work screens' look (highlight color, menu, Bright / Soft, dimmed plans —
+ * brand-style.ts), for the whole company. The preview shows it as the program will before saving.
  */
-export function BrandingForm({ color, logoUrl, companyName }: { color: string | null; logoUrl: string | null; companyName: string }) {
+export function BrandingForm({ color, style, logoUrl, companyName }: { color: string | null; style: BrandStyle; logoUrl: string | null; companyName: string }) {
   const [hex, setHex] = useState(isHexColor(color) ? color : DEFAULT_BRAND);
+  const [accent, setAccent] = useState<string | null>(style.accent);
+  const [menu, setMenu] = useState(style.menu);
+  const [screen, setScreen] = useState(style.screen);
+  const [background, setBackground] = useState<string>(style.background ?? BACKGROUND_PRESETS[0].hex);
+  const [intensity, setIntensity] = useState(style.intensity);
+  const [planDim, setPlanDim] = useState(style.planDim);
   const [preview, setPreview] = useState<string | null>(null);
   const [removeLogo, setRemoveLogo] = useState(false);
   const [logoError, setLogoError] = useState<string | null>(null);
@@ -105,11 +112,21 @@ export function BrandingForm({ color, logoUrl, companyName }: { color: string | 
     };
   }, []);
   const shades = brandShades(hex);
+  // The marker color as it will show: the highlight picked, or the main color's own (the logo's yellow out of the box).
+  const marker = accent ? accentShades(accent)[400] : shades[400];
+  // The screen's colors as picked (null: Bright, the program's own).
+  const pal = screenPalette({ ...style, screen, background, intensity });
   const shownLogo = preview ?? (removeLogo ? null : logoUrl);
 
   return (
     <form action={saveBranding} className="space-y-5">
       <input type="hidden" name="brandColor" value={hex} />
+      <input type="hidden" name="accent" value={accent ?? ""} />
+      <input type="hidden" name="menu" value={menu} />
+      <input type="hidden" name="screen" value={screen} />
+      <input type="hidden" name="background" value={screen === "color" ? background : ""} />
+      <input type="hidden" name="intensity" value={intensity} />
+      <input type="hidden" name="planDim" value={planDim} />
       <input type="hidden" name="removeLogo" value={removeLogo ? "1" : ""} />
 
       {/* Drop a logo anywhere on the page (see above), or click the box to choose one */}
@@ -216,11 +233,142 @@ export function BrandingForm({ color, logoUrl, companyName }: { color: string | 
         ) : null}
       </div>
 
-      {/* Preview, drawn with the picked color's shades */}
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div>
+        <p className="label">Highlight color</p>
+        <p className="mb-2 text-xs text-slate-600">The marker on the menu item you&apos;re on, the tab you&apos;re on, and the box you&apos;re typing in.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setAccent(null)}
+            className={cn("rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset", accent === null ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-700 ring-slate-300 hover:bg-slate-50")}
+            title={hex.toLowerCase() === DEFAULT_BRAND ? "The logo's yellow" : "A lighter shade of your main color"}
+          >
+            Automatic
+          </button>
+          {ACCENT_PRESETS.map((p) => (
+            <button
+              key={p.hex}
+              type="button"
+              title={p.name}
+              aria-label={p.name}
+              onClick={() => setAccent(p.hex)}
+              className={cn("grid h-7 w-7 place-items-center rounded-full ring-2 ring-offset-2", accent === p.hex ? "ring-slate-900" : "ring-transparent hover:ring-slate-300")}
+              style={{ background: p.hex }}
+            >
+              {accent === p.hex ? <Check className="h-3.5 w-3.5 text-white" /> : null}
+            </button>
+          ))}
+          <label className="ml-2 flex items-center gap-2 text-xs text-slate-600">
+            Any color
+            <input
+              type="color"
+              value={accent ?? marker}
+              onChange={(e) => setAccent(e.target.value.toLowerCase())}
+              className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+              aria-label="Pick any highlight color"
+            />
+          </label>
+        </div>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div>
+          <p className="label">Menu</p>
+          <div className="flex gap-2">
+            {(
+              [
+                ["light", "Light"],
+                ["brand", "In your main color"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                onClick={() => setMenu(v)}
+                className={cn("flex-1 rounded-lg border-2 p-2 text-left text-xs font-medium", menu === v ? "border-slate-900" : "border-slate-200 hover:border-slate-300")}
+              >
+                <span className="mb-1.5 block h-8 rounded" style={{ background: v === "brand" ? shades[900] : "#ffffff", border: "1px solid #e2e8f0" }} />
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <p className="label">Screen</p>
+          <div className="flex gap-2">
+            {(["bright", "soft", "color"] as const).map((v) => {
+              const pal = screenPalette({ ...style, screen: v, background, intensity });
+              const label = v === "bright" ? "Bright" : v === "soft" ? "Soft" : "Your color";
+              return (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setScreen(v)}
+                  className={cn("flex-1 rounded-lg border-2 p-2 text-left text-xs font-medium", screen === v ? "border-slate-900" : "border-slate-200 hover:border-slate-300")}
+                >
+                  <span className="mb-1.5 flex h-8 items-center rounded px-1.5" style={{ background: pal?.background ?? "#f6f7f9" }}>
+                    <span className="h-5 w-full rounded-sm" style={{ background: pal?.white ?? "#ffffff", border: `1px solid ${pal?.slate[200] ?? "#e2e8f0"}` }} />
+                  </span>
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+          {screen === "color" ? (
+            <div className="mt-2 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                {BACKGROUND_PRESETS.map((p) => (
+                  <button
+                    key={p.hex}
+                    type="button"
+                    title={p.name}
+                    aria-label={p.name}
+                    onClick={() => setBackground(p.hex)}
+                    className={cn("h-7 w-7 rounded-full border border-slate-300 ring-2 ring-offset-2", background === p.hex ? "ring-slate-900" : "ring-transparent hover:ring-slate-300")}
+                    style={{ background: p.hex }}
+                  />
+                ))}
+                <label className="ml-1 flex items-center gap-2 text-xs text-slate-600">
+                  Any color
+                  <input
+                    type="color"
+                    value={background}
+                    onChange={(e) => setBackground(e.target.value.toLowerCase())}
+                    className="h-8 w-12 cursor-pointer rounded border border-slate-300 bg-white p-0.5"
+                    aria-label="Pick any background color"
+                  />
+                </label>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-slate-700">
+                <span className="font-medium">Strength</span>
+                <span className="text-slate-500">Faint</span>
+                <input type="range" min={0} max={100} step={5} value={intensity} onChange={(e) => setIntensity(Number(e.target.value))} aria-label="How strong the background color is" className="w-40" />
+                <span className="text-slate-500">Strong</span>
+              </div>
+              {backgroundAdjusted(background) ? (
+                <p className="text-xs text-slate-600">
+                  Lightened to <span className="inline-block h-3 w-3 rounded-sm align-middle" style={{ background: usableBackground(background) }} /> so text stays readable.
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      <div>
+        <p className="label">Plans on the takeoff screen</p>
+        <div className="flex flex-wrap items-center gap-3 text-sm text-slate-700">
+          <input type="range" min={0} max={PLAN_DIM_MAX} step={5} value={planDim} onChange={(e) => setPlanDim(Number(e.target.value))} aria-label="Dim plan sheets" className="w-48" />
+          <span className="tabular-nums">{planDim ? `Dimmed ${planDim}%` : "Full brightness"}</span>
+        </div>
+        <p className="mt-1 text-xs text-slate-600">A white plan sheet can glare. Your takeoff lines on top stay full strength; printing isn&apos;t affected.</p>
+      </div>
+
+      {/* Preview, drawn with the picked colors */}
+      <div className="rounded-lg border border-slate-200 p-4" style={{ background: pal?.background ?? "#f6f7f9" }}>
         <p className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Preview</p>
         <div className="flex flex-wrap items-start gap-6">
-          <div className="w-60 rounded-lg border border-slate-200 bg-white p-2">
+          <div className="w-60 rounded-lg border border-slate-200 p-2" style={{ background: menu === "brand" ? shades[900] : (pal?.white ?? "#ffffff") }}>
             <div className="mb-2 flex items-center gap-2 px-1">
               {shownLogo ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -230,14 +378,28 @@ export function BrandingForm({ color, logoUrl, companyName }: { color: string | 
                   <HardHat className="h-5 w-5" />
                 </span>
               )}
-              <span className="truncate text-xs font-semibold text-slate-800">{companyName}</span>
+              <span className="truncate text-xs font-semibold" style={{ color: menu === "brand" ? "#ffffff" : "#1e293b" }}>
+                {companyName}
+              </span>
             </div>
-            <div className="rounded-md px-2 py-1.5 text-sm font-medium" style={{ background: shades[50], color: shades[800] }}>
+            <div
+              className="rounded-md px-2 py-1.5 text-sm font-medium"
+              style={{
+                background: menu === "brand" ? "rgb(255 255 255 / 0.14)" : shades[50],
+                color: menu === "brand" ? "#ffffff" : shades[800],
+                boxShadow: `inset 3px 0 0 ${marker}`,
+              }}
+            >
               Projects
             </div>
-            <div className="px-2 py-1.5 text-sm text-slate-600">Clients</div>
+            <div className="px-2 py-1.5 text-sm" style={{ color: menu === "brand" ? "rgb(255 255 255 / 0.82)" : "#475569" }}>
+              Clients
+            </div>
           </div>
-          <div className="space-y-3">
+          <div className="space-y-3 rounded-lg p-3" style={{ background: pal?.white ?? "#ffffff" }}>
+            <span className="block border-b-2 pb-1 text-sm font-medium" style={{ borderColor: marker, color: pal?.slate[900] ?? "#0f172a" }}>
+              The tab you&apos;re on
+            </span>
             <span className="inline-block rounded-md px-3 py-1.5 text-sm font-medium text-white shadow-sm" style={{ background: shades[700] }}>
               Save estimate
             </span>

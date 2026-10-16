@@ -143,8 +143,8 @@ export const JOBS: HelpArticle[] = [
         heading: "The top of the tab",
         items: [
           { name: "Selections / Still to choose / Allowances / Over / under", what: "How many selections there are, how many are still waiting (and how many overdue), the allowance total, and how far the choices made are over (red) or under (green)." },
-          { name: "Change deadlines", what: "Sets deadlines for many selections at once: tick them, set the deadline, **Apply to N ticked**, then **Save deadlines**." },
-          { name: "Jump to", what: "Scrolls to a division." },
+          { name: "The list (left)", what: "Every selection, by division, with its cost codes, where it stands (amber dot: waiting, red: overdue, green: chosen) and when it's due. **NEW** means someone else changed it since you looked.", how: "Click one to open it on the right. Only one is open at a time, so a choice always goes on the selection you meant." },
+          { name: "Deadlines", what: "Sets deadlines for many selections at once: tick them, set the deadline, **Apply to N ticked**, then **Save deadlines**." },
         ],
       },
       {
@@ -156,9 +156,10 @@ export const JOBS: HelpArticle[] = [
           { name: "Files", what: "Drawings, spec sheets, photos for the client. **✓ Client viewed** shows when they've opened one.", how: "Click **Add files** or drop files on the box." },
           { name: "Original budget", what: "What the estimate has for it: cost lines, profit, total. Only your team sees it." },
           { name: "Comments", what: "A conversation with the client about this selection.", how: "Write a comment and click **Post**. Tick **Team only** to keep it from the client." },
-          { name: "Allowance / Profit in or out", what: "The amount the choice is measured against, and whether the allowance includes your profit." },
+          { name: "Allowance", what: "The amount the client's choice is measured against for over / under. Pick how it's figured from the estimate, in dollars: **your cost, no markup**, or **with your markup**, or the company default." },
           { name: "Choices", what: "Each option: picture, name, description, vendor, model, your cost, the client price, and how it compares to the allowance. The last row, **I do not want this selection**, is the client saying no." },
-          { name: "Add choice", what: "A new option: name, client price, your cost, description, vendor, model, and a file or picture." },
+          { name: "Add choice", what: "A new option: name, client price, your cost, description, vendor, model, and a file or picture. The form says which selection it's for." },
+          { name: "Move to another selection (arrows)", what: "Moves a choice, with its picture and files, to another selection, for when it went on the wrong one. If it was the choice made, the first selection goes back to waiting." },
           { name: "Make choice / Clear choice", what: "Saves the ticked choice for the client, or clears it back to waiting." },
         ],
       },

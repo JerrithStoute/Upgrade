@@ -240,7 +240,8 @@ export function PlanCanvas({
 
   return (
     <>
-      <canvas ref={canvasRef} className="block bg-white" style={style ?? { width: 0, height: 0 }} />
+      {/* data-plan: the company can dim plan sheets on screen (brand-style.ts). */}
+      <canvas ref={canvasRef} data-plan="" className="block bg-white" style={style ?? { width: 0, height: 0 }} />
       {status !== "ready" ? (
         <div className="absolute inset-0 grid min-h-64 min-w-64 place-items-center text-sm text-slate-500">
           {status === "error" ? <span className="text-rose-700">{error}</span> : "Loading plan…"}

@@ -13,9 +13,10 @@ import { SelectionsBoard } from "./_components/selections-board";
  * an allowance. Choices, the client's pick and over / under live here; names, spec
  * text and allowances follow the estimate.
  */
-export default async function SelectionsPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function SelectionsPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ s?: string }> }) {
   const user = await requireView("selections");
   const { id } = await params;
+  const { s: openFirst } = await searchParams;
   const project = await getProject(id);
   const [{ estimate, cards: all, others, profitDefault }, tasks] = await Promise.all([boardForViewer(project.id, user.id, false), scheduleOptions(project.id)]);
   // Their position doesn't see costs and profit: none of it is sent to the page.
@@ -72,6 +73,7 @@ export default async function SelectionsPage({ params }: { params: Promise<{ id:
           profitDefault={profitDefault}
           tasks={tasks}
           showCosts={showCosts}
+          initialId={openFirst}
         />
       )}
 

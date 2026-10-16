@@ -36,9 +36,11 @@ export function FileTypesNote({ className, viewOnly }: { className?: string; /**
       </p>
     );
   return (
-    <p className={cn("text-[11px] leading-snug text-slate-400", className)}>
-      Up to 25 MB: PDFs, photos, Word, Excel, CSV or text, CAD drawings (DWG, DXF) or ZIP. PDFs and pictures (JPG, PNG, GIF, WebP) open in the browser; the rest download. iPhone
-      photos (HEIC) download too — set the iPhone to Settings › Camera › Formats › Most Compatible for JPGs.
+    <p
+      className={cn("text-[11px] leading-snug text-slate-500", className)}
+      title="PDFs, photos, Word, Excel, CSV or text, CAD drawings (DWG, DXF) or ZIP. PDFs and pictures (JPG, PNG, GIF, WebP) open in the browser; the rest download. iPhone photos (HEIC) download too — set the iPhone to Settings › Camera › Formats › Most Compatible for JPGs."
+    >
+      Up to 25 MB — PDFs, photos, documents, drawings.
     </p>
   );
 }
@@ -214,7 +216,7 @@ export function FilesBox({
         </button>
         <input ref={input} type="file" multiple hidden onChange={(e) => upload(e.target.files)} />
       </div>
-      {files.length === 0 ? <p className="text-slate-400">No files — drop them here, or Add files.</p> : null}
+      {files.length === 0 ? <p className="text-slate-500">No files — drop them here, or Add files.</p> : null}
       <FileTypesNote className="mb-1.5" />
       <ul className="flex flex-wrap gap-2">
         {files.map((f) => (

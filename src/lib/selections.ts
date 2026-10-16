@@ -6,6 +6,7 @@ import { tiedDeadline } from "./deadlines";
 import { allowanceExtras, parseMarkupTable } from "./markup";
 import { markViewed, noteChange, selectionExtras, updatedSince } from "./selection-activity";
 import { fileSeen } from "./file-views";
+import { costCodeLabel } from "./utils";
 
 /** Selections tied to a schedule item: their deadline follows the item's start date. */
 export async function refreshTiedDeadlines(projectId: string) {
@@ -100,6 +101,14 @@ export async function loadSelectionBoard(projectId: string) {
       allowanceProfit: spec.allowanceProfit,
       withProfit,
       allowance: spec.isAllowance ? allowance : null,
+      /** The allowance both ways it can be figured — at your cost, and with your markup — to say plainly what the choice means. */
+      allowanceWays: spec.isAllowance
+        ? {
+            atCost: Math.round((allowanceAmount(spec.items, false) + allowanceExtras(markup, spec.items)) * 100) / 100,
+            withMarkup: Math.round((allowanceAmount(spec.items, true) + allowanceExtras(markup, spec.items)) * 100) / 100,
+          }
+        : null,
+      costCodes: [] as string[],
       budget: {
         lines: included.map((i) => ({ id: i.id, description: i.description, cost: Math.round(i.quantity * i.unitCost * 100) / 100 })),
         profit: Math.round((price - cost) * 100) / 100,
@@ -119,6 +128,10 @@ export async function loadSelectionBoard(projectId: string) {
     });
   }
   const linked = new Set(cards.map((c) => c.selectionId));
+  // Each selection's cost codes (from its estimate lines), shown by its name.
+  const codeIds = [...new Set(specs.flatMap((sp) => sp.items.map((i) => i.costCodeId).filter((x): x is string => !!x)))];
+  const codes = new Map((codeIds.length ? await db.costCode.findMany({ where: { id: { in: codeIds } }, select: { id: true, code: true, name: true } }) : []).map((c) => [c.id, costCodeLabel(c, " · ")]));
+  for (const card of cards) card.costCodes = [...new Set(specs.find((sp) => sp.id === card.specId)?.items.filter((i) => !i.isOptional).map((i) => (i.costCodeId ? codes.get(i.costCodeId) : undefined)).filter((x): x is string => !!x))];
   const others = Array.from(byId.values()).filter((s) => !linked.has(s.id));
   return { estimate: est, cards, others, profitDefault };
 }

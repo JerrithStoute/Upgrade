@@ -183,7 +183,11 @@ export const SETTINGS: HelpArticle[] = [
           { name: "Logo", what: "Drag your logo onto the box, or click to choose one. PNG, JPG or WebP." },
           { name: "Crop / stretch", what: "Trims the logo, cuts empty edges, and stretches it wider or taller. **Use this** keeps it." },
           { name: "Main color", what: "The color used across the program, the client portal and printouts. Pick a swatch or **Any color**. The preview shows how it looks." },
-          { name: "Save branding", what: "Saves the logo and color. Nothing changes until you do." },
+          { name: "Highlight color", what: "The marker on the menu item you're on, the tab you're on and the box you're typing in. **Automatic** uses a shade of your main color (the logo's yellow out of the box)." },
+          { name: "Menu", what: "**Light**, or **In your main color**: the menu down the left side in a dark shade of your color with white text." },
+          { name: "Screen", what: "**Bright** (white, as built), **Soft** (warm off-white instead of glaring white, easier on the eyes over a long day), or **Your color**: pick a background color, from the swatches or any color, and how strong it is with **Strength** (faint to strong). The cards and grays follow it. A dark or loud color is lightened so text stays readable. It's for the whole company, so every computer looks the same." },
+          { name: "Plans on the takeoff screen", what: "Dims white plan sheets on screen so they don't glare. Your takeoff lines stay full strength, and printing isn't affected." },
+          { name: "Save branding", what: "Saves the logo, colors and screen look for everyone on the team. Nothing changes until you do. Printouts, the client and vendor portals and emails keep your main color and logo; the screen look is for your team's screens." },
         ],
       },
       {

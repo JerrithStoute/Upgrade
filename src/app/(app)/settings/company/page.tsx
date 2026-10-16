@@ -162,7 +162,7 @@ export default async function CompanySettingsPage({
       <Card>
         <CardHeader title="Branding" description="Your logo and main color, used across the whole program, the client portal and printouts." />
         <CardBody>
-          <BrandingForm color={brand.color} logoUrl={brand.logoUrl} companyName={brand.name} />
+          <BrandingForm color={brand.color} style={brand.style} logoUrl={brand.logoUrl} companyName={brand.name} />
         </CardBody>
       </Card>
       <Card>

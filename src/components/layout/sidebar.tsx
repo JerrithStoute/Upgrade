@@ -128,7 +128,18 @@ function SidebarContent({
   );
 }
 
-export function Sidebar({ allowed, companyName, logoUrl }: { allowed: string[]; companyName: string; logoUrl: string | null }) {
+export function Sidebar({
+  allowed,
+  companyName,
+  logoUrl,
+  menu = "light",
+}: {
+  allowed: string[];
+  companyName: string;
+  logoUrl: string | null;
+  /** The company's menu look (brand-style.ts): light, or in its main color. */
+  menu?: "light" | "brand";
+}) {
   const pathname = usePathname();
   const pinned = useSyncExternalStore(subscribePinned, readPinned, () => false);
   // Open over the plan for this page only; going anywhere else closes it.
@@ -159,7 +170,7 @@ export function Sidebar({ allowed, companyName, logoUrl }: { allowed: string[]; 
         {open ? (
           <>
             <div className="no-print fixed inset-0 z-40 hidden bg-slate-900/10 md:block" onClick={() => setOpenOn(null)} aria-hidden />
-            <aside className="no-print fixed inset-y-0 left-0 z-50 hidden w-60 flex-col border-r border-slate-200 bg-white shadow-2xl md:flex">
+            <aside data-menu={menu} className="no-print fixed inset-y-0 left-0 z-50 hidden w-60 flex-col border-r border-slate-200 bg-white shadow-2xl md:flex">
               <SidebarContent
                 allowed={allowed}
                                 companyName={companyName}
@@ -189,7 +200,7 @@ export function Sidebar({ allowed, companyName, logoUrl }: { allowed: string[]; 
     );
 
   return (
-    <aside className="no-print sticky top-0 z-20 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white md:flex">
+    <aside data-menu={menu} className="no-print sticky top-0 z-20 hidden h-screen w-60 shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white md:flex">
       <SidebarContent
         allowed={allowed}
                 companyName={companyName}

@@ -1,12 +1,21 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { db, systemDb } from "@/lib/db";
+import { tryCompanyId } from "@/lib/tenant";
 import { readUpload } from "@/lib/uploads";
 
-/** The signed-in company's logo. Only PNG, JPG and WebP are ever stored. */
-export async function GET() {
+/**
+ * A company's logo: the signed-in person's company, or (no sign-in — the browser fetching the tab
+ * icon on its own) the company named in the address (?c=). A logo isn't private. Only PNG, JPG and
+ * WebP are ever stored.
+ */
+export async function GET(req: Request) {
   try {
-    // Only after signing in: the logo belongs to the signed-in person's company.
-    const c = await db.company.findFirst({ select: { logoPath: true, logoType: true } });
+    const named = new URL(req.url).searchParams.get("c");
+    const c = (await tryCompanyId())
+      ? await db.company.findFirst({ select: { logoPath: true, logoType: true } })
+      : named && /^[a-z0-9]{10,40}$/.test(named)
+        ? await systemDb.company.findUnique({ where: { id: named }, select: { logoPath: true, logoType: true } })
+        : null;
     if (!c?.logoPath || !c.logoType) return new NextResponse("No logo", { status: 404 });
     const data = await readUpload(c.logoPath);
     return new NextResponse(new Uint8Array(data), {

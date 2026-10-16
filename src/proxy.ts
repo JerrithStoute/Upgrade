@@ -6,7 +6,7 @@ import { siteIsLive } from "@/lib/site";
 const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-bs_session" : "upgrade_session";
 // Pages for people not signed in: sign in (and its second step), sign up, forgot / reset
 // password, confirm email, accept an invitation — and, on this PC only, the test inbox.
-const PUBLIC_PATHS = ["/login", "/logout", "/signup", "/forgot", "/reset", "/verify", "/invite", "/api/health", "/api/qbwc", ...(process.env.NODE_ENV === "production" ? [] : ["/dev/outbox"])];
+const PUBLIC_PATHS = ["/login", "/logout", "/signup", "/forgot", "/reset", "/verify", "/invite", "/api/health", "/api/qbwc", "/api/company/logo", ...(process.env.NODE_ENV === "production" ? [] : ["/dev/outbox"])];
 // The website (/site), once it's turned on — until then only its owner sees it (src/lib/site.ts).
 const SITE_PATHS = siteIsLive() ? ["/site"] : [];
 

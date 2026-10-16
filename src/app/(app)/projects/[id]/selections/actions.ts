@@ -267,6 +267,30 @@ export async function removeChoice(projectId: string, selectionId: string, choic
   return { ok: true };
 }
 
+/**
+ * Moves a choice — with its picture and files — to another selection on the job (put on the wrong
+ * one by mistake). If it was the choice made on the first, that one goes back to waiting.
+ */
+export async function moveChoice(projectId: string, selectionId: string, choiceId: string, toSelectionId: string): Promise<Result> {
+  const user = await requireEdit("selections");
+  if (selectionId === toSelectionId) return { ok: true };
+  const [from, to] = await Promise.all([boardSelection(projectId, selectionId), boardSelection(projectId, toSelectionId)]);
+  const opt = from.options.find((o) => o.id === choiceId);
+  if (!opt) return { ok: false, error: "Choice not found" };
+  const wasChosen = from.chosenOptionId === choiceId;
+  await db.$transaction([
+    ...(wasChosen ? [db.selection.update({ where: { id: from.id }, data: { chosenOptionId: null, status: "PENDING", chosenAt: null, approvedAt: null } })] : []),
+    db.selectionOption.update({ where: { id: opt.id }, data: { selectionId: to.id, sortOrder: Math.max(-1, ...to.options.map((o) => o.sortOrder)) + 1 } }),
+  ]);
+  await noteChange(from.id, user, `Moved choice "${opt.name}" to "${to.title}"`);
+  await noteChange(to.id, user, `Choice "${opt.name}" moved here from "${from.title}"`);
+  await logActivity({ projectId, userId: user.id, type: "selection.option_moved", description: `Moved choice "${opt.name}" from "${from.title}" to "${to.title}"` });
+  if (wasChosen) await syncSelectionChangeOrder(from.id, user);
+  revalidate(projectId, from.id);
+  revalidate(projectId, to.id);
+  return { ok: true };
+}
+
 /** Makes the choice (a choice's id), "DECLINED" ("I do not want this selection"), or null to undo. */
 export async function makeChoice(projectId: string, selectionId: string, choice: string | null): Promise<Result> {
   const user = await requireEdit("selections");

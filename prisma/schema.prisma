@@ -32,6 +32,8 @@ model Company {
   // Branding: the main color ("#1d4ed8"; null = the built-in blue) and the logo file
   // (under uploads/company; null = none).
   brandColor          String?
+  // More of the work screens' look, for the whole company (src/lib/brand-style.ts): JSON { accent, menu, screen, planDim }; null = the built-in look.
+  brandStyle          String?
   logoPath            String?
   logoType            String?
   // What proposals show by default (JSON, see src/lib/proposal-options.ts); null = the built-in default.
