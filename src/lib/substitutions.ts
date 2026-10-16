@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "./db";
+import { PRICE_CHECKED } from "./price-recheck";
 import { DEFAULT_STOCK_LENGTHS, LUMBER_METRIC_PREFIX, itemNameKey, lumberItemName, lumberOf, parseStockLengths } from "./takeoff";
 
 /**
@@ -162,7 +163,7 @@ export async function addSubstitution(
     data = { toItemId: to.id, toName: to.name, size: null, fromLen: null, toLen: null };
     // A bid taken for every job: the new item's Item List price and vendor are the bid's.
     if (input.listPrice && input.unitCost != null)
-      await db.materialItem.update({ where: { id: to.id }, data: { unitCost: input.unitCost, ...(input.vendor ? { vendor: input.vendor } : {}) } });
+      await db.materialItem.update({ where: { id: to.id }, data: { unitCost: input.unitCost, ...PRICE_CHECKED(), ...(input.vendor ? { vendor: input.vendor } : {}) } });
   }
   const sub = await db.jobSubstitution.create({
     data: { projectId, fromItemId: from.id, fromName: from.name, ...data, unitCost: input.unitCost, source: input.source ?? null },

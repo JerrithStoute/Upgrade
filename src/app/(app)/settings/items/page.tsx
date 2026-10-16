@@ -11,6 +11,7 @@ import { ProgramItems } from "./program-items";
 import { groupOf, itemKind, type CodeGroup } from "@/lib/code-groups";
 import { loadCodeRules } from "@/lib/item-codes";
 import { requireView } from "@/lib/auth";
+import { isStale, recheckOf, staleNote } from "@/lib/price-recheck";
 
 type ItemValues = {
   id: string;
@@ -142,36 +143,46 @@ function ItemForm({
   );
 }
 
-export default async function ItemListPage({ searchParams }: { searchParams: Promise<{ q?: string; category?: string; edit?: string; nocode?: string; unpriced?: string }> }) {
+export default async function ItemListPage({ searchParams }: { searchParams: Promise<{ q?: string; category?: string; edit?: string; nocode?: string; unpriced?: string; recheck?: string }> }) {
   await requireView("lists");
-  const { q = "", category, edit, nocode, unpriced } = await searchParams;
+  const { q = "", category, edit, nocode, unpriced, recheck } = await searchParams;
   // Items still at $0: new ones (added by a takeoff, or the starter lumber) waiting for a price.
   const noPrice = unpriced === "1";
   const noCode = nocode === "1";
+  // Prices past their cost code's recheck time (Settings → Cost codes).
+  const toRecheck = recheck === "1";
   const [all, costCodes, rules, vendors] = await Promise.all([
     db.materialItem.findMany({
       orderBy: [{ category: "asc" }, { name: "asc" }],
-      include: { costCode: { select: { code: true, name: true } }, _count: { select: { assemblyItems: true } } },
+      include: { costCode: { select: { code: true, name: true, priceRecheckEvery: true, priceRecheckUnit: true } }, _count: { select: { assemblyItems: true } } },
     }),
     activeCostCodes(),
     loadCodeRules(),
     db.vendor.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
   ]);
   const categories = Array.from(new Set(all.map((i) => i.category))).sort();
+  const now = new Date();
+  const staleById = new Map(
+    all.flatMap((i) => {
+      const r = recheckOf(i.costCode);
+      return r && isStale(i, r, now) ? [[i.id, staleNote(i.priceCheckedAt, r, costCodeLabel(i.costCode!, " "))] as const] : [];
+    }),
+  );
   const needle = q.trim().toLowerCase();
   const items = all.filter(
     (i) =>
-      (!category || i.category === category) && (!noCode || !i.costCodeId) && (!noPrice || !(i.unitCost > 0)) && (!needle || [i.name, i.sku, i.vendor, i.category].some((v) => v?.toLowerCase().includes(needle))),
+      (!category || i.category === category) && (!noCode || !i.costCodeId) && (!noPrice || !(i.unitCost > 0)) && (!toRecheck || staleById.has(i.id)) && (!needle || [i.name, i.sku, i.vendor, i.category].some((v) => v?.toLowerCase().includes(needle))),
   );
   const missing = all.filter((i) => !i.costCodeId).length;
   const unpricedCount = all.filter((i) => !(i.unitCost > 0)).length;
-  const listHref = (o: { category?: string | null; noCode?: boolean; noPrice?: boolean }) => {
+  const listHref = (o: { category?: string | null; noCode?: boolean; noPrice?: boolean; recheck?: boolean }) => {
     const sp = new URLSearchParams();
     if (q) sp.set("q", q);
     const cat = o.category === undefined ? category : o.category;
     if (cat) sp.set("category", cat);
     if (o.noCode ?? noCode) sp.set("nocode", "1");
     if (o.noPrice ?? noPrice) sp.set("unpriced", "1");
+    if (o.recheck ?? toRecheck) sp.set("recheck", "1");
     const s = sp.toString();
     return s ? `/settings/items?${s}` : "/settings/items";
   };
@@ -223,6 +234,7 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
           {category ? <input type="hidden" name="category" value={category} /> : null}
           {noCode ? <input type="hidden" name="nocode" value="1" /> : null}
           {noPrice ? <input type="hidden" name="unpriced" value="1" /> : null}
+          {toRecheck ? <input type="hidden" name="recheck" value="1" /> : null}
           <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
           <input name="q" defaultValue={q} placeholder="Search name, SKU, vendor" className="input !w-72 !pl-8" aria-label="Search items" />
         </form>
@@ -256,6 +268,18 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
             title="Items still at $0 — give them your price"
           >
             {noPrice ? "✕ " : ""}Needs a price · {unpricedCount}
+          </Link>
+        ) : null}
+        {staleById.size || toRecheck ? (
+          <Link
+            href={listHref({ recheck: !toRecheck })}
+            className={cn(
+              "rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
+              toRecheck ? "bg-amber-600 text-white ring-amber-600" : "bg-amber-50 text-amber-800 ring-amber-300 hover:bg-amber-100",
+            )}
+            title="Prices past their cost code's recheck time — check them with your supplier"
+          >
+            {toRecheck ? "✕ " : ""}Price to recheck · {staleById.size}
           </Link>
         ) : null}
         <Link href={listHref({ category: null })} className={chip(!category)}>
@@ -316,6 +340,7 @@ export default async function ItemListPage({ searchParams }: { searchParams: Pro
             sku: i.sku,
             vendor: i.vendor,
             used: i._count.assemblyItems,
+            stale: staleById.get(i.id) ?? null,
           }))}
           costCodes={costCodes.map((c) => ({ id: c.id, code: c.code, name: c.name }))}
           returnTo={returnTo}

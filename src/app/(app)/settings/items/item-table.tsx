@@ -6,7 +6,7 @@ import { Check, Pencil, Trash2, X } from "lucide-react";
 import { UNITS } from "@/lib/constants";
 import { cn, costCodeLabel } from "@/lib/utils";
 import { ConfirmForm, buttonClasses } from "@/components/ui";
-import { deleteMaterialItem, restoreItemCells, saveItemCells, type ItemCell } from "./actions";
+import { confirmItemPrices, deleteMaterialItem, restoreItemCells, saveItemCells, type ItemCell } from "./actions";
 import { moveByArrow } from "@/components/grid-keys";
 
 export type ItemRow = {
@@ -22,6 +22,8 @@ export type ItemRow = {
   sku: string | null;
   vendor: string | null;
   used: number;
+  /** Past its cost code's recheck time: why ("Price checked Mar 3 — … every 3 weeks"), else null. */
+  stale: string | null;
 };
 
 type CostCode = { id: string; code: string | null; name: string };
@@ -96,6 +98,16 @@ export function ItemTable({
             }),
           1500,
         );
+    });
+  };
+  /** "Still good": marks the price checked today (on every ticked row, when this one is ticked). */
+  const stillGood = (id: string) => {
+    const k = `${id}:unitCost`;
+    const ids = selected.has(id) && picked.length > 1 ? picked : [id];
+    setStatus((s) => ({ ...s, [k]: "saving" }));
+    startTransition(async () => {
+      const r = await confirmItemPrices(ids);
+      setStatus((s) => ({ ...s, [k]: r.error ? { error: r.error } : "saved" }));
     });
   };
   const mark = (id: string, field: ItemCell) => <CellStatus status={status[`${id}:${field}`]} />;
@@ -202,7 +214,7 @@ export function ItemTable({
                             value={i.unitCost}
                             min="0"
                             width="!w-20"
-                            warn={i.unitCost === 0 ? "No price yet" : undefined}
+                            warn={i.unitCost === 0 ? "No price yet" : (i.stale ?? undefined)}
                             onSave={(v) => save(i.id, "unitCost", v)}
                           />
                           <span className="text-slate-400">/</span>
@@ -221,6 +233,19 @@ export function ItemTable({
                           </select>
                           {mark(i.id, "unit")}
                         </div>
+                        {i.stale ? (
+                          <div className="mt-0.5 flex items-center justify-end gap-1.5 text-xs text-amber-800" title={i.stale}>
+                            Recheck price
+                            <button
+                              type="button"
+                              className="rounded px-1 font-medium text-blue-700 underline-offset-2 hover:underline"
+                              title="The price hasn't changed — mark it checked today"
+                              onClick={() => stillGood(i.id)}
+                            >
+                              Still good
+                            </button>
+                          </div>
+                        ) : null}
                       </td>
                       <td className="px-2 py-1.5 align-middle">
                         <div className="flex items-center justify-end gap-1">

@@ -12,6 +12,7 @@ import { CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { kindForCategory, newItemPlacement, renameCategory, saveCategoryRule, saveCodeRule } from "@/lib/item-codes";
 import { boolField, numField, str, strOrNull } from "@/lib/utils";
 import { ensureVendor } from "@/lib/vendor-list";
+import { PRICE_CHECKED } from "@/lib/price-recheck";
 
 const PATH = "/settings/items";
 
@@ -73,8 +74,11 @@ export const createMaterialItem = friendly(async function createMaterialItem(fd:
 export const updateMaterialItem = friendly(async function updateMaterialItem(fd: FormData) {
   await requireEdit("lists");
   const id = str(fd, "id");
-  if (!(await db.materialItem.findUnique({ where: { id }, select: { id: true } }))) throw new Error("Item not found");
-  await db.materialItem.update({ where: { id }, data: await itemFields(fd, id) });
+  const current = await db.materialItem.findUnique({ where: { id }, select: { unitCost: true } });
+  if (!current) throw new Error("Item not found");
+  const data = await itemFields(fd, id);
+  // A new price is a checked price; saving the name or notes isn't.
+  await db.materialItem.update({ where: { id }, data: { ...data, ...(Math.abs(data.unitCost - current.unitCost) > 0.00001 ? PRICE_CHECKED() : {}) } });
   revalidatePath(PATH);
   redirect(back(fd, `#item-${id}`));
 });
@@ -96,7 +100,7 @@ function cellData(field: ItemCell, value: string) {
     case "unit":
       return { unit: (UNITS as readonly string[]).includes(value) ? value : "ea" };
     case "unitCost":
-      return { unitCost: Number.isFinite(n) ? Math.max(0, n) : 0 };
+      return { unitCost: Number.isFinite(n) ? Math.max(0, n) : 0, ...PRICE_CHECKED() };
     case "wastePct":
       return { wastePct: Number.isFinite(n) ? Math.max(0, n) : 0 };
     case "roundUp":
@@ -139,6 +143,23 @@ export async function saveItemCells(ids: string[], field: ItemCell, value: strin
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Couldn't save" };
   }
+}
+
+/**
+ * "Price still good": the supplier's price hasn't moved — marks the items' prices checked today
+ * without retyping them (one item, or every one ticked / showing under "Price to recheck").
+ */
+export async function confirmItemPrices(ids: string[]): Promise<{ error?: string }> {
+  const admin = await requireEdit("lists");
+  try {
+    const { count } = await db.materialItem.updateMany({ where: { id: { in: ids.slice(0, 2000) } }, data: PRICE_CHECKED() });
+    if (count > 1) await logActivity({ userId: admin.id, type: "item_list.prices_checked", description: `Marked ${count} Item List prices as still good` });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Couldn't save" };
+  }
+  revalidatePath(PATH);
+  revalidatePath("/projects", "layout");
+  return {};
 }
 
 /** Undo for a fill: puts each item's old value back. */

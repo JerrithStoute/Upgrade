@@ -1,5 +1,6 @@
 "use server";
 
+import { PRICE_CHECKED } from "@/lib/price-recheck";
 import { friendly } from "@/lib/friendly-action";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -306,7 +307,7 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
       }
       if (scope === "JOB") await setItemPrice({ projectId: project.id, materialItemId, unitCost: l.unitPrice, pin: true });
       else {
-        await db.materialItem.update({ where: { id: materialItemId }, data: { unitCost: l.unitPrice, vendor: bid.vendorName } }).catch(() => null);
+        await db.materialItem.update({ where: { id: materialItemId }, data: { unitCost: l.unitPrice, vendor: bid.vendorName, ...PRICE_CHECKED() } }).catch(() => null);
         if (!locked)
           await db.takeoffAssemblyItem.updateMany({
             where: { materialItemId, condition: { projectId: project.id } },

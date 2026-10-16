@@ -179,6 +179,11 @@ export const ESTIMATES: HelpArticle[] = [
           { name: "Add cost code", what: "A code (optional), a name, a group, and a sort order." },
           { name: "Active / Inactive", what: "Only active codes show on estimates. Click to switch." },
           { name: "Delete / Deactivate", what: "A code that's in use can't be deleted; deactivate it instead." },
+          {
+            name: "Recheck prices",
+            what: "How often prices under this code go out of date: a number and days, weeks or months. Lumber might be every 3 weeks, concrete every 3 months, windows and doors every 6 months. Blank means never.",
+            how: "Click **Edit** on the code, fill in **Recheck prices**, and **Save**. Once an Item List price under this code is older than that, it's flagged **Recheck price** on the Item List, the job's Material list and the estimate. It's only a reminder: nothing changes a price by itself.",
+          },
         ],
       },
     ],

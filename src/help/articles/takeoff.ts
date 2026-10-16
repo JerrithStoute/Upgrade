@@ -635,6 +635,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Search name, SKU, vendor", what: "Finds items by any of those." },
           { name: "Needs a price · N", what: "Shows only items still at $0. Fill one in and it drops off the list. Click again (✕) for the whole list." },
           { name: "No cost code · N", what: "Shows only items with no cost code. Only shows when some are missing." },
+          { name: "Price to recheck · N", what: "Shows only prices older than their cost code's **Recheck prices** time (set in **Settings → Cost codes**). Call your supplier, then type the new price or click **Still good**." },
           { name: "All / category chips", what: "Shows every item, or one category." },
           { name: "Rename / merge", what: "With a category picked: renames it, or merges it into another." },
           { name: "For a vendor…", what: "A printable price request of part of the list for a vendor. Your prices never print." },
@@ -645,7 +646,8 @@ export const TAKEOFF: HelpArticle[] = [
         text: ["Change any box right in its row; it saves when you click away (a ✓ shows). Tick several rows and a change goes to all of them, with an **Undo**."],
         items: [
           { name: "Cost code", what: "Where the item's cost lands on the estimate and Budget." },
-          { name: "Unit cost", what: "The price per unit. Amber means $0: no price yet." },
+          { name: "Unit cost", what: "The price per unit. Amber means $0 (no price yet) or **Recheck price** (older than its cost code's recheck time; hover to see when it was last checked)." },
+          { name: "Still good", what: "Under a price to recheck: the price hasn't changed, so it's marked checked today without retyping it. With several rows ticked, it marks them all. Typing a new price marks it checked too." },
           { name: "Waste %", what: "Extra added for waste." },
           { name: "Round up", what: "Orders whole units (sheets, bags) instead of fractions." },
           { name: "SKU / Vendor", what: "The vendor's part number and who you buy it from." },

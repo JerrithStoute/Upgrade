@@ -60,6 +60,7 @@ const link = "font-medium underline underline-offset-2 hover:no-underline";
 export function PriceWarnings({
   unpriced = [],
   zeroLines = [],
+  stale = [],
   changed,
   expired,
   bidOver = [],
@@ -70,6 +71,8 @@ export function PriceWarnings({
 }: {
   unpriced?: { name: string; quantity: number; unit: string }[];
   zeroLines?: string[];
+  /** Takeoff prices past their cost code's recheck time. */
+  stale?: string[];
   changed?: { count: number; change: number };
   expired?: { on: Date; days: number };
   /** Re-bids 10%+ over the bid taken for a cost code. */
@@ -94,6 +97,24 @@ export function PriceWarnings({
           Price them in the takeoff, the Material list or the Item List — the estimate picks them up the next time you open it.{" "}
           <Link href={materialsHref} className={link}>
             Material list
+          </Link>
+        </p>
+      </Box>,
+    );
+  if (stale.length)
+    parts.push(
+      <Box
+        key="stale"
+        tone="amber"
+        icon={<Clock className="h-4 w-4" />}
+        title={`${stale.length} price${stale.length === 1 ? " is" : "s are"} due for a recheck`}
+        note="older than their cost code's recheck time. Check them with your supplier."
+      >
+        <Names names={stale} />
+        <p className="mt-1.5 text-xs">
+          Type the new price, or click <b>Still good</b> if it hasn&apos;t changed.{" "}
+          <Link href="/settings/items?recheck=1" className={link}>
+            Item List
           </Link>
         </p>
       </Box>,

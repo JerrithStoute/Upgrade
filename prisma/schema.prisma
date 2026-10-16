@@ -276,6 +276,9 @@ model CostCode {
   active    Boolean  @default(true)
   // QuickBooks Desktop: the item it is there (its ListID) — the item named with this code.
   qbListId  String?
+  // How often prices under this code go stale (lumber every 3 weeks, windows every 6 months…): blank = never.
+  priceRecheckEvery Int?
+  priceRecheckUnit  String? // days | weeks | months
   createdAt DateTime @default(now())
 
   estimateItems             EstimateItem[]
@@ -1260,6 +1263,8 @@ model MaterialItem {
   // What the program uses it as, whatever category you file it under:
   // windows | doors | framing lumber | sheathing | drywall | trim (null = your own item).
   kind       String?
+  // When its price was last set or confirmed ("Price still good") — stale once past its cost code's recheck time.
+  priceCheckedAt DateTime @default(now())
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 

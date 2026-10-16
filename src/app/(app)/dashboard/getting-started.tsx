@@ -18,7 +18,7 @@ const GETTING_STARTED_COOKIE = "bs_hide_getting_started";
  */
 export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin || (await cookies()).get(GETTING_STARTED_COOKIE)) return null;
-  const [company, people, invites, clients, projects, plans, shapes, items, unpriced, costCodes, codedKinds] = await Promise.all([
+  const [company, people, invites, clients, projects, plans, shapes, items, unpriced, costCodes, codedKinds, rechecked] = await Promise.all([
     db.company.findFirst({ select: { logoPath: true } }),
     db.user.count({ where: { role: { in: ["ADMIN", "STAFF"] } } }),
     db.invite.count(),
@@ -31,6 +31,8 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
     db.costCode.count(),
     // The kinds of material a first takeoff adds, that have a cost code picked for them.
     db.itemCodeRule.count({ where: { group: { in: MATERIAL_KINDS }, sameForAll: true, costCodeId: { not: null } } }),
+    // Cost codes with a "recheck prices every …" time — theirs to set, none set for them.
+    db.costCode.count({ where: { priceRecheckEvery: { gt: 0 } } }),
   ]);
   // An established company (a few jobs in) doesn't need it.
   if (projects.length > 2) return null;
@@ -59,6 +61,16 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
       hint: unpriced ? `${unpriced} item${unpriced === 1 ? "" : "s"} still at $0 — your yard's prices go here.` : "Your Item List prices every takeoff.",
       href: "/settings/items?unpriced=1",
     },
+    ...(costCodes > 0
+      ? [
+          {
+            done: rechecked > 0,
+            label: "Set how often to recheck prices",
+            hint: "On each cost code: lumber every few weeks, windows every 6 months… Old prices get flagged before you bid with them.",
+            href: "/settings/cost-codes",
+          },
+        ]
+      : []),
   ];
   const left = steps.filter((s) => !s.done).length;
   if (!left) return null;

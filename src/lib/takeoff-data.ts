@@ -52,6 +52,7 @@ import { usesTakeoffWaste,
 import { pickSize, spanSpec } from "./span-tables";
 import { bayKeys, boardCost, joistPieces, sizePieces, wholeIsCheaper, type MemberPiece } from "./joist-pieces";
 import { parseSections } from "./joist-sections";
+import { stalePrices } from "./stale-prices";
 
 /**
  * Conditions with their measurements (and each measurement's sheet scale) and assembly items,
@@ -766,7 +767,12 @@ export async function lockAfterAutoChanges(projectId: string, estimateId: string
   return { estimate: est, restored: !!base };
 }
 
-export type PriceCheck = { unpriced: { name: string; quantity: number; unit: string }[]; changed: { count: number; change: number } };
+export type PriceCheck = {
+  unpriced: { name: string; quantity: number; unit: string }[];
+  changed: { count: number; change: number };
+  /** Item List prices on this job past their cost code's recheck time: name and when it was checked. */
+  stale: string[];
+};
 
 /**
  * Before a proposal goes out: takeoff items with no price (they'd go in at $0), and
@@ -778,10 +784,14 @@ export async function takeoffPriceCheck(projectId: string): Promise<PriceCheck> 
   let change = 0;
   // An unlocked job follows the Item List by itself — only a locked one falls behind it.
   const locked = !!(await db.project.findUnique({ where: { id: projectId }, select: { pricesLockedAt: true } }))?.pricesLockedAt;
+  // Lines that follow the Item List's price (not locked, not "this job only"): the ones a stale list price reaches.
+  const following = new Map<string, string>();
   for (const c of await loadConditions(projectId)) {
     const totals = conditionTotals(c);
     for (const l of conditionEstimateLines(c, totals)) if (l.quantity > 0 && !(l.unitCost > 0)) unpriced.push({ name: l.description, quantity: l.quantity, unit: l.unit });
     for (const i of c.items) {
+      if (!locked && !i.pricePinned && i.materialItem && !following.has(i.materialItem.id) && assemblyQuantity(i, totals.metrics, totals.cutList, totals.wall) > 0)
+        following.set(i.materialItem.id, i.materialItem.name);
       const list = i.materialItem?.unitCost;
       // An Item List price of $0 isn't a price change — it's unpriced there too.
       if (!locked || i.pricePinned || list === undefined || list === null || !(list > 0) || Math.abs(list - i.unitCost) <= 0.0001) continue;
@@ -792,5 +802,10 @@ export async function takeoffPriceCheck(projectId: string): Promise<PriceCheck> 
       }
     }
   }
-  return { unpriced, changed: { count, change: Math.round(change * 100) / 100 } };
+  const stale = await stalePrices([...following.keys()]);
+  return {
+    unpriced,
+    changed: { count, change: Math.round(change * 100) / 100 },
+    stale: [...stale].map(([id, note]) => `${following.get(id)} — ${note}`),
+  };
 }

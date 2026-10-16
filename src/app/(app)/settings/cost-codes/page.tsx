@@ -6,6 +6,34 @@ import { Button, ButtonLink, Card, CardHeader, Collapsible, ConfirmForm, EmptySt
 import { createCostCode, updateCostCode, toggleCostCodeActive, deleteCostCode, replaceCostCodesFromCsv, addStarterCostCodes } from "./actions";
 import { STARTER_COST_CODES } from "@/lib/starter-cost-codes";
 import { CostCodeCsvImport } from "./_components/csv-import";
+import { HelpLink } from "@/components/help/help-link";
+import { RECHECK_UNITS, recheckOf, recheckText } from "@/lib/price-recheck";
+
+/** "Recheck prices every [3] [weeks]" — blank = this code's prices never go stale. */
+function RecheckInputs({ every, unit, form, id }: { every?: number | null; unit?: string | null; form?: string; id?: string }) {
+  return (
+    <span className="flex items-center gap-1">
+      <input
+        id={id}
+        name="priceRecheckEvery"
+        type="number"
+        min="1"
+        defaultValue={every ?? ""}
+        className="input !w-16"
+        form={form}
+        aria-label="Recheck prices every"
+        placeholder="—"
+      />
+      <select name="priceRecheckUnit" defaultValue={unit ?? "weeks"} className="input !w-24" form={form} aria-label="Days, weeks or months">
+        {RECHECK_UNITS.map((u) => (
+          <option key={u} value={u}>
+            {u}
+          </option>
+        ))}
+      </select>
+    </span>
+  );
+}
 
 export const metadata = { title: "Cost codes" };
 
@@ -122,6 +150,9 @@ export default async function CostCodesSettingsPage({ searchParams }: { searchPa
             <Field label="Sort order" htmlFor="new-sort">
               <input id="new-sort" name="sortOrder" type="number" className="input" defaultValue={(codes.length + 1) * 10} />
             </Field>
+            <Field label="Recheck prices every" htmlFor="new-recheck" hint="Blank = never. Lumber 3 weeks, windows 6 months…">
+              <RecheckInputs id="new-recheck" />
+            </Field>
           </FormGrid>
           <SubmitButton>Add cost code</SubmitButton>
         </form>
@@ -141,6 +172,11 @@ export default async function CostCodesSettingsPage({ searchParams }: { searchPa
                 <Th>Name</Th>
                 <Th>Group</Th>
                 <Th right>Sort</Th>
+                <Th>
+                  <span className="inline-flex items-center gap-1">
+                    Recheck prices <HelpLink slug="estimate-settings" section="Cost codes" />
+                  </span>
+                </Th>
                 <Th right>In use</Th>
                 <Th>Active</Th>
                 <Th right>Actions</Th>
@@ -165,6 +201,8 @@ type CodeRow = {
   division: string;
   sortOrder: number;
   active: boolean;
+  priceRecheckEvery: number | null;
+  priceRecheckUnit: string | null;
   _count: { estimateItems: number; templateItems: number; changeOrderItems: number; expenses: number; selections: number };
 };
 
@@ -172,7 +210,7 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
   return (
     <>
       <tr className="bg-slate-50/80">
-        <td colSpan={7} className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
+        <td colSpan={8} className="px-4 py-1.5 text-xs font-semibold uppercase tracking-wide text-slate-600">
           {division}
         </td>
       </tr>
@@ -193,6 +231,9 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
               </Td>
               <Td right>
                 <input name="sortOrder" type="number" defaultValue={c.sortOrder} className="input !w-20" form={formId} aria-label="Sort order" />
+              </Td>
+              <Td>
+                <RecheckInputs every={c.priceRecheckEvery} unit={c.priceRecheckUnit} form={formId} />
               </Td>
               <Td right>{refs}</Td>
               <Td>{c.active ? "Yes" : "No"}</Td>
@@ -215,6 +256,12 @@ function GroupRows({ division, codes, edit, formId }: { division: string; codes:
             <Td className={cn("font-medium", c.active ? "text-slate-900" : "text-slate-400")}>{c.name}</Td>
             <Td>{c.division}</Td>
             <Td right>{c.sortOrder}</Td>
+            <Td className="whitespace-nowrap">
+              {(() => {
+                const r = recheckOf(c);
+                return r ? `Every ${recheckText(r)}` : <span className="text-slate-300">—</span>;
+              })()}
+            </Td>
             <Td right>
               <span
                 title={`${c._count.estimateItems} estimate items · ${c._count.templateItems} template items · ${c._count.changeOrderItems} change order items · ${c._count.expenses} expenses · ${c._count.selections} selections`}

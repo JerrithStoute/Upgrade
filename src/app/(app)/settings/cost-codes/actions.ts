@@ -9,6 +9,7 @@ import { logActivity } from "@/lib/activity";
 import { costCodeLabel, str, strOrNull, intField } from "@/lib/utils";
 import { parseCostCodeCsv, planCostCodeImport } from "@/lib/cost-code-csv";
 import { STARTER_COST_CODES } from "@/lib/starter-cost-codes";
+import { recheckFields } from "@/lib/price-recheck";
 
 function done() {
   revalidatePath("/settings/cost-codes");
@@ -23,7 +24,7 @@ export const createCostCode = friendly(async function createCostCode(formData: F
   if (!name) throw new Error("Name is required");
   if (code && (await db.costCode.findFirst({ where: { code } }))) throw new Error(`Cost code ${code} already exists`);
 
-  await db.costCode.create({ data: { code, name, division, sortOrder: intField(formData, "sortOrder", 0), active: true } });
+  await db.costCode.create({ data: { code, name, division, sortOrder: intField(formData, "sortOrder", 0), active: true, ...recheckFields(formData) } });
   await logActivity({ userId: admin.id, type: "cost_code.created", description: `Added cost code ${costCodeLabel({ code, name }, " ")}` });
   done();
   redirect("/settings/cost-codes");
@@ -43,7 +44,7 @@ export const updateCostCode = friendly(async function updateCostCode(formData: F
     if (clash) throw new Error(`Cost code ${code} already exists`);
   }
 
-  await db.costCode.update({ where: { id }, data: { code, name, division, sortOrder: intField(formData, "sortOrder", current.sortOrder) } });
+  await db.costCode.update({ where: { id }, data: { code, name, division, sortOrder: intField(formData, "sortOrder", current.sortOrder), ...recheckFields(formData) } });
   await logActivity({ userId: admin.id, type: "cost_code.updated", description: `Updated cost code ${costCodeLabel({ code, name }, " ")}` });
   done();
   redirect("/settings/cost-codes");

@@ -1,5 +1,6 @@
 import "server-only";
 import { db } from "./db";
+import { PRICE_CHECKED } from "./price-recheck";
 
 /**
  * One price per item, shared everywhere, until you lock it.
@@ -61,7 +62,7 @@ export async function setItemPrice(opts: { projectId: string; materialItemId: st
     await db.takeoffAssemblyItem.updateMany({ where, data: { unitCost, ...(locked ? {} : { pricePinned: true }) } });
     return "job" as const;
   }
-  await db.materialItem.update({ where: { id: materialItemId }, data: { unitCost } });
+  await db.materialItem.update({ where: { id: materialItemId }, data: { unitCost, ...PRICE_CHECKED() } });
   await db.takeoffAssemblyItem.updateMany({ where, data: { unitCost, pricePinned: false } });
   return "list" as const;
 }

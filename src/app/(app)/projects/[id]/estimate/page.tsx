@@ -380,6 +380,7 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
       <PriceWarnings
         unpriced={isDraft ? check?.unpriced : undefined}
         zeroLines={zeroLines}
+        stale={isDraft ? check?.stale : undefined}
         changed={check?.changed}
         expired={expiresOn && expiresOn < new Date() ? { on: expiresOn, days: validDays } : undefined}
         materialsHref={`/projects/${project.id}/materials`}

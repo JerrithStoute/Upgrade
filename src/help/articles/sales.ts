@@ -34,7 +34,7 @@ export const SALES: HelpArticle[] = [
           { name: "Upcoming schedule", what: "Tasks starting in the next 7 days." },
           { name: "Recent activity", what: "What's happened lately across your jobs." },
           { name: "Job profit / Over / under billing / Cash next 30 days / What clients owe", what: "Report cards for admins and anyone who sees Reports. Not on until you tick them in Customize. **Bill it** on an under-billed job starts an invoice." },
-          { name: "Getting started", what: "Admins: the first steps for a new company: logo, team, first client, first job, plans, takeoff, cost codes, prices. It goes away when they're done, or with its X." },
+          { name: "Getting started", what: "Admins: the first steps for a new company: logo, team, first client, first job, plans, takeoff, cost codes, prices, and how often to recheck prices. It goes away when they're done, or with its X." },
         ],
       },
     ],

@@ -15,6 +15,7 @@ export function MaterialTable({
   showPrices,
   edit,
   pulled,
+  stale,
 }: {
   lines: MaterialLine[];
   cutLists: CutList[];
@@ -24,6 +25,8 @@ export function MaterialTable({
   edit?: { projectId: string; locked: boolean; substitutions?: { fromName: string; toName: string }[] };
   /** Pulled from the company's inventory, by line key: shown under the quantity with what's left to order. */
   pulled?: Record<string, number>;
+  /** Item List prices past their cost code's recheck time, by item id: why. */
+  stale?: Record<string, string>;
 }) {
   const groups = groupBy(lines, (l) => l.category);
   // "Instead of 2x6 × 26'" under a line that's a substitute on this job.
@@ -99,6 +102,11 @@ export function MaterialTable({
                         ) : (
                           <span title="No price — this goes to the estimate at $0. Price it in the takeoff.">No price</span>
                         )}
+                        {l.materialItemId && !l.pinned && stale?.[l.materialItemId] ? (
+                          <span className="no-print block whitespace-nowrap text-xs font-medium text-amber-700" title={stale[l.materialItemId]}>
+                            Recheck price
+                          </span>
+                        ) : null}
                       </Td>
                       <Td right>{money(l.extended)}</Td>
                     </>

@@ -14,6 +14,7 @@ import { getBrand } from "@/lib/company-brand";
 import { PrintLogo } from "@/components/brand-mark";
 import { jobPulls } from "@/lib/inventory";
 import { answerInventory } from "./inventory/actions";
+import { stalePrices } from "@/lib/stale-prices";
 
 /** The job's material list: its own project tab, printable with or without prices. */
 export default async function MaterialListPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ plan?: string; prices?: string }> }) {
@@ -30,6 +31,8 @@ export default async function MaterialListPage({ params, searchParams }: { param
   const inContract = !!project.pricesLockedAt || ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"].includes(project.status);
   const askInventory = inContract && !project.inventoryAnswer && stocked > 0;
   const pulledFor = planId ? undefined : Object.fromEntries(pulls);
+  // A locked job keeps its own prices, so the Item List's age doesn't reach it.
+  const stale = project.pricesLockedAt ? undefined : Object.fromEntries(await stalePrices(lines.map((l) => l.materialItemId)));
 
   const base = `/projects/${project.id}/materials`;
   const href = (o: { plan?: string | null; prices?: boolean }) => {
@@ -167,6 +170,7 @@ export default async function MaterialListPage({ params, searchParams }: { param
         total={total}
         showPrices={showPrices}
         pulled={pulledFor}
+        stale={showPrices ? stale : undefined}
         edit={{ projectId: project.id, locked: !!project.pricesLockedAt, substitutions: substitutions.map((s) => ({ fromName: s.fromName, toName: s.toName })) }}
       />
     </div>
