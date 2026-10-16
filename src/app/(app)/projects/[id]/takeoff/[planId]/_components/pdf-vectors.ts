@@ -25,8 +25,10 @@ function mul(m: Matrix, n: Matrix): Matrix {
  * The straight line segments a PDF page draws, in page units (the same space the
  * takeoff stores points in). Returned as [x1, y1, x2, y2, ...]. Curves contribute
  * their end points only (as zero-length segments). Scanned plans have none.
+ * `arcs`, when given, collects the radius of every quarter circle drawn (door swings —
+ * a clue to the sheet's scale).
  */
-export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy): Promise<Float32Array> {
+export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: number[]): Promise<Float32Array> {
   const { OPS } = pdfjs;
   const list = await page.getOperatorList();
   const vt = page.getViewport({ scale: 1 }).transform as Matrix;
@@ -67,9 +69,14 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy): Promise
           if (cur) seg(cur, p);
           cur = p;
         } else if (op === DrawOPS.curveTo) {
-          j += 4;
+          const c1 = tx(data[j++], data[j++]);
+          const c2 = tx(data[j++], data[j++]);
           const p = tx(data[j++], data[j++]);
           if (cur) out.push(cur[0], cur[1], cur[0], cur[1], p[0], p[1], p[0], p[1]);
+          if (cur && arcs) {
+            const r = quarterCircleRadius(cur, c1, c2, p);
+            if (r) arcs.push(r);
+          }
           cur = p;
         } else if (op === DrawOPS.quadraticCurveTo) {
           j += 2;
@@ -86,6 +93,36 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy): Promise
     }
   }
   return new Float32Array(out);
+}
+
+/**
+ * The radius of a curve that's a quarter circle (a door swing), or null. Its center is where the
+ * lines square to the curve at each end cross; both ends must be the same distance from it, a
+ * quarter turn apart.
+ */
+export function quarterCircleRadius(p0: [number, number], c1: [number, number], c2: [number, number], p3: [number, number]): number | null {
+  const n0 = [-(c1[1] - p0[1]), c1[0] - p0[0]];
+  const n3 = [-(p3[1] - c2[1]), p3[0] - c2[0]];
+  const det = -n0[0] * n3[1] + n0[1] * n3[0];
+  if (Math.abs(det) < 1e-9) return null;
+  const dx = p3[0] - p0[0];
+  const dy = p3[1] - p0[1];
+  const s = (-dx * n3[1] + dy * n3[0]) / det;
+  const cx = p0[0] + n0[0] * s;
+  const cy = p0[1] + n0[1] * s;
+  const r0 = Math.hypot(p0[0] - cx, p0[1] - cy);
+  const r3 = Math.hypot(p3[0] - cx, p3[1] - cy);
+  if (!(r0 > 3) || Math.abs(r0 - r3) > 0.05 * r0) return null;
+  const a = [p0[0] - cx, p0[1] - cy];
+  const b = [p3[0] - cx, p3[1] - cy];
+  const turn = Math.abs(Math.atan2(a[0] * b[1] - a[1] * b[0], a[0] * b[0] + a[1] * b[1])) * (180 / Math.PI);
+  return turn > 80 && turn < 100 ? r0 : null;
+}
+
+/** All of a PDF page's own text, as one string (scanned plans, and most CAD plans, have none). */
+export async function pageText(page: PDFPageProxy): Promise<string> {
+  const content = await page.getTextContent();
+  return content.items.map((i) => ("str" in i ? i.str : "")).join(" ");
 }
 
 /** A box around some of the plan's own text, in page units: [left, top, right, bottom]. */

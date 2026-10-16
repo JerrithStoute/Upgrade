@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { extractSegments, extractTextBoxes, type TextBox } from "./pdf-vectors";
+import { extractSegments, extractTextBoxes, pageText, type TextBox } from "./pdf-vectors";
+import type { ScaleClues } from "@/lib/scale-recommend";
 
 const ASSETS = "/api/pdfjs";
 
@@ -77,6 +78,7 @@ export function PlanCanvas({
   onSize,
   onPageCount,
   onVectors,
+  onScaleClues,
   onRendered,
   onText,
   fill = false,
@@ -88,6 +90,8 @@ export function PlanCanvas({
   onSize: (w: number, h: number) => void;
   onPageCount?: (n: number) => void;
   onVectors?: (segments: Float32Array) => void;
+  /** Clues to the sheet's scale (door swings, a scale note in its text), for the recommended scale. */
+  onScaleClues?: (clues: ScaleClues) => void;
   onRendered?: () => void;
   onText?: (boxes: TextBox[]) => void;
   fill?: boolean;
@@ -97,9 +101,9 @@ export function PlanCanvas({
   const [size, setSize] = useState<{ w: number; h: number } | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
-  const callbacks = useRef({ onSize, onPageCount, onVectors, onRendered, onText });
+  const callbacks = useRef({ onSize, onPageCount, onVectors, onRendered, onText, onScaleClues });
   useEffect(() => {
-    callbacks.current = { onSize, onPageCount, onVectors, onRendered, onText };
+    callbacks.current = { onSize, onPageCount, onVectors, onRendered, onText, onScaleClues };
   });
 
   // Load (or share) the document.
@@ -139,10 +143,18 @@ export function PlanCanvas({
         setPage(p);
         setSize({ w: vp.width, h: vp.height });
         callbacks.current.onSize(vp.width, vp.height);
-        if (callbacks.current.onVectors) {
+        if (callbacks.current.onVectors || callbacks.current.onScaleClues) {
+          const arcRadii: number[] = [];
           loadPdfJs()
-            .then((pdfjs) => extractSegments(pdfjs, p))
-            .then((segments) => !cancelled && callbacks.current.onVectors?.(segments))
+            .then((pdfjs) => extractSegments(pdfjs, p, arcRadii))
+            .then(async (segments) => {
+              if (cancelled) return;
+              callbacks.current.onVectors?.(segments);
+              if (callbacks.current.onScaleClues) {
+                const text = await pageText(p).catch(() => "");
+                if (!cancelled) callbacks.current.onScaleClues?.({ arcRadii, text });
+              }
+            })
             .catch(() => !cancelled && callbacks.current.onVectors?.(new Float32Array()));
         }
         if (callbacks.current.onText) {

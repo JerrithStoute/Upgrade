@@ -41,6 +41,7 @@ import {
 } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
 import { LibraryPicker } from "./library-picker";
+import { recommendScale, type ScaleRecommendation } from "@/lib/scale-recommend";
 import { cn, money, num } from "@/lib/utils";
 import {
   CONDITION_TYPES,
@@ -666,6 +667,8 @@ export function PlanViewer({
   const snapOn = useSyncExternalStore(subscribeLabels, readSnap, () => true);
   const [altHeld, setAltHeld] = useState(false);
   const [vectors, setVectors] = useState<Float32Array | null>(null);
+  // The sheet's recommended scale — only marked in the scale list; the contractor picks it (or not).
+  const [scaleRec, setScaleRec] = useState<ScaleRecommendation | null>(null);
   const snapIndex = useMemo(() => (vectors && vectors.length ? buildSnapIndex(vectors) : null), [vectors]);
   const [snapHit, setSnapHit] = useState<SnapHit | null>(null);
   // Editing a selected shape: dragging one point, or the whole shape.
@@ -747,6 +750,7 @@ export function PlanViewer({
     setFitted(false);
     setSheetName(sheet?.name ?? "");
     setVectors(null);
+    setScaleRec(null);
     setSnapHit(null);
     setDrag(null);
     setHistoryCounts({ undo: 0, redo: 0 });
@@ -2977,8 +2981,8 @@ export function PlanViewer({
             >
               <option value="">{unitsPerFoot ? (sheet?.scaleLabel ?? "Custom") : "Set scale…"}</option>
               {PRESET_SCALES.map((s) => (
-                <option key={s.label} value={s.label}>
-                  {s.label}
+                <option key={s.label} value={s.label} title={scaleRec?.label === s.label ? scaleRec.why : undefined}>
+                  {scaleRec?.label === s.label ? `${s.label} — Recommended` : s.label}
                 </option>
               ))}
             </select>
@@ -3274,7 +3278,12 @@ export function PlanViewer({
           </span>
         ) : (
           <span>
-            {unitsPerFoot ? null : <strong className="mr-2 text-amber-700">This sheet has no scale — pick one or calibrate.</strong>}
+            {unitsPerFoot ? null : (
+              <strong className="mr-2 text-amber-700">
+                This sheet has no scale — pick one or calibrate.
+                {scaleRec ? ` The scale list marks ${scaleRec.label} Recommended: ${scaleRec.why} Your call — check a dimension with the Ruler after.` : null}
+              </strong>
+            )}
             {tool === "select" && selected
               ? "Drag a point or the shape to move it · double-click an edge to add a point · double-click a point to curve or straighten it · right-click a point to remove it · Ctrl+C / Ctrl+V / Ctrl+D copy, paste, duplicate · Ctrl+Z undo."
               : tool === "select"
@@ -3783,6 +3792,7 @@ export function PlanViewer({
                     onSize={onSize}
                     onPageCount={plan.kind === "PDF" ? onPageCount : undefined}
                     onVectors={setVectors}
+                    onScaleClues={plan.kind === "PDF" ? (c) => setScaleRec(recommendScale(c)) : undefined}
                   />
                   {compare && prevRev && pairSheet && size ? (
                     <RevisionOverlay
@@ -4485,8 +4495,8 @@ export function PlanViewer({
                     >
                       <option value="">Pick the scale…</option>
                       {PRESET_SCALES.map((x) => (
-                        <option key={x.label} value={x.label}>
-                          {x.label}
+                        <option key={x.label} value={x.label} title={scaleRec?.label === x.label ? scaleRec.why : undefined}>
+                          {scaleRec?.label === x.label ? `${x.label} — Recommended` : x.label}
                         </option>
                       ))}
                     </select>

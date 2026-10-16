@@ -141,6 +141,11 @@ export const TAKEOFF: HelpArticle[] = [
         items: [
           { name: "Scale box", what: "The usual architect and engineer scales, from 1/16\" = 1'-0\" to 1-1/2\" = 1'-0\", and 1\" = 10' to 1\" = 100'. Picking one sets it right away. On picture plans (not PDF) it only shows the scale; use Calibrate." },
           {
+            name: "Recommended",
+            what: "When the program can tell a sheet's scale, it writes **Recommended** next to that scale in the list, and the hint under the toolbar says why. It reads the scale note when the PDF has it as text, or goes by the door swings: doors come in a few widths, and at the right scale they land on them. It's only a suggestion. Nothing is set until you pick it, and when it isn't clear, nothing is marked.",
+            how: "Pick it like any other scale, then check one dimension you know with the **Ruler**.",
+          },
+          {
             name: "Calibrate",
             what: "Sets the scale from a dimension printed on the plan. The most accurate way, and the only way for scanned plans or pictures.",
             how: "Click **Calibrate**, click one end of a long dimension (the longer the better; Shift keeps it straight), click the other end, type the real length in **Feet** and **Inches**, and click **Set scale** (or press Enter). **Redo the line** starts over.",
