@@ -73,8 +73,9 @@ test("each piece sized for its own span; a joist on a wall takes its neighbor's 
       { a: 0.47, b: 1, spanFt: 16, lengthFt: 16 },
     ],
   ];
+  // The joist on the wall takes the size of the piece beside it at the same spot: 2x8, then 2x10.
   assert.deepEqual(sizePieces(pieces, sizeFor), [
-    ["2x8", "2x8"],
+    ["2x8", "2x10"],
     ["2x8", "2x10"],
   ]);
 });
@@ -145,4 +146,27 @@ test("joists ending on different stretches of one jogging wall are different bay
     [{ from: "edge", to: "w", a: 0, b: 0.54 }],
   ];
   assert.deepEqual(bayKeys(split, [["2x6"], ["2x6"], ["2x6"]]), [["edge|w|1"], ["edge|w|2"], ["edge|w|2"]]);
+});
+
+test("a joist lying on a wall is still broken where walls cross it, and each piece takes the size beside it", () => {
+  // A wall along the floor at 4' in (where a joist lies on it) and walls across it at 10' and 20'.
+  const along: [Pt, Pt] = [
+    [-12, 48],
+    [372, 48],
+  ];
+  const { members, pieces } = joistPieces(cond(), shape(floor()), UPF, [along, wallAt(10), wallAt(20)], { keys: ["along", "a", "b"] });
+  const i = members.findIndex(([p]) => Math.abs(p[1] - 48) < 4);
+  assert.ok(i >= 0, "a joist lies on the wall");
+  assert.deepEqual(
+    pieces[i].map((p) => [p.from, p.to, p.spanFt]),
+    [
+      ["edge", "a", 0],
+      ["a", "b", 0],
+      ["b", "edge", 0],
+    ],
+    "broken at the cross walls, no span of its own",
+  );
+  const sizes = sizePieces(pieces, (span) => (span > 9.5 ? "2x8" : "2x6"));
+  const next = i > 0 ? i - 1 : i + 1;
+  assert.deepEqual(sizes[i], sizes[next], "each piece the size of the joist beside it there");
 });

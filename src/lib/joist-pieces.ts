@@ -52,12 +52,15 @@ export function joistPieces(
   const whole: WholeJoist[] = [];
   const pieces = members.map((member) => {
     const len = Math.hypot(member[1][0] - member[0][0], member[1][1] - member[0][1]);
-    // A joist within 4" of a wall running alongside it sits on that wall: no span of its own, one piece.
-    const crossings = memberCrossings(member, supports, opts.keys, (4 / 12) * upf);
+    // A joist within 4" of a wall running alongside it sits on that wall: no span of its own. It's still
+    // broken where the walls across it are, like the joists beside it (so it goes with their bays).
+    const held = memberCrossings(member, supports, opts.keys, (4 / 12) * upf);
+    const onWall = !held;
+    const crossings = held ?? memberCrossings(member, supports, opts.keys, 0);
     const at = crossings?.map((x) => x.at) ?? null;
     const full = (len / upf + overhang) * factor;
     let longest = 0;
-    for (let k = 1; k < (at?.length ?? 0); k++) longest = Math.max(longest, at![k] - at![k - 1]);
+    if (!onWall) for (let k = 1; k < (at?.length ?? 0); k++) longest = Math.max(longest, at![k] - at![k - 1]);
     whole.push({ spanFt: longest / upf, lengthFt: full });
     if (!crossings || !at || !(len > 0)) return [{ a: 0, b: 1, spanFt: 0, lengthFt: full, from: EDGE, to: EDGE }];
     // Breaks that would leave a piece too short to be its own board are left out (the joist runs on),
@@ -74,7 +77,7 @@ export function joistPieces(
       // Its span: the longest stretch between supports within it (a short end it kept adds to its run).
       const inner = at.filter((x) => x >= kept[i].at - 1e-9 && x <= kept[i + 1].at + 1e-9);
       let span = 0;
-      for (let k = 1; k < inner.length; k++) span = Math.max(span, inner[k] - inner[k - 1]);
+      if (!onWall) for (let k = 1; k < inner.length; k++) span = Math.max(span, inner[k] - inner[k - 1]);
       // The walls you run it through, within it.
       const over = crossings.filter((x) => through.has(x.key) && x.at > kept[i].at + 1e-9 && x.at < kept[i + 1].at - 1e-9).map((x) => x.key);
       return { a: kept[i].at / len, b: kept[i + 1].at / len, spanFt: span / upf, lengthFt: (plan + laps + hang) * factor, from: kept[i].key, to: kept[i + 1].key, ...(over.length ? { over } : {}) };
@@ -127,12 +130,18 @@ export function bayKeys(split: Pick<JoistPiece, "from" | "to" | "a" | "b">[][], 
  * Each piece's size from its own span. A joist lying on a wall (no span) takes the size of the
  * joists beside it — the one before, or (at the start) the one after.
  */
-export function sizePieces(pieces: Pick<JoistPiece, "spanFt">[][], sizeFor: (spanFt: number) => string | null): (string | null)[][] {
+export function sizePieces(pieces: (Pick<JoistPiece, "spanFt"> & Partial<Pick<JoistPiece, "a" | "b">>)[][], sizeFor: (spanFt: number) => string | null): (string | null)[][] {
   const sizes: (string | null | undefined)[][] = pieces.map((row) => row.map((p) => (p.spanFt > 0 ? sizeFor(p.spanFt) : undefined)));
-  const known = (row: (string | null | undefined)[]) => row.find((x) => x !== undefined);
-  for (let i = 0; i < sizes.length; i++) if (sizes[i].some((x) => x === undefined) && i > 0) sizes[i] = sizes[i].map((x) => (x === undefined ? known(sizes[i - 1]) : x));
-  for (let i = sizes.length - 1; i >= 0; i--)
-    if (sizes[i].some((x) => x === undefined)) sizes[i] = sizes[i].map((x) => (x === undefined ? (i + 1 < sizes.length ? known(sizes[i + 1]) : undefined) ?? sizeFor(0) : x));
+  // The size of the piece beside it in another joist: the one at the same spot along the joist, else the first known.
+  const beside = (k: number, p: (typeof pieces)[number][number]) => {
+    const row = sizes[k];
+    if (!row) return undefined;
+    const mid = p.a != null && p.b != null ? (p.a + p.b) / 2 : null;
+    const j = mid == null ? -1 : pieces[k].findIndex((q) => q.a != null && q.b != null && q.a <= mid && mid <= q.b);
+    return (j >= 0 ? row[j] : undefined) ?? row.find((x) => x !== undefined);
+  };
+  for (let i = 0; i < sizes.length; i++) if (i > 0) sizes[i] = sizes[i].map((x, j) => (x === undefined ? beside(i - 1, pieces[i][j]) : x));
+  for (let i = sizes.length - 1; i >= 0; i--) sizes[i] = sizes[i].map((x, j) => (x === undefined ? beside(i + 1, pieces[i][j]) ?? sizeFor(0) : x));
   return sizes as (string | null)[][];
 }
 
