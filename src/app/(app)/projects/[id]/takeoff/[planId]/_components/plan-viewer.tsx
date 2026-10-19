@@ -36,6 +36,8 @@ import {
   ChevronDown,
   GripVertical,
   WandSparkles,
+  PaintBucket,
+  Scissors,
   Eraser,
   Library,
 } from "lucide-react";
@@ -76,8 +78,9 @@ import {
 } from "@/lib/takeoff";
 import { PlanCanvas, renderSheetGray } from "./plan-canvas";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
-import { FoundWalls, WallFindPanel, type WallFind } from "./wall-find";
+import { drawnStud } from "./wall-find";
 import { findWalls } from "@/lib/wall-detect";
+import { findRoom, splitOutline } from "@/lib/room-detect";
 import { areaJoists, bayAt, bayOutline, breakAt, joistGroupText, memberAt, pieceLine, throughAt } from "./joist-labels";
 import type { MemberPiece } from "@/lib/joist-pieces";
 import { searchSheet } from "./symbol-search";
@@ -173,7 +176,7 @@ type ViewerMeasurement = {
   pending?: boolean;
 };
 
-type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount" | "findwalls";
+type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount" | "findwalls" | "findarea";
 
 /** A takeoff in your templates (the Library), to pull onto the job. */
 export type LibraryTakeoff = { id: string; name: string; type: string; color: string; template: string; templateId: string; items: number };
@@ -309,7 +312,9 @@ type HistoryEntry =
   | { kind: "deleteMany"; label: string; ids: string[]; data: ShapeData[] }
   // Many shapes added at once (Find walls), undone together.
   | { kind: "addMany"; label: string; ids: string[]; data: ShapeData[] }
-  | { kind: "updateMany"; label: string; changes: { id: string; before: ShapePatch; after: ShapePatch }[] };
+  | { kind: "updateMany"; label: string; changes: { id: string; before: ShapePatch; after: ShapePatch }[] }
+  // One shape swapped for others (an area split in two), undone together.
+  | { kind: "replace"; label: string; removedIds: string[]; removed: ShapeData[]; addedIds: string[]; added: ShapeData[] };
 
 // Totals / Material list panel: which view is open ("" = closed), remembered per browser.
 const PANEL_KEY = "takeoff.panel";
@@ -587,13 +592,17 @@ export function PlanViewer({
   const [hoverBay, setHoverBay] = useState<string | null>(null);
   // The little control on the plan where you clicked a joist area: a bay's size, or a break (joist-chip.tsx).
   const [chip, setChip] = useState<(ChipState & { id: string }) | null>(null);
+  // A picked area: its ✂ Split chip at the click; then splitting it — the line's first end, once clicked.
+  const [areaChip, setAreaChip] = useState<{ id: string; at: Pt } | null>(null);
+  const [splitting, setSplitting] = useState<{ id: string; a: Pt | null } | null>(null);
   // The length of the member under the mouse (a rafter, hip, beam, wall…) — a small tag that follows it.
   const [hoverTip, setHoverTip] = useState<{ text: string; at: Pt } | null>(null);
   const pressAt = useRef<[number, number] | null>(null);
   useEffect(() => {
     if (bays && bays.id !== selectedId) setBays(null);
     if (chip && chip.id !== selectedId) setChip(null);
-  }, [bays, chip, selectedId]);
+    if (areaChip && areaChip.id !== selectedId) setAreaChip(null);
+  }, [bays, chip, areaChip, selectedId]);
   // Several shapes at once (drag a box, or Shift+click). One shape picked is `selectedId` (it can be edited).
   const [multi, setMulti] = useState<string[]>([]);
   const [boxSel, setBoxSel] = useState<{ a: Pt; b: Pt; add: boolean } | null>(null);
@@ -719,7 +728,6 @@ export function PlanViewer({
   // Auto-count: the search under way / under review, and the box being dragged around a sample symbol.
   const [auto, setAuto] = useState<AutoCount | null>(null);
   // Find walls: what one click found (on this sheet), to review before adding.
-  const [wallFind, setWallFind] = useState<WallFind | null>(null);
   // "+ New takeoff like this…" for the selected shape: the name being typed.
   const [newLike, setNewLike] = useState<{ id: string; name: string } | null>(null);
   // …and for several shapes picked together: the name being typed (null = not asking).
@@ -1310,6 +1318,41 @@ export function PlanViewer({
     });
   };
 
+  /** Splits a picked area in two along the line a–b (Find area found two rooms as one, say). */
+  const splitArea = (id: string, a: Pt, b: Pt) => {
+    const m = shapes.find((x) => x.id === id);
+    const data = m ? shapeData(m) : null;
+    if (!m || !data) return setSplitting(null);
+    const parts = splitOutline(m.points, a, b);
+    if (!parts) return setError("That line doesn't cross the area — click on one side of it, then the other, across where it should split.");
+    setError(null);
+    setSplitting(null);
+    const added = parts.map((pts) => ({ ...data, points: pts, arcs: [] }));
+    setRemoving((r) => new Set(r).add(id));
+    const temps = added.map((d) => ({ ...d, id: `pending-${Math.random().toString(36).slice(2)}`, pending: true }));
+    setPending((p) => [...p, ...temps]);
+    startTransition(async () => {
+      try {
+        await deleteMeasurements({ projectId, ids: [id] });
+        const { ids } = await createShapes({ projectId, shapes: added });
+        const real = new Map(temps.map((t, i) => [t.id, ids[i]]));
+        setPending((p) => p.filter((x) => x.id !== id).map((x) => (real.has(x.id) ? { ...x, id: real.get(x.id)!, pending: false } : x)));
+        record({ kind: "replace", label: "a split", removedIds: [id], removed: [data], addedIds: ids, added });
+        setSelectedId(null);
+        setFlash("Split in two — click either part to delete it or change it");
+      } catch (e) {
+        const gone = new Set(temps.map((t) => t.id));
+        setPending((p) => p.filter((x) => !gone.has(x.id)));
+        setRemoving((r) => {
+          const n = new Set(r);
+          n.delete(id);
+          return n;
+        });
+        setError(e instanceof Error ? e.message : "Could not split the area");
+      }
+    });
+  };
+
   const save = useCallback(
     (cond: ViewerCondition, points: Pt[], framingAngle?: number, arcs: number[] = []) => {
       if (!sheet) return;
@@ -1690,6 +1733,16 @@ export function PlanViewer({
           setFlash(`${direction === "undo" ? "Undid" : "Redid"} ${entry.label}`);
           return;
         }
+        if (entry.kind === "replace") {
+          // Undo: the new shapes go, the old one comes back. Redo: the other way.
+          const [goIds, back, backIds] = direction === "undo" ? [entry.addedIds, entry.removed, entry.removedIds] : [entry.removedIds, entry.added, entry.addedIds];
+          await deleteMeasurements({ projectId, ids: goIds.map(resolveId) });
+          const { ids } = await createShapes({ projectId, shapes: back });
+          backIds.forEach((old, i) => idMap.current.set(resolveId(old), ids[i]));
+          (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
+          setFlash(`${direction === "undo" ? "Undid" : "Redid"} ${entry.label}`);
+          return;
+        }
         if (entry.kind === "updateMany") {
           for (const ch of entry.changes) await updateMeasurement({ projectId, id: resolveId(ch.id), ...(direction === "undo" ? ch.before : ch.after) });
           (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
@@ -1830,10 +1883,9 @@ export function PlanViewer({
           stopAuto();
           setTool("measure");
         }
-        if (tool === "findwalls") {
-          if (wallFind) setWallFind(null);
-          else setTool("measure");
-        }
+        if (tool === "findwalls" || tool === "findarea") setTool("measure");
+        setSplitting(null);
+        setAreaChip(null);
         setAligning(null);
         resetDraft();
         setCalib([]);
@@ -2040,7 +2092,7 @@ export function PlanViewer({
       const hit = magnet(raw);
       setSnapHit(hit);
       setCursor(hit?.point ?? raw);
-    } else if (dirFor) setCursor(raw);
+    } else if (dirFor || splitting) setCursor(raw);
   };
 
   const onPointerUp = () => {
@@ -2126,6 +2178,12 @@ export function PlanViewer({
       return;
     }
     if (panning) return;
+    if (splitting) {
+      const p = toPage(e.clientX, e.clientY);
+      if (!splitting.a) setSplitting({ ...splitting, a: p });
+      else splitArea(splitting.id, splitting.a, p);
+      return;
+    }
     if (upperPlacing) {
       // Double-click sets it where it is.
       if (e.detail >= 2) {
@@ -2168,7 +2226,6 @@ export function PlanViewer({
       if (!vectors || !vectors.length) return setError("This sheet has no line work to read (a scanned plan?) — walls can't be found here. Trace them with Measure.");
       const r = findWalls(vectors, toPage(e.clientX, e.clientY), { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom });
       if (!r.ok) {
-        setWallFind(null);
         return setError(
           r.reason === "no-line"
             ? "No line there — click right on one of the wall's lines."
@@ -2178,15 +2235,38 @@ export function PlanViewer({
         );
       }
       setError(null);
-      setWallFind({
-        conditionId: active.id,
-        thicknessIn: r.thicknessIn,
-        kind: r.kind,
-        openings: r.openings,
-        runs: r.runs,
-        lengthsFt: r.runs.map((run) => run.slice(1).reduce((sum, pt, i) => sum + dist(pt, run[i]), 0) / unitsPerFoot),
-        off: [],
-      });
+      // Added right away — each wall on its own, undone together (Ctrl+Z); click one + Delete to drop it.
+      createMany(
+        r.runs.map((run) => shapeFor(active, sheet.id, run as Pt[])),
+        `adding ${r.runs.length} walls`,
+      );
+      // Drawn a different size than this takeoff (2x6 walls, a 2x4 takeoff): said, so it can be undone.
+      const drawnAs = drawnStud(r.thicknessIn);
+      const takeoffStud = active.memberSize?.match(/2\s*x\s*(4|6|8|10|12)/i)?.[1];
+      const mismatch = drawnAs && takeoffStud && drawnAs !== `2x${takeoffStud}` ? ` — drawn like ${drawnAs}, this takeoff is ${active.memberSize}. Wrong takeoff? Ctrl+Z` : "";
+      setFlash(`Added ${r.runs.length} ${r.kind} wall${r.runs.length === 1 ? "" : "s"} · ${num(r.lengthFt)} lf${mismatch}`);
+      return;
+    }
+    if (tool === "findarea") {
+      // One click in a room: its floor, to the inside of the walls, added right away (room-detect).
+      if (!active || !sheet) return;
+      if (!unitsPerFoot) return setError("Set this sheet's scale before finding areas.");
+      if (!vectors || !vectors.length) return setError("This sheet has no line work to read (a scanned plan?) — areas can't be found here. Trace them with Measure.");
+      const r = findRoom(vectors, toPage(e.clientX, e.clientY), { unitsPerFoot });
+      if (!r.ok) {
+        return setError(
+          r.reason === "in-wall"
+            ? "That's on a wall — click inside the room."
+            : r.reason === "open"
+              ? "No closed-in room there — it runs out to the outside. Click inside a room, or trace it with Measure."
+              : r.reason === "too-small"
+                ? "Nothing there to measure — click inside the room."
+                : "Set this sheet's scale before finding areas.",
+        );
+      }
+      setError(null);
+      createShape(shapeFor(active, sheet.id, r.outline));
+      setFlash(`${deduct ? "Deducted" : "Added"} ${num(r.areaSf)} sf — Ctrl+Z to take it back; click it for ✂ Split`);
       return;
     }
     if (tool === "select") {
@@ -2274,7 +2354,7 @@ export function PlanViewer({
   const calibLength = (Number(calibFeet) || 0) + (Number(calibInches) || 0) / 12;
   // Measuring (or finding walls) on a sheet with no scale: stop and ask first — nothing drawn would
   // get a length or area. Counts, doors and windows don't need one. "Draw anyway" lets you go on.
-  const needsScale = !!sheet && !unitsPerFoot && !!active && !isCountType(active.type) && (tool === "measure" || tool === "findwalls") && !scaleSkipped.includes(sheet.id);
+  const needsScale = !!sheet && !unitsPerFoot && !!active && !isCountType(active.type) && (tool === "measure" || tool === "findwalls" || tool === "findarea") && !scaleSkipped.includes(sheet.id);
   const presetValue = PRESET_SCALES.find((s) => sheet?.unitsPerFoot && Math.abs(s.paperInchesPerFoot * PDF_UNITS_PER_INCH - sheet.unitsPerFoot) < 1e-6)?.label ?? "";
 
   // --- Live readout -----------------------------------------------------------------------
@@ -2359,7 +2439,7 @@ export function PlanViewer({
       ? edgePick && hoverEdge !== null
         ? "cursor-pointer"
         : "cursor-default"
-      : tool === "measure" || tool === "calibrate" || tool === "ruler" || tool === "autocount" || tool === "findwalls"
+      : tool === "measure" || tool === "calibrate" || tool === "ruler" || tool === "autocount" || tool === "findwalls" || tool === "findarea"
         ? "cursor-crosshair"
         : "cursor-default";
 
@@ -2637,6 +2717,13 @@ export function PlanViewer({
         setHoverTip(null);
       },
       onClick: (e: React.MouseEvent) => {
+        if (splitting && !panning) {
+          e.stopPropagation();
+          const p = toPage(e.clientX, e.clientY);
+          if (!splitting.a) setSplitting({ ...splitting, a: p });
+          else splitArea(splitting.id, splitting.a, p);
+          return;
+        }
         if (tool !== "select" || panning || dirFor) return;
         e.stopPropagation();
         const still0 = !pressAt.current || Math.hypot(e.clientX - pressAt.current[0], e.clientY - pressAt.current[1]) < 5;
@@ -2669,6 +2756,8 @@ export function PlanViewer({
         if (e.shiftKey) return selectSet(picked.includes(m.id) ? picked.filter((x) => x !== m.id) : [...picked, m.id]);
         setMulti([]);
         setSelectedId(m.id);
+        // An area: ✂ Split, right where it was clicked.
+        if (c.type === "AREA" && still && !m.pending) setAreaChip({ id: m.id, at: toPage(e.clientX, e.clientY) });
       },
       onDoubleClick: (e: React.MouseEvent) => {
         // Double-click a wall the picked joist area's joists run through (the wall may be drawn on top): broken there again.
@@ -3293,7 +3382,6 @@ export function PlanViewer({
             <ToolButton
               active={tool === "findwalls"}
               onClick={() => {
-                setWallFind(null);
                 if (tool === "findwalls") setTool("measure");
                 else {
                   setTool("findwalls");
@@ -3305,6 +3393,23 @@ export function PlanViewer({
               title="Find walls — click one wall and it finds the walls connected to it (plans made in CAD)"
             >
               <WandSparkles className="h-3.5 w-3.5" /> Find walls
+            </ToolButton>
+          ) : null}
+          {active && active.type === "AREA" && !superseded ? (
+            <ToolButton
+              active={tool === "findarea"}
+              onClick={() => {
+                if (tool === "findarea") setTool("measure");
+                else {
+                  setTool("findarea");
+                  setSelectedId(null);
+                  resetDraft();
+                  showTakeoff(active.id);
+                }
+              }}
+              title="Find area — click inside a room and its floor is added, to the inside of the walls (plans made in CAD)"
+            >
+              <PaintBucket className="h-3.5 w-3.5" /> Find area
             </ToolButton>
           ) : null}
           {active && (active.type === "AREA" || active.type === "LINEAR") ? (
@@ -3451,8 +3556,13 @@ export function PlanViewer({
           </span>
         ) : tool === "findwalls" ? (
           <span>
-            <strong className="font-medium text-slate-800">Find walls{active ? ` · ${active.name}` : ""}:</strong> click right on a line of a wall. Found walls light up — click one
-            to leave it out, then Add. Esc = {wallFind ? "clear" : "stop"}.
+            <strong className="font-medium text-slate-800">Find walls{active ? ` · ${active.name}` : ""}:</strong> click a wall — it and the walls connected to it are added. Ctrl+Z
+            takes them back; pick one and Delete to drop it. Esc = stop.
+          </span>
+        ) : tool === "findarea" ? (
+          <span>
+            <strong className="font-medium text-slate-800">Find area{active ? ` · ${active.name}` : ""}:</strong> click inside a room — its floor is added, to the inside of the walls.
+            Ctrl+Z takes it back. Two rooms came as one? Pick it, then ✂ Split. Esc = stop.
           </span>
         ) : tool === "autocount" ? (
           <span>
@@ -4090,13 +4200,11 @@ export function PlanViewer({
                             </g>
                           ))
                         : null}
-                      {tool === "findwalls" && wallFind && active && wallFind.conditionId === active.id ? (
-                        <FoundWalls
-                          find={wallFind}
-                          color={active.color}
-                          zoom={zoom}
-                          onToggle={(i) => setWallFind((w) => w && { ...w, off: w.off.includes(i) ? w.off.filter((x) => x !== i) : [...w.off, i] })}
-                        />
+                      {splitting?.a && cursor ? (
+                        <g pointerEvents="none">
+                          <line x1={splitting.a[0]} y1={splitting.a[1]} x2={cursor[0]} y2={cursor[1]} stroke="#0f172a" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
+                          <circle cx={splitting.a[0]} cy={splitting.a[1]} r={4 / zoom} fill="#0f172a" />
+                        </g>
                       ) : null}
                       {autoOn && autoPlan ? (
                         <FoundMarkers
@@ -4390,6 +4498,27 @@ export function PlanViewer({
                     </svg>
                   ) : null}
                   {chip && size ? renderChip() : null}
+                  {areaChip && size && !splitting && tool === "select" ? (
+                    <div
+                      className="absolute z-20"
+                      style={{ left: areaChip.at[0] * zoom, top: areaChip.at[1] * zoom, transform: `rotate(${-rotation}deg) translate(-50%, calc(-100% - 10px))`, transformOrigin: "0 0" }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="flex h-7 items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-lg hover:bg-slate-50"
+                        title="Split this area in two: click one side, then the other, across where it should split"
+                        onClick={() => {
+                          setSplitting({ id: areaChip.id, a: null });
+                          setAreaChip(null);
+                          setFlash("Split: click one side of the area, then the other — across where it splits. Esc = cancel.");
+                        }}
+                      >
+                        <Scissors className="h-3.5 w-3.5" /> Split
+                      </button>
+                    </div>
+                  ) : null}
                   {hoverTip && size && !chip ? (
                     <div
                       className="pointer-events-none absolute z-20 whitespace-nowrap rounded bg-slate-900/90 px-1.5 py-0.5 text-xs font-medium text-white shadow"
@@ -4473,22 +4602,6 @@ export function PlanViewer({
                 }
               }}
               onClose={() => setForward(false)}
-            />
-          ) : null}
-          {tool === "findwalls" && active ? (
-            <WallFindPanel
-              find={wallFind && wallFind.conditionId === active.id ? wallFind : null}
-              conditionName={active.name}
-              studSize={active.memberSize}
-              onAdd={() => {
-                if (!wallFind) return;
-                // Each wall saved on its own, like a wall you traced (undo, materials, estimate all as usual).
-                const keep = wallFind.runs.filter((_, i) => !wallFind.off.includes(i));
-                if (sheet) createMany(keep.map((run) => shapeFor(active, sheet.id, run)), `adding ${keep.length} walls`);
-                setFlash(`Added ${keep.length} wall${keep.length === 1 ? "" : "s"}`);
-                setWallFind(null);
-              }}
-              onClear={() => setWallFind(null)}
             />
           ) : null}
           {autoOn && autoPlan && active ? (

@@ -144,6 +144,45 @@ function brickBumpHouse() {
   return segs;
 }
 
+/**
+ * A 40' × 30' house drawn the way some CAD plans hatch their walls (1 unit = 1 inch): the stud space
+ * itself is filled with slanted hatching, like brick. Outside walls: drywall ½" in, a hatched stud
+ * space (`stud` deep: 3½" for 2x4, 5½" for 2x6…), sheathing (two lines) outside, an air space, then a
+ * hatched 3½" brick band with a bare outer face. An inside wall up the middle: a hatched 3½" stud space
+ * with drywall both sides.
+ */
+function hatchedHouse(stud = 3.5) {
+  const segs: number[] = [];
+  const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+  // A rectangle d outside the stud faces (0…480 × 0…360); negative = inside.
+  const rect = (d: number) => {
+    line(-d, -d, 480 + d, -d);
+    line(480 + d, -d, 480 + d, 360 + d);
+    line(480 + d, 360 + d, -d, 360 + d);
+    line(-d, 360 + d, -d, -d);
+  };
+  // Hatching between two rectangles (outer > inner offsets), a stroke every 1½".
+  const hatch = (inner: number, outer: number) => {
+    const w = outer - inner;
+    for (let x = -inner; x + w <= 480 + inner; x += 1.5) {
+      line(x, -inner, x + w, -outer);
+      line(x, 360 + inner, x + w, 360 + outer);
+    }
+    for (let y = -inner; y + w <= 360 + inner; y += 1.5) {
+      line(-inner, y, -outer, y + w);
+      line(480 + inner, y, 480 + outer, y + w);
+    }
+  };
+  for (const d of [-stud - 0.5, -stud, 0, 0.5, 1, 2.25, 5.75]) rect(d);
+  hatch(-stud, 0); // the stud space
+  hatch(2.25, 5.75); // the brick
+  // The inside wall up the middle: drywall, a hatched stud space, drywall.
+  const [top, bottom] = [stud + 0.5, 360 - stud - 0.5];
+  for (const x of [237.5, 238, 241.5, 242]) line(x, top, x, bottom);
+  for (let y = top; y + 3.5 <= bottom; y += 1.5) line(238, y, 241.5, y + 3.5);
+  return segs;
+}
+
 const runLength = (runs: Pt[][]) => runs.reduce((sum, r) => sum + r.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - r[i][0], p[1] - r[i][1]), 0), 0);
 
 describe("wall finder", () => {
@@ -318,6 +357,53 @@ describe("wall finder", () => {
     assert.ok(r.ok);
     assert.equal(r.thicknessIn, 5.5);
     assert.ok(Math.abs(r.lengthFt - 6) < 0.1, `length ${r.lengthFt}`);
+  });
+
+  it("on a plan that hatches its walls, the hatched stud space is the wall and the brick isn't — 2x4 to 2x10 (O'Quinn)", () => {
+    for (const stud of [3.5, 5.5, 7.25, 9.25]) {
+      // Clicked on the brick's outer face, the sheathing, the drywall, or right in the hatched band
+      // (where the wall shows — among the strokes): the same four outside walls.
+      for (const click of [
+        [100, -5.75],
+        [100, -1],
+        [100, stud + 0.5],
+        [480.5, 200],
+        [100, stud / 2],
+        [-stud / 2, 200],
+      ] as Pt[]) {
+        const r = findWalls(hatchedHouse(stud), click, opts);
+        assert.ok(r.ok, `${stud}" stud, click ${click}`);
+        assert.equal(r.kind, "exterior", `${stud}" stud, click ${click}`);
+        assert.equal(r.thicknessIn, stud);
+        assert.equal(r.runs.length, 4);
+        // On the stud space's center line: 2 × ((40' − stud) + (30' − stud)).
+        const want = (2 * (480 - stud + 360 - stud)) / 12;
+        assert.ok(Math.abs(r.lengthFt - want) < 0.1, `${stud}" stud, click ${click}: found ${r.lengthFt} ft, want ${want}`);
+        assert.ok(r.runs.every((run) => run.every(([x, y]) => x > 0 && y > 0 && x < 480 && y < 360)));
+      }
+    }
+    // The inside wall is a wall too — by itself, clicked on its drywall or in its hatching.
+    for (const click of [
+      [242, 100],
+      [239.75, 150],
+    ] as Pt[]) {
+      const r = findWalls(hatchedHouse(), click, opts);
+      assert.ok(r.ok, `click ${click}`);
+      assert.equal(r.kind, "interior");
+      assert.equal(r.thicknessIn, 3.5);
+      assert.equal(r.runs.length, 1);
+    }
+  });
+
+  it("a plan that only hatches its brick isn't read as hatching its walls", () => {
+    // The brick band near the click has a bare outer face: the walls are found the usual way.
+    // (Clicked in the brick's hatching: the wall behind it, as always.)
+    const r = findWalls(layeredHouse(), [483, 200], opts);
+    assert.ok(r.ok);
+    assert.equal(r.kind, "exterior");
+    assert.equal(r.thicknessIn, 3.5);
+    assert.equal(r.runs.length, 4);
+    assert.ok(Math.abs(r.lengthFt - 1666 / 12) < 0.1, `found ${r.lengthFt} ft`);
   });
 
   it("says why when there's nothing to find", () => {

@@ -5,7 +5,9 @@
  * units. A wall on a plan is two parallel lines its thickness apart. From the line
  * you click it finds that partner (the wall's thickness), then every other pair of
  * parallel lines the same thickness apart. Then:
- *  - a band of the same thickness filled with hatching is brick veneer, not a wall;
+ *  - a band of the same thickness filled with hatching is brick veneer, not a wall — unless the
+ *    plan fills its walls' stud space with hatching too: then the band with layered faces
+ *    (drywall, sheathing) is the wall, and the one with a bare outside face is the brick;
  *  - each wall is exterior or interior: an exterior wall has a skin along one side —
  *    brick, or siding/sheathing lines running close alongside — an interior wall is
  *    the same on both sides. Only walls of the kind you clicked are kept;
@@ -193,7 +195,82 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     return n >= 4 && n >= len / upf;
   };
 
-  // 1. The line clicked, and the wall's thickness there. Look straight across the wall where you
+  // Hatching: a row of short strokes alike, side by side — brick, or (on some plans) the stud space itself.
+  const inHatchRow = (l: Line) => {
+    const len = l.s1 - l.s0;
+    if (len > 2 * upf) return false;
+    const [mx, my] = [(l.x1 + l.x2) / 2, (l.y1 + l.y2) / 2];
+    let like = 0;
+    for (const m of strokesNear(mx, my, mx, my))
+      if (m !== l && near(bucketOf(m.ang), bucketOf(l.ang)) && Math.abs(m.s1 - m.s0 - len) < 0.5 * inch && Math.abs(m.rho - l.rho) >= 0.3 * inch && ++like >= 3) return true;
+    return false;
+  };
+
+  // 1a. On a plan that hatches its walls' stud space, the hatching shows where the wall is, whatever line
+  // the click lands on (a stroke, a window's line, a jamb — you click the hatched band you see). Each
+  // hatch stroke near the click runs face to face across its band; the nearest band with layered faces
+  // on both sides (drywall, sheathing) is the wall. Brick's outside face is a bare line, so a plan that
+  // only hatches its brick never gets here.
+  const R = 4 * upf;
+  const nearby = strokesNear(click[0] - R, click[1] - R, click[0] + R, click[1] + R)
+    .map((l) => ({ l, d: distToSeg(click[0], click[1], l) }))
+    .filter((x) => x.d <= R)
+    .sort((x, y) => x.d - y.d);
+  // The walls' directions here: the long lines around the click.
+  const dirs: number[] = [];
+  for (const [k, list] of buckets) {
+    let len = 0;
+    for (const l of list) if (l.s1 - l.s0 >= 2 * upf && distToSeg(click[0], click[1], l) <= R) len += l.s1 - l.s0;
+    if (len >= 4 * upf && !dirs.some((a) => near(bucketOf(a), k))) dirs.push(list[0].ang);
+  }
+  // The face through a point, in direction ang (a long line that way passing within a hair of it).
+  const faceAt = (ang: number, x: number, y: number) => {
+    const f = toLine(0, 0, Math.cos(ang), Math.sin(ang))!;
+    const rho = x * f.nx + y * f.ny;
+    const s = x * f.ux + y * f.uy;
+    for (const m of parallelIn(buckets, f.ang, rho - 0.3 * inch, rho + 0.3 * inch)) if (m.s1 - m.s0 >= upf && m.s0 <= s + 0.3 * inch && m.s1 >= s - 0.3 * inch) return { f, rho, s };
+    return null;
+  };
+  // Lines bunched at a face, going out from it (a line drawn twice over counted once): its layers.
+  const layersOut = (ang: number, rho: number, s: number, dir: number) => {
+    const offs = new Set<number>();
+    const [lo, hi] = dir > 0 ? [rho - 0.2 * inch, rho + 3 * inch] : [rho - 3 * inch, rho + 0.2 * inch];
+    for (const m of parallelIn(buckets, ang, lo, hi)) if (m.s1 - m.s0 >= 6 * inch && m.s0 <= s && m.s1 >= s) offs.add(Math.round(((m.rho - rho) * dir) / (0.1 * inch)));
+    const o = [...offs].sort((a, b) => a - b);
+    let n = o.length ? 1 : 0;
+    for (let k = 1; k < o.length && o[k] - o[k - 1] <= 11; k++) n++;
+    return n;
+  };
+  // (A band the click is inside beats a nearer one it isn't: past a window's end, the wall's own hatching.)
+  let band: { t: number; ang: number } | null = null;
+  let inside = false;
+  let looked = 0;
+  for (const { l } of nearby) {
+    if (inside || !dirs.length || looked > 300 || !inHatchRow(l)) continue;
+    looked++;
+    for (const ang of dirs) {
+      // Hatching runs on a slant; square-across strokes are wall ends, jambs, joints.
+      const slant = Math.abs(Math.sin(l.ang - ang));
+      if (slant < Math.sin(20 * DEG) || slant > Math.sin(75 * DEG)) continue;
+      const a = faceAt(ang, l.x1, l.y1);
+      const b = faceAt(ang, l.x2, l.y2);
+      if (!a || !b) continue;
+      const t = Math.abs(b.rho - a.rho);
+      if (t < tMin || t > tMax) continue;
+      const [lo, hi] = a.rho < b.rho ? [a.rho, b.rho] : [b.rho, a.rho];
+      const s = (a.s + b.s) / 2;
+      if (Math.min(layersOut(a.f.ang, lo, s, -1), layersOut(a.f.ang, hi, s, 1)) < 2) continue;
+      const c = click[0] * a.f.nx + click[1] * a.f.ny;
+      const isIn = c >= lo - 0.5 * inch && c <= hi + 0.5 * inch;
+      if (!band || isIn) band = { t, ang: a.f.ang };
+      if (isIn) {
+        inside = true;
+        break;
+      }
+    }
+  }
+
+  // 1b. Otherwise, the line clicked, and the wall's thickness there. Look straight across the wall where you
   // clicked: its lines come in bunches (each face's layers — drywall, sheathing, siding), and
   // the wall is the open gap between two bunches, the stud space. Whichever of its lines you
   // click — the siding, the drywall, the brick — it's the same gap. A hatched gap is brick.
@@ -207,78 +284,116 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
       clicked = l;
     }
   }
-  if (!clicked) return { ok: false, reason: "no-line" };
-  const cs = click[0] * clicked.ux + click[1] * clicked.uy;
-  const across: number[] = [];
-  for (const l of parallelIn(buckets, clicked.ang, clicked.rho - 2 * tMax, clicked.rho + 2 * tMax))
-    if (l.s1 - l.s0 >= 6 * inch && l.s0 <= cs + inch && l.s1 >= cs - inch) across.push(l.rho - clicked.rho);
-  across.sort((a, b) => a - b);
-  const bunches: [number, number][] = [];
-  for (const o of across) {
-    const c = bunches[bunches.length - 1];
-    if (c && o - c[1] <= 1.1 * inch) c[1] = o;
-    else bunches.push([o, o]);
-  }
-  // Walk out from the bunch you clicked, each way, to the first gap a wall's thickness wide.
-  // Brick on the way means you clicked the veneer: the wall is the one behind it.
-  const mineAt = bunches.findIndex((c) => c[0] <= 0 && c[1] >= 0);
-  // Clicked past the end of the line (it's the nearest, but doesn't reach across here): no wall.
-  if (mineAt < 0) return { ok: false, reason: "no-wall" };
-  const probe = (lo: number, hi: number): Piece => ({
-    bucket: bucketOf(clicked.ang),
-    ang: clicked.ang,
-    ux: clicked.ux,
-    uy: clicked.uy,
-    nx: clicked.nx,
-    ny: clicked.ny,
-    rho: clicked.rho + (lo + hi) / 2,
-    s0: Math.max(clicked.s0, cs - 2 * upf),
-    s1: Math.min(clicked.s1, cs + 2 * upf),
-    open: 0,
-  });
-  // The gap between bunch k and the next one out (null: none).
-  const gapAt = (k: number, dir: number) => {
-    if (k + dir < 0 || k + dir >= bunches.length) return null;
-    const [lo, hi] = dir > 0 ? [bunches[k][1], bunches[k + 1][0]] : [bunches[k - 1][1], bunches[k][0]];
-    return { lo, hi, t: hi - lo, from: dir > 0 ? lo : -hi };
-  };
-  const sides = [-1, 1].map((dir) => {
-    let brick = false;
-    for (let k = mineAt; gapAt(k, dir); k += dir) {
-      const { lo, hi, t, from } = gapAt(k, dir)!;
-      if (from > tMax) break;
-      if (t < tMin || t > tMax) continue;
-      if (hatched(probe(lo, hi), t / 2)) {
-        brick = true;
-        continue;
+  if (!clicked && !band) return { ok: false, reason: "no-line" };
+  let pick: { t: number; from: number; brick: boolean } | null | undefined = null;
+  let poche = false;
+  const wallAng = band ? band.ang : clicked!.ang;
+  if (band) {
+    pick = { t: band.t, from: 0, brick: true };
+    poche = true;
+  } else if (clicked) {
+    const cs = click[0] * clicked.ux + click[1] * clicked.uy;
+    const across: number[] = [];
+    for (const l of parallelIn(buckets, clicked.ang, clicked.rho - 2 * tMax, clicked.rho + 2 * tMax))
+      if (l.s1 - l.s0 >= 6 * inch && l.s0 <= cs + inch && l.s1 >= cs - inch) across.push(l.rho - clicked.rho);
+    across.sort((a, b) => a - b);
+    const bunches: [number, number][] = [];
+    // How many lines each bunch has (a line drawn twice over is one): a face's layers.
+    const bunchLayers: Set<number>[] = [];
+    for (const o of across) {
+      const c = bunches[bunches.length - 1];
+      if (c && o - c[1] <= 1.1 * inch) {
+        c[1] = o;
+        bunchLayers[bunchLayers.length - 1].add(Math.round(o / (0.1 * inch)));
+      } else {
+        bunches.push([o, o]);
+        bunchLayers.push(new Set([Math.round(o / (0.1 * inch))]));
       }
-      // A thin band (under 2½") with a wall-wide gap right past it: stone (or another veneer) drawn
-      // as an outline off the wall's face — the wall is the gap behind it, like brick.
-      const next = gapAt(k + dir, dir);
-      if (t < VENEER_MAX * inch && next && next.t >= VENEER_MAX * inch && next.t <= tMax) {
-        brick = true;
-        continue;
-      }
-      return { t, from, brick };
     }
-    return null;
-  });
-  // A thin band one way (under 2½") and a wall-wide gap the other: the thin one is a veneer (stone
-  // drawn as an outline off the face you clicked) — the wall is the other way.
-  const thin = (sd: (typeof sides)[number]) => !!sd && sd.t < VENEER_MAX * inch;
-  if (sides.some(thin) && sides.some((sd) => sd && !thin(sd))) for (const [i, sd] of sides.entries()) if (thin(sd)) sides[i] = null;
-  // Gaps both ways: the wall is the narrower (the other is a closet, a chase, a room's edge).
-  const pick = sides.find((sd) => sd?.brick) ?? sides.filter((sd) => sd).sort((a, b) => a!.t - b!.t)[0];
+    // Walk out from the bunch you clicked, each way, to the first gap a wall's thickness wide.
+    // Brick on the way means you clicked the veneer: the wall is the one behind it.
+    const mineAt = bunches.findIndex((c) => c[0] <= 0 && c[1] >= 0);
+    // Clicked past the end of the line (it's the nearest, but doesn't reach across here): no wall.
+    if (mineAt < 0) return { ok: false, reason: "no-wall" };
+    const probe = (lo: number, hi: number): Piece => ({
+      bucket: bucketOf(clicked.ang),
+      ang: clicked.ang,
+      ux: clicked.ux,
+      uy: clicked.uy,
+      nx: clicked.nx,
+      ny: clicked.ny,
+      rho: clicked.rho + (lo + hi) / 2,
+      s0: Math.max(clicked.s0, cs - 2 * upf),
+      s1: Math.min(clicked.s1, cs + 2 * upf),
+      open: 0,
+    });
+    // The gap between bunch k and the next one out (null: none).
+    const gapAt = (k: number, dir: number) => {
+      if (k + dir < 0 || k + dir >= bunches.length) return null;
+      const [lo, hi] = dir > 0 ? [bunches[k][1], bunches[k + 1][0]] : [bunches[k - 1][1], bunches[k][0]];
+      // Its faces' layers: the fewer of the two (brick's outside face is a single line).
+      const layers = Math.min(bunchLayers[k].size, bunchLayers[k + dir].size);
+      return { lo, hi, t: hi - lo, from: dir > 0 ? lo : -hi, layers };
+    };
+    // Hatched gaps passed on the way out (brick — or, on plans that hatch their walls, the wall).
+    const hatchedGaps: { t: number; from: number; lo: number; layers: number }[] = [];
+    const sides = [-1, 1].map((dir) => {
+      let brick = false;
+      for (let k = mineAt; gapAt(k, dir); k += dir) {
+        const { lo, hi, t, from, layers } = gapAt(k, dir)!;
+        if (from > tMax) break;
+        if (t < tMin || t > tMax) continue;
+        if (hatched(probe(lo, hi), t / 2)) {
+          brick = true;
+          // (Each band once — found from either side of the click.)
+          if (!hatchedGaps.some((g) => Math.abs(g.lo - lo) < 0.1 * inch)) hatchedGaps.push({ t, from, lo, layers });
+          continue;
+        }
+        // A thin band (under 2½") with a wall-wide gap right past it: stone (or another veneer) drawn
+        // as an outline off the wall's face — the wall is the gap behind it, like brick.
+        const next = gapAt(k + dir, dir);
+        if (t < VENEER_MAX * inch && next && next.t >= VENEER_MAX * inch && next.t <= tMax) {
+          brick = true;
+          continue;
+        }
+        return { t, from, brick };
+      }
+      return null;
+    });
+    // A thin band one way (under 2½") and a wall-wide gap the other: the thin one is a veneer (stone
+    // drawn as an outline off the face you clicked) — the wall is the other way.
+    const thin = (sd: (typeof sides)[number]) => !!sd && sd.t < VENEER_MAX * inch;
+    if (sides.some(thin) && sides.some((sd) => sd && !thin(sd))) for (const [i, sd] of sides.entries()) if (thin(sd)) sides[i] = null;
+    // Gaps both ways: the wall is the narrower (the other is a closet, a chase, a room's edge).
+    pick = sides.find((sd) => sd?.brick) ?? sides.filter((sd) => sd).sort((a, b) => a!.t - b!.t)[0];
+    // A hatched band with layered faces (drywall, sheathing — brick's outside face is a bare line): this
+    // plan hatches its walls' stud space, and that band is the wall (an open gap past it is a closet or a
+    // room's edge). With no open gap anywhere, a single hatched band clicked on is the wall too.
+    const layeredGaps = hatchedGaps.filter((g) => g.layers >= 2).sort((a, b) => b.layers - a.layers);
+    if (layeredGaps.length && (layeredGaps.length === 1 || layeredGaps[0].layers > layeredGaps[1].layers)) {
+      pick = { t: layeredGaps[0].t, from: layeredGaps[0].from, brick: true };
+      poche = true;
+    } else if (!pick && hatchedGaps.length === 1 && hatchedGaps[0].from < inch) {
+      // (…when it's the band clicked — one further off is something else's, past a window or door clicked.)
+      pick = { t: hatchedGaps[0].t, from: hatchedGaps[0].from, brick: true };
+      poche = true;
+    }
+  }
   const thickness = pick ? pick.t : Infinity;
   if (!(thickness < Infinity)) return { ok: false, reason: "no-wall" };
   const half = thickness / 2;
   const join = thickness + 3 * inch;
 
+  // On a plan that hatches its walls, the hatch strokes themselves (slanted to the walls, in rows of
+  // the same length) can pair up like tiny walls when they're long (a 2x6's or wider): not lines to pair.
+  const hatchStroke = (l: Line) => Math.abs(Math.sin(2 * (l.ang - wallAng))) >= Math.sin(40 * DEG) && inHatchRow(l);
+  const pairable = poche ? lines.filter((l) => !hatchStroke(l)) : lines;
+
   // 2. Every pair of parallel lines that thickness apart with nothing between them (a stud
   // space is open — siding to drywall across a thinner wall isn't one): the walls like this
   // one (and veneer).
   const pieces: Piece[] = [];
-  for (const a of lines) {
+  for (const a of pairable) {
     for (const b of parallelIn(buckets, a.ang, a.rho + thickness - tol, a.rho + thickness + tol)) {
       if (b === a || overlapOf(a, b) < inch) continue;
       const p = pieceOf(a, b);
@@ -365,6 +480,34 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
       for (const l of parallelIn(buckets, p.ang, rho - tol, rho + tol)) if (l.s1 - l.s0 < 6 * inch && overlapOf(l, p) > 0) dashes++;
       return dashes >= 4 && dashes >= (2 * lengthOf(p)) / upf && drawn(p.ang, rho - tol, rho + tol, p.s0, p.s1, 6 * inch) < 0.5;
     });
+  // A face's layers here: the lines bunched at it (within an inch past it, a line drawn twice over
+  // counted once). Brick's outside face is a single line; a framed wall's carry drywall, sheathing.
+  // (From the nearest line that side — the face — out, while they come within an inch of each other:
+  // the center line of a merged piece can sit a little off its faces.)
+  const faceLayers = (p: Piece, s: number, side: number) => {
+    const [lo, hi] = side > 0 ? [p.rho + 0.3 * half, p.rho + half + 3 * inch] : [p.rho - half - 3 * inch, p.rho - 0.3 * half];
+    const offs = new Set<number>();
+    for (const l of parallelIn(buckets, p.ang, lo, hi)) if (l.s1 - l.s0 >= 6 * inch && l.s0 <= s && l.s1 >= s) offs.add(Math.round(((l.rho - p.rho) * side) / (0.1 * inch)));
+    const out = [...offs].sort((a, b) => a - b);
+    let n = out.length ? 1 : 0;
+    for (let k = 1; k < out.length && out[k] - out[k - 1] <= 11; k++) n++;
+    return n;
+  };
+  /** Layered on both faces along a good part of it: a hatched wall, not brick, whose outside face is a bare line all along (only on plans that hatch their walls). */
+  const framed = (p: Piece) => {
+    const n = Math.max(1, Math.min(20, Math.round(lengthOf(p) / upf)));
+    let yes = 0;
+    let said = 0;
+    for (let k = 0; k < n; k++) {
+      const s = p.s0 + (lengthOf(p) * (k + 0.5)) / n;
+      const a = faceLayers(p, s, -1);
+      const b = faceLayers(p, s, 1);
+      if (!a || !b) continue;
+      said++;
+      if (Math.min(a, b) >= 2) yes++;
+    }
+    return said > 0 && yes * 4 >= said;
+  };
   const merged = merge(pieces, (w, p) => gapOf(w, p) <= inch);
   const veneer: Piece[] = [];
   let walls: Piece[] = [];
@@ -372,7 +515,7 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     // Lines run between its faces all along: it's not a wall this thick (two faces of a
     // thinner wall's layers).
     if (p.open < Math.min(upf, lengthOf(p) / 2)) continue;
-    if (lengthOf(p) >= upf && hatched(p, half)) veneer.push(p);
+    if (lengthOf(p) >= upf && hatched(p, half) && !(poche && framed(p))) veneer.push(p);
     else if (!dashed(p)) walls.push(p);
   }
 
@@ -412,9 +555,16 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   };
   // A stub comes off a wall at one end and is closed at the other.
   walls = walls.filter((p) => lengthOf(p) >= upf || (offFace(p, p.s0) && capped(p, p.s1)) || (offFace(p, p.s1) && capped(p, p.s0)));
+  // Drawn in the wall. On a plan that hatches its walls (drawn layer by layer): lines inside it (a
+  // window's glass, a door's panel), or along both its faces — not one line running on from one face
+  // alone (a porch or slab edge lined up with the wall).
   const drawnAcross = (w: Piece, p: Piece) => {
     const rho = (w.rho + p.rho) / 2;
-    return drawn(w.ang, rho - half - inch, rho + half + inch, Math.min(w.s1, p.s1), Math.max(w.s0, p.s0)) >= 0.8;
+    const [from, to] = [Math.min(w.s1, p.s1), Math.max(w.s0, p.s0)];
+    if (!poche) return drawn(w.ang, rho - half - inch, rho + half + inch, from, to) >= 0.8;
+    const inside = half - 0.25 * inch;
+    if (inside > 0 && drawn(w.ang, rho - inside, rho + inside, from, to) >= 0.8) return true;
+    return drawn(w.ang, rho - half - inch, rho - inside, from, to) >= 0.8 && drawn(w.ang, rho + inside, rho + half + inch, from, to) >= 0.8;
   };
   walls = merge(walls, (w, p) => {
     const gap = gapOf(w, p);
@@ -476,7 +626,10 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   // Brick drawn right alongside, whatever its width (its band needn't match the wall's): slanted
   // hatch strokes just outside one face, within a foot or so of here. Brick is outside.
   // A row of them, all parallel and spaced along — a dimension tick or a door line here and there isn't.
+  // (Not on a plan that hatches its walls: there the hatching of a wall nearby looks just like it, and
+  // its brick is a band of its own — in `veneer`.)
   const brickBeside = (w: Piece, s: number) => {
+    if (poche) return false;
     const [x, y] = at(w, s);
     const found: { ang: number; along: number; side: number }[] = [];
     for (const l of strokesNear(x, y, x, y)) {
@@ -531,14 +684,18 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
       // …boxed back to the wall at a corner (its side comes back to this face). A dimension line out
       // there runs free.
       const off = (x: number, y: number) => x * w.nx + y * w.ny - w.rho;
+      // (On a plan that hatches its walls, at both ends: a door drawn standing open against the wall
+      // meets it only at the hinge.)
       const boxed = (l: Line) =>
         [
           [l.x1, l.y1],
           [l.x2, l.y2],
-        ].some(([x, y]) =>
+        ][poche ? "every" : "some"](([x, y]) =>
           strokesNear(x, y, x, y).some((m) => {
             if (Math.abs(Math.sin(m.ang - w.ang)) < Math.sin(75 * DEG) || distToSeg(x, y, m) > 1.5 * inch) return false;
-            const reaches = (o: number) => o >= left[0] - 2 * inch && o <= right[1] + 2 * inch;
+            // (On a plan that hatches its walls, back to an outline drawn just off the face too — a hearth's.)
+            const off2 = poche ? 0.75 * upf : 2 * inch;
+            const reaches = (o: number) => o >= left[0] - off2 && o <= right[1] + off2;
             return reaches(off(m.x1, m.y1)) || reaches(off(m.x2, m.y2));
           }),
         );
@@ -553,7 +710,11 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     // More layers on one face (siding, sheathing) is the outside — when it's open past them (past the
     // stone, if any). A tub or vanity drawn tight to an inside wall adds lines too, but its far edge is right there.
     const extra = left[1] - left[0] - (right[1] - right[0]);
-    if (Math.abs(extra) < 0.75 * inch) return { kind: "interior", layers, stone };
+    // On a plan that hatches its walls, the faces are drawn layer by layer: one more line on a face
+    // (sheathing outside, drywall alone inside) is the outside, even a thin one.
+    const distinct = ([lo, hi]: [number, number]) => new Set(offs.filter((o) => o >= lo && o <= hi).map((o) => Math.round(o / (0.1 * inch)))).size;
+    const moreLines = poche && distinct(left) !== distinct(right) && Math.abs(extra) >= 0.25 * inch && Math.sign(distinct(left) - distinct(right)) === Math.sign(extra);
+    if (Math.abs(extra) < 0.75 * inch && !moreLines) return { kind: "interior", layers, stone };
     const open = extra > 0 ? openPast(outsideLeft ? clusters[li - 1]![0] : left[0], -1) : openPast(outsideRight ? clusters[ri + 1]![1] : right[1], 1);
     return { kind: open ? "exterior" : "interior", layers, stone };
   };
@@ -571,6 +732,8 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     // All opening (two door stubs and the doors between): nothing to look across, but a wall.
     const drawnWith = seen.length ? median(seen) : w.openings?.length ? Infinity : 0;
     let says = looks.map((l) => l?.kind ?? null);
+    // A short wall (a bump-out's side) with brick along it is outside — too short to out-vote one look the other way.
+    if (poche && n <= 3 && looks.some((l) => l?.brick)) says = says.map(() => "exterior");
     // Smooth: each foot goes with most of the 5 around it.
     says = says.map((_, k) => {
       let ext = 0;
@@ -628,7 +791,18 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
         runs[r].kind = "interior";
     joinAlike();
     // …then windows.
-    for (let r = 1; r < runs.length - 1; r++) if (runs[r].kind === "interior" && runs[r - 1].kind === "exterior" && runs[r + 1].kind === "exterior" && span(runs[r]) <= 10) runs[r].kind = "exterior";
+    // (On a plan that hatches its walls, a stretch read as inside foot after foot is an inside wall —
+    // unless brick runs on both sides of it: then it's a window in a brick wall.)
+    const readInside = (r: (typeof runs)[number]) => looks.slice(r.from, r.to).filter((l) => l?.kind === "interior").length;
+    for (let r = 1; r < runs.length - 1; r++)
+      if (
+        runs[r].kind === "interior" &&
+        runs[r - 1].kind === "exterior" &&
+        runs[r + 1].kind === "exterior" &&
+        span(runs[r]) <= 10 &&
+        !(poche && readInside(runs[r]) >= 3 && !(brickIn(runs[r - 1]) && brickIn(runs[r + 1])))
+      )
+        runs[r].kind = "exterior";
     for (let r = runs.length - 1; r > 0; r--)
       if (runs[r].kind === runs[r - 1].kind) {
         runs[r - 1].to = runs[r].to;
@@ -737,3 +911,6 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   const openings = mine.reduce((n, w) => n + (w.openings ?? []).filter((s) => s >= w.s0 && s <= w.s1).length, 0);
   return { ok: true, thicknessIn: Math.round((thickness / inch) * 8) / 8, kind, runs, lengthFt, openings };
 }
+
+// The line helpers, shared with the room finder (room-detect).
+export { DEG, bucketOf, distToSeg, grid, index as indexLines, near, overlapOf, parallelIn, toLine, type Line };
