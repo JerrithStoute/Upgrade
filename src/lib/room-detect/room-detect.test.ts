@@ -4,7 +4,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { findRoom, splitOutline } from "./index";
+import { findDimensions, findRoom, splitOutline } from "./index";
 import type { Pt } from "../wall-detect";
 
 const opts = { unitsPerFoot: 12 };
@@ -148,6 +148,44 @@ describe("room finder", () => {
     assert.equal(r.outline.length, 4, JSON.stringify(r.outline));
   });
 
+  it("words drawn as lines and an outlet against a wall don't cut a room up", () => {
+    const segs = house();
+    const rect = (x0: number, y0: number, x1: number, y1: number) => segs.push(x0, y0, x1, y0, x1, y0, x1, y1, x1, y1, x0, y1, x0, y1, x0, y0);
+    // An outlet: two short lines, 2½" apart, standing off the left wall's face...
+    segs.push(4.5, 300, 12, 300, 4.5, 302.5, 12, 302.5);
+    // ...and a big "E" (a 30" spine, three 8" arms, strokes 3" thick) 5' out from it.
+    rect(66, 285, 69, 315);
+    for (const y of [285, 299, 312]) rect(69, y, 77, y + 3);
+    const r = findRoom(segs, [120, 300], opts);
+    assert.ok(r.ok);
+    assert.ok(Math.abs(r.areaSf - (235.5 * 351) / 144) < 1, `${r.areaSf} sf`);
+    assert.ok(r.outline.length <= 6, `outline ${JSON.stringify(r.outline)}`);
+  });
+
+  it("on a plan that fills its walls solid, only the filled ones are walls — a counter's edge isn't", () => {
+    const segs = house({ island: false });
+    // A counter's front edge drawn double (4" apart), right across the left room, wall to wall.
+    segs.push(4.5, 200, 240, 200, 4.5, 204, 240, 204);
+    const rect = (x0: number, y0: number, x1: number, y1: number) => [x0, y0, x1, y0, x1, y1, x0, y1];
+    const fills = [
+      // The walls, in their gray, piece by piece: the four outside walls and the middle one.
+      { color: "#efefef", rings: [rect(0, 0, 480, 4.5)] },
+      { color: "#efefef", rings: [rect(0, 355.5, 480, 360)] },
+      { color: "#efefef", rings: [rect(0, 4.5, 4.5, 355.5)] },
+      { color: "#efefef", rings: [rect(475.5, 4.5, 480, 355.5)] },
+      { color: "#efefef", rings: [rect(240, 4.5, 244.5, 100)] },
+      { color: "#efefef", rings: [rect(240, 136, 244.5, 355.5)] },
+      // A counter in its own shade, and a heavy border line drawn as a thin black strip.
+      { color: "#eeeeee", rings: [rect(4.5, 204, 240, 230)] },
+      { color: "#000000", rings: [rect(-20, -20, 500, -18.5)] },
+    ];
+    const lined = findRoom(segs, [120, 300], opts);
+    assert.ok(lined.ok && lined.areaSf < 300, `without the fills the counter's edge cuts the room: ${lined.ok && lined.areaSf}`);
+    const r = findRoom(segs, [120, 300], { ...opts, fills });
+    assert.ok(r.ok);
+    assert.ok(Math.abs(r.areaSf - (235.5 * 351) / 144) < 1, `${r.areaSf} sf`);
+  });
+
   it("a wide opening (10') isn't closed: the two rooms come back as one, to split", () => {
     const r = findRoom(house({ opening: true }), [120, 300], opts);
     assert.ok(r.ok);
@@ -181,6 +219,34 @@ describe("room finder", () => {
     assert.deepEqual(l.map((p) => Math.round(area(p) * 144)).sort((a, b) => a - b), [1200, 5200]);
     // Not across it: no split.
     assert.equal(splitOutline(sq, [200, 0], [200, 50]), null);
+  });
+
+  it("finds the dimension lines and their ticks (for auto-count to leave out), not the walls", () => {
+    const segs = house({ dims: true });
+    // A mark partway along the first string, crossing it.
+    segs.push(100, 32, 104, 28);
+    const { lines, ticks } = findDimensions(segs, 12);
+    const ys = new Set<number>();
+    for (let i = 0; i < lines.length; i += 4) {
+      assert.equal(lines[i + 1], lines[i + 3], "dimension lines run across");
+      ys.add(lines[i + 1]);
+    }
+    assert.deepEqual([...ys].sort((a, b) => a - b), [30, 40], `dimension lines at ${[...ys]}`);
+    assert.ok(ticks.length / 4 >= 7, `${ticks.length / 4} ticks`);
+    let mid = false;
+    for (let i = 0; i < ticks.length; i += 4) if (ticks[i] === 100 && ticks[i + 1] === 32) mid = true;
+    assert.ok(mid, "the mark partway along");
+    // Given the sheet's text, only a string with its measurement written along it counts: the one at
+    // y 30 is labeled (in two pieces, either side of its number), the one at y 40 isn't.
+    const text: { str: string; box: [number, number, number, number] }[] = [
+      { str: "4'-6\"", box: [61, 26, 79, 33] },
+      { str: "ROOM", box: [151, 36, 169, 43] },
+    ];
+    const labeled = findDimensions(segs, 12, text);
+    const at = new Set<number>();
+    for (let i = 0; i < labeled.lines.length; i += 4) at.add(labeled.lines[i + 1]);
+    assert.deepEqual([...at], [30], `labeled strings at ${[...at]}`);
+    assert.equal(labeled.lines.length / 4, 3, "all three pieces of the labeled string");
   });
 
   it("says why when there's no room there", () => {

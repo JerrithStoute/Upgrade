@@ -893,6 +893,69 @@ export async function createMeasurement(input: {
   return { id: m.id, isDeduction: m.isDeduction, conditionId: placed?.conditionId ?? c.id, sizedAs: placed?.size ?? null, sizeNote: placed?.pick?.reason ?? null };
 }
 
+/**
+ * A Find area click, saved quietly (AreaFindLog) so the room finder can be improved from real use:
+ * where, the scale, and what it gave — the area it added, or why it found none. Never fails the
+ * click: anything wrong here is dropped.
+ */
+export async function logAreaFind(input: {
+  projectId: string;
+  sheetId: string;
+  conditionId: string | null;
+  click: [number, number];
+  unitsPerFoot: number;
+  version: string;
+  ok: boolean;
+  reason?: string | null;
+  areaSf?: number | null;
+  outline?: [number, number][] | null;
+  isDeduction?: boolean;
+  measurementId?: string | null;
+  ms?: number | null;
+}) {
+  try {
+    await requireEdit("takeoffs");
+    const d = z
+      .object({
+        projectId: z.string(),
+        sheetId: z.string(),
+        conditionId: z.string().nullable(),
+        click: ptSchema,
+        unitsPerFoot: z.number().finite().positive(),
+        version: z.string().max(40),
+        ok: z.boolean(),
+        reason: z.string().max(40).nullable().optional(),
+        areaSf: z.number().finite().nullable().optional(),
+        outline: z.array(ptSchema).max(5000).nullable().optional(),
+        isDeduction: z.boolean().optional(),
+        measurementId: z.string().nullable().optional(),
+        ms: z.number().finite().nullable().optional(),
+      })
+      .parse(input);
+    await viewerSheet(d.projectId, d.sheetId);
+    await db.areaFindLog.create({
+      data: {
+        projectId: d.projectId,
+        sheetId: d.sheetId,
+        conditionId: d.conditionId,
+        clickX: d.click[0],
+        clickY: d.click[1],
+        unitsPerFoot: d.unitsPerFoot,
+        version: d.version,
+        ok: d.ok,
+        reason: d.reason ?? null,
+        areaSf: d.areaSf ?? null,
+        outline: d.outline ? JSON.stringify(d.outline) : null,
+        isDeduction: !!d.isDeduction,
+        measurementId: d.measurementId ?? null,
+        ms: d.ms == null ? null : Math.round(d.ms),
+      },
+    });
+  } catch {
+    // Only a record for later — the click itself already worked (or said why not).
+  }
+}
+
 export async function updateMeasurement(input: {
   projectId: string;
   id: string;

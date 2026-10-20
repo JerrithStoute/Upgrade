@@ -76,11 +76,12 @@ import {
   type MetricKey,
   type Pt,
 } from "@/lib/takeoff";
-import { PlanCanvas, renderSheetGray } from "./plan-canvas";
+import { PlanCanvas, renderPatchGray, renderSheetGray, sheetLinesAndText } from "./plan-canvas";
+import type { DoorSwing, FillShape } from "./pdf-vectors";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { drawnStud } from "./wall-find";
 import { findWalls } from "@/lib/wall-detect";
-import { findRoom, splitOutline } from "@/lib/room-detect";
+import { findRoom, ROOM_DETECT_VERSION, splitOutline } from "@/lib/room-detect";
 import { areaJoists, bayAt, bayOutline, breakAt, joistGroupText, memberAt, pieceLine, throughAt } from "./joist-labels";
 import type { MemberPiece } from "@/lib/joist-pieces";
 import { searchSheet } from "./symbol-search";
@@ -90,7 +91,24 @@ import { BringForwardPanel, ComparePanel, type RevisionInfo } from "./revision-p
 import { NO_ALIGN, alignAngle, alignFromPairs, alignScale, applyAlign, composeAlign, pairSheets, parseAlign, type Align } from "@/lib/revisions";
 import { middleOf, parseUpperFloor, pickFloor, placedWalls, placement, snapPlacement, type UpperFloor } from "@/lib/upper-floor";
 import { UpperFloorButton, UpperFloorLayer, UpperFloorPlacing } from "./upper-floor";
-import { cropGray, type Box } from "@/lib/symbol-match";
+import {
+  clutterText,
+  cropGray,
+  cutPatch,
+  eraseClutter,
+  leavingLines,
+  lookPatches,
+  LOOK_FROM,
+  planTiles,
+  sampleWords,
+  sharpSample,
+  sharpScale,
+  symbolBox,
+  verifyMatch,
+  type Box,
+  type Clutter,
+} from "@/lib/symbol-match";
+import { findDimensions } from "@/lib/room-detect";
 import { buildSnapIndex, findSnap, type SnapHit } from "./snap";
 import { ConditionDrawer, type DrawerCondition } from "./condition-drawer";
 import { TotalsPanel, type PanelView, type TotalsPanelData } from "./totals-panel";
@@ -104,6 +122,7 @@ import {
   createCountMarkers,
   deleteMeasurements,
   createMeasurement,
+  logAreaFind,
   createShapes,
   deleteMeasurement,
   initPlanPages,
@@ -482,6 +501,7 @@ export function PlanViewer({
     pageNumber: number;
     name: string;
     scaled: boolean;
+    unitsPerFoot: number | null;
     count: number;
   }[];
   /** Every count / door / window marker on this plan's sheets (auto-count skips spots already counted). */
@@ -696,6 +716,10 @@ export function PlanViewer({
   const snapOn = useSyncExternalStore(subscribeLabels, readSnap, () => true);
   const [altHeld, setAltHeld] = useState(false);
   const [vectors, setVectors] = useState<Float32Array | null>(null);
+  // The sheet's filled shapes: a plan that fills its walls solid marks them (for Find area).
+  const [fills, setFills] = useState<FillShape[]>([]);
+  // Its door swings: Find area tells a door (closed off) from an open passage by them.
+  const [doorSwings, setDoorSwings] = useState<DoorSwing[]>([]);
   // The sheet's recommended scale — only marked in the scale list; the contractor picks it (or not).
   const [scaleRec, setScaleRec] = useState<ScaleRecommendation | null>(null);
   const snapIndex = useMemo(() => (vectors && vectors.length ? buildSnapIndex(vectors) : null), [vectors]);
@@ -778,6 +802,8 @@ export function PlanViewer({
     setFitted(false);
     setSheetName(sheet?.name ?? "");
     setVectors(null);
+    setFills([]);
+    setDoorSwings([]);
     setScaleRec(null);
     setSnapHit(null);
     setDrag(null);
@@ -1259,7 +1285,7 @@ export function PlanViewer({
   const saveShape = async (data: ShapeData) => (await createMeasurement({ projectId, ...data })).id;
 
   /** Saves a new shape (shown right away as pending) and records it for undo. */
-  const createShape = (data: ShapeData, track = true) => {
+  const createShape = (data: ShapeData, track = true, onSaved?: (id: string) => void) => {
     const tempId = `pending-${Math.random().toString(36).slice(2)}`;
     setPending((p) => [
       ...p,
@@ -1274,6 +1300,7 @@ export function PlanViewer({
         const r = await createMeasurement({ projectId, ...data });
         setPending((p) => p.map((m) => (m.id === tempId ? { ...m, id: r.id, conditionId: r.conditionId ?? m.conditionId, pending: false } : m)));
         if (track) record({ kind: "create", id: r.id, data });
+        onSaved?.(r.id);
         // Joists/rafters on a span table: say which size it got (and why).
         if (r.sizeNote) setFlash(`${r.sizedAs ? `Sized ${r.sizedAs}` : "No size for this span"} — ${r.sizeNote}`);
       } catch (e) {
@@ -1561,35 +1588,91 @@ export function PlanViewer({
     showTakeoff(active.id);
   };
   /** Finds the sample (a box on `samplePage`, page units) on this sheet or every sheet. */
-  const runAuto = async (conditionId: string, box: Box, allSheets: boolean, samplePage: number) => {
+  const runAuto = async (conditionId: string, picked: Box, allSheets: boolean, samplePage: number) => {
     autoAbort.current?.abort();
     const ctl = new AbortController();
     autoAbort.current = ctl;
     setAuto((a) => a && { ...a, conditionId, status: "searching", progress: 0, allSheets, results: {}, rejected: [], message: undefined });
     try {
+      // On a PDF, what's in the way is left out first: dimension lines, and every word but the symbol's own
+      // (a tag's number). A 3080 can't be mistaken for a 2880 once it's gone, and a dimension line through
+      // a tag doesn't hide it. A sheet with no scale keeps its dimensions.
+      const pdf = plan.kind === "PDF";
+      const vectors = new Map<number, Awaited<ReturnType<typeof sheetLinesAndText>>>();
+      const linesAndText = async (page: number) => {
+        if (!vectors.has(page)) vectors.set(page, await sheetLinesAndText(plan.fileUrl, page));
+        return vectors.get(page)!;
+      };
+      const words = pdf ? sampleWords((await linesAndText(samplePage)).text, picked) : new Set<string>();
+      const dimensionsOn = async (page: number) => {
+        const upf = sheets.find((sh) => sh.pageNumber === page)?.unitsPerFoot;
+        if (!pdf || !upf) return { lines: [], ticks: [] };
+        const { segments, text } = await linesAndText(page);
+        return findDimensions(segments, upf, text);
+      };
+      const clutterOn = async (page: number): Promise<Clutter> =>
+        pdf ? { segments: (await dimensionsOn(page)).lines, text: clutterText((await linesAndText(page)).text, words) } : { segments: [], text: [] };
+      const sheetClutter = await clutterOn(samplePage);
+      // The sample also leaves out the dimension ticks (drawn heavy, they'd eat into a copy crossed by one
+      // if left out of the whole sheet) and lines running on past the box (a leader to a tag, a wire, a
+      // wall); and the box is shrunk to the symbol.
+      const inSample: Clutter = pdf
+        ? {
+            ...sheetClutter,
+            ticks: (await dimensionsOn(samplePage)).ticks,
+            segments: [...sheetClutter.segments, ...leavingLines((await linesAndText(samplePage)).segments, picked)],
+          }
+        : sheetClutter;
+      let box = picked;
+      if (pdf) {
+        const k0 = sharpScale(picked, 0);
+        const t = symbolBox(eraseClutter(await renderPatchGray(plan.fileUrl, samplePage, k0, picked), k0, inSample, 255, picked));
+        box = { x: picked.x + t.x / k0, y: picked.y + t.y / k0, w: t.w / k0, h: t.h / k0 };
+      }
+      if (ctl.signal.aborted) return;
       // About 48 pixels across the sample, so small symbols keep their detail.
       const want = Math.min(6, Math.max(1.5, 48 / Math.max(box.w, box.h)));
       const first = await renderSheetGray(plan.fileUrl, plan.kind, samplePage, want);
       const sc = first.scale;
-      const sample = cropGray(first.gray, { x: box.x * sc, y: box.y * sc, w: box.w * sc, h: box.h * sc });
+      const sample = cropGray(eraseClutter(first.gray, sc, inSample), { x: box.x * sc, y: box.y * sc, w: box.w * sc, h: box.h * sc });
       const thumb = document.createElement("canvas");
       thumb.width = sample.w;
       thumb.height = sample.h;
       thumb.getContext("2d")?.drawImage(first.canvas, box.x * sc, box.y * sc, box.w * sc, box.h * sc, 0, 0, sample.w, sample.h);
-      const sampleInfo = { pageNumber: samplePage, box, thumb: thumb.toDataURL() };
+      const sampleInfo = { pageNumber: samplePage, box: picked, thumb: thumb.toDataURL() };
       const pages = allSheets ? sheets.map((sh) => sh.pageNumber) : [samplePage];
+      // On a PDF, every likely spot gets a second, sharp look: the sheet drawn again around it, close up,
+      // where a 2680 and a 2880 don't look alike and a line through a tag doesn't hide it. (What the sample
+      // leaves out is "don't care" there: neither asked for nor minded.)
+      const K = sharpScale(box, sc);
+      const sharp = pdf ? sharpSample(eraseClutter(await renderPatchGray(plan.fileUrl, samplePage, K, box), K, inSample, 200, box)) : null;
+      // The search is most of the time; the second look the rest.
+      const part = pdf ? 0.6 : 1;
       const results: AutoCount["results"] = {};
       for (const [i, page] of pages.entries()) {
         const sheetId = sheets.find((sh) => sh.pageNumber === page)?.id;
         if (!sheetId) continue;
         const pic = page === samplePage ? first : await renderSheetGray(plan.fileUrl, plan.kind, page, sc);
         if (ctl.signal.aborted) return;
-        const found = await searchSheet(
-          pic.gray,
+        let found = await searchSheet(
+          eraseClutter(pic.gray, pic.scale, page === samplePage ? sheetClutter : await clutterOn(page)),
           { ...sample, data: sample.data.slice() },
-          (f) => setAuto((a) => (a && a.status === "searching" ? { ...a, progress: (i + f) / pages.length } : a)),
+          (f) => setAuto((a) => (a && a.status === "searching" ? { ...a, progress: (i + f * part) / pages.length } : a)),
           ctl.signal,
         );
+        if (sharp) {
+          const looks = found.filter((m) => m.score >= LOOK_FROM);
+          const patches = lookPatches(looks, pic.scale, sharp, K);
+          const tiles = planTiles(patches, K);
+          for (const [t, { tile, items }] of tiles.entries()) {
+            const img = await renderPatchGray(plan.fileUrl, page, K, tile);
+            if (ctl.signal.aborted) return;
+            for (const k of items) looks[k] = { ...looks[k], score: verifyMatch(sharp, cutPatch(img, tile, patches[k], K), looks[k]).score };
+            setAuto((a) => (a && a.status === "searching" ? { ...a, progress: (i + part + ((1 - part) * (t + 1)) / tiles.length) / pages.length } : a));
+          }
+          // Below the slider's lowest setting: not the symbol.
+          found = looks.filter((m) => m.score >= 0.45);
+        }
         results[page] = { sheetId, matches: found.map((m) => ({ x: m.x / pic.scale, y: m.y / pic.scale, w: m.w / pic.scale, h: m.h / pic.scale, score: m.score })) };
         setAuto((a) => a && { ...a, sample: sampleInfo, results: { ...results }, progress: (i + 1) / pages.length });
       }
@@ -2252,8 +2335,13 @@ export function PlanViewer({
       if (!active || !sheet) return;
       if (!unitsPerFoot) return setError("Set this sheet's scale before finding areas.");
       if (!vectors || !vectors.length) return setError("This sheet has no line work to read (a scanned plan?) — areas can't be found here. Trace them with Measure.");
-      const r = findRoom(vectors, toPage(e.clientX, e.clientY), { unitsPerFoot });
+      const click = toPage(e.clientX, e.clientY);
+      const t0 = performance.now();
+      const r = findRoom(vectors, click, { unitsPerFoot, fills, doors: doorSwings });
+      // Saved quietly, to improve the room finder from real use (AreaFindLog).
+      const log = { projectId, sheetId: sheet.id, conditionId: active.id, click, unitsPerFoot, version: ROOM_DETECT_VERSION, ms: performance.now() - t0, isDeduction: deduct };
       if (!r.ok) {
+        void logAreaFind({ ...log, ok: false, reason: r.reason });
         return setError(
           r.reason === "in-wall"
             ? "That's on a wall — click inside the room."
@@ -2265,7 +2353,7 @@ export function PlanViewer({
         );
       }
       setError(null);
-      createShape(shapeFor(active, sheet.id, r.outline));
+      createShape(shapeFor(active, sheet.id, r.outline), true, (id) => void logAreaFind({ ...log, ok: true, areaSf: r.areaSf, outline: r.outline, measurementId: id }));
       setFlash(`${deduct ? "Deducted" : "Added"} ${num(r.areaSf)} sf — Ctrl+Z to take it back; click it for ✂ Split`);
       return;
     }
@@ -4128,7 +4216,11 @@ export function PlanViewer({
                     zoom={zoom}
                     onSize={onSize}
                     onPageCount={plan.kind === "PDF" ? onPageCount : undefined}
-                    onVectors={setVectors}
+                    onVectors={(s, f, d) => {
+                      setVectors(s);
+                      setFills(f);
+                      setDoorSwings(d);
+                    }}
                     onScaleClues={plan.kind === "PDF" ? (c) => setScaleRec(recommendScale(c)) : undefined}
                   />
                   {compare && prevRev && pairSheet && size ? (

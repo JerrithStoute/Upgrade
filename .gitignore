@@ -52,3 +52,6 @@ next-env.d.ts
 
 # test inbox (emails saved instead of sent on this PC)
 /.outbox
+
+# Plans for testing Find walls / Find area (never uploaded)
+/test-plans/

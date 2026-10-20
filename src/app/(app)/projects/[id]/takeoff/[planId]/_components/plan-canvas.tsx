@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
-import { extractSegments, extractTextBoxes, pageText, type TextBox } from "./pdf-vectors";
+import { extractSegments, extractTextBoxes, extractTextItems, pageText, type DoorSwing, type FillShape, type TextBox } from "./pdf-vectors";
 import type { ScaleClues } from "@/lib/scale-recommend";
 
 const ASSETS = "/api/pdfjs";
@@ -66,7 +66,7 @@ const MAX_PIXELS = 40_000_000;
 /**
  * Renders one page of a PDF (or an image) at the current zoom. Page units are
  * PDF points at 100% (or image pixels); `onSize` reports the page size in them.
- * `onVectors` receives the page's line segments (for snapping); `onText`, where its own text is
+ * `onVectors` receives the page's line segments (for snapping) and its filled shapes; `onText`, where its own text is
  * (so print labels can stay off it). With `fill`, the
  * page stretches to its container's width (print), rendered at `zoom` resolution.
  */
@@ -89,7 +89,7 @@ export function PlanCanvas({
   zoom: number;
   onSize: (w: number, h: number) => void;
   onPageCount?: (n: number) => void;
-  onVectors?: (segments: Float32Array) => void;
+  onVectors?: (segments: Float32Array, fills: FillShape[], swings: DoorSwing[]) => void;
   /** Clues to the sheet's scale (door swings, a scale note in its text), for the recommended scale. */
   onScaleClues?: (clues: ScaleClues) => void;
   onRendered?: () => void;
@@ -145,17 +145,19 @@ export function PlanCanvas({
         callbacks.current.onSize(vp.width, vp.height);
         if (callbacks.current.onVectors || callbacks.current.onScaleClues) {
           const arcRadii: number[] = [];
+          const fills: FillShape[] = [];
+          const swings: DoorSwing[] = [];
           loadPdfJs()
-            .then((pdfjs) => extractSegments(pdfjs, p, arcRadii))
+            .then((pdfjs) => extractSegments(pdfjs, p, arcRadii, fills, swings))
             .then(async (segments) => {
               if (cancelled) return;
-              callbacks.current.onVectors?.(segments);
+              callbacks.current.onVectors?.(segments, fills, swings);
               if (callbacks.current.onScaleClues) {
                 const text = await pageText(p).catch(() => "");
                 if (!cancelled) callbacks.current.onScaleClues?.({ arcRadii, text });
               }
             })
-            .catch(() => !cancelled && callbacks.current.onVectors?.(new Float32Array()));
+            .catch(() => !cancelled && callbacks.current.onVectors?.(new Float32Array(), [], []));
         }
         if (callbacks.current.onText) {
           loadPdfJs()
@@ -231,7 +233,7 @@ export function PlanCanvas({
           const img = e.currentTarget;
           setSize({ w: img.naturalWidth, h: img.naturalHeight });
           onSize(img.naturalWidth, img.naturalHeight);
-          onVectors?.(new Float32Array());
+          onVectors?.(new Float32Array(), [], []);
           onRendered?.();
         }}
       />
@@ -300,4 +302,47 @@ export async function renderSheetGray(url: string, kind: string, pageNumber: num
     gray[i] = a < 128 ? 255 : Math.round(data[i * 4] * 0.3 + data[i * 4 + 1] * 0.59 + data[i * 4 + 2] * 0.11);
   }
   return { gray: { w: canvas.width, h: canvas.height, data: gray }, scale: used, canvas };
+}
+
+/** A PDF sheet's line work (segments, page units) and its text with where each piece is, for auto-count. */
+export async function sheetLinesAndText(url: string, pageNumber: number) {
+  const held = acquireDoc(url);
+  try {
+    const [pdfjs, doc] = await Promise.all([loadPdfJs(), held.promise]);
+    const page = await doc.getPage(Math.min(Math.max(1, pageNumber), doc.numPages));
+    const [segments, text] = await Promise.all([extractSegments(pdfjs, page), extractTextItems(pdfjs, page)]);
+    return { segments, text };
+  } finally {
+    held.release();
+  }
+}
+
+/**
+ * Part of a PDF sheet (`box`, page units) drawn sharp for auto-count's second look, grayscale, at
+ * `scale` pixels per page unit. Off the page is paper.
+ */
+export async function renderPatchGray(url: string, pageNumber: number, scale: number, box: { x: number; y: number; w: number; h: number }) {
+  const held = acquireDoc(url);
+  try {
+    const doc = await held.promise;
+    const page = await doc.getPage(Math.min(Math.max(1, pageNumber), doc.numPages));
+    const canvas = document.createElement("canvas");
+    const w = Math.max(1, Math.round(box.w * scale));
+    const h = Math.max(1, Math.round(box.h * scale));
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const vp = page.getViewport({ scale, offsetX: -box.x * scale, offsetY: -box.y * scale });
+    await page.render({ canvas, viewport: vp, intent: "print" }).promise;
+    const { data } = ctx.getImageData(0, 0, w, h);
+    const gray = new Uint8Array(w * h);
+    for (let i = 0; i < gray.length; i++) gray[i] = Math.round(data[i * 4] * 0.3 + data[i * 4 + 1] * 0.59 + data[i * 4 + 2] * 0.11);
+    // Let the browser have the canvas memory back now.
+    canvas.width = canvas.height = 0;
+    return { w, h, data: gray };
+  } finally {
+    held.release();
+  }
 }

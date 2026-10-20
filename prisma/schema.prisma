@@ -251,6 +251,7 @@ model Project {
   threads           MessageThread[]
   activities        Activity[]
   takeoffPlans      TakeoffPlan[]
+  areaFinds         AreaFindLog[]
   takeoffConditions TakeoffCondition[]
   bids              Bid[]
   bidAwards         BidAward[]
@@ -1115,6 +1116,7 @@ model TakeoffSheet {
   upperFloor  String?
 
   measurements TakeoffMeasurement[]
+  areaFinds    AreaFindLog[]
 
   @@unique([planId, pageNumber])
   @@index([companyId])
@@ -1174,6 +1176,40 @@ model TakeoffCondition {
 
 /// A shape drawn on a sheet. `points` is a JSON array of [x, y] page-unit pairs.
 /// `angle` (radians) is the member direction for FRAMING areas.
+// Every Find area click and what it gave — kept quietly, to learn where the room finder goes wrong
+// (src/lib/room-detect). What the user did with the area isn't stored: it's read later from the
+// measurement itself — still there as found (kept), changed (split, or corners moved) or gone (undone
+// or deleted). Nothing here is shown in the app.
+model AreaFindLog {
+  id            String       @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId     String       @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId     String
+  project       Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sheetId       String
+  sheet         TakeoffSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  conditionId   String? // the takeoff it was added to
+  // Where the click was (page units) and the sheet's scale then.
+  clickX        Float
+  clickY        Float
+  unitsPerFoot  Float
+  // The room finder's version (ROOM_DETECT_VERSION) — results are compared within a version.
+  version       String
+  // What it gave: a room (area, outline JSON [[x,y],…]) or why not ("open", "in-wall", …).
+  ok            Boolean
+  reason        String?
+  areaSf        Float?
+  outline       String?
+  isDeduction   Boolean      @default(false)
+  // The area it added (a plain id, not a link: the area being undone or deleted is the point).
+  measurementId String?
+  ms            Int? // how long the click took to work out
+  createdAt     DateTime     @default(now())
+
+  @@index([companyId])
+  @@index([measurementId])
+}
+
 model TakeoffMeasurement {
   id             String           @id @default(cuid())
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).

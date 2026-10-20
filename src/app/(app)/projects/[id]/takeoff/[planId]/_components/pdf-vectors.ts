@@ -26,21 +26,31 @@ function mul(m: Matrix, n: Matrix): Matrix {
  * takeoff stores points in). Returned as [x1, y1, x2, y2, ...]. Curves contribute
  * their end points only (as zero-length segments). Scanned plans have none.
  * `arcs`, when given, collects the radius of every quarter circle drawn (door swings —
- * a clue to the sheet's scale).
+ * a clue to the sheet's scale). `fills`, when given, collects every filled shape with its color
+ * (a plan that fills its walls solid marks them that way). `swings`, when given, collects every quarter
+ * circle as a door swing: its hinge (the circle's center), radius and two ends.
  */
-export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: number[]): Promise<Float32Array> {
+export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: number[], fills?: FillShape[], swings?: DoorSwing[]): Promise<Float32Array> {
   const { OPS } = pdfjs;
   const list = await page.getOperatorList();
   const vt = page.getViewport({ scale: 1 }).transform as Matrix;
   const out: number[] = [];
   let ctm: Matrix = [1, 0, 0, 1, 0, 0];
   const stack: Matrix[] = [];
+  let color = "#000000";
+  const colors: string[] = [];
+  const fillOps = new Set<number>([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
 
   for (let i = 0; i < list.fnArray.length && out.length < MAX_SEGMENTS * 4; i++) {
     const fn = list.fnArray[i];
     const args = list.argsArray[i] as unknown[];
-    if (fn === OPS.save) stack.push(ctm);
-    else if (fn === OPS.restore) ctm = stack.pop() ?? ctm;
+    if (fn === OPS.save) {
+      stack.push(ctm);
+      colors.push(color);
+    } else if (fn === OPS.restore) {
+      ctm = stack.pop() ?? ctm;
+      color = colors.pop() ?? color;
+    } else if (fn === OPS.setFillRGBColor) color = typeof args?.[0] === "string" ? (args[0] as string) : color;
     else if (fn === OPS.transform) ctm = mul(ctm, args as unknown as Matrix);
     else if (fn === OPS.paintFormXObjectBegin) {
       stack.push(ctm);
@@ -56,6 +66,14 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
       const tx = (x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
       let cur: [number, number] | null = null;
       let start: [number, number] | null = null;
+      // A filled shape's outline, ring by ring (curves by their ends).
+      const filling = fills && fillOps.has(paintOp);
+      const rings: number[][] = [];
+      const at = (q: [number, number], fresh = false) => {
+        if (!filling) return;
+        if (fresh || !rings.length) rings.push([]);
+        rings[rings.length - 1].push(q[0], q[1]);
+      };
       const seg = (a: [number, number], b: [number, number]) => {
         const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
         if (len >= MIN_SEGMENT || len === 0) out.push(a[0], a[1], b[0], b[1]);
@@ -64,10 +82,12 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
         const op = data[j++];
         if (op === DrawOPS.moveTo) {
           cur = start = tx(data[j++], data[j++]);
+          at(cur, true);
         } else if (op === DrawOPS.lineTo) {
           const p = tx(data[j++], data[j++]);
           if (cur) seg(cur, p);
           cur = p;
+          at(p);
         } else if (op === DrawOPS.curveTo) {
           const c1 = tx(data[j++], data[j++]);
           const c2 = tx(data[j++], data[j++]);
@@ -77,12 +97,19 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
             const r = quarterCircleRadius(cur, c1, c2, p);
             if (r) arcs.push(r);
           }
+          // (A door drawn open part way — 45°, say — swings a shorter arc from the same hinge.)
+          if (cur && swings) {
+            const q = circleArc(cur, c1, c2, p, 25, 100);
+            if (q) swings.push({ x: q.cx, y: q.cy, r: q.r, a: cur, b: p });
+          }
           cur = p;
+          at(p);
         } else if (op === DrawOPS.quadraticCurveTo) {
           j += 2;
           const p = tx(data[j++], data[j++]);
           if (cur) out.push(p[0], p[1], p[0], p[1]);
           cur = p;
+          at(p);
         } else if (op === DrawOPS.closePath) {
           if (cur && start) seg(cur, start);
           cur = start;
@@ -90,10 +117,17 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
           break; // unknown operator: stop reading this path
         }
       }
+      if (filling) {
+        const kept = rings.filter((r) => r.length >= 6);
+        if (kept.length) fills.push({ color, rings: kept });
+      }
     }
   }
   return new Float32Array(out);
 }
+
+/** A filled shape on the page: its color ("#rrggbb") and outline rings ([x, y, x, y, …], page units). */
+export type FillShape = { color: string; rings: number[][] };
 
 /**
  * The radius of a curve that's a quarter circle (a door swing), or null. Its center is where the
@@ -101,6 +135,19 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
  * quarter turn apart.
  */
 export function quarterCircleRadius(p0: [number, number], c1: [number, number], c2: [number, number], p3: [number, number]): number | null {
+  return quarterCircle(p0, c1, c2, p3)?.r ?? null;
+}
+
+/** A door swing on the page: the hinge (x, y), the door's width (r) and the swing's two ends (page units). */
+export type DoorSwing = { x: number; y: number; r: number; a: [number, number]; b: [number, number] };
+
+/** A curve that's a quarter circle: its center and radius, or null (see quarterCircleRadius). */
+export function quarterCircle(p0: [number, number], c1: [number, number], c2: [number, number], p3: [number, number]) {
+  return circleArc(p0, c1, c2, p3, 80, 100);
+}
+
+/** A curve that's a piece of a circle turning `minTurn`–`maxTurn` degrees: its center and radius, or null. */
+export function circleArc(p0: [number, number], c1: [number, number], c2: [number, number], p3: [number, number], minTurn: number, maxTurn: number): { cx: number; cy: number; r: number } | null {
   const n0 = [-(c1[1] - p0[1]), c1[0] - p0[0]];
   const n3 = [-(p3[1] - c2[1]), p3[0] - c2[0]];
   const det = -n0[0] * n3[1] + n0[1] * n3[0];
@@ -116,7 +163,7 @@ export function quarterCircleRadius(p0: [number, number], c1: [number, number], 
   const a = [p0[0] - cx, p0[1] - cy];
   const b = [p3[0] - cx, p3[1] - cy];
   const turn = Math.abs(Math.atan2(a[0] * b[1] - a[1] * b[0], a[0] * b[0] + a[1] * b[1])) * (180 / Math.PI);
-  return turn > 80 && turn < 100 ? r0 : null;
+  return turn > minTurn && turn < maxTurn ? { cx, cy, r: r0 } : null;
 }
 
 /** All of a PDF page's own text, as one string (scanned plans, and most CAD plans, have none). */
@@ -133,9 +180,14 @@ export type TextBox = [number, number, number, number];
  * print's labels can stay off it. Scanned plans have none.
  */
 export async function extractTextBoxes(pdfjs: PdfJs, page: PDFPageProxy): Promise<TextBox[]> {
+  return (await extractTextItems(pdfjs, page)).map((t) => t.box);
+}
+
+/** A PDF page's text, each piece with its box (as in `extractTextBoxes`). */
+export async function extractTextItems(pdfjs: PdfJs, page: PDFPageProxy): Promise<{ str: string; box: TextBox }[]> {
   const vt = page.getViewport({ scale: 1 }).transform as Matrix;
   const content = await page.getTextContent();
-  const out: TextBox[] = [];
+  const out: { str: string; box: TextBox }[] = [];
   for (const item of content.items) {
     if (!("str" in item) || !item.str.trim() || !(item.width > 0)) continue;
     const t = pdfjs.Util.transform(vt, item.transform) as Matrix;
@@ -157,7 +209,7 @@ export async function extractTextBoxes(pdfjs: PdfJs, page: PDFPageProxy): Promis
     ];
     const xs = corners.map((c) => c[0]);
     const ys = corners.map((c) => c[1]);
-    out.push([Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)]);
+    out.push({ str: item.str.trim(), box: [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)] });
   }
   return out;
 }

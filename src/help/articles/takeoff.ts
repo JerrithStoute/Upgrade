@@ -372,6 +372,8 @@ export const TAKEOFF: HelpArticle[] = [
       "\"No closed-in room there\" means the room runs out to the outside (a missing wall, or an opening wider than a door that's drawn empty). Click inside a room that's closed in, or trace it with **Measure**.",
       "\"That's on a wall\" means the click landed on a wall. Click in the open floor.",
       "On a scanned plan there's no line work to read. Trace the room with **Measure**.",
+      "On a plan that fills its walls (solid gray or hatched), only the filled walls count: counters, closet shelves, outlets, labels and dimension lines never cut a room off.",
+      "A wall of windows and sliders (up to 40') closes the room like a wall does.",
     ],
     related: ["takeoff-screen", "takeoff-conditions", "find-walls"],
   },
@@ -505,7 +507,7 @@ export const TAKEOFF: HelpArticle[] = [
     how: [
       "Pick a Count, Doors or Windows takeoff and click **Auto-count**.",
       "Drag a box around one symbol on the plan. A loose box is fine.",
-      "It searches and rings every match. Check the plan: click a dashed ring to leave that one out.",
+      "It searches and rings every match. On a CAD plan (a real PDF) it first leaves out what's in the way: dimension lines and every word that isn't in your box, so a **3080** tag can't pass for a **2880**. Then it takes a second, close-up look at each one, so a tag with a dimension line through it is still found. Check the plan: click a dashed ring to leave that one out.",
       "Click **Add N counts**.",
     ],
     sections: [
@@ -520,7 +522,13 @@ export const TAKEOFF: HelpArticle[] = [
         ],
       },
     ],
-    tips: ["Similar-looking symbols can sneak in. Always look over the rings before adding.", "For doors and windows found this way with no door picked, each shows a red ? to pick the door later."],
+    tips: [
+      "Similar-looking symbols can sneak in, more so on a scanned plan. Always look over the rings before adding.",
+      "A loose box is fine, and any copy will do as the sample: wires, leaders and walls running off it, and dimension lines through it, are left out. It's found whichever way it's turned or flipped.",
+      "Dimension lines are only left out on a sheet with its scale set.",
+      "A big sheet with lots of symbols takes a little while (up to half a minute or so). The bar shows how far along it is.",
+      "For doors and windows found this way with no door picked, each shows a red ? to pick the door later.",
+    ],
     related: ["takeoff-doors-windows", "takeoff-screen"],
   },
   {
