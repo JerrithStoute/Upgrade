@@ -24,7 +24,9 @@ export async function sendMail(mail: Mail) {
   if (mode() === "outbox") {
     await fs.mkdir(outboxDir(), { recursive: true });
     const id = `${Date.now()}-${randomUUID().slice(0, 8)}`;
-    await fs.writeFile(path.join(outboxDir(), `${id}.json`), JSON.stringify({ id, at: new Date().toISOString(), ...mail }, null, 2));
+    // (Attachments kept by name and size only — the test inbox doesn't need the files.)
+    const attachments = mail.attachments?.map((a) => ({ filename: a.filename, size: Math.round((a.content.length * 3) / 4) }));
+    await fs.writeFile(path.join(outboxDir(), `${id}.json`), JSON.stringify({ id, at: new Date().toISOString(), ...mail, attachments }, null, 2));
     return;
   }
   if (mode() === "resend") {
@@ -40,6 +42,7 @@ export async function sendMail(mail: Mail) {
         html: mail.html,
         text: mail.text,
         ...(mail.replyTo ? { reply_to: mail.replyTo } : {}),
+        ...(mail.attachments?.length ? { attachments: mail.attachments } : {}),
       }),
     });
     if (!res.ok) throw new Error(`Couldn't send the email (${res.status})`);

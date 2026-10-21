@@ -72,13 +72,15 @@ export async function newCodes(_prev: AccountState, fd: FormData): Promise<Accou
 
 /**
  * The Builder Station's first owner: whoever runs it (PLATFORM_ADMIN_EMAILS), signed in here as a
- * builder, starts their own Station sign-in — once, before the Station has an owner. From then on
+ * builder, starts their own Station sign-in — before the Station has a set-up owner (again, if they stopped
+ * halfway: a new link, the old password and code gone). From then on
  * Station people are added inside the Station (Team), never from a builder's account.
  */
 export async function startStationOwner() {
   const me = await requireUser();
   if (!isPlatformAdmin(me.email)) redirect("/account");
-  if (await systemDb.stationUser.count({ where: { role: "OWNER", active: true } })) redirect("/station/login");
+  // An owner who has finished setting up signs in at the Station; one left halfway (this person) starts over.
+  if (await systemDb.stationUser.count({ where: { role: "OWNER", active: true, passwordHash: { not: null }, totpEnabledAt: { not: null } } })) redirect("/station/login");
   const user = await systemDb.stationUser.upsert({
     where: { email: me.email.toLowerCase() },
     create: { email: me.email.toLowerCase(), name: me.name, role: "OWNER" },

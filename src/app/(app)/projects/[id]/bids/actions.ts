@@ -8,7 +8,7 @@ import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
-import { biddableLines, isLadderLine, ladderLines, parsePrice, priceLadders, readBidWorkbook } from "@/lib/bids";
+import { bidWorkbook, biddableLines, isLadderLine, ladderLines, parsePrice, priceLadders, readBidWorkbook } from "@/lib/bids";
 import { isJobLocked, setItemPrice } from "@/lib/job-prices";
 import { saveUpload } from "@/lib/uploads";
 import { str } from "@/lib/utils";
@@ -16,6 +16,9 @@ import { itemNameKey, substituteLength } from "@/lib/takeoff";
 import { addSubstitution } from "@/lib/substitutions";
 import { newItemPlacement } from "@/lib/item-codes";
 import { cleanVendorName, vendorCodes, vendorKey } from "@/lib/vendors";
+import { bidEmail, bidEmailText, bidFileName, emailedBids } from "@/lib/bid-email";
+import { companyLines } from "@/lib/company";
+import { sendMail } from "@/lib/mail";
 
 const bidsPath = (projectId: string) => `/projects/${projectId}/bids`;
 
@@ -333,3 +336,90 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
   revalidateBids(project.id);
   redirect(`${bidsPath(project.id)}?taken=${done.length}&items=${items}&skipped=${skipped}&subbed=${subbed}&kept=${keptOut}&scope=${scope}#compare`);
 });
+
+// --- Emailing bids from the program ---------------------------------------------------------
+
+type Sent = { ok: true; to: string; at: string } | { error: string };
+const looksLikeEmail = (s: string) => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(s);
+
+/** One bid to its vendor: the message given, the bid's Excel file (prices blank) attached; noted on the job. */
+async function emailBid(
+  user: { id: string; email: string },
+  project: Awaited<ReturnType<typeof getProject>>,
+  bidId: string,
+  mail: { to: string; subject?: string; body?: string },
+): Promise<Sent> {
+  const to = mail.to.trim().toLowerCase();
+  if (!looksLikeEmail(to)) return { error: "Put in the vendor's email" };
+  const [bid, company] = await Promise.all([
+    db.bid.findFirst({ where: { id: bidId, projectId: project.id }, include: { lines: { orderBy: { sortOrder: "asc" } }, vendor: { select: { contact: true } } } }),
+    db.company.findFirst(),
+  ]);
+  if (!bid) return { error: "That bid isn't here any more" };
+  const text =
+    mail.subject && mail.body
+      ? { subject: mail.subject.slice(0, 300), body: mail.body.slice(0, 20_000) }
+      : bidEmailText({
+          bid,
+          project,
+          address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
+          contact: bid.vendor?.contact ?? null,
+          from: companyLines(company),
+        });
+  const content = await bidWorkbook({ ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) }, project, company);
+  try {
+    await sendMail(
+      bidEmail({
+        to,
+        ...text,
+        companyName: company?.name ?? "Your builder",
+        replyTo: user.email,
+        lines: bid.lines,
+        attachment: { filename: bidFileName(bid, project), content: Buffer.from(content) },
+      }),
+    );
+  } catch (e) {
+    console.error("Bid email not sent:", e);
+    return { error: "The email didn't go out — try again in a minute, or use “Open in my email”." };
+  }
+  await logActivity({ projectId: project.id, userId: user.id, type: "bid.emailed", description: `Emailed bid #${bid.number} (${bid.vendorName}) to ${to}` });
+  return { ok: true, to, at: new Date().toISOString() };
+}
+
+/** "Send" in a bid's email window: sends it from the program, as you see it, with the Excel file attached. */
+export async function sendBidEmail(input: { projectId: string; bidId: string; to: string; subject: string; body: string }): Promise<Sent> {
+  const user = await requireEdit("estimates", { costs: true });
+  const project = await getProject(String(input.projectId));
+  if (!String(input.subject ?? "").trim() || !String(input.body ?? "").trim()) return { error: "Give the email a subject and a message" };
+  const r = await emailBid(user, project, String(input.bidId), { to: String(input.to ?? ""), subject: String(input.subject), body: String(input.body) });
+  if ("ok" in r) revalidatePath(bidsPath(project.id));
+  return r;
+}
+
+/**
+ * "Email all": every bid on the job that hasn't been emailed yet and isn't back, to its vendor's email
+ * on file, with the usual message. Vendors with no email are listed (open their bid's email to add one).
+ */
+export async function sendAllBidEmails(input: { projectId: string }): Promise<{ sent: string[]; skipped: string[]; failed: string[] } | { error: string }> {
+  const user = await requireEdit("estimates", { costs: true });
+  const project = await getProject(String(input.projectId));
+  const [bids, activity] = await Promise.all([
+    db.bid.findMany({ where: { projectId: project.id, status: { not: "RECEIVED" } }, orderBy: { number: "asc" }, select: { id: true, number: true, vendorName: true, vendor: { select: { email: true } } } }),
+    db.activity.findMany({ where: { projectId: project.id, type: "bid.emailed" }, orderBy: { createdAt: "desc" }, select: { description: true, createdAt: true } }),
+  ]);
+  const done = emailedBids(activity);
+  const sent: string[] = [];
+  const skipped: string[] = [];
+  const failed: string[] = [];
+  for (const b of bids.filter((b) => !done.has(b.number))) {
+    const to = b.vendor?.email?.trim() ?? "";
+    if (!looksLikeEmail(to)) {
+      skipped.push(b.vendorName);
+      continue;
+    }
+    const r = await emailBid(user, project, b.id, { to });
+    (("ok" in r) ? sent : failed).push(b.vendorName);
+  }
+  if (sent.length) revalidatePath(bidsPath(project.id));
+  return { sent, skipped, failed };
+}

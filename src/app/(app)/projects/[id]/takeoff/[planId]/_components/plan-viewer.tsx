@@ -1,5 +1,6 @@
 "use client";
 
+import { actionMessage } from "@/lib/action-message";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "@/components/link";
 import { useRouter } from "next/navigation";
@@ -1056,7 +1057,7 @@ export function PlanViewer({
           await initPlanPages({ projectId, planId: plan.id, pageCount: n });
           router.refresh();
         } catch (e) {
-          setError(e instanceof Error ? e.message : "Could not index the plan pages");
+          setError(actionMessage(e, "Could not index the plan pages"));
         }
       });
     },
@@ -1332,7 +1333,7 @@ export function PlanViewer({
         if (r.sizeNote) setFlash(`${r.sizedAs ? `Sized ${r.sizedAs}` : "No size for this span"} — ${r.sizeNote}`);
       } catch (e) {
         setPending((p) => p.filter((m) => m.id !== tempId));
-        setError(e instanceof Error ? e.message : "Could not save the measurement");
+        setError(actionMessage(e, "Could not save the measurement"));
       }
     });
   };
@@ -1367,7 +1368,7 @@ export function PlanViewer({
       } catch (e) {
         const gone = new Set(temps.map((t) => t.id));
         setPending((p) => p.filter((m) => !gone.has(m.id)));
-        setError(e instanceof Error ? e.message : "Could not save the shapes");
+        setError(actionMessage(e, "Could not save the shapes"));
       }
     });
   };
@@ -1402,7 +1403,7 @@ export function PlanViewer({
           n.delete(id);
           return n;
         });
-        setError(e instanceof Error ? e.message : "Could not split the area");
+        setError(actionMessage(e, "Could not split the area"));
       }
     });
   };
@@ -1458,7 +1459,7 @@ export function PlanViewer({
             n.delete(id);
             return n;
           });
-          setError(e instanceof Error ? e.message : "Could not delete the measurement");
+          setError(actionMessage(e, "Could not delete the measurement"));
         }
       });
     },
@@ -1510,7 +1511,7 @@ export function PlanViewer({
             n.delete(id);
             return n;
           });
-        setError(e instanceof Error ? e.message : "Could not update the measurement");
+        setError(actionMessage(e, "Could not update the measurement"));
       }
     });
   };
@@ -1532,7 +1533,7 @@ export function PlanViewer({
         setFlash(`Deleted ${gone.length} shapes — Ctrl+Z brings them back`);
       } catch (e) {
         setRemoving((s) => new Set([...s].filter((x) => !gone.includes(x))));
-        setError(e instanceof Error ? e.message : "Could not delete the shapes");
+        setError(actionMessage(e, "Could not delete the shapes"));
       }
     });
   };
@@ -1551,7 +1552,7 @@ export function PlanViewer({
         }
         setFlash(`Moved ${changes.length} shape${changes.length === 1 ? "" : "s"} to ${target.name}`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not move the shapes");
+        setError(actionMessage(e, "Could not move the shapes"));
       } finally {
         if (changes.length) record({ kind: "updateMany", label: `moving ${changes.length} shapes`, changes });
       }
@@ -1593,7 +1594,7 @@ export function PlanViewer({
         setFlash(`Cleared ${rows.length} measurement${rows.length === 1 ? "" : "s"} from ${c.name} — Ctrl+Z brings them back`);
       } catch (e) {
         setRemoving((s) => new Set([...s].filter((x) => !here.includes(x))));
-        setError(e instanceof Error ? e.message : "Could not clear the takeoff");
+        setError(actionMessage(e, "Could not clear the takeoff"));
       }
     });
   };
@@ -1706,7 +1707,7 @@ export function PlanViewer({
       if (!ctl.signal.aborted) setAuto((a) => a && { ...a, status: "done", sample: sampleInfo });
     } catch (e) {
       if (ctl.signal.aborted || (e instanceof Error && e.message === "cancelled")) return;
-      setAuto((a) => a && { ...a, status: "error", message: e instanceof Error ? e.message : "The search didn't work" });
+      setAuto((a) => a && { ...a, status: "error", message: actionMessage(e, "The search didn't work") });
     }
   };
   /** Markers this takeoff already has on a sheet (found symbols there aren't counted twice). */
@@ -1731,7 +1732,7 @@ export function PlanViewer({
         record({ kind: "createMany", ids, conditionId: c.id, markers, materialItemId, cased });
         setFlash(`Added ${ids.length} count${ids.length === 1 ? "" : "s"} to ${c.name} — Ctrl+Z undoes them all`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not add the counts");
+        setError(actionMessage(e, "Could not add the counts"));
       }
     });
   };
@@ -1772,7 +1773,7 @@ export function PlanViewer({
         await saveSheetAlign({ projectId, sheetId: sheet.id, prevSheetId, align });
         router.refresh();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not save");
+        setError(actionMessage(e, "Could not save"));
       }
     });
   };
@@ -1876,7 +1877,7 @@ export function PlanViewer({
         (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
         setFlash(`${direction === "undo" ? "Undid" : "Redid"} ${entry.kind === "create" ? "adding a shape" : entry.kind === "delete" ? "a delete" : "an edit"}`);
       } catch (e) {
-        setError(e instanceof Error ? e.message : `Could not ${direction}`);
+        setError(actionMessage(e, `Could not ${direction}`));
       } finally {
         syncHistory();
       }
@@ -2477,7 +2478,7 @@ export function PlanViewer({
         setAfterCalibrate(null);
         setTool(thenTool);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Could not set the scale");
+        setError(actionMessage(e, "Could not set the scale"));
       }
     });
   };
@@ -2548,7 +2549,7 @@ export function PlanViewer({
       router.refresh();
       return id;
     } catch (e) {
-      setError(e instanceof Error ? e.message : `Could not add the ${kind}`);
+      setError(actionMessage(e, `Could not add the ${kind}`));
       return null;
     }
   };
@@ -4734,7 +4735,7 @@ export function PlanViewer({
                   setFlash(`Moved ${moved} measurement${moved === 1 ? "" : "s"} to Rev ${revision.revision}`);
                   router.refresh();
                 } catch (e) {
-                  setError(e instanceof Error ? e.message : "Could not move the takeoffs");
+                  setError(actionMessage(e, "Could not move the takeoffs"));
                 }
               }}
               onClose={() => setForward(false)}

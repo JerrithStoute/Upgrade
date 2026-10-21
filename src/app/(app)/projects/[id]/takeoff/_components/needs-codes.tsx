@@ -1,5 +1,6 @@
 "use client";
 
+import { actionMessage } from "@/lib/action-message";
 import { useState, useTransition } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import { CODE_GROUPS, type CodeGroup, type CodeRules } from "@/lib/code-groups";
@@ -87,7 +88,7 @@ function CodesPanel({ projectId, items, costCodes, rules, onClose }: { projectId
         await assignCostCodes({ projectId, items: itemList, rules: ruleList });
         onClose();
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Couldn't save");
+        setError(actionMessage(e, "Couldn't save"));
       }
     });
 

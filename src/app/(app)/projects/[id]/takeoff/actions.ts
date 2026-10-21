@@ -1430,8 +1430,13 @@ export async function createDoorItem(input: {
   const costCodeId = data.costCodeId === undefined ? place.costCodeId : data.costCodeId;
   const name = data.name.replace(/\s+/g, " ");
   const nameKey = itemNameKey(name);
-  const existing = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } });
-  if (existing) throw new Error(`"${name}" is already on the Item List`);
+  // Already on the Item List (added before, on this job or another): that one is picked — the same
+  // window isn't added twice. Something else by that name (lumber, say) is a different thing.
+  const existing = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, name: true, kind: true } });
+  if (existing) {
+    if (existing.kind === place.kind) return { id: existing.id, name: existing.name };
+    throw new Error(`"${name}" is already on the Item List as something else — give this ${isWindow ? "window" : "door"} another name`);
+  }
   const item = await db.materialItem.create({
     data: {
       name,

@@ -1,16 +1,22 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Download, ExternalLink, Mail, Printer, X } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, Copy, Download, ExternalLink, Mail, Printer, Send, X } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
+import { actionMessage } from "@/lib/action-message";
+import { sendBidEmail } from "../actions";
 
 /**
- * The email to a vendor, to read over before it goes: who it's to, the subject and the
- * message (all can be changed), and the files to attach — your email program can't be
- * handed attachments, so they're right here to download. "Open in my email" starts it with
- * exactly what you see; nothing is sent from here.
+ * The email to a vendor, to read over before it goes: who it's to, the subject and the message (all
+ * can be changed). "Send" sends it from here, with the bid's Excel file attached and the list in the
+ * email itself — replies come to your own email. "Open in my email" is still there, to send it yourself
+ * (your email program can't be handed files, so they're right here to download and attach).
  */
 export function EmailPreview({
+  projectId,
+  bidId,
+  emailedTo,
   to: initialTo,
   subject: initialSubject,
   body: initialBody,
@@ -19,6 +25,10 @@ export function EmailPreview({
   vendorName,
   bidNumber,
 }: {
+  projectId: string;
+  bidId: string;
+  /** Already emailed from here (to this address), or null. */
+  emailedTo: string | null;
   to: string;
   subject: string;
   body: string;
@@ -27,11 +37,14 @@ export function EmailPreview({
   vendorName: string;
   bidNumber: number;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState(initialTo);
   const [subject, setSubject] = useState(initialSubject);
   const [body, setBody] = useState(initialBody);
   const [copied, setCopied] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [result, setResult] = useState<{ ok?: string; error?: string } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -42,10 +55,34 @@ export function EmailPreview({
 
   const mailto = `mailto:${encodeURIComponent(to.trim()).replace(/%40/g, "@")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
+  const send = async () => {
+    setSending(true);
+    setResult(null);
+    try {
+      const r = await sendBidEmail({ projectId, bidId, to, subject, body });
+      if ("ok" in r) {
+        setResult({ ok: `Sent to ${r.to}. Their reply comes to your email.` });
+        router.refresh();
+      } else setResult({ error: r.error });
+    } catch (e) {
+      setResult({ error: actionMessage(e, "The email didn't go out") });
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <>
-      <button type="button" className={buttonClasses("ghost", "sm")} onClick={() => setOpen(true)} title="See the email before it goes">
-        <Mail className="h-3.5 w-3.5" /> Email
+      <button
+        type="button"
+        className={buttonClasses(emailedTo ? "ghost" : "secondary", "sm")}
+        onClick={() => {
+          setResult(null);
+          setOpen(true);
+        }}
+        title={emailedTo ? `Emailed to ${emailedTo} — open it to send again` : "See the email, then send it"}
+      >
+        <Mail className="h-3.5 w-3.5" /> {emailedTo ? "Email again" : "Email"}
       </button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:items-center" onClick={() => setOpen(false)}>
@@ -68,9 +105,7 @@ export function EmailPreview({
               <label className="block">
                 <span className="label">To</span>
                 <input className="input" type="email" value={to} onChange={(e) => setTo(e.target.value)} placeholder="vendor@example.com" />
-                {!to.trim() ? (
-                  <span className="mt-1 block text-xs text-amber-700">No email on file for {vendorName} — type it here (or fill it in your email program).</span>
-                ) : null}
+                {!to.trim() ? <span className="mt-1 block text-xs text-amber-700">No email on file for {vendorName} — type it here.</span> : null}
               </label>
               <label className="block">
                 <span className="label">Subject</span>
@@ -80,9 +115,9 @@ export function EmailPreview({
                 <span className="label">Message</span>
                 <textarea className="input" rows={9} value={body} onChange={(e) => setBody(e.target.value)} />
               </label>
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
-                <p className="font-medium text-amber-900">Attach before you send</p>
-                <p className="text-xs text-amber-800">Your email program can&apos;t be handed files, so download one (or both) and attach it to the email.</p>
+              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                <p className="font-medium text-slate-900">Sent with it: the Excel file, and the list in the email itself</p>
+                <p className="text-xs text-slate-600">Replies come to your own email. Sending it yourself with &ldquo;Open in my email&rdquo;? Download the file here and attach it.</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {excelHref ? (
                     <a href={excelHref} className={buttonClasses("secondary", "sm")}>
@@ -95,13 +130,22 @@ export function EmailPreview({
                 </div>
               </div>
             </div>
+            {result ? (
+              <p className={result.ok ? "mx-5 mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800" : "mx-5 mb-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"}>
+                {result.ok ? <Check className="mr-1 inline h-4 w-4" /> : null}
+                {result.ok ?? result.error}
+              </p>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 px-5 py-3">
-              <a href={mailto} className={buttonClasses("primary", "sm")} onClick={() => setOpen(false)}>
+              <Button type="button" size="sm" disabled={sending || !to.trim() || !!result?.ok} onClick={send}>
+                <Send className="h-3.5 w-3.5" /> {sending ? "Sending…" : result?.ok ? "Sent" : "Send"}
+              </Button>
+              <a href={mailto} className={buttonClasses("secondary", "sm")} onClick={() => setOpen(false)}>
                 <ExternalLink className="h-3.5 w-3.5" /> Open in my email
               </a>
               <Button
                 type="button"
-                variant="secondary"
+                variant="ghost"
                 size="sm"
                 onClick={async () => {
                   try {
@@ -115,7 +159,7 @@ export function EmailPreview({
               >
                 <Copy className="h-3.5 w-3.5" /> {copied ? "Copied" : "Copy the email"}
               </Button>
-              <span className="text-xs text-slate-500">Nothing is sent from here — your email program sends it.</span>
+              {emailedTo && !result?.ok ? <span className="text-xs text-slate-500">Already emailed to {emailedTo}.</span> : null}
             </div>
           </div>
         </div>

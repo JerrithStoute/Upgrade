@@ -9,6 +9,8 @@ export type Mail = {
   fromName?: string;
   /** Where a reply goes (the person who sent it), instead of our no-reply address. */
   replyTo?: string;
+  /** Files sent with it (a bid's Excel file): the file's name, and its contents in base64. */
+  attachments?: { filename: string; content: string }[];
 };
 
 const DEFAULT_FROM = "The Builder Station <no-reply@thebuilderstation.com>";

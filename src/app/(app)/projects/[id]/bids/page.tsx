@@ -12,6 +12,8 @@ import { RequestBids } from "./_components/request-bids";
 import { ImportButton } from "./_components/import-button";
 import { EmailPreview } from "./_components/email-preview";
 import { companyLines } from "@/lib/company";
+import { bidEmailText, emailedBids } from "@/lib/bid-email";
+import { EmailAllButton } from "./_components/email-all";
 import { deleteBid, importBid, quickAddVendor, requestBids, takeBids } from "./actions";
 
 export const metadata = { title: "Send to vendors" };
@@ -79,29 +81,13 @@ export default async function BidsPage({
         include: { bid: { select: { number: true, vendorName: true } } },
       })
     : [];
-  /** The email to a vendor about a bid — shown to you first (EmailPreview), then opened in your email program. */
-  const emailFor = (b: (typeof cmp.bids)[number], contact: string | null) => {
-    const items = b.lines.filter((l) => !isLadderLine(l));
-    const ladder = b.lines.length - items.length;
-    const codes = Array.from(new Set(items.map((l) => l.codeLabel)));
-    return {
-      subject: `Request for prices — Job #${project.number} ${project.name} (Bid #${b.number})`,
-      body: [
-        `Hello${contact ? ` ${contact.split(" ")[0]}` : ""},`,
-        "",
-        `Please send us your prices for the attached list — ${items.length} item${items.length === 1 ? "" : "s"} (${codes.join(", ")}).`,
-        ...(ladder ? ["At the end there's a short price list of other lumber lengths — just a price per board, so we can order the lengths that cost least."] : []),
-        "Just fill in your price per unit (the yellow column in the Excel file, or write it on the PDF) and send it back.",
-        ...(b.notes ? ["", b.notes] : []),
-        "",
-        `Job #${project.number} — ${project.name}`,
-        ...(address ? [`Deliver to: ${address}`] : []),
-        "",
-        "Thank you,",
-        ...from,
-      ].join(String.fromCharCode(10)),
-    };
-  };
+  /** The email to a vendor about a bid — shown to you first (EmailPreview), then sent from here (or opened in your email program). */
+  const emailFor = (b: (typeof cmp.bids)[number], contact: string | null) => bidEmailText({ bid: b, project, address, contact, from });
+  // Which bids were emailed from here, when, and to whom (the job's activity).
+  const emailed = emailedBids(
+    await db.activity.findMany({ where: { projectId: project.id, type: "bid.emailed" }, orderBy: { createdAt: "desc" }, select: { description: true, createdAt: true } }),
+  );
+  const waitingToEmail = cmp.bids.filter((b) => b.status !== "RECEIVED" && !emailed.has(b.number)).length;
 
   return (
     <div className="space-y-5">
@@ -243,8 +229,15 @@ export default async function BidsPage({
         <div id="bids" className="scroll-mt-40" />
         <CardHeader
           title="Sent"
-          description="Download each file and email it to the vendor. When they send it back, upload it on its row (or anywhere — the file knows which bid it is)."
-          actions={cmp.bids.length ? <ImportButton action={importBid} projectId={project.id} /> : null}
+          description="Email each bid to its vendor from here (the Excel file goes with it), or all of them at once. When they send it back, upload it on its row (or anywhere — the file knows which bid it is)."
+          actions={
+            cmp.bids.length ? (
+              <>
+                {waitingToEmail ? <EmailAllButton projectId={project.id} count={waitingToEmail} /> : null}
+                <ImportButton action={importBid} projectId={project.id} />
+              </>
+            ) : null
+          }
         />
         {cmp.bids.length === 0 ? (
           <CardBody>
@@ -272,7 +265,14 @@ export default async function BidsPage({
                     <tr key={b.id} className="align-top">
                       <td className="whitespace-nowrap px-4 py-2.5">
                         <span className="font-medium text-slate-900">#{b.number}</span>
-                        <span className="block text-xs text-slate-500">sent {fmtDate(b.sentAt)}</span>
+                        <span className="block text-xs text-slate-500">made {fmtDate(b.sentAt)}</span>
+                        {emailed.get(b.number) ? (
+                          <span className="block text-xs text-emerald-700" title={`Emailed to ${emailed.get(b.number)!.to}`}>
+                            emailed {fmtDate(emailed.get(b.number)!.at)}
+                          </span>
+                        ) : (
+                          <span className="block text-xs text-amber-700">not emailed</span>
+                        )}
                         {b.afterLock ? <span className="mt-0.5 inline-block rounded-full bg-amber-50 px-2 text-[11px] font-medium text-amber-800">re-bid</span> : null}
                       </td>
                       <td className="px-4 py-2.5">
@@ -311,6 +311,9 @@ export default async function BidsPage({
                       <td className="px-4 py-2.5">
                         <div className="flex flex-wrap items-center justify-end gap-1.5">
                           <EmailPreview
+                            projectId={project.id}
+                            bidId={b.id}
+                            emailedTo={emailed.get(b.number)?.to ?? null}
                             to={v?.email ?? ""}
                             {...emailFor(b, v?.contact ?? null)}
                             excelHref={`${base}/${b.id}/excel`}

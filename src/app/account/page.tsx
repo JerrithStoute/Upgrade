@@ -26,7 +26,9 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const setup = !user.totpEnabledAt && sp.setup === "1" ? await setupSecret(me.id) : null;
   const card = "rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
   // Whoever runs The Builder Station: until it has an owner, they start its own sign-in from here.
-  const stationOwnerNeeded = isPlatformAdmin(user.email) && !(await systemDb.stationUser.count({ where: { role: "OWNER", active: true } }));
+  // (Until an owner has finished — password and phone code — so a setup left halfway can be started again.)
+  const stationOwnerNeeded =
+    isPlatformAdmin(user.email) && !(await systemDb.stationUser.count({ where: { role: "OWNER", active: true, passwordHash: { not: null }, totpEnabledAt: { not: null } } }));
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">

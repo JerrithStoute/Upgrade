@@ -1,5 +1,6 @@
 "use client";
 
+import { actionMessage } from "@/lib/action-message";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FilePlus2, Loader2 } from "lucide-react";
@@ -29,7 +30,7 @@ export function RevisionUpload({ projectId, planId, nextRevision }: { projectId:
       if (!res.ok || !body.id) throw new Error(body.error ?? `Upload failed (${res.status})`);
       router.push(`/projects/${projectId}/takeoff/${body.id}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Upload failed");
+      setError(actionMessage(e, "Upload failed"));
       setBusy(false);
     }
   };

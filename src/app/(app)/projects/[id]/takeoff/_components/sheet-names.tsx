@@ -1,5 +1,6 @@
 "use client";
 
+import { actionMessage } from "@/lib/action-message";
 import Link from "@/components/link";
 import { useState, useTransition } from "react";
 import { Check, ExternalLink, Pencil, X } from "lucide-react";
@@ -26,7 +27,7 @@ export function SheetNames({ projectId, planId, sheets }: { projectId: string; p
         await renameSheet({ projectId, sheetId, name });
         setStatus((s) => ({ ...s, [sheetId]: "saved" }));
       } catch (e) {
-        setStatus((s) => ({ ...s, [sheetId]: { error: e instanceof Error ? e.message : "Couldn't rename it" } }));
+        setStatus((s) => ({ ...s, [sheetId]: { error: actionMessage(e, "Couldn't rename it") } }));
       }
     });
   };
