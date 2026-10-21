@@ -235,6 +235,7 @@ export const LIST_SETTINGS = new Set([
   "cost-codes",
   "vendors",
   "member-sizes",
+  "windows",
   "span-tables",
   "takeoff-templates",
   "estimate-templates",

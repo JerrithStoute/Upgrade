@@ -37,6 +37,7 @@ import { NO_ALIGN, alignAngle, alignScale, applyAlign, isNoAlign, parseAlign, ty
 import { upperFloorSchema } from "@/lib/upper-floor";
 import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { assignItemCodes, newItemPlacement, saveCodeRule } from "@/lib/item-codes";
+import { MAX_LINES, readColor, readItemDetails, readJobWindows, readSizeCode, readWindowDetails, windowName, withDetail, type JobWindows, type WindowColor, type WindowDetail } from "@/lib/window-list";
 import { assemblyFields, conditionFields, type AssemblyFields } from "@/lib/takeoff-forms";
 import { addConditionsToTemplate, applyTemplate, pullLibraryTakeoff, saveTemplateFromProject } from "@/lib/takeoff-templates";
 import { addSubstitution, swapBack } from "@/lib/substitutions";
@@ -1525,4 +1526,108 @@ export const swapBackSubstitution = friendly(async function swapBackSubstitution
 export async function substituteChoices() {
   await requireEdit("takeoffs");
   return db.materialItem.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, unit: true, unitCost: true, category: true } });
+}
+
+// --- The job's windows (Windows takeoff: the short list to pick from) -----------------------------
+
+export type JobWindowLine = { id: string; name: string; widthIn: number; heightIn: number; style: string | null; color: WindowColor; details: Record<string, string> };
+type WindowsResult = { ok: true; lines: JobWindowLine[] } | { ok: false; error: string };
+
+async function jobWindowLines(ids: string[]): Promise<JobWindowLine[]> {
+  const items = await db.materialItem.findMany({ where: { id: { in: ids } }, select: { id: true, name: true, widthIn: true, heightIn: true, style: true, color: true, details: true } });
+  const byId = new Map(items.map((i) => [i.id, i]));
+  return ids
+    .map((id) => byId.get(id))
+    .filter((i): i is NonNullable<typeof i> => !!i && i.widthIn != null && i.heightIn != null)
+    .map((i) => ({ id: i.id, name: i.name, widthIn: i.widthIn!, heightIn: i.heightIn!, style: i.style, color: readColor(i.color), details: readItemDetails(i.details) }));
+}
+
+async function saveJobWindows(projectId: string, list: JobWindows): Promise<WindowsResult> {
+  await db.project.update({ where: { id: projectId }, data: { windowList: JSON.stringify(list) } });
+  revalidatePath(`/projects/${projectId}/takeoff`, "layout");
+  return { ok: true, lines: await jobWindowLines(list.lines) };
+}
+
+/**
+ * A window on this job's list: its size ("3050"), type, color, and the company's own details.
+ * It's the Item List window by that name — made the first time (filed with your windows, their cost
+ * code), the same one after — so the material list, estimate and bids see it like any window.
+ */
+export async function addJobWindow(input: { projectId: string; size: string; type: string; color: string; values?: Record<string, string> }): Promise<WindowsResult> {
+  await requireEdit("takeoffs");
+  const project = await getProject(String(input.projectId));
+  const size = readSizeCode(String(input.size ?? ""));
+  if (!size) return { ok: false, error: "Type the size the usual way — 3050 for 3'0\" by 5'0\" (or 36x60 in inches)" };
+  const type = String(input.type ?? "").trim().replace(/\s+/g, " ").slice(0, 40);
+  if (!type) return { ok: false, error: "Pick the window's type" };
+  const list = readJobWindows(project.windowList);
+  const company = await db.company.findFirst({ select: { windowDetails: true } });
+  const details = readWindowDetails(company?.windowDetails);
+  const values = Object.fromEntries(
+    details.map((d) => [d.name, String(input.values?.[d.name] ?? "").trim().slice(0, 60)] as const).filter(([, v]) => v && !(v === "No")),
+  ) as Record<string, string>;
+  const color = readColor(input.color);
+  const name = windowName({ ...size, type, color, details, values });
+  const nameKey = itemNameKey(name);
+  const had = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, kind: true } });
+  if (had && had.kind !== "windows") return { ok: false, error: `"${name}" is already on the Item List as something else` };
+  let id = had?.id;
+  if (!id) {
+    const place = await newItemPlacement("windows", null);
+    const item = await db.materialItem.create({
+      data: {
+        name,
+        nameKey,
+        category: place.category,
+        kind: place.kind,
+        unit: "ea",
+        roundUp: true,
+        costCodeId: place.costCodeId,
+        widthIn: size.widthIn,
+        heightIn: size.heightIn,
+        style: type,
+        color,
+        details: Object.keys(values).length ? JSON.stringify(values) : null,
+      },
+    });
+    id = item.id;
+    revalidatePath("/settings/items");
+  }
+  if (!list.lines.includes(id)) {
+    if (list.lines.length >= MAX_LINES) return { ok: false, error: `The list holds ${MAX_LINES} windows — take one off first` };
+    list.lines.push(id);
+  }
+  return saveJobWindows(project.id, list);
+}
+
+/** The list's order, or a line taken off (the window stays on the Item List and the plan). */
+export async function setJobWindows(input: { projectId: string; lines?: string[] }): Promise<WindowsResult> {
+  await requireEdit("takeoffs");
+  const project = await getProject(String(input.projectId));
+  const list = readJobWindows(project.windowList);
+  if (Array.isArray(input.lines)) list.lines = input.lines.map(String).filter((id) => list.lines.includes(id));
+  return saveJobWindows(project.id, list);
+}
+
+/** "+ Add a detail" while adding a window: one more thing every window has, for the whole company (Settings → Windows too). */
+export async function addWindowDetailHere(input: { name: string; kind: string }): Promise<{ ok: true; details: WindowDetail[] } | { ok: false; error: string }> {
+  await requireEdit("takeoffs");
+  const company = await db.company.findFirst({ select: { id: true, windowDetails: true } });
+  if (!company) return { ok: false, error: "Set up your company first (Settings)" };
+  const next = withDetail(readWindowDetails(company.windowDetails), String(input.name ?? ""), String(input.kind ?? ""));
+  if (typeof next === "string") return { ok: false, error: next };
+  await db.company.update({ where: { id: company.id }, data: { windowDetails: JSON.stringify(next) } });
+  revalidatePath("/settings/windows");
+  return { ok: true, details: next };
+}
+
+/** × on a detail while adding a window: off the company's list (windows already made keep it in their name). */
+export async function removeWindowDetailHere(input: { name: string }): Promise<{ ok: true; details: WindowDetail[] } | { ok: false; error: string }> {
+  await requireEdit("takeoffs");
+  const company = await db.company.findFirst({ select: { id: true, windowDetails: true } });
+  if (!company) return { ok: false, error: "Set up your company first (Settings)" };
+  const next = readWindowDetails(company.windowDetails).filter((d) => d.name !== String(input.name ?? ""));
+  await db.company.update({ where: { id: company.id }, data: { windowDetails: next.length ? JSON.stringify(next) : null } });
+  revalidatePath("/settings/windows");
+  return { ok: true, details: next };
 }

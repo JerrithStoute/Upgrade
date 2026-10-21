@@ -389,15 +389,24 @@ export const TAKEOFF: HelpArticle[] = [
     what: "Doors and Windows takeoffs place each door or window on the plan with one click. The program orders the door or window, its header, studs and trim from what you place.",
     how: [
       "Pick a **Doors** or **Windows** takeoff on the left and click **Measure**.",
-      "In the card at the top left, narrow down the door or window with the chips (interior or exterior, height, width) and pick it from the list.",
-      "Click on the plan where each one goes. You can change the pick between clicks.",
-      "A marker shown as a dashed red square still needs a door picked: click it and choose one in **Which door is this?**",
+      "Windows: the card at the top left is this job's window list. Add each window once (size like 3050, type, color), then click a line, or press its number 1–9, and click the plan where each one goes. The number shows on every window placed.",
+      "Doors: in the card, narrow down the door with the chips (interior or exterior, height, width) and pick it from the list, then click on the plan where each one goes.",
+      "A marker shown as a dashed red square still needs a door or window picked: click it and choose one in **Which door is this?** (or **Which window is this?**)",
     ],
     sections: [
       {
-        heading: "The door / window card",
+        heading: "The window list (Windows takeoff)",
         items: [
-          { name: "Any / Int / Ext (or window types)", what: "Narrows the list to interior or exterior doors, or a type of window." },
+          { name: "The list", what: "This job's windows, numbered 1 to 9, with how many are on the job (every sheet). Click one, or press its number, to place it." },
+          { name: "Add window", what: "Type the size the usual way (3050 is 3'0\" by 5'0\", or 36x60 in inches), pick the type from the dropdown (or **Other…** to type one in), pick the color — Standard (white), White on black (white inside, black outside) or Black on black (it starts as your last window was) — and any details of your own. **+ Add a detail** right there adds one more for every window (Grids, Glass…), and the **×** beside one takes it off — the same list as Settings → Windows. It's put on your Item List as \"3050 Single Hung White/Black\", filed with your windows and their cost code — the same item next time." },
+          { name: "×", what: "Takes a window you haven't placed off this job's list (it stays on the Item List)." },
+          { name: "Window bid list", what: "How many of each window are on the job — size, type, color — ready for **Send to vendors**. **−** shrinks it to a small chip, to see the plan; click the chip to open it again." },
+        ],
+      },
+      {
+        heading: "The door card",
+        items: [
+          { name: "Any / Int / Ext", what: "Narrows the list to interior or exterior doors." },
           { name: "Height and width chips", what: "Narrow it further; each row narrows the next." },
           { name: "Pick a door…", what: "The doors (or windows) from your Item List that match." },
           { name: "+ New door…", what: "Adds a door or window that isn't in your Item List: width, height, interior or exterior (or type), name and cost code. It's added to the Item List." },
@@ -406,7 +415,10 @@ export const TAKEOFF: HelpArticle[] = [
         ],
       },
     ],
-    tips: ["**Auto-count** can find every door or window tag on the sheets at once. See **Auto-count**."],
+    tips: [
+      "**Auto-count** can find every door or window tag on the sheets at once. See **Auto-count**.",
+      "Another detail matters to you on windows (grids, glass)? Add it in **Settings → Windows**: it's asked when you add a window and goes in its name and on the bid.",
+    ],
     related: ["takeoff-autocount", "takeoff-conditions", "item-list"],
   },
   {
@@ -727,10 +739,18 @@ export const TAKEOFF: HelpArticle[] = [
     title: "Settings: takeoff templates, span tables and member sizes",
     group: "Takeoff",
     area: "lists",
-    pages: ["/settings/takeoff-templates", "/settings/takeoff-templates/*", "/settings/span-tables", "/settings/member-sizes"],
-    what: "Three Settings pages feed the takeoff: **Takeoff templates** (ready-made sets of takeoffs to add to jobs), **Span tables** (which joist or rafter size a span needs) and **Member sizes** (the lumber and engineered members you can pick).",
+    pages: ["/settings/takeoff-templates", "/settings/takeoff-templates/*", "/settings/span-tables", "/settings/member-sizes", "/settings/windows"],
+    what: "Four Settings pages feed the takeoff: **Takeoff templates** (ready-made sets of takeoffs to add to jobs), **Span tables** (which joist or rafter size a span needs), **Member sizes** (the lumber and engineered members you can pick) and **Windows** (what every window has).",
     how: ["Go to **Settings** and open the page you need.", "Make your changes and save. Jobs that already used a template or size keep what they have."],
     sections: [
+      {
+        heading: "Windows",
+        items: [
+          { name: "Size, Type, Color", what: "Every window has these. They're asked when you add a window to a job's list." },
+          { name: "Your own details", what: "Anything else you want on every window — Grids, Glass. Yes / no ones go in the window's name when yes (\"5040 Picture Black/Black Grids\"); typed ones with their answer.", how: "Type the name, pick **Yes / no** or **Typed in**, click **Add detail**." },
+          { name: "Remove", what: "Takes a detail off. Windows already on the Item List keep it in their name." },
+        ],
+      },
       {
         heading: "Takeoff templates",
         items: [

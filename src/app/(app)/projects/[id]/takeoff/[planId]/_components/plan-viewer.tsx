@@ -41,6 +41,7 @@ import {
   Scissors,
   Eraser,
   Library,
+  X,
 } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
 import { LibraryPicker } from "./library-picker";
@@ -116,6 +117,8 @@ import { buildSnapIndex, findSnap, type SnapHit } from "./snap";
 import { ConditionDrawer, type DrawerCondition } from "./condition-drawer";
 import { TotalsPanel, type PanelView, type TotalsPanelData } from "./totals-panel";
 import { DoorPicker, type DoorChoice, type NewUnit, type UnitCodes } from "./door-picker";
+import { WindowListPanel } from "./window-list-panel";
+import { sizeCode, type WindowDetail } from "@/lib/window-list";
 import type { CodeRules } from "@/lib/code-groups";
 import type { MemberSizeOption } from "../../_components/condition-form";
 import type { ItemOption } from "../../_components/assembly-form";
@@ -126,6 +129,11 @@ import {
   deleteMeasurements,
   createMeasurement,
   logAreaFind,
+  addJobWindow,
+  setJobWindows,
+  addWindowDetailHere,
+  removeWindowDetailHere,
+  type JobWindowLine,
   createShapes,
   deleteMeasurement,
   initPlanPages,
@@ -473,6 +481,7 @@ export function PlanViewer({
   totalsPanel,
   doors,
   windows,
+  jobWindows,
   codes,
   codeAlert,
   countMarkers,
@@ -529,6 +538,8 @@ export function PlanViewer({
   doors: DoorChoice[];
   /** Windows on the Item List (category Windows, with a size) for the Windows takeoff. */
   windows: DoorChoice[];
+  /** The job's windows: its short list to pick from (keys 1–9), the company's details, how many of each. */
+  jobWindows: { details: WindowDetail[]; counts: Record<string, number>; lines: JobWindowLine[] };
   /** Cost codes and the remembered "same code for all …" answers, for new doors / windows. */
   codes: UnitCodes;
   /** "3 items need a cost code" — floats over the plan's corner when there are any. */
@@ -599,6 +610,53 @@ export function PlanViewer({
   const [nextCardMin, setNextCardMin] = useState(false);
   // Windows: whether the next window placed is cased, per Windows takeoff (cased unless switched off).
   const [casedPick, setCasedPick] = useState<Record<string, boolean>>({});
+  // The job's window list (and black) as last saved — an added window shows at once; the page's copy follows.
+  const [winList, setWinList] = useState({ lines: jobWindows.lines });
+  const [winFrom, setWinFrom] = useState(jobWindows);
+  if (winFrom !== jobWindows) {
+    setWinFrom(jobWindows);
+    setWinList({ lines: jobWindows.lines });
+  }
+  const winLineNo = new Map(winList.lines.map((l, i) => [l.id, i + 1]));
+  const addWindow = async (w: { size: string; type: string; color: string; values: Record<string, string> }) => {
+    const r = await addJobWindow({ projectId, ...w });
+    if (r.ok) {
+      setWinList({ lines: r.lines });
+      router.refresh();
+    }
+    return r;
+  };
+  const setWindows = async (change: { lines?: string[] }) => {
+    if (change.lines) setWinList((w) => ({ ...w, lines: change.lines!.map((id) => w.lines.find((l) => l.id === id)!).filter(Boolean) }));
+    try {
+      await setJobWindows({ projectId, ...change });
+    } catch (e) {
+      setError(actionMessage(e, "The window list wasn't saved"));
+    }
+  };
+  // The company's window details (a new one, added while adding a window, shows at once).
+  const [winDetails, setWinDetails] = useState(jobWindows.details);
+  const [winDetailsFrom, setWinDetailsFrom] = useState(jobWindows.details);
+  if (winDetailsFrom !== jobWindows.details) {
+    setWinDetailsFrom(jobWindows.details);
+    setWinDetails(jobWindows.details);
+  }
+  const addWindowDetail = async (d: { name: string; kind: string }) => {
+    const r = await addWindowDetailHere(d);
+    if (r.ok) setWinDetails(r.details);
+    return r;
+  };
+  const removeWindowDetail = async (name: string) => {
+    setWinDetails((list) => list.filter((d) => d.name !== name));
+    try {
+      const r = await removeWindowDetailHere({ name });
+      if (r.ok) setWinDetails(r.details);
+    } catch (e) {
+      setError(actionMessage(e, "The detail wasn't removed"));
+    }
+  };
+  const [windowBids, setWindowBids] = useState(false);
+  const [windowBidsMin, setWindowBidsMin] = useState(false);
   // Doors: the door the next click places, per Doors takeoff (starts as the last one used there).
   const [doorPick, setDoorPick] = useState<Record<string, string | null>>(() => {
     const last: Record<string, string | null> = {};
@@ -2027,6 +2085,11 @@ export function PlanViewer({
       } else if ((e.key === "m" || e.key === "M") && active) {
         setTool("measure");
         setHidden((h) => (h.has(active.id) ? new Set([...h].filter((x) => x !== active.id)) : h));
+      } else if (e.type === "keydown" && /^[1-9]$/.test(e.key) && active?.type === "WINDOW" && winList.lines[Number(e.key) - 1]) {
+        // Windows: its number on the job's list picks it (then click the plan).
+        const id = winList.lines[Number(e.key) - 1].id;
+        setDoorPick((cur) => ({ ...cur, [active.id]: id }));
+        if (tool !== "measure") setTool("measure");
       } else if (e.key === "d" || e.key === "D") {
         setDeduct((d) => !d);
       } else if (e.key === "+" || e.key === "=") {
@@ -2043,7 +2106,7 @@ export function PlanViewer({
     };
     // The edit helpers (runHistory, copy/paste) are recreated each render; listening with the latest is intended.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, selectedId, selected, multi, finishDraft, removeShape, active, zoom, zoomAt, dirFor, finishDirection, tool, upperPlacing, upperPicking]);
+  }, [draft, selectedId, selected, multi, finishDraft, removeShape, active, zoom, zoomAt, dirFor, finishDirection, tool, upperPlacing, upperPicking, winList]);
 
   // --- Framing direction chooser ---------------------------------------------------------
   // The outline being aimed, its default direction, and what the preview shows right now.
@@ -2936,7 +2999,22 @@ export function PlanViewer({
             strokeDasharray={door ? undefined : "3 2"}
             {...stroke}
           />
-          {c.type === "WINDOW" && door ? (
+          {c.type === "WINDOW" && door && winLineNo.get(door.id) ? (
+            // Its number on the job's window list.
+            <text
+              x={x}
+              y={y}
+              dy={px(3.5)}
+              transform={rotation ? `rotate(${-rotation} ${x} ${y})` : undefined}
+              textAnchor="middle"
+              fontSize={px(isSel ? 11 : 9.5)}
+              fontWeight={700}
+              fill={m.cased === false ? color : "white"}
+              pointerEvents="none"
+            >
+              {winLineNo.get(door.id)}
+            </text>
+          ) : c.type === "WINDOW" && door ? (
             <line x1={x - px(isSel ? 9 : 7)} y1={y} x2={x + px(isSel ? 9 : 7)} y2={y} stroke={m.cased === false ? color : "white"} strokeWidth={2} {...stroke} />
           ) : null}
           {showLabels ? (
@@ -4878,17 +4956,47 @@ export function PlanViewer({
                     <Minus className="h-4 w-4" />
                   </button>
                 </div>
-                <DoorPicker
-                  key={active.id}
-                  kind={unitKind(active.type)}
-                  doors={unitsFor(active.type)}
-                  value={doorPick[active.id] ?? null}
-                  onChange={(id) => setDoorPick((cur) => ({ ...cur, [active.id]: id }))}
-                  onCreate={addUnit(unitKind(active.type))}
-                  codes={codes}
-                />
+                {active.type === "WINDOW" ? (
+                  <>
+                    <WindowListPanel
+                      lines={winList.lines}
+                      details={winDetails}
+                      counts={jobWindows.counts}
+                      value={doorPick[active.id] ?? null}
+                      onPick={(id) => setDoorPick((cur) => ({ ...cur, [active.id]: id }))}
+                      onAdd={addWindow}
+                      onSet={setWindows}
+                      onAddDetail={addWindowDetail}
+                      onRemoveDetail={removeWindowDetail}
+                    />
+                    <button
+                      type="button"
+                      className="mt-2 w-full rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setWindowBids(true);
+                        setWindowBidsMin(false);
+                      }}
+                    >
+                      Window bid list
+                    </button>
+                  </>
+                ) : (
+                  <DoorPicker
+                    key={active.id}
+                    kind={unitKind(active.type)}
+                    doors={unitsFor(active.type)}
+                    value={doorPick[active.id] ?? null}
+                    onChange={(id) => setDoorPick((cur) => ({ ...cur, [active.id]: id }))}
+                    onCreate={addUnit(unitKind(active.type))}
+                    codes={codes}
+                  />
+                )}
                 {active.type === "WINDOW" ? <CasedSwitch value={casedPick[active.id] ?? true} onChange={(v) => setCasedPick((cur) => ({ ...cur, [active.id]: v }))} /> : null}
-                <p className="mt-2 text-[11px] text-slate-500">Each click places this {unitKind(active.type)} — change it any time between clicks.</p>
+                <p className="mt-2 text-[11px] text-slate-500">
+                  {active.type === "WINDOW"
+                    ? "Click a window on the list (or press its number), then click the plan. The number shows on each window placed."
+                    : `Each click places this ${unitKind(active.type)} — change it any time between clicks.`}
+                </p>
                 {active.unassignedDoors ? (
                   <p className="mt-1 text-[11px] text-rose-700">
                     {active.unassignedDoors === 1 ? `1 ${unitKind(active.type)} still needs` : `${active.unassignedDoors} ${unitKind(active.type)}s still need`} one picked (red ?).
@@ -4896,6 +5004,71 @@ export function PlanViewer({
                 ) : null}
               </div>
             )
+          ) : null}
+
+          {/* The job's window bid list: how many of each window, the way they go out for prices */}
+          {windowBids && windowBidsMin ? (
+            <button
+              type="button"
+              onClick={() => setWindowBidsMin(false)}
+              className="absolute left-1/2 top-3 z-20 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-lg hover:bg-slate-50"
+            >
+              Window bid list · {Object.entries(jobWindows.counts).reduce((t, [id, n]) => t + (windows.some((w) => w.id === id) ? n : 0), 0)} windows
+            </button>
+          ) : windowBids ? (
+            <div className="absolute left-1/2 top-3 z-20 w-[min(92%,28rem)] -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+              <div className="mb-2 flex items-center gap-2">
+                <p className="flex-1 text-sm font-semibold text-slate-900">Window bid list</p>
+                <button type="button" aria-label="Shrink the window bid list" title="Shrink" className="text-slate-400 hover:text-slate-700" onClick={() => setWindowBidsMin(true)}>
+                  <Minus className="h-4 w-4" />
+                </button>
+                <button type="button" aria-label="Close" className="text-slate-400 hover:text-slate-700" onClick={() => setWindowBids(false)}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {(() => {
+                const rows = [
+                  ...winList.lines.map((l) => ({ id: l.id, size: sizeCode(l.widthIn, l.heightIn), type: l.style ?? "Window", color: l.color as string, name: l.name })),
+                  ...windows
+                    .filter((w) => !winLineNo.has(w.id) && jobWindows.counts[w.id])
+                    .map((w) => ({ id: w.id, size: sizeCode(w.widthIn, w.heightIn), type: w.style ?? "Window", color: "", name: w.name })),
+                ].filter((r) => jobWindows.counts[r.id]);
+                const total = rows.reduce((t, r) => t + (jobWindows.counts[r.id] ?? 0), 0);
+                return rows.length ? (
+                  <>
+                    <table className="w-full text-xs">
+                      <thead className="text-left text-slate-500">
+                        <tr>
+                          <th className="py-1 pr-2 text-right font-medium">Qty</th>
+                          <th className="py-1 pr-2 font-medium">Size</th>
+                          <th className="py-1 pr-2 font-medium">Type</th>
+                          <th className="py-1 font-medium">Color</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {rows.map((r) => (
+                          <tr key={r.id} title={r.name}>
+                            <td className="py-1 pr-2 text-right tabular-nums">{jobWindows.counts[r.id]}</td>
+                            <td className="py-1 pr-2 font-medium tabular-nums">{r.size}</td>
+                            <td className="py-1 pr-2">{r.type}</td>
+                            <td className="py-1">{r.color}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      {total} window{total === 1 ? "" : "s"} on the job (every sheet). They go out like anything else:{" "}
+                      <Link href={`/projects/${projectId}/bids`} className="font-medium text-blue-700 hover:underline">
+                        Send to vendors
+                      </Link>
+                      , and tick your windows&apos; cost code.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500">No windows placed on this job yet.</p>
+                );
+              })()}
+            </div>
           ) : null}
 
           {/* Totals / Material list (hidden while a condition is being edited) */}
@@ -5169,20 +5342,37 @@ export function PlanViewer({
               {isUnitType(sel.c.type) && !sel.m.pending ? (
                 <div className="mb-2 border-b border-slate-100 pb-2">
                   <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Which {unitKind(sel.c.type)} is this?</p>
-                  <DoorPicker
-                    key={sel.m.id}
-                    kind={unitKind(sel.c.type)}
-                    doors={unitsFor(sel.c.type)}
-                    value={sel.m.materialItemId ?? null}
-                    onChange={(id) => {
-                      patchShape(sel.m.id, { materialItemId: id });
-                      // The next door placed on this takeoff follows the last one picked.
-                      if (id) setDoorPick((cur) => ({ ...cur, [sel.c!.id]: id }));
-                    }}
-                    onCreate={addUnit(unitKind(sel.c.type))}
-                    codes={codes}
-                    compact
-                  />
+                  {sel.c.type === "WINDOW" ? (
+                    <WindowListPanel
+                      key={sel.m.id}
+                      lines={winList.lines}
+                      details={winDetails}
+                      counts={jobWindows.counts}
+                      value={sel.m.materialItemId ?? null}
+                      onPick={(id) => {
+                        patchShape(sel.m.id, { materialItemId: id });
+                        setDoorPick((cur) => ({ ...cur, [sel.c!.id]: id }));
+                      }}
+                      onAdd={addWindow}
+                      onSet={setWindows}
+                      compact
+                    />
+                  ) : (
+                    <DoorPicker
+                      key={sel.m.id}
+                      kind={unitKind(sel.c.type)}
+                      doors={unitsFor(sel.c.type)}
+                      value={sel.m.materialItemId ?? null}
+                      onChange={(id) => {
+                        patchShape(sel.m.id, { materialItemId: id });
+                        // The next door placed on this takeoff follows the last one picked.
+                        if (id) setDoorPick((cur) => ({ ...cur, [sel.c!.id]: id }));
+                      }}
+                      onCreate={addUnit(unitKind(sel.c.type))}
+                      codes={codes}
+                      compact
+                    />
+                  )}
                   {sel.c.type === "WINDOW" ? <CasedSwitch value={sel.m.cased !== false} onChange={(v) => patchShape(sel.m.id, { cased: v })} /> : null}
                 </div>
               ) : null}
