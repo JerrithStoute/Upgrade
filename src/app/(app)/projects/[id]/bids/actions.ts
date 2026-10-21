@@ -11,14 +11,16 @@ import { logActivity } from "@/lib/activity";
 import { bidWorkbook, biddableLines, isLadderLine, ladderLines, parsePrice, priceLadders, readBidWorkbook } from "@/lib/bids";
 import { isJobLocked, setItemPrice } from "@/lib/job-prices";
 import { saveUpload } from "@/lib/uploads";
-import { str } from "@/lib/utils";
+import { fmtDate, str } from "@/lib/utils";
 import { itemNameKey, substituteLength } from "@/lib/takeoff";
 import { addSubstitution } from "@/lib/substitutions";
 import { newItemPlacement } from "@/lib/item-codes";
 import { cleanVendorName, vendorCodes, vendorKey } from "@/lib/vendors";
 import { bidEmail, bidEmailText, bidFileName, emailedBids } from "@/lib/bid-email";
 import { companyLines } from "@/lib/company";
-import { sendMail } from "@/lib/mail";
+import { appUrl, sendMail } from "@/lib/mail";
+import { bidPdf } from "@/lib/bid-pdf";
+import { makeBidLink } from "@/lib/bid-link";
 
 const bidsPath = (projectId: string) => `/projects/${projectId}/bids`;
 
@@ -366,7 +368,18 @@ async function emailBid(
           contact: bid.vendor?.contact ?? null,
           from: companyLines(company),
         });
-  const content = await bidWorkbook({ ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) }, project, company);
+  // Sent with it: the Excel file (prices blank), the PDF to fill in by hand, and the link to type prices online.
+  const [excel, pdf] = await Promise.all([
+    bidWorkbook({ ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) }, project, company),
+    bidPdf({
+      bid,
+      project,
+      address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
+      from: companyLines(company),
+      date: fmtDate(new Date()),
+      replyTo: user.email,
+    }),
+  ]);
   try {
     await sendMail(
       bidEmail({
@@ -375,7 +388,11 @@ async function emailBid(
         companyName: company?.name ?? "Your builder",
         replyTo: user.email,
         lines: bid.lines,
-        attachment: { filename: bidFileName(bid, project), content: Buffer.from(content) },
+        attachments: [
+          { filename: bidFileName(bid, project), content: Buffer.from(excel) },
+          { filename: bidFileName(bid, project, "pdf"), content: Buffer.from(pdf) },
+        ],
+        onlineUrl: appUrl(`/prices/${await makeBidLink(bid.id, bid.companyId)}`),
       }),
     );
   } catch (e) {
@@ -386,7 +403,7 @@ async function emailBid(
   return { ok: true, to, at: new Date().toISOString() };
 }
 
-/** "Send" in a bid's email window: sends it from the program, as you see it, with the Excel file attached. */
+/** "Send" in a bid's email window: sends it from the program, as you see it, with the Excel file and PDF attached. */
 export async function sendBidEmail(input: { projectId: string; bidId: string; to: string; subject: string; body: string }): Promise<Sent> {
   const user = await requireEdit("estimates", { costs: true });
   const project = await getProject(String(input.projectId));

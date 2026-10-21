@@ -122,8 +122,8 @@ export const FINANCIALS: HelpArticle[] = [
       "On the job's **Material list** tab, click **Send to vendors**.",
       "Under **What to send**, tick the cost codes (click one to untick single items), then tick the **Vendors**.",
       "Click **Send to N vendors**. This makes the bids; the emails are the next step.",
-      "Under **Sent**, click **Email all** to email every bid that hasn't gone out yet, each to its vendor with its Excel file attached. Or click **Email** on one vendor's row to read it over and **Send** it.",
-      "When a vendor sends the Excel file back, click **Import…** on their row (or **Import returned file…**). Their prices come in by themselves.",
+      "Under **Sent**, click **Email all** to email every bid that hasn't gone out yet, each to its vendor with a button to type prices online, the Excel file and a PDF attached. Or click **Email** on one vendor's row to read it over and **Send** it.",
+      "Vendors who type their prices online are done: the prices land on their bid and you get an email. When a vendor sends the Excel file back instead, click **Import…** on their row (or **Import returned file…**). Prices written on the PDF, type in with **Prices**.",
       "In **Compare and take**, pick a bid for each cost code and click **Take the picked bids**.",
     ],
     sections: [
@@ -141,9 +141,10 @@ export const FINANCIALS: HelpArticle[] = [
       {
         heading: "Sent",
         items: [
-          { name: "Excel file / Print / PDF", what: "The bid as an Excel file (prices typed into it come back in by themselves) or as a page to print." },
-          { name: "Email all", what: "Emails every bid that hasn't been emailed yet, each to its vendor's email on file, with the usual message and its Excel file attached. Vendors with no email on file are listed: open their bid's **Email** and type one in." },
-          { name: "Email", what: "Shows the email before it goes: To, Subject and Message, all editable. The list of items goes in the email too, and the Excel file is attached.", how: "Click **Send**. It comes from your company's name, and when the vendor replies, it goes to your own email. **Open in my email** is still there if you'd rather send it yourself (download the Excel file and attach it)." },
+          { name: "Excel file / PDF", what: "The bid as an Excel file (prices typed into it come back in by themselves), or as a PDF to print and fill in by hand. Both go with the bid's email." },
+          { name: "Typed online", what: "Every bid email has a **Type your prices online** button: the vendor opens a page with your list (no sign-in, works on a phone), types a price on each line (and anything they'd send instead), and sends. The prices land on their bid, it shows as back, and whoever emailed it (and the job's manager) gets an email with their note. They can change and send again until you take a bid for those cost codes. The link only opens that one bid and stops working after 30 days." },
+          { name: "Email all", what: "Emails every bid that hasn't been emailed yet, each to its vendor's email on file, with the usual message, the online-prices button, the Excel file and the PDF. Vendors with no email on file are listed: open their bid's **Email** and type one in." },
+          { name: "Email", what: "Shows the email before it goes: To, Subject and Message, all editable. The list of items goes in the email too, with a button to type prices online, and the Excel file and PDF are attached.", how: "Click **Send**. It comes from your company's name, and when the vendor replies, it goes to your own email. **Open in my email** is still there if you'd rather send it yourself (the online link goes in the message; download the files and attach them)." },
           { name: "emailed / not emailed", what: "Under each bid's number: when it was emailed from here (point at it to see who to). **Email again** sends it once more." },
           { name: "Import… / Import returned file…", what: "Brings a vendor's filled-in Excel file back. Their prices go on their bid." },
           { name: "Prices", what: "The bid's lines, where you can type prices a vendor gave you by phone or on paper.", how: "Type each **Unit price** and click **Save prices**." },

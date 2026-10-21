@@ -5,8 +5,9 @@ import { getStationKey, STATION_COOKIE } from "@/lib/station-key";
 
 const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-bs_session" : "upgrade_session";
 // Pages for people not signed in: sign in (and its second step), sign up, forgot / reset
-// password, confirm email, accept an invitation — and, on this PC only, the test inbox.
-const PUBLIC_PATHS = ["/login", "/logout", "/signup", "/forgot", "/reset", "/verify", "/invite", "/api/health", "/api/qbwc", "/api/company/logo", ...(process.env.NODE_ENV === "production" ? [] : ["/dev/outbox"])];
+// password, confirm email, accept an invitation, a vendor typing prices from their bid's link (the link
+// is the key: src/lib/bid-link.ts) — and, on this PC only, the test inbox.
+const PUBLIC_PATHS = ["/login", "/logout", "/signup", "/forgot", "/reset", "/verify", "/invite", "/prices", "/api/health", "/api/qbwc", "/api/company/logo", ...(process.env.NODE_ENV === "production" ? [] : ["/dev/outbox"])];
 // The website (/site). Until it's turned on, its pages show only to someone signed in to the Station
 // (src/app/site/layout.tsx) — who may have no builder sign-in at all.
 const SITE_PATHS = ["/site"];

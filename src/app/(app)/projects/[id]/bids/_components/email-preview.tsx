@@ -21,7 +21,8 @@ export function EmailPreview({
   subject: initialSubject,
   body: initialBody,
   excelHref,
-  printHref,
+  pdfHref,
+  onlineUrl,
   vendorName,
   bidNumber,
 }: {
@@ -33,7 +34,9 @@ export function EmailPreview({
   subject: string;
   body: string;
   excelHref: string | null;
-  printHref: string;
+  pdfHref: string;
+  /** The vendor's link to type prices online (the sent email has it as a button). */
+  onlineUrl: string;
   vendorName: string;
   bidNumber: number;
 }) {
@@ -53,7 +56,9 @@ export function EmailPreview({
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  const mailto = `mailto:${encodeURIComponent(to.trim()).replace(/%40/g, "@")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  // Sent yourself, the email carries the online link in its message.
+  const mailBody = onlineUrl ? `${body}\n\nType your prices online (the quickest way): ${onlineUrl}` : body;
+  const mailto = `mailto:${encodeURIComponent(to.trim()).replace(/%40/g, "@")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mailBody)}`;
 
   const send = async () => {
     setSending(true);
@@ -116,16 +121,19 @@ export function EmailPreview({
                 <textarea className="input" rows={9} value={body} onChange={(e) => setBody(e.target.value)} />
               </label>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                <p className="font-medium text-slate-900">Sent with it: the Excel file, and the list in the email itself</p>
-                <p className="text-xs text-slate-600">Replies come to your own email. Sending it yourself with &ldquo;Open in my email&rdquo;? Download the file here and attach it.</p>
+                <p className="font-medium text-slate-900">Sent with it: a button to type prices online, the Excel file, and a PDF to fill in by hand</p>
+                <p className="text-xs text-slate-600">
+                  Prices typed online come in by themselves, and you get an email. Replies come to your own email. Sending it yourself with &ldquo;Open in my email&rdquo;? The
+                  online link goes in the message; download the files here and attach them.
+                </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {excelHref ? (
                     <a href={excelHref} className={buttonClasses("secondary", "sm")}>
                       <Download className="h-3.5 w-3.5" /> Excel file (prices come back in by themselves)
                     </a>
                   ) : null}
-                  <a href={printHref} target="_blank" rel="noopener" className={buttonClasses("secondary", "sm")}>
-                    <Printer className="h-3.5 w-3.5" /> Print / save as PDF
+                  <a href={pdfHref} target="_blank" rel="noopener" className={buttonClasses("secondary", "sm")}>
+                    <Printer className="h-3.5 w-3.5" /> PDF (to print and fill in)
                   </a>
                 </div>
               </div>
@@ -149,7 +157,7 @@ export function EmailPreview({
                 size="sm"
                 onClick={async () => {
                   try {
-                    await navigator.clipboard.writeText(`To: ${to}\nSubject: ${subject}\n\n${body}`);
+                    await navigator.clipboard.writeText(`To: ${to}\nSubject: ${subject}\n\n${mailBody}`);
                     setCopied(true);
                     setTimeout(() => setCopied(false), 2000);
                   } catch {

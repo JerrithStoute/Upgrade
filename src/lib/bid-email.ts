@@ -43,8 +43,9 @@ const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replac
 const qty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""));
 
 /**
- * The email itself: the message as written, then the items (quantity, unit, item), with the Excel file
- * attached. From the company by name (our address, so it gets delivered); replies go to whoever sent it.
+ * The email itself: the message as written, a button to type the prices online, then the items
+ * (quantity, unit, item), with the Excel file and the PDF attached. From the company by name, through
+ * The Builder Station (our address, so it gets delivered); replies go to whoever sent it.
  */
 export function bidEmail(o: {
   to: string;
@@ -53,10 +54,22 @@ export function bidEmail(o: {
   companyName: string;
   replyTo: string | null;
   lines: Line[];
-  attachment: { filename: string; content: Buffer };
+  attachments: { filename: string; content: Buffer }[];
+  /** The link to type prices online (the bid's own page, no sign-in). */
+  onlineUrl: string;
 }): Mail {
   const items = o.lines.filter((l) => !isLadderLine(l));
-  const text = [o.body, "", "The list:", ...items.map((l) => `  ${qty(l.quantity)} ${l.unit}  ${l.name}`), "", `Attached: ${o.attachment.filename}`].join("\n");
+  const files = o.attachments.map((a) => a.filename).join(" and ");
+  const text = [
+    o.body,
+    "",
+    `Type your prices online (the quickest way): ${o.onlineUrl}`,
+    "",
+    "The list:",
+    ...items.map((l) => `  ${qty(l.quantity)} ${l.unit}  ${l.name}`),
+    "",
+    `Attached: ${files}`,
+  ].join("\n");
   const paragraphs = o.body
     .split(/\n{2,}/)
     .map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.5;color:#334155">${esc(p).replace(/\n/g, "<br>")}</p>`)
@@ -71,24 +84,27 @@ export function bidEmail(o: {
 <div style="max-width:620px;margin:24px auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:28px">
 <p style="margin:0 0 18px;font-size:13px;font-weight:600;color:#64748b">${esc(o.companyName)}</p>
 ${paragraphs}
+<p style="margin:22px 0 4px"><a href="${esc(o.onlineUrl)}" style="display:inline-block;background:#1d4ed8;color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:8px">Type your prices online</a></p>
+<p style="margin:0 0 14px;font-size:12px;color:#94a3b8">The quickest way — or fill in the attached Excel file or PDF and send it back.</p>
 <p style="margin:20px 0 6px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b">The list (${items.length} item${items.length === 1 ? "" : "s"})</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;color:#0f172a">${rows}</table>
-<p style="margin:18px 0 0;font-size:13px;color:#64748b">Attached: ${esc(o.attachment.filename)} — type your prices in the yellow column and send it back.</p>
+<p style="margin:18px 0 0;font-size:13px;color:#64748b">Attached: ${esc(files)} — prices typed in the Excel file's yellow column come back in by themselves; the PDF is for writing them in by hand.</p>
 </div></body></html>`;
   return {
     to: o.to,
     subject: o.subject,
     text,
     html,
-    fromName: o.companyName,
+    // (Like every email the program sends for a company: its name, through The Builder Station.)
+    fromName: `${o.companyName} via The Builder Station`,
     replyTo: o.replyTo ?? undefined,
-    attachments: [{ filename: o.attachment.filename, content: o.attachment.content.toString("base64") }],
+    attachments: o.attachments.map((a) => ({ filename: a.filename, content: a.content.toString("base64") })),
   };
 }
 
-/** The name a bid's Excel file goes by (the download, and the email's attachment). */
-export function bidFileName(bid: { number: number; vendorName: string }, project: { number: number }) {
-  return `${`Bid ${bid.number} - ${bid.vendorName} - Job ${project.number}`.replace(/[\/:*?"<>|]+/g, "-").slice(0, 80)}.xlsx`;
+/** The name a bid's files go by (the downloads, and the email's attachments), with its extension. */
+export function bidFileName(bid: { number: number; vendorName: string }, project: { number: number }, ext: "xlsx" | "pdf" = "xlsx") {
+  return `${`Bid ${bid.number} - ${bid.vendorName} - Job ${project.number}`.replace(/[\\/:*?"<>|]+/g, "-").slice(0, 80)}.${ext}`;
 }
 
 /** Bids already emailed, by number — read back from the job's activity ("Emailed bid #3 (…) to …"). */

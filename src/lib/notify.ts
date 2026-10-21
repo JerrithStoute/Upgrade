@@ -124,3 +124,32 @@ export async function emailInsuranceUploaded(vendorId: string, type: string, exp
     },
   );
 }
+
+/**
+ * A vendor typed their prices online (the link in the bid's email): whoever emailed the bid and the job's
+ * manager hear — the admins, if neither.
+ */
+export async function emailBidAnswered(bidId: string, o: { priced: number; items: number; total: number; message: string | null }) {
+  const bid = await db.bid.findUnique({ where: { id: bidId }, include: { project: { select: { id: true, number: true, name: true, managerId: true } } } });
+  if (!bid) return [];
+  const sentBy = await db.activity.findFirst({
+    where: { projectId: bid.projectId, type: "bid.emailed", description: { startsWith: `Emailed bid #${bid.number} (` } },
+    orderBy: { createdAt: "desc" },
+    select: { userId: true },
+  });
+  let to = await staff([sentBy?.userId, bid.project.managerId]);
+  if (!to.length) to = await db.user.findMany({ where: { role: "ADMIN", active: true }, select: { email: true } });
+  return sendCompanyMail(
+    to.map((u) => u.email),
+    {
+      subject: `${bid.vendorName} priced bid #${bid.number} for ${bid.project.name}`,
+      heading: `${bid.vendorName} sent their prices`,
+      lines: [
+        `Bid #${bid.number} for Job #${bid.project.number} ${bid.project.name}: ${o.priced} of ${o.items} items priced${o.total ? `, ${money(o.total)} for what's priced` : ""}.`,
+        ...(o.message ? [`Their note: "${o.message}"`] : []),
+        "The prices are on the bid already — compare and take it on the bids page.",
+      ],
+      button: { label: "Compare bids", url: appUrl(`/projects/${bid.project.id}/bids#bids`) },
+    },
+  );
+}

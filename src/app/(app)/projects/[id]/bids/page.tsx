@@ -13,6 +13,8 @@ import { ImportButton } from "./_components/import-button";
 import { EmailPreview } from "./_components/email-preview";
 import { companyLines } from "@/lib/company";
 import { bidEmailText, emailedBids } from "@/lib/bid-email";
+import { makeBidLink } from "@/lib/bid-link";
+import { appUrl } from "@/lib/mail";
 import { EmailAllButton } from "./_components/email-all";
 import { deleteBid, importBid, quickAddVendor, requestBids, takeBids } from "./actions";
 
@@ -88,6 +90,8 @@ export default async function BidsPage({
     await db.activity.findMany({ where: { projectId: project.id, type: "bid.emailed" }, orderBy: { createdAt: "desc" }, select: { description: true, createdAt: true } }),
   );
   const waitingToEmail = cmp.bids.filter((b) => b.status !== "RECEIVED" && !emailed.has(b.number)).length;
+  // Each bid's link for the vendor to type prices online (in its email; no sign-in).
+  const onlineUrls = new Map(await Promise.all(cmp.bids.map(async (b) => [b.id, appUrl(`/prices/${await makeBidLink(b.id, b.companyId)}`)] as const)));
 
   return (
     <div className="space-y-5">
@@ -299,9 +303,9 @@ export default async function BidsPage({
                         <a href={`${base}/${b.id}/excel`} className="flex items-center gap-1 font-medium text-blue-700 hover:underline">
                           <Download className="h-3.5 w-3.5" /> Excel file
                         </a>
-                        <Link href={`${base}/${b.id}/print`} className="mt-1 flex items-center gap-1 font-medium text-blue-700 hover:underline">
-                          <Printer className="h-3.5 w-3.5" /> Print / PDF
-                        </Link>
+                        <a href={`${base}/${b.id}/pdf`} target="_blank" rel="noopener" className="mt-1 flex items-center gap-1 font-medium text-blue-700 hover:underline">
+                          <Printer className="h-3.5 w-3.5" /> PDF
+                        </a>
                         {b.returnFileId ? (
                           <a href={`/api/files/${b.returnFileId}?download=1`} className="mt-1 flex items-center gap-1 text-slate-600 hover:underline">
                             <Download className="h-3.5 w-3.5" /> Returned file
@@ -317,7 +321,8 @@ export default async function BidsPage({
                             to={v?.email ?? ""}
                             {...emailFor(b, v?.contact ?? null)}
                             excelHref={`${base}/${b.id}/excel`}
-                            printHref={`${base}/${b.id}/print`}
+                            pdfHref={`${base}/${b.id}/pdf`}
+                            onlineUrl={onlineUrls.get(b.id) ?? ""}
                             vendorName={b.vendorName}
                             bidNumber={b.number}
                           />

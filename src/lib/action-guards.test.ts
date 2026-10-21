@@ -26,6 +26,8 @@ const PUBLIC_ACTIONS = new Set([
   // The Station's own sign-in (its rate limits and robot check), and signing out of it.
   "station/(auth)/actions.ts:stationLogin",
   "station/(auth)/actions.ts:stationSignOut",
+  // A vendor typing prices from their bid's email — the signed link is the key to that one bid (bid-link.ts), plus a limit per address.
+  "prices/actions.ts:submitBidPrices",
   // The website's "Request an invite" — robot check and a limit per address.
   "site/actions.ts:requestInvite",
 ]);
