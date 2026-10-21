@@ -1,4 +1,5 @@
 import pg from "pg";
+import { STATION_TABLES } from "./tenant-rules";
 
 // Times are stored as UTC (that's what the app, through Prisma, reads and writes). The
 // plain Postgres connector would otherwise read and write them in this computer's own
@@ -43,6 +44,15 @@ export async function appTables(client: pg.Client | pg.PoolClient) {
   ).rows.map((r) => r.table_name as string);
 }
 
+/**
+ * The tables that hold a company's rows — every app table but The Builder Station's own (its people, its
+ * log, what it keeps about each builder: tenant-rules.ts STATION_TABLES). Those are never part of a
+ * company's backup, export or restore.
+ */
+export async function companyTables(client: pg.Client | pg.PoolClient) {
+  return (await appTables(client)).filter((t) => !STATION_TABLES.includes(t));
+}
+
 function convert(type: string, column: string, v: unknown) {
   if (v === null || v === undefined) return null;
   if (type.startsWith("timestamp")) return new Date(typeof v === "number" || typeof v === "bigint" ? Number(v) : String(v));
@@ -57,7 +67,7 @@ function convert(type: string, column: string, v: unknown) {
  * this company, whatever the source says. All of it goes in, or nothing changes.
  */
 export async function replaceCompany(client: pg.Client | pg.PoolClient, companyId: string, source: Source) {
-  const tables = await appTables(client);
+  const tables = await companyTables(client);
   const copied: Record<string, number> = {};
   await client.query("BEGIN");
   try {

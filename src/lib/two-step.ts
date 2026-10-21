@@ -101,7 +101,9 @@ export function homeFor(role: string, next?: string) {
  */
 export async function afterFirstStep(userId: string, next = ""): Promise<string> {
   const user = await systemDb.user.findUniqueOrThrow({ where: { id: userId }, select: { id: true, name: true, role: true, totpEnabledAt: true, sessionVersion: true, companyId: true } });
-  const company = await systemDb.company.findUnique({ where: { id: user.companyId }, select: { requireTwoStep: true } });
+  const company = await systemDb.company.findUnique({ where: { id: user.companyId }, select: { requireTwoStep: true, station: { select: { status: true } } } });
+  // Paused by The Builder Station (builder-status.ts): not signed in, whatever the way in.
+  if (company?.station?.status === "PAUSED") return "/login?paused=1";
   const team = user.role === "ADMIN" || user.role === "STAFF";
   if (user.totpEnabledAt) {
     if (await trustedDevice(userId, user.sessionVersion)) {

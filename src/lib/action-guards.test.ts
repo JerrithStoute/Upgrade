@@ -12,7 +12,7 @@ import { areaForPath } from "./access";
 
 const APP = join(process.cwd(), "src", "app");
 const GUARD =
-  /\b(requireUser|requireStaff|requireAdmin|requireView|requireEdit|requireVendor|requireClient|requireTimeManager|getCurrentUser|setupUser|readTwoStep)\s*\(/;
+  /\b(requireUser|requireStaff|requireAdmin|requireView|requireEdit|requireVendor|requireClient|requireTimeManager|getCurrentUser|setupUser|readTwoStep|requireStation|getStationUser|stationOwner|readStationStep|readSetupLink)\s*\(/;
 
 /** Actions meant for people who aren't signed in yet (each protects itself with its own link, code or rate limit). */
 const PUBLIC_ACTIONS = new Set([
@@ -23,6 +23,9 @@ const PUBLIC_ACTIONS = new Set([
   "(public)/actions.ts:resetPassword",
   "(public)/actions.ts:acceptInvite",
   "login/actions.ts:login",
+  // The Station's own sign-in (its rate limits and robot check), and signing out of it.
+  "station/(auth)/actions.ts:stationLogin",
+  "station/(auth)/actions.ts:stationSignOut",
   // The website's "Request an invite" — robot check and a limit per address.
   "site/actions.ts:requestInvite",
 ]);

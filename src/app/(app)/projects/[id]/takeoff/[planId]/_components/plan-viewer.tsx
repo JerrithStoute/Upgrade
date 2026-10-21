@@ -81,7 +81,9 @@ import type { DoorSwing, FillShape } from "./pdf-vectors";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { drawnStud } from "./wall-find";
 import { findWalls } from "@/lib/wall-detect";
-import { findRoom, ROOM_DETECT_VERSION, splitOutline } from "@/lib/room-detect";
+import { ROOM_DETECT_VERSION, splitOutline } from "@/lib/room-detect";
+import { looksLikeFloorPlan } from "@/lib/room-detect/sheet-kind";
+import { RoomFinder } from "./room-find";
 import { areaJoists, bayAt, bayOutline, breakAt, joistGroupText, memberAt, pieceLine, throughAt } from "./joist-labels";
 import type { MemberPiece } from "@/lib/joist-pieces";
 import { searchSheet } from "./symbol-search";
@@ -194,6 +196,9 @@ type ViewerMeasurement = {
   sections?: string | null;
   pending?: boolean;
 };
+
+/** Find area on a sheet it can't read (said on the click, and in the tool's help line once known). */
+const UNREADABLE = "This plan is drawn in a way Find area can't read — measure its rooms with Area (click the corners).";
 
 type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount" | "findwalls" | "findarea";
 
@@ -723,6 +728,28 @@ export function PlanViewer({
   // The sheet's recommended scale — only marked in the scale list; the contractor picks it (or not).
   const [scaleRec, setScaleRec] = useState<ScaleRecommendation | null>(null);
   const snapIndex = useMemo(() => (vectors && vectors.length ? buildSnapIndex(vectors) : null), [vectors]);
+  // Find area works in the background (room-find.ts): the page never waits on a plan. A floor plan is read
+  // ahead as soon as it opens (worked out from its doors — nobody's asked), so the first click is ready;
+  // a sheet that can't be read is known before anyone clicks.
+  const roomFinder = useRef<RoomFinder | null>(null);
+  useEffect(() => () => roomFinder.current?.dispose(), []);
+  const finder = () => (roomFinder.current ??= new RoomFinder());
+  const [unreadableSheet, setUnreadableSheet] = useState<Float32Array | null>(null);
+  const sheetScale = sheet?.unitsPerFoot ?? null;
+  useEffect(() => {
+    if (!vectors || !vectors.length || !sheetScale || !looksLikeFloorPlan(vectors, doorSwings, sheetScale)) return;
+    let live = true;
+    const f = (roomFinder.current ??= new RoomFinder());
+    void f.prepare(f.sheet(vectors, fills, doorSwings), sheetScale).then((readable) => live && !readable && setUnreadableSheet(vectors));
+    return () => {
+      live = false;
+    };
+  }, [vectors, fills, doorSwings, sheetScale]);
+  const sheetUnreadable = !!vectors && unreadableSheet === vectors;
+  const sheetIdRef = useRef(sheet?.id);
+  useEffect(() => {
+    sheetIdRef.current = sheet?.id;
+  });
   const [snapHit, setSnapHit] = useState<SnapHit | null>(null);
   // Editing a selected shape: dragging one point, or the whole shape.
   const [drag, setDrag] = useState<{
@@ -2337,24 +2364,40 @@ export function PlanViewer({
       if (!vectors || !vectors.length) return setError("This sheet has no line work to read (a scanned plan?) — areas can't be found here. Trace them with Measure.");
       const click = toPage(e.clientX, e.clientY);
       const t0 = performance.now();
-      const r = findRoom(vectors, click, { unitsPerFoot, fills, doors: doorSwings });
-      // Saved quietly, to improve the room finder from real use (AreaFindLog).
-      const log = { projectId, sheetId: sheet.id, conditionId: active.id, click, unitsPerFoot, version: ROOM_DETECT_VERSION, ms: performance.now() - t0, isDeduction: deduct };
-      if (!r.ok) {
-        void logAreaFind({ ...log, ok: false, reason: r.reason });
-        return setError(
-          r.reason === "in-wall"
-            ? "That's on a wall — click inside the room."
-            : r.reason === "open"
-              ? "No closed-in room there — it runs out to the outside. Click inside a room, or trace it with Measure."
-              : r.reason === "too-small"
-                ? "Nothing there to measure — click inside the room."
-                : "Set this sheet's scale before finding areas.",
-        );
-      }
-      setError(null);
-      createShape(shapeFor(active, sheet.id, r.outline), true, (id) => void logAreaFind({ ...log, ok: true, areaSf: r.areaSf, outline: r.outline, measurementId: id }));
-      setFlash(`${deduct ? "Deducted" : "Added"} ${num(r.areaSf)} sf — Ctrl+Z to take it back; click it for ✂ Split`);
+      const forSheet = sheet.id;
+      const cond = active;
+      const isDeduction = deduct;
+      // (Worked out in the background; "Finding…" only if it takes a moment.)
+      const finding = "Finding the room…";
+      const slow = window.setTimeout(() => setFlash(finding), 400);
+      void finder()
+        .find(finder().sheet(vectors, fills, doorSwings), click, unitsPerFoot)
+        .then((r) => {
+          window.clearTimeout(slow);
+          setFlash((f) => (f === finding ? null : f));
+          // (Moved on to another sheet meanwhile: nothing's added to the wrong one.)
+          if (sheetIdRef.current !== forSheet) return;
+          // Saved quietly, to improve the room finder from real use (AreaFindLog).
+          const log = { projectId, sheetId: forSheet, conditionId: cond.id, click, unitsPerFoot, version: ROOM_DETECT_VERSION, ms: performance.now() - t0, isDeduction };
+          if (!r.ok) {
+            if (r.reason === "unreadable") setUnreadableSheet(vectors);
+            void logAreaFind({ ...log, ok: false, reason: r.reason });
+            return setError(
+              r.reason === "in-wall"
+                ? "That's on a wall — click inside the room."
+                : r.reason === "open"
+                  ? "No closed-in room there — it runs out to the outside. Click inside a room, or trace it with Measure."
+                  : r.reason === "too-small"
+                    ? "Nothing there to measure — click inside the room."
+                    : r.reason === "unreadable"
+                      ? UNREADABLE
+                      : "Set this sheet's scale before finding areas.",
+            );
+          }
+          setError(null);
+          createShape(shapeFor(cond, forSheet, r.outline), true, (id) => void logAreaFind({ ...log, ok: true, areaSf: r.areaSf, outline: r.outline, measurementId: id }));
+          setFlash(`${isDeduction ? "Deducted" : "Added"} ${num(r.areaSf)} sf — Ctrl+Z to take it back; click it for ✂ Split`);
+        });
       return;
     }
     if (tool === "select") {
@@ -3651,6 +3694,7 @@ export function PlanViewer({
           <span>
             <strong className="font-medium text-slate-800">Find area{active ? ` · ${active.name}` : ""}:</strong> click inside a room — its floor is added, to the inside of the walls.
             Ctrl+Z takes it back. Two rooms came as one? Pick it, then ✂ Split. Esc = stop.
+            {sheetUnreadable ? <strong className="ml-1 text-amber-700">{UNREADABLE}</strong> : null}
           </span>
         ) : tool === "autocount" ? (
           <span>

@@ -2,11 +2,24 @@ import { StationBlock } from "@/components/station-logo";
 import Link from "@/components/link";
 
 /** The plain card the sign-in-type pages share (sign up, forgot password, invitations…). */
-export function AuthCard({ title, intro, children, footer }: { title: string; intro?: React.ReactNode; children: React.ReactNode; footer?: React.ReactNode }) {
+export function AuthCard({
+  title,
+  intro,
+  children,
+  footer,
+  home = "/login",
+}: {
+  title: string;
+  intro?: React.ReactNode;
+  children: React.ReactNode;
+  footer?: React.ReactNode;
+  /** Where the logo goes: the builders' sign-in, or the Station's own (/station/login). */
+  home?: string;
+}) {
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center bg-slate-100 p-6">
       <div className="w-full max-w-sm">
-        <Link href="/login" className="mb-6 block" aria-label="The Builder Station — sign in">
+        <Link href={home} className="mb-6 block" aria-label="The Builder Station — sign in">
           <StationBlock />
         </Link>
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">

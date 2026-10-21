@@ -18,6 +18,7 @@ import { SignJWT } from "jose";
 import { Prisma } from "@prisma/client";
 import { db, systemDb } from "../src/lib/db";
 import { runAsCompany } from "../src/lib/tenant";
+import { STATION_TABLES } from "../src/lib/tenant-rules";
 import { getSessionSecret } from "../src/lib/session-secret";
 
 const APP = process.env.APP_URL ?? "http://localhost:3000";
@@ -73,7 +74,8 @@ async function main() {
 
     // --- 1. The database layer, every kind of record -------------------------------
     console.log("1. Every kind of record, through the program's database layer…");
-    const models = Prisma.dmmf.datamodel.models.map((m) => m.name);
+    // (The Builder Station's own tables belong to no company — closed to the app's login altogether, checked below.)
+    const models = Prisma.dmmf.datamodel.models.map((m) => m.name).filter((m) => !STATION_TABLES.includes(m));
     for (const model of models) {
       const theirIds = (await delegate(systemDb, model).findMany({ where: model === "Company" ? { id: victim.id } : { companyId: victim.id }, select: { id: true }, take: 200 })).map(
         (r) => r.id,
@@ -119,6 +121,14 @@ async function main() {
     const myCompany = await runAsCompany(intruder.id, () => db.company.findFirst());
     if (myCompany?.id !== intruder.id) fail("Company: the company record wasn't my own");
     else ok();
+    // The Builder Station's own people and log: no company's, so the app's login is refused outright.
+    for (const model of STATION_TABLES) {
+      const read = await runAsCompany(intruder.id, () => delegate(db, model).count())
+        .then(() => true)
+        .catch(() => false);
+      if (read) fail(`${model}: the app's login could read The Builder Station's own table`);
+      else ok();
+    }
 
     // --- 2. The running app, signed in as the throwaway company -------------------
     console.log(`2. Their pages, files and downloads through the running app (${APP})…`);

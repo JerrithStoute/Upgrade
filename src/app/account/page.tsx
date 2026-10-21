@@ -6,7 +6,7 @@ import { setupSecret } from "@/lib/two-step-setup";
 import { fmtDateTime } from "@/lib/utils";
 import { SetupForm } from "../login/two-step/forms";
 import { PasswordForm, TwoStepOnForms } from "./forms";
-import { setMorningEmail, signOutAll } from "./actions";
+import { setMorningEmail, signOutAll, startStationOwner } from "./actions";
 import { isPlatformAdmin } from "@/lib/builder-invites";
 import { companyClock } from "@/lib/company-zone";
 
@@ -25,6 +25,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const backupLeft = user.backupCodes ? (JSON.parse(user.backupCodes) as string[]).length : 0;
   const setup = !user.totpEnabledAt && sp.setup === "1" ? await setupSecret(me.id) : null;
   const card = "rounded-xl border border-slate-200 bg-white p-5 shadow-sm";
+  // Whoever runs The Builder Station: until it has an owner, they start its own sign-in from here.
+  const stationOwnerNeeded = isPlatformAdmin(user.email) && !(await systemDb.stationUser.count({ where: { role: "OWNER", active: true } }));
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-8">
@@ -39,15 +41,20 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
           </p>
         </div>
         {sp.twostep === "on" ? <p className="rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800">Two-step sign-in is on.</p> : null}
-        {isPlatformAdmin(user.email) ? (
+        {stationOwnerNeeded ? (
           <section className={card}>
             <h2 className="mb-1 flex items-center gap-2 font-semibold text-slate-900">
               <UserPlus className="h-4 w-4 text-slate-400" /> The Builder Station
             </h2>
-            <p className="mb-3 text-sm text-slate-500">You run it: sign-up is by invitation for now.</p>
-            <Link href="/builders" className="text-sm font-medium text-blue-700 hover:underline">
-              Invite a builder →
-            </Link>
+            <p className="mb-3 text-sm text-slate-500">
+              You run it. Running The Builder Station has its own sign-in, apart from {company?.name ?? "your company"}: set a password and a phone code for it, then sign in at
+              /station/login. Your employees there get their own Station sign-in — never through {company?.name ?? "your company"}.
+            </p>
+            <form action={startStationOwner}>
+              <button type="submit" className="rounded-md bg-blue-700 px-3 py-2 text-sm font-medium text-white hover:bg-blue-800">
+                Set up my Station sign-in
+              </button>
+            </form>
           </section>
         ) : null}
 

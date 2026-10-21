@@ -2,8 +2,7 @@ import { notFound } from "next/navigation";
 import { StationLine } from "@/components/station-logo";
 import { STATION_SHADES } from "@/lib/brand";
 import Link from "@/components/link";
-import { getCurrentUser } from "@/lib/auth";
-import { isPlatformAdmin } from "@/lib/builder-invites";
+import { getStationUser } from "@/lib/station-auth";
 import { siteIsLive } from "@/lib/site";
 
 export const metadata = {
@@ -15,19 +14,19 @@ export const metadata = {
 // (src/lib/brand.ts) would otherwise repaint it.
 const OWN_BLUE: React.CSSProperties = Object.fromEntries(Object.entries(STATION_SHADES).map(([k, v]) => [`--color-blue-${k}`, v]));
 
-/** The public website. Until SITE_LIVE=1 only the platform owner sees it (src/lib/site.ts). */
+/** The public website. Until SITE_LIVE=1 only the Station's people see it (src/lib/site.ts). */
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const live = siteIsLive();
   if (!live) {
-    const me = await getCurrentUser();
-    if (!isPlatformAdmin(me?.email)) notFound();
+    // Until it's turned on, only the people who run the Station see it.
+    if (!(await getStationUser())) notFound();
   }
   return (
     <div className="flex min-h-screen flex-col bg-white text-slate-900" style={OWN_BLUE}>
       {live ? null : (
         <div className="bg-amber-100 px-4 py-2 text-center text-sm text-amber-900">
           <b>Preview</b> — only you can see this. It goes public when the website is turned on.{" "}
-          <Link href="/builders" className="underline">
+          <Link href="/station/invites" className="underline">
             Back to the program
           </Link>
         </div>

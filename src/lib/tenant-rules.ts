@@ -22,7 +22,10 @@ import type pg from "pg";
 const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
-export type RulesReport = { appRole: string | null; tables: number; links: number; note?: string };
+/** Tables of The Builder Station itself — no company's, and closed to the app's login. */
+export const STATION_TABLES = ["StationUser", "StationLog", "StationBuilder"];
+
+export type RulesReport ={ appRole: string | null; tables: number; links: number; note?: string };
 
 export async function applyTenantRules(system: pg.Client, appUrl: string | undefined): Promise<RulesReport> {
   const app = appUrl ? new URL(appUrl) : null;
@@ -114,6 +117,12 @@ END $$`);
       await system.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO ${q(appRole)}`);
       await system.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO ${q(appRole)}`);
       await system.query(`ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO ${q(appRole)}`);
+      // The Builder Station's own tables (its people, its log) belong to no company: the app's login
+      // can't touch them at all — only the Station's pages, through the system login.
+      for (const t of STATION_TABLES) {
+        const has = await system.query("SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = $1", [t]);
+        if (has.rowCount) await system.query(`REVOKE ALL ON ${q(t)} FROM ${q(appRole)}`);
+      }
       for (const t of [...tables, "Company"]) {
         const col = t === "Company" ? `"id"` : `"companyId"`;
         await system.query(`ALTER TABLE ${q(t)} ENABLE ROW LEVEL SECURITY`);

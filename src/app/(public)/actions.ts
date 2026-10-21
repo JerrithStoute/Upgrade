@@ -3,6 +3,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { db, systemDb } from "@/lib/db";
+import { stationLog } from "@/lib/station-auth";
 import { hashPassword, signOutEverywhere } from "@/lib/auth";
 import { hashToken, sendResetEmail, sendSecurityNotice, sendVerifyEmail, redeemLink } from "@/lib/account";
 import { passwordProblem } from "@/lib/passwords";
@@ -78,6 +79,8 @@ export async function signUp(_prev: FormState, fd: FormData): Promise<FormState>
     await logActivity({ userId: u.id, type: "company.created", description: `${name} created ${companyName}` });
     return u;
   });
+  // On the Station's Log (and the builder's own page there).
+  await stationLog(null, "builder.signed-up", `${companyName} signed up (${name}, ${email})`, company.id);
   await sendVerifyEmail(user, company.name);
   return { ok: "sent", email };
 }

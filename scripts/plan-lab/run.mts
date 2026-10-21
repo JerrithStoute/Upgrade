@@ -55,9 +55,8 @@ for (const sh of sheets) {
   try {
     const doc = await task.promise;
     const page = await doc.getPage(sh.page);
-    const v = page.getViewport({ scale: 1 });
     const fills: FillShape[] = [];
-const swings: DoorSwing[] = [];
+    const swings: DoorSwing[] = [];
     const segs = await extractSegments(pdfjs as never, page as never, undefined, fills, swings);
     const upf = sh.upf;
 

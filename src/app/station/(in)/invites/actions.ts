@@ -1,17 +1,16 @@
 "use server";
 
-import { requireUser } from "@/lib/auth";
 import { systemDb } from "@/lib/db";
-import { isPlatformAdmin, makeBuilderInvite, INVITE_DAYS } from "@/lib/builder-invites";
+import { makeBuilderInvite, INVITE_DAYS } from "@/lib/builder-invites";
 import { appUrl, sendMail, simpleEmail } from "@/lib/mail";
-import { logActivity } from "@/lib/activity";
+import { getStationUser, stationLog } from "@/lib/station-auth";
 
 export type InviteState = { error?: string; link?: string; email?: string; sent?: boolean } | undefined;
 
-/** The platform owner invites a builder: a sign-up link for their email, by email (and to copy). */
+/** Someone at the Station invites a builder: a sign-up link for their email, by email (and to copy). */
 export async function inviteBuilder(_prev: InviteState, fd: FormData): Promise<InviteState> {
-  const me = await requireUser();
-  if (!isPlatformAdmin(me.email)) return { error: "Only The Builder Station's owner can invite builders" };
+  const me = await getStationUser();
+  if (!me) return { error: "Sign in to the Station again" };
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const name = String(fd.get("name") ?? "").trim().slice(0, 120) || null;
   const companyName = String(fd.get("companyName") ?? "").trim().slice(0, 120) || null;
@@ -38,6 +37,6 @@ export async function inviteBuilder(_prev: InviteState, fd: FormData): Promise<I
     console.error("Builder invitation email not sent:", err);
     sent = false;
   }
-  await logActivity({ userId: me.id, type: "platform.builder-invited", description: `Invited ${email}${companyName ? ` (${companyName})` : ""} to The Builder Station` });
+  await stationLog(me.id, "invite.sent", `Invited ${email}${companyName ? ` (${companyName})` : ""} to The Builder Station`);
   return { link, email, sent };
 }

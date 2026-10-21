@@ -8,6 +8,8 @@ import { passwordProblem } from "@/lib/passwords";
 import { newBackupCodes } from "@/lib/totp";
 import { logSecurity } from "@/lib/security-log";
 import { sendSecurityNotice } from "@/lib/account";
+import { isPlatformAdmin } from "@/lib/builder-invites";
+import { makeSetupLink, stationLog } from "@/lib/station-auth";
 
 export type AccountState = { error?: string; ok?: string; codes?: string[] } | undefined;
 
@@ -66,4 +68,22 @@ export async function newCodes(_prev: AccountState, fd: FormData): Promise<Accou
   await systemDb.user.update({ where: { id: me.id }, data: { backupCodes: JSON.stringify(hashes) } });
   await logSecurity(me, "two-step", "made new backup codes");
   return { codes, ok: "New backup codes — the old ones no longer work." };
+}
+
+/**
+ * The Builder Station's first owner: whoever runs it (PLATFORM_ADMIN_EMAILS), signed in here as a
+ * builder, starts their own Station sign-in — once, before the Station has an owner. From then on
+ * Station people are added inside the Station (Team), never from a builder's account.
+ */
+export async function startStationOwner() {
+  const me = await requireUser();
+  if (!isPlatformAdmin(me.email)) redirect("/account");
+  if (await systemDb.stationUser.count({ where: { role: "OWNER", active: true } })) redirect("/station/login");
+  const user = await systemDb.stationUser.upsert({
+    where: { email: me.email.toLowerCase() },
+    create: { email: me.email.toLowerCase(), name: me.name, role: "OWNER" },
+    update: { role: "OWNER", active: true, passwordHash: null, totpSecret: null, totpEnabledAt: null, backupCodes: null, sessionVersion: { increment: 1 } },
+  });
+  await stationLog(user.id, "owner.created", `${user.name} became The Builder Station's owner`);
+  redirect(`/station/setup?t=${await makeSetupLink(user.id, user.sessionVersion)}`);
 }

@@ -12,8 +12,8 @@ import { SETTINGS } from "./articles/settings";
 export const ARTICLES: HelpArticle[] = [...JOBS, ...SALES, ...TAKEOFF, ...ESTIMATES, ...FINANCIALS, ...FINANCIALS_2, ...FIELD, ...SETTINGS];
 
 /**
- * Pages that don't get an article: the platform owner's page for inviting builders (other builders
- * never see it). Every other page must have one — src/help/help.test.ts fails for a new page
- * without, so nothing slips through.
+ * Pages that don't get an article. (None today: the people who run The Builder Station have their own
+ * pages, under /station, outside the builders' program and its manual.) Every page must have one —
+ * src/help/help.test.ts fails for a new page without, so nothing slips through.
  */
-export const NO_HELP_PAGES = ["/builders"];
+export const NO_HELP_PAGES: string[] = [];

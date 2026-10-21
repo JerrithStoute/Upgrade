@@ -19,7 +19,7 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Company {
-  id                  String   @id @default(cuid())
+  id                  String          @id @default(cuid())
   name                String
   address             String?
   city                String?
@@ -39,36 +39,38 @@ model Company {
   // What proposals show by default (JSON, see src/lib/proposal-options.ts); null = the built-in default.
   proposalOptions     String?
   // New allowances start with profit in (true) or out (false, at cost); each can be switched.
-  allowanceProfit     Boolean  @default(false)
+  allowanceProfit     Boolean         @default(false)
   // Change order defaults ("Use as default"): JSON { introText, closingText, terms, ifDeclined, profitMode, profitValue, profitShown }.
   changeOrderDefaults String?
   // Your default Markup, Margin & Tax table for new estimates (JSON).
   markupTable         String?
   // The days you work, 0 = Sunday … 6 = Saturday ("1,2,3,4,5" = Monday–Friday). Schedules count these.
-  workDays            String   @default("1,2,3,4,5")
+  workDays            String          @default("1,2,3,4,5")
   // A client's choice over (or under) its allowance goes on a draft change order by itself.
-  autoSelectionCO     Boolean  @default(true)
+  autoSelectionCO     Boolean         @default(true)
   // An approved change order goes on the job's next draft invoice by itself.
-  autoInvoiceCO       Boolean  @default(true)
+  autoInvoiceCO       Boolean         @default(true)
   // Invoice numbers: AUTO (counted up from invoiceNextNumber) or MANUAL (you type them).
-  invoiceNumbering    String   @default("AUTO")
+  invoiceNumbering    String          @default("AUTO")
   invoiceNextNumber   Int?
   // Insurance every sub/vendor must carry (COI tracking): "GL,WC" (GL, WC, AUTO, UMBRELLA).
   // Spec houses: usual selling costs (JSON { listPct, buyerPct, closingPct, closingFlat, concessions }); null = built-in.
   specDefaults        String?
-  requiredCoverage    String   @default("GL,WC")
+  requiredCoverage    String          @default("GL,WC")
   // Team members must use two-step sign-in (an authenticator app code).
-  requireTwoStep      Boolean  @default(false)
+  requireTwoStep      Boolean         @default(false)
   // Time clock: percent added on top of pay for payroll taxes, workers' comp and insurance.
-  laborBurden         Float    @default(0)
+  laborBurden         Float           @default(0)
   // Time clock rules (JSON, src/lib/time-rules.ts): week start, overtime, rounding, lunch, long shifts, job-site distance.
   timeRules           String?
   // The company's clock (IANA name; src/lib/zone.ts): time clock days and weeks, times shown, the morning email.
-  timeZone            String   @default("America/Chicago")
+  timeZone            String          @default("America/Chicago")
   // Where backups go (a folder path, e.g. on another drive or OneDrive); null = BACKUP_DIR or ./backups.
   backupDir           String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  // (The Builder Station's own record of this company — its status, the Station's notes. Never shown here.)
+  station             StationBuilder?
 }
 
 /// ADMIN: full access. STAFF: internal team. CLIENT: portal only. SUB: subcontractor (limited).
@@ -199,10 +201,10 @@ model Project {
   clientId String?
   client   Client? @relation(fields: [clientId], references: [id], onDelete: SetNull)
 
-  managerId String?
-  manager   User?   @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
+  managerId   String?
+  manager     User?           @relation("ProjectManager", fields: [managerId], references: [id], onDelete: SetNull)
   // The team on this job (besides its manager): people whose position shows only their jobs see it too.
-  members   ProjectMember[]
+  members     ProjectMember[]
   // Subs and vendors picked to see where this job is (their portal's Jobs page, with directions).
   siteVendors ProjectVendor[]
   // Where the job is on the map (time clock: on site or not). Found from the address, or set from a phone at the site.
@@ -267,20 +269,20 @@ model Project {
 // ---------------------------------------------------------------------------
 
 model CostCode {
-  id        String   @id @default(cuid())
+  id                String   @id @default(cuid())
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
-  companyId String   @default(dbgenerated("current_setting('app.company_id'::text)"))
-  code      String? // e.g. "03-100" — optional; some codes are name-only
-  name      String // e.g. "Concrete Foundation"
-  division  String // group, e.g. "03 Concrete"
-  sortOrder Int      @default(0)
-  active    Boolean  @default(true)
+  companyId         String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  code              String? // e.g. "03-100" — optional; some codes are name-only
+  name              String // e.g. "Concrete Foundation"
+  division          String // group, e.g. "03 Concrete"
+  sortOrder         Int      @default(0)
+  active            Boolean  @default(true)
   // QuickBooks Desktop: the item it is there (its ListID) — the item named with this code.
-  qbListId  String?
+  qbListId          String?
   // How often prices under this code go stale (lumber every 3 weeks, windows every 6 months…): blank = never.
   priceRecheckEvery Int?
   priceRecheckUnit  String? // days | weeks | months
-  createdAt DateTime @default(now())
+  createdAt         DateTime @default(now())
 
   estimateItems             EstimateItem[]
   templateItems             EstimateTemplateItem[]
@@ -1113,7 +1115,7 @@ model TakeoffSheet {
 
   // The floor above, laid over this sheet to draw the floor joists on (src/lib/upper-floor.ts):
   // JSON {sourceSheetId, walls, align}. A picture only — nothing in it is counted. Null = none.
-  upperFloor  String?
+  upperFloor String?
 
   measurements TakeoffMeasurement[]
   areaFinds    AreaFindLog[]
@@ -1275,34 +1277,34 @@ model TakeoffAssemblyItem {
 /// Company-wide Item List: materials and labor picked into takeoff assemblies.
 /// New items typed into an assembly are added here automatically.
 model MaterialItem {
-  id         String    @id @default(cuid())
+  id             String    @id @default(cuid())
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
-  companyId  String    @default(dbgenerated("current_setting('app.company_id'::text)"))
-  name       String
-  nameKey    String // lower-cased, single-spaced name — keeps "Concrete" and "concrete" one item
-  category   String    @default("General")
-  unit       String    @default("ea")
-  unitCost   Float     @default(0)
-  wastePct   Float     @default(0)
-  roundUp    Boolean   @default(false)
-  costCodeId String?
-  costCode   CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
-  vendor     String?
-  sku        String?
-  notes      String?
+  companyId      String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  name           String
+  nameKey        String // lower-cased, single-spaced name — keeps "Concrete" and "concrete" one item
+  category       String    @default("General")
+  unit           String    @default("ea")
+  unitCost       Float     @default(0)
+  wastePct       Float     @default(0)
+  roundUp        Boolean   @default(false)
+  costCodeId     String?
+  costCode       CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  vendor         String?
+  sku            String?
+  notes          String?
   // Doors (and other sized items): rough size, interior / exterior, and the length one piece comes in (casing sticks).
-  widthIn    Float?
-  heightIn   Float?
-  exterior   Boolean?
-  style      String? // windows (and doors): type, e.g. Single hung, Slider
-  lengthFt   Float?
+  widthIn        Float?
+  heightIn       Float?
+  exterior       Boolean?
+  style          String? // windows (and doors): type, e.g. Single hung, Slider
+  lengthFt       Float?
   // What the program uses it as, whatever category you file it under:
   // windows | doors | framing lumber | sheathing | drywall | trim (null = your own item).
-  kind       String?
+  kind           String?
   // When its price was last set or confirmed ("Price still good") — stale once past its cost code's recheck time.
-  priceCheckedAt DateTime @default(now())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  priceCheckedAt DateTime  @default(now())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   assemblyItems TakeoffAssemblyItem[]
   templateItems TakeoffTemplateItem[]
@@ -1540,10 +1542,10 @@ model Vendor {
   insurance      VendorInsurance[]
   logins         User[]
   tasks          ScheduleTask[]
+  siteJobs       ProjectVendor[]
 
   @@unique([companyId, qbListId])
   @@index([companyId])
-  siteJobs          ProjectVendor[]
 }
 
 /// A request for prices: one vendor, one job, the Material list items of the cost codes
@@ -2109,36 +2111,36 @@ model SpecOffer {
 
 /// One stretch on the clock: someone working on a job (and a cost code) from clockIn to clockOut.
 model TimeEntry {
-  id           String    @id @default(cuid())
+  id              String    @id @default(cuid())
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
-  companyId    String    @default(dbgenerated("current_setting('app.company_id'::text)"))
-  userId       String
-  user         User      @relation("TimeEntryUser", fields: [userId], references: [id], onDelete: Cascade)
-  projectId    String
-  project      Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  costCodeId   String?
-  costCode     CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
-  clockIn      DateTime
-  clockOut     DateTime? // null = still on the clock
-  breakMinutes Int       @default(0)
+  companyId       String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  userId          String
+  user            User      @relation("TimeEntryUser", fields: [userId], references: [id], onDelete: Cascade)
+  projectId       String
+  project         Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  costCodeId      String?
+  costCode        CostCode? @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
+  clockIn         DateTime
+  clockOut        DateTime? // null = still on the clock
+  breakMinutes    Int       @default(0)
   // Where the phone was at each punch (GPS, read once at that moment; accuracy in meters). Null: not shared or no signal.
-  inLat        Float?
-  inLng        Float?
-  inAccuracy   Float?
-  outLat       Float?
-  outLng       Float?
-  outAccuracy  Float?
-  notes        String?
+  inLat           Float?
+  inLng           Float?
+  inAccuracy      Float?
+  outLat          Float?
+  outLng          Float?
+  outAccuracy     Float?
+  notes           String?
   // Cost per hour when it was worked (pay + burden), so a raise later doesn't rewrite old jobs.
   // null = no pay rate was set then; the person's current rate is used.
-  rate         Float?
+  rate            Float?
   // On the clock a long time: when the "still on the clock?" email went out (once per stretch).
   longShiftSentAt DateTime?
   // Changed by hand (Timesheets) — by whom.
-  editedById   String?
-  editedBy     User?     @relation("TimeEntryEditor", fields: [editedById], references: [id], onDelete: SetNull)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  editedById      String?
+  editedBy        User?     @relation("TimeEntryEditor", fields: [editedById], references: [id], onDelete: SetNull)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   @@index([userId, clockIn])
   @@index([projectId, clockIn])
@@ -2275,4 +2277,59 @@ model ProjectVendor {
   @@unique([projectId, vendorId])
   @@index([companyId])
   @@index([vendorId])
+}
+
+// ---------------------------------------------------------------------------
+// The Builder Station itself — not any builder company
+// ---------------------------------------------------------------------------
+
+/// Someone who runs The Builder Station: its owner, or an employee. Not a builder's login — they
+/// sign in at /station (src/lib/station-auth.ts), belong to no company, and the app's own database
+/// login can't read these rows at all (tenant-rules.ts). role: OWNER | STAFF
+model StationUser {
+  id             String       @id @default(cuid())
+  email          String       @unique
+  name           String
+  role           String       @default("STAFF")
+  passwordHash   String? // null until they set one from their invitation link
+  active         Boolean      @default(true)
+  sessionVersion Int          @default(0) // bumped to sign them out everywhere
+  totpSecret     String? // the authenticator app's secret, encrypted (two-step is required here)
+  totpEnabledAt  DateTime?
+  backupCodes    String? // JSON: hashes of unused one-time backup codes
+  lastSignInAt   DateTime?
+  createdAt      DateTime     @default(now())
+  log            StationLog[]
+}
+
+/// What happened at The Builder Station, and who did it: invitations sent, people added or removed,
+/// sign-ins — and the website's requests for an invitation (no one). Read on the Station's Log.
+model StationLog {
+  id            String       @id @default(cuid())
+  stationUserId String?
+  stationUser   StationUser? @relation(fields: [stationUserId], references: [id], onDelete: SetNull)
+  // e.g. "invite.sent", "invite.requested", "staff.added", "sign-in", "builder.status"
+  type          String
+  description   String
+  // The builder company it was about, if any (a plain id: the history stays if the company goes).
+  builderId     String?
+  createdAt     DateTime     @default(now())
+
+  @@index([type, createdAt])
+  @@index([builderId])
+}
+
+/// What The Builder Station keeps about a builder company: where they stand (status: TRIAL | ACTIVE |
+/// FREE | PAUSED — no row is Active) and the Station's private notes. The Station's, not the company's:
+/// never in the company's backups or exports, and the app's own login can't read it (tenant-rules.ts).
+/// PAUSED stops everyone in that company signing in (their data is kept).
+model StationBuilder {
+  id          String    @id @default(cuid())
+  companyId   String    @unique
+  company     Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  status      String    @default("ACTIVE")
+  trialEndsAt DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 }

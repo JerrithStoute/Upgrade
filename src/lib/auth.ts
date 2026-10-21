@@ -107,6 +107,8 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
   });
   // Signed out everywhere since this sign-in (or deactivated): no longer valid.
   if (!user || !user.active || user.sessionVersion !== session.version) return null;
+  // The company's account is paused by The Builder Station (builder-status.ts): nobody in it is signed in.
+  if ((await systemDb.stationBuilder.findUnique({ where: { companyId: user.companyId }, select: { status: true } }))?.status === "PAUSED") return null;
   return {
     id: user.id,
     email: user.email,

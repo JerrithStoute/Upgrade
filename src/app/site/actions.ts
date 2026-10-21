@@ -2,8 +2,7 @@
 
 import { headers } from "next/headers";
 import { systemDb } from "@/lib/db";
-import { runAsCompany } from "@/lib/tenant";
-import { logActivity } from "@/lib/activity";
+import { stationLog } from "@/lib/station-auth";
 import { appUrl, sendMail, simpleEmail } from "@/lib/mail";
 import { inviteRequestText, type InviteRequest } from "@/lib/builder-invites";
 import { recordFailure, retryAfter } from "@/lib/rate-limit";
@@ -15,8 +14,8 @@ export type RequestState = { error?: string; ok?: boolean } | undefined;
 const field = (fd: FormData, k: string, max = 120) => String(fd.get(k) ?? "").trim().slice(0, max);
 
 /**
- * "Request an invite" on the website: the request lands on the platform owner's
- * "Invite a builder" page (an activity entry), and they get an email about it.
+ * "Request an invite" on the website: the request lands on the Station's Invites page (its log), and
+ * the Station's owners get an email about it.
  */
 export async function requestInvite(_prev: RequestState, fd: FormData): Promise<RequestState> {
   if (!(await passedRobotCheck(fd))) return { error: ROBOT_CHECK_FAILED };
@@ -37,28 +36,25 @@ export async function requestInvite(_prev: RequestState, fd: FormData): Promise<
   if (retryAfter(`invite-request:${ip}`, 5) > 0) return { error: "We've had a few requests from here already — try again later, or email us." };
   recordFailure(`invite-request:${ip}`, 60 * 60 * 1000);
 
-  // The platform owner: the first of PLATFORM_ADMIN_EMAILS.
-  const ownerEmail = (process.env.PLATFORM_ADMIN_EMAILS ?? "").split(",")[0]?.trim().toLowerCase();
-  const owner = ownerEmail ? await systemDb.user.findUnique({ where: { email: ownerEmail }, select: { companyId: true } }) : null;
-  if (!owner) {
-    console.error("Invite request with no platform owner to send it to:", r.email);
-    return { ok: true };
-  }
   const text = inviteRequestText(r);
-  await runAsCompany(owner.companyId, () => logActivity({ type: "platform.invite-requested", description: text }));
-  try {
-    const invite = new URLSearchParams({ email: r.email, name: r.name, company: r.company });
-    await sendMail(
-      simpleEmail({
-        to: ownerEmail!,
-        subject: `Invite request: ${r.company}`,
-        heading: "Someone asked for an invitation",
-        lines: [text],
-        button: { label: "Invite them", url: appUrl(`/builders?${invite}`) },
-      }),
-    );
-  } catch (err) {
-    console.error("Invite request email not sent:", err);
-  }
+  await stationLog(null, "invite.requested", text);
+  // The Station's owners (before any is set up: the first of PLATFORM_ADMIN_EMAILS).
+  const owners = (await systemDb.stationUser.findMany({ where: { role: "OWNER", active: true }, select: { email: true } })).map((o) => o.email);
+  const to = owners.length ? owners : [(process.env.PLATFORM_ADMIN_EMAILS ?? "").split(",")[0]?.trim().toLowerCase()].filter(Boolean);
+  const invite = new URLSearchParams({ email: r.email, name: r.name, company: r.company });
+  for (const email of to)
+    try {
+      await sendMail(
+        simpleEmail({
+          to: email,
+          subject: `Invite request: ${r.company}`,
+          heading: "Someone asked for an invitation",
+          lines: [text],
+          button: { label: "Invite them", url: appUrl(`/station/invites?${invite}`) },
+        }),
+      );
+    } catch (err) {
+      console.error("Invite request email not sent:", err);
+    }
   return { ok: true };
 }

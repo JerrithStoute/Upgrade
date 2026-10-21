@@ -1,8 +1,7 @@
-import { notFound } from "next/navigation";
-import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { systemDb } from "@/lib/db";
 import Link from "@/components/link";
-import { isPlatformAdmin, readInviteRequest, INVITE_DAYS } from "@/lib/builder-invites";
+import { readInviteRequest, INVITE_DAYS } from "@/lib/builder-invites";
+import { requireStation } from "@/lib/station-auth";
 import { siteIsLive } from "@/lib/site";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import { fmtDateTime } from "@/lib/utils";
@@ -10,16 +9,15 @@ import { InviteBuilderForm } from "./invite-form";
 
 export const metadata = { title: "Invite a builder" };
 
-/** The platform owner's page: invite builders (sign-up is invite-only for now). Hidden from everyone else. */
-export default async function BuildersPage({ searchParams }: { searchParams: Promise<{ email?: string; name?: string; company?: string }> }) {
-  const me = await requireUser();
-  if (!isPlatformAdmin(me.email)) notFound();
+/** The Station's Invites: invite builders (sign-up is invite-only for now), and the website's requests. */
+export default async function InvitesPage({ searchParams }: { searchParams: Promise<{ email?: string; name?: string; company?: string }> }) {
+  await requireStation();
   const fill = await searchParams;
-  const pick = { id: true, description: true, createdAt: true } as const;
+  const pick = { id: true, description: true, createdAt: true, stationUser: { select: { name: true } } } as const;
   const [sent, requests] = await Promise.all([
-    db.activity.findMany({ where: { type: "platform.builder-invited" }, orderBy: { createdAt: "desc" }, take: 50, select: pick }),
+    systemDb.stationLog.findMany({ where: { type: "invite.sent" }, orderBy: { createdAt: "desc" }, take: 50, select: pick }),
     // From the website's "Request an invite" (src/app/site/actions.ts).
-    db.activity.findMany({ where: { type: "platform.invite-requested" }, orderBy: { createdAt: "desc" }, take: 50, select: pick }),
+    systemDb.stationLog.findMany({ where: { type: "invite.requested" }, orderBy: { createdAt: "desc" }, take: 50, select: pick }),
   ]);
   const invited = new Set(sent.map((s) => /^Invited (\S+)/.exec(s.description)?.[1]).filter(Boolean));
   return (
@@ -52,7 +50,7 @@ export default async function BuildersPage({ searchParams }: { searchParams: Pro
                   {who && invited.has(who.email) ? (
                     <span className="shrink-0 text-xs text-emerald-700">Invited</span>
                   ) : who ? (
-                    <Link href={`/builders?${new URLSearchParams(who)}`} className="shrink-0 text-xs font-medium text-blue-700 hover:underline">
+                    <Link href={`/station/invites?${new URLSearchParams(who)}`} className="shrink-0 text-xs font-medium text-blue-700 hover:underline">
                       Invite
                     </Link>
                   ) : null}
@@ -71,7 +69,8 @@ export default async function BuildersPage({ searchParams }: { searchParams: Pro
             {sent.map((s) => (
               <li key={s.id} className="flex gap-3 px-5 py-2">
                 <span className="w-44 shrink-0 text-slate-500">{fmtDateTime(s.createdAt)}</span>
-                <span className="text-slate-800">{s.description.replace(/ to The Builder Station$/, "")}</span>
+                <span className="min-w-0 flex-1 text-slate-800">{s.description.replace(/ to The Builder Station$/, "")}</span>
+                {s.stationUser ? <span className="shrink-0 text-xs text-slate-500">by {s.stationUser.name}</span> : null}
               </li>
             ))}
           </ul>

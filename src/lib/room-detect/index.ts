@@ -15,10 +15,10 @@
  *
  * Plain numbers in, plain numbers out (no database, no screens), like the wall finder.
  */
-import { DEG, distToSeg, grid, indexLines, parallelIn, toLine, type Line, type Pt } from "../wall-detect";
+import { DEG, bucketOf, distToSeg, grid, toLine, type Line, type Pt } from "../wall-detect";
 
 /** Which rules the room finder runs: saved with each Find area click (AreaFindLog). Change it with them. */
-export const ROOM_DETECT_VERSION = "2026-10-20f";
+export const ROOM_DETECT_VERSION = "2026-10-21a";
 
 export type RoomFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -46,6 +46,8 @@ export type RoomFindOptions = {
   doors?: { x: number; y: number; r: number; a?: [number, number]; b?: [number, number] }[];
   /** (Internal: false closes every opening up to a door's width, swing or not — see `doors`.) */
   passages?: boolean;
+  /** How long a click may take, in milliseconds (default 2500), before the sheet counts as unreadable. */
+  budgetMs?: number;
   /** (Internal: hand back the wall pieces found — before any are sorted out — and stop.) */
   piecesOnly?: (bands: { half: number; s0: number; s1: number }[]) => void;
 };
@@ -56,7 +58,7 @@ export type RoomFindOptions = {
  * 20' or more of them (or a good share of the commonest). `top`: how much there is of the commonest (page units).
  */
 const thicknessCache = new WeakMap<object, Map<number, { used: number[]; top: number }>>();
-function sheetWallThicknesses(segments: Float32Array | number[], upf: number) {
+function sheetWallThicknesses(segments: Float32Array | number[], upf: number, deadline = Infinity) {
   const byUpf = thicknessCache.get(segments) ?? new Map<number, { used: number[]; top: number }>();
   thicknessCache.set(segments, byUpf);
   const known = byUpf.get(upf);
@@ -70,8 +72,10 @@ function sheetWallThicknesses(segments: Float32Array | number[], upf: number) {
   }
   const inch = upf / 12;
   const byThickness = new Map<number, number>();
+  // (Within the click's own time: a sheet too crowded to sort out in time is unreadable.)
   findRoom(segments, [(xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2], {
     unitsPerFoot: upf,
+    budgetMs: deadline - performance.now(),
     reachFt: Math.max(xs[1] - xs[0], ys[1] - ys[0]) / upf + 10,
     piecesOnly: (bands) => {
       for (const w of bands) {
@@ -92,8 +96,12 @@ function sheetWallThicknesses(segments: Float32Array | number[], upf: number) {
 export type FilledShape = { rings: number[][]; box: [number, number, number, number] };
 
 /** A sheet's filled shapes by color, with their boxes — paper (white or nearly) left out. */
+const byColorCache = new WeakMap<object, Map<string, FilledShape[]>>();
 function fillsByColor(fills: { color: string; rings: number[][] }[]): Map<string, FilledShape[]> {
+  const known = byColorCache.get(fills);
+  if (known) return known;
   const out = new Map<string, FilledShape[]>();
+  byColorCache.set(fills, out);
   for (const f of fills) {
     const v = parseInt(f.color.slice(1), 16);
     if (!(v >= 0) || Math.min(v >> 16, (v >> 8) & 255, v & 255) >= 0xf8) continue;
@@ -118,8 +126,28 @@ function inFilled(shapes: FilledShape[], x: number, y: number) {
 }
 
 /** Which of `shapes` (x, y) is inside, or -1. */
+// Shapes filed by where they are (a grid of 24-unit cells), once per list — a sheet can have thousands.
+const shapeGrids = new WeakMap<FilledShape[], Map<string, number[]>>();
+const CELL = 24;
+function shapeGrid(shapes: FilledShape[]) {
+  const known = shapeGrids.get(shapes);
+  if (known) return known;
+  const grid = new Map<string, number[]>();
+  shapes.forEach(({ box }, k) => {
+    for (let i = Math.floor(box[0] / CELL); i <= Math.floor(box[2] / CELL); i++)
+      for (let j = Math.floor(box[1] / CELL); j <= Math.floor(box[3] / CELL); j++) {
+        const key = `${i}:${j}`;
+        const list = grid.get(key);
+        if (list) list.push(k);
+        else grid.set(key, [k]);
+      }
+  });
+  shapeGrids.set(shapes, grid);
+  return grid;
+}
+
 function filledAt(shapes: FilledShape[], x: number, y: number) {
-  for (let k = 0; k < shapes.length; k++) {
+  for (const k of shapeGrid(shapes).get(`${Math.floor(x / CELL)}:${Math.floor(y / CELL)}`) ?? []) {
     const { rings, box } = shapes[k];
     if (x < box[0] || x > box[2] || y < box[1] || y > box[3]) continue;
     let inside = false;
@@ -134,7 +162,12 @@ function filledAt(shapes: FilledShape[], x: number, y: number) {
 }
 
 
-export type RoomFindResult = { ok: true; outline: Pt[]; areaSf: number } | { ok: false; reason: "no-scale" | "in-wall" | "open" | "too-small" };
+export type RoomFindResult = { ok: true; outline: Pt[]; areaSf: number } | { ok: false; reason: "no-scale" | "in-wall" | "open" | "too-small" | "unreadable" };
+
+/** Thrown inside the room finder when it runs past its time: the sheet is drawn in a way it can't read. */
+class TooSlow extends Error {}
+/** Sheets found unreadable (their line work): every later click says so at once. */
+const unreadable = new WeakSet<object>();
 
 /** A wall (or a closed opening): its center line along u at offset rho on n, from s0 to s1, and half its thickness. */
 type Band = { ang: number; ux: number; uy: number; nx: number; ny: number; rho: number; half: number; s0: number; s1: number };
@@ -142,14 +175,43 @@ type Band = { ang: number; ux: number; uy: number; nx: number; ny: number; rho: 
 const bandOf = (l: Line, rho: number, half: number, s0: number, s1: number): Band => ({ ang: l.ang, ux: l.ux, uy: l.uy, nx: l.nx, ny: l.ny, rho, half, s0, s1 });
 
 export function findRoom(segments: Float32Array | number[], click: Pt, opts: RoomFindOptions): RoomFindResult {
-  const r = findRoomOnce(segments, click, opts);
-  // Leaving the passages open (see `doors`) joins rooms, never the outside: if the room ran out to the
-  // outside that way, it's found again with every opening closed (the doors still shut theirs).
-  if (!r.ok && r.reason === "open" && opts.doors?.length) return findRoomOnce(segments, click, { ...opts, passages: false });
-  return r;
+  if (unreadable.has(segments)) return { ok: false, reason: "unreadable" };
+  // A plan drawn some way it can't make sense of in a couple of seconds (a sheet thick with hatching, words
+  // and symbols drawn as lines) isn't worked at any longer: it says so, and the room is traced by hand.
+  const deadline = performance.now() + (opts.budgetMs ?? 2500);
+  try {
+    const r = findRoomOnce(segments, click, opts, deadline);
+    // Leaving the passages open (see `doors`) joins rooms, never the outside: if the room ran out to the
+    // outside that way, it's found again with every opening closed (the doors still shut theirs).
+    if (!r.ok && r.reason === "open" && opts.doors?.length) return findRoomOnce(segments, click, { ...opts, passages: false }, deadline);
+    return r;
+  } catch (e) {
+    if (!(e instanceof TooSlow)) throw e;
+    unreadable.add(segments);
+    return { ok: false, reason: "unreadable" };
+  }
 }
 
-function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFindOptions): RoomFindResult {
+/**
+ * Reads a sheet ahead of the first click — the sheet-wide work every click shares (the wall thicknesses
+ * it uses, its filled shapes sorted out), kept for the same `segments`/`fills` — so the clicks after
+ * come back at once. Given longer than a click (`budgetMs`, default 8000): nobody's waiting on it. False
+ * when the sheet can't be read in that time (then every click says so at once).
+ */
+export function prepareRoomFind(segments: Float32Array | number[], opts: Pick<RoomFindOptions, "unitsPerFoot" | "fills" | "budgetMs">): boolean {
+  if (unreadable.has(segments)) return false;
+  if (!(opts.unitsPerFoot > 0) || segments.length < 4) return true;
+  if (opts.fills?.length) for (const shapes of fillsByColor(opts.fills).values()) shapeGrid(shapes);
+  sheetWallThicknesses(segments, opts.unitsPerFoot, performance.now() + (opts.budgetMs ?? 8000));
+  return !unreadable.has(segments);
+}
+
+function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFindOptions, deadline = Infinity): RoomFindResult {
+  let ticks = 0;
+  /** Out of time? (Looked at every so often in the long loops.) */
+  const check = (every = 1) => {
+    if (++ticks % every === 0 && performance.now() > deadline) throw new TooSlow();
+  };
   const upf = opts.unitsPerFoot;
   if (!(upf > 0)) return { ok: false, reason: "no-scale" };
   const inch = upf / 12;
@@ -169,7 +231,48 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     const l = toLine(x1, y1, x2, y2);
     if (l && l.s1 - l.s0 >= inch) lines.push(l);
   }
-  const buckets = indexLines(lines);
+  // The same lines filed by direction and by where they lie along it (in 4' stretches), so a piece of wall
+  // is only compared with the lines beside it — not every parallel line across the sheet.
+  const TILE = 4 * upf;
+  const tiles = new Map<string, Line[]>();
+  for (const l of lines) {
+    const k = bucketOf(l.ang);
+    for (let t = Math.floor(l.s0 / TILE); t <= Math.floor(l.s1 / TILE); t++) {
+      const key = `${k}:${t}`;
+      const list = tiles.get(key);
+      if (list) list.push(l);
+      else tiles.set(key, [l]);
+    }
+  }
+  for (const list of tiles.values()) list.sort((a, b) => a.rho - b.rho);
+  /** Lines parallel to `ang`, offset `lo`–`hi`, overlapping `s0`–`s1` along it (each once; stops past `limit`). */
+  const parallelNear = (ang: number, lo: number, hi: number, s0: number, s1: number, limit = Infinity): Line[] => {
+    const out: Line[] = [];
+    const seen = new Set<Line>();
+    const k = bucketOf(ang);
+    for (const kk of [k - 1, k, k + 1]) {
+      const kb = (kk + 180) % 180;
+      for (let t = Math.floor(s0 / TILE); t <= Math.floor(s1 / TILE); t++) {
+        const list = tiles.get(`${kb}:${t}`);
+        if (!list) continue;
+        let i = 0;
+        let j = list.length;
+        while (i < j) {
+          const m = (i + j) >> 1;
+          if (list[m].rho < lo) i = m + 1;
+          else j = m;
+        }
+        for (; i < list.length && list[i].rho <= hi; i++) {
+          const l = list[i];
+          if (l.s1 < s0 || l.s0 > s1 || seen.has(l)) continue;
+          seen.add(l);
+          out.push(l);
+          if (out.length > limit) return out;
+        }
+      }
+    }
+    return out;
+  };
   const strokesNear = grid(lines, upf);
 
   const { dimension } = dimensionsIn(lines, strokesNear, upf);
@@ -188,7 +291,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     // sits in a wall: the wall's long faces run alongside it or on past it, within a wall's thickness.
     // A label stands clear, but for the dimension it labels.)
     const inWallLine = () => {
-      for (const m of parallelIn(buckets, l.ang, l.rho - tMax, l.rho + tMax)) {
+      for (const m of parallelNear(l.ang, l.rho - tMax, l.rho + tMax, l.s0 - 8 * upf - inch, l.s1 + 8 * upf + inch)) {
         if (m === l || m.s1 - m.s0 < 2 * upf || isDimension(m)) continue;
         const covers = m.s0 <= l.s0 + inch && m.s1 >= l.s1 - inch;
         const before = m.s1 <= l.s0 + inch && l.s0 - m.s1 <= 8 * upf;
@@ -198,7 +301,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       return false;
     };
     if (len <= 4 * upf && !inWallLine())
-      for (const m of parallelIn(buckets, l.ang, l.rho - 16 * inch, l.rho + 16 * inch)) {
+      for (const m of parallelNear(l.ang, l.rho - 16 * inch, l.rho + 16 * inch, l.s0 - inch, l.s1 + inch)) {
         const d = m.rho - l.rho;
         if (m === l || Math.abs(d) < inch || Math.abs(m.s1 - m.s0 - len) > inch || Math.abs(m.s0 - l.s0) > inch) continue;
         const mid = l.rho + d / 2;
@@ -316,8 +419,9 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   const wallPieces = (shortest: number, boxes: boolean) => {
     const out: Band[] = [];
     for (const a of lines) {
+      check(64);
       if (a.s1 - a.s0 < shortest || isDimension(a) || (!boxes && boxSide(a))) continue;
-      for (const b of parallelIn(buckets, a.ang, a.rho + tMin, a.rho + tMax)) {
+      for (const b of parallelNear(a.ang, a.rho + tMin, a.rho + tMax, a.s0, a.s1)) {
         if (isDimension(b) || (!boxes && boxSide(b))) continue;
         const s0 = Math.max(a.s0, b.s0);
         const s1 = Math.min(a.s1, b.s1);
@@ -325,7 +429,11 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         // Where something's drawn between the faces (a pocket door's slot, a window), it isn't open stud
         // space: the wall is the stretches that are — the rest an opening, closed like any other.
         const spans: [number, number][] = [];
-        for (const c of parallelIn(buckets, a.ang, a.rho + 0.3 * inch, b.rho - 0.3 * inch))
+        // (More than 40 lines between them: that's cluttered space — words, hatching, fixtures — not a
+        // wall's stud space, which has at most a few, at its windows and doors.)
+        const between = parallelNear(a.ang, a.rho + 0.3 * inch, b.rho - 0.3 * inch, s0, s1, 40);
+        if (between.length > 40) continue;
+        for (const c of between)
           if (c.s1 - c.s0 >= shortest && c.s1 > s0 && c.s0 < s1) spans.push([Math.max(c.s0, s0), Math.min(c.s1, s1)]);
         spans.sort((p, q) => p[0] - q[0]);
         let from = s0;
@@ -380,6 +488,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   if (opts.fills?.length) {
     let most = 20 * upf;
     for (const shapes of fillsByColor(opts.fills).values()) {
+      check();
       // (A wall's fill is just between its faces: a step past either face is out of it — not lines
       // drawn across a big filled area, like an elevation's siding. Looked at in three places along the
       // wall, two of which must be — one may be where another wall meets it.)
@@ -460,14 +569,16 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     const besideStairs = (w: Band) => stairSide.has(w) || nearStairsCheck(w);
     const nearStairsCheck = (w: Band) =>
       [w.s0, (w.s0 + w.s1) / 2, w.s1].some((sv) => stairs.some((st) => distToBand(w.ux * sv + w.nx * w.rho, w.uy * sv + w.ny * w.rho, st) <= upf)) && !!stairSide.add(w);
-    const { used, top } = sheetWallThicknesses(segments, upf);
+    const { used, top } = sheetWallThicknesses(segments, upf, deadline);
+    if (unreadable.has(segments)) throw new TooSlow();
+    check();
     if (used.length && top >= 30 * upf) bands.splice(0, bands.length, ...bands.filter((w) => filledAll.includes(w) || used.some((t) => Math.abs(bucket(w) - t) <= 0.375) || besideStairs(w)));
   }
 
   // How much of [from, to] along a band's line is drawn by lines within its faces.
   const drawnAlong = (w: Band, from: number, to: number) => {
     const spans: [number, number][] = [];
-    for (const l of parallelIn(buckets, w.ang, w.rho - w.half - inch, w.rho + w.half + inch)) {
+    for (const l of parallelNear(w.ang, w.rho - w.half - inch, w.rho + w.half + inch, from, to)) {
       // (A dimension line running past isn't something drawn in the wall.)
       if (isDimension(l)) continue;
       const a = Math.max(l.s0, from);
@@ -560,6 +671,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   const anchored = (w: Band) => w.s1 - w.s0 >= 3 * upf || tiedAt(w, w.s0) || tiedAt(w, w.s1);
   const byLine = [...bands].sort((p, q) => Math.round(p.ang / DEG) - Math.round(q.ang / DEG) || p.rho - q.rho || p.s0 - q.s0);
   for (let i = 0; i < byLine.length; i++) {
+    check(64);
     const w = byLine[i];
     // The next piece along the same line (same direction, center lines within a wall's thickness) —
     // looked for both ways through the list (a piece drawn a hair off the line sorts either side).
@@ -608,12 +720,15 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       return out;
     };
     const links = new Map<Band, Band[]>(bands.map((w) => [w, []]));
-    for (const w of bands)
+    for (const w of bands) {
+      check(64);
       for (const v of touching(w)) {
         links.get(w)!.push(v);
         links.get(v)?.push(w);
       }
+    }
     for (const start of bands) {
+      check(64);
       if (runOf.has(start)) continue;
       const group: Band[] = [start];
       const seen = new Set([start]);
@@ -666,6 +781,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         (dir > 0 ? v.s0 > end && v.s0 - end <= maxDoor : v.s1 < end && end - v.s1 <= maxDoor),
     );
   for (const w of bands) {
+    check(16);
     if (w.s1 - w.s0 < 1.5 * inch) continue;
     for (const [end, dir] of [
       [w.s0, -1],
@@ -789,6 +905,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   stack[top++] = cj * W + ci;
   floor[cj * W + ci] = 1;
   while (top) {
+    check(4096);
     const k = stack[--top];
     const i = k % W;
     const j = (k - i) / W;
@@ -816,6 +933,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         stack[top++] = j * W + i;
       }
   while (top) {
+    check(4096);
     const k = stack[--top];
     const i = k % W;
     for (const n of [i > 0 ? k - 1 : -1, i < W - 1 ? k + 1 : -1, k - W, k + W])

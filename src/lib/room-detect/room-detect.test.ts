@@ -249,6 +249,14 @@ describe("room finder", () => {
     assert.equal(labeled.lines.length / 4, 3, "all three pieces of the labeled string");
   });
 
+  it("a sheet it can't work out in time says so — and every later click at once", () => {
+    const segs = house();
+    assert.deepEqual(findRoom(segs, [120, 300], { ...opts, budgetMs: -1 }), { ok: false, reason: "unreadable" });
+    assert.deepEqual(findRoom(segs, [400, 200], opts), { ok: false, reason: "unreadable" });
+    // Another sheet is read as usual.
+    assert.ok(findRoom(house(), [120, 300], opts).ok);
+  });
+
   it("says why when there's no room there", () => {
     assert.deepEqual(findRoom(house(), [-60, 100], opts), { ok: false, reason: "open" });
     assert.deepEqual(findRoom(house(), [242, 300], opts), { ok: false, reason: "in-wall" });

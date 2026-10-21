@@ -7,6 +7,7 @@ import { afterFirstStep } from "@/lib/two-step";
 import { clearFailures, failures, recordFailure, retryAfter } from "@/lib/rate-limit";
 import { passedRobotCheck, robotCheckKey, ROBOT_CHECK_FAILED } from "@/lib/turnstile";
 import { clientIp, logSecurity } from "@/lib/security-log";
+import { PAUSED_MESSAGE } from "@/lib/builder-status";
 
 export type LoginState = { error?: string; unconfirmed?: string; check?: boolean } | undefined;
 
@@ -62,6 +63,7 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
   }
 
   clearFailures(emailKey);
+  if ((await systemDb.stationBuilder.findUnique({ where: { companyId: user.companyId }, select: { status: true } }))?.status === "PAUSED") return { error: PAUSED_MESSAGE };
   await upgradePasswordHash(user.id, password, user.passwordHash);
   if (!user.emailVerifiedAt) return { error: `Confirm your email first — we sent a link to ${user.email} when you signed up.`, unconfirmed: user.email };
   // Signed in now — or on to the authenticator code, when they use one.

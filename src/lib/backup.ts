@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { promises as fs } from "fs";
 import { gzipSync, gunzipSync } from "zlib";
 import { db, systemDb } from "./db";
-import { appTables, connectPg, jsonSource, replaceCompany, sqliteSource } from "./db-copy";
+import { companyTables, connectPg, jsonSource, replaceCompany, sqliteSource } from "./db-copy";
 import { currentCompanyId, runAsCompany } from "./tenant";
 import { normalizeKey } from "./storage-key";
 import { cloud, NotFound } from "./cloud-storage";
@@ -213,7 +213,7 @@ export async function dumpTables(companyId: string) {
   try {
     await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const tables: Record<string, Record<string, unknown>[]> = {};
-    for (const t of await appTables(client)) {
+    for (const t of await companyTables(client)) {
       const col = t === "Company" ? "id" : "companyId";
       tables[t] = (await client.query(`SELECT * FROM "${t.replace(/"/g, '""')}" WHERE "${col}" = $1`, [companyId])).rows;
     }
