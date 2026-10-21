@@ -194,10 +194,13 @@ export function WindowListPanel({
                 <option value={OTHER}>Other…</option>
               </select>
             )}
+          </div>
+          {/* Color on its own line, the full width (its names are long). */}
+          <label className="flex items-center gap-1.5 text-slate-600">
+            <span className="w-16 shrink-0 text-right">Color</span>
             <select
-              className="input !h-7 !w-auto shrink-0 !px-1 !py-0 text-xs"
+              className="input !h-7 min-w-0 flex-1 !px-1 !py-0 text-xs"
               aria-label="Window color"
-              title={WINDOW_COLORS.find((c) => c.value === color)?.label}
               value={color}
               onChange={(e) => setLineColor(e.target.value as WindowColor)}
             >
@@ -207,7 +210,7 @@ export function WindowListPanel({
                 </option>
               ))}
             </select>
-          </div>
+          </label>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
             {details.map((d) => (
               <span key={d.name} className="group/detail inline-flex items-center gap-0.5">

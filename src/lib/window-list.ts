@@ -14,7 +14,7 @@ export type JobWindows = { lines: string[] };
  */
 export const WINDOW_COLORS = [
   { value: "Standard", label: "Standard (white)", name: "" },
-  { value: "White/Black", label: "White on black (white inside, black outside)", name: "White/Black" },
+  { value: "White/Black", label: "White on black (white in, black out)", name: "White/Black" },
   { value: "Black/Black", label: "Black on black", name: "Black/Black" },
 ] as const;
 export type WindowColor = (typeof WINDOW_COLORS)[number]["value"];
