@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Replace } from "lucide-react";
+import { Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { submitBidPrices, type PricesState } from "../actions";
 
@@ -15,12 +15,13 @@ const num = (s: string) => {
 };
 
 /**
- * One short row per item — quantity, item, price box, line total — like a price sheet; "something else
- * instead" behind a small button on the row; the total and Send pinned to the bottom of the screen.
+ * Their note first; then one short row per item — quantity, item, price box, line total — like a price
+ * sheet, with "Sub" on the row to offer something else; the total and Send pinned to the bottom of the screen.
  */
-export function PricesForm({ token, lines, company }: { token: string; lines: Line[]; company: string }) {
+export function PricesForm({ token, lines, company, attached }: { token: string; lines: Line[]; company: string; attached: boolean }) {
   const [state, action, pending] = useActionState<PricesState, FormData>(submitBidPrices, undefined);
   const [prices, setPrices] = useState<Record<string, string>>(() => Object.fromEntries(lines.map((l) => [l.id, l.price != null ? String(l.price) : ""])));
+  const [quote, setQuote] = useState<string | null>(null);
   const [subOpen, setSubOpen] = useState<Record<string, boolean>>(() => Object.fromEntries(lines.filter((l) => l.substitute).map((l) => [l.id, true])));
   const items = lines.filter((l) => !l.ladder);
   const ladder = lines.filter((l) => l.ladder);
@@ -40,6 +41,11 @@ export function PricesForm({ token, lines, company }: { token: string; lines: Li
   return (
     <form action={action} className="mt-3">
       <input type="hidden" name="t" value={token} />
+      {/* Their note first, where it's seen. */}
+      <label className="mb-3 block">
+        <span className="text-xs font-medium text-slate-700">A note for {company} (optional)</span>
+        <textarea name="message" rows={2} className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" placeholder="Delivery time, prices good through, anything they should know…" />
+      </label>
       <p className="mb-2 text-xs text-slate-500">Price per unit on each line — leave it blank if you don&apos;t carry it.</p>
       <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">
         {items.map((l) => {
@@ -55,12 +61,15 @@ export function PricesForm({ token, lines, company }: { token: string; lines: Li
                 <span className="hidden w-20 shrink-0 text-right text-xs text-slate-500 tabular-nums sm:block">{p != null ? money(p * l.quantity) : ""}</span>
                 <button
                   type="button"
-                  className={cn("shrink-0 rounded p-1", subOpen[l.id] ? "text-amber-700" : "text-slate-400 hover:bg-slate-100 hover:text-slate-700")}
-                  title="Offering something else for this line?"
-                  aria-label={`Offer something else instead of ${l.name}`}
+                  className={cn(
+                    "shrink-0 rounded px-1.5 py-1 text-xs font-medium ring-1 ring-inset",
+                    subOpen[l.id] ? "bg-amber-50 text-amber-800 ring-amber-300" : "text-slate-600 ring-slate-300 hover:bg-slate-50",
+                  )}
+                  title="Substitute: offer something else for this line"
+                  aria-label={`Substitute something else for ${l.name}`}
                   onClick={() => setSubOpen((s) => ({ ...s, [l.id]: !s[l.id] }))}
                 >
-                  <Replace className="h-4 w-4" />
+                  Sub
                 </button>
               </div>
               {subOpen[l.id] ? (
@@ -68,7 +77,7 @@ export function PricesForm({ token, lines, company }: { token: string; lines: Li
                   name={`sub_${l.id}`}
                   defaultValue={l.substitute ?? ""}
                   className="mb-1 ml-[4.5rem] mt-1 h-8 w-[calc(100%-4.5rem)] rounded-md border border-amber-300 px-2 text-sm"
-                  placeholder="What you'd send instead (the price is for this)"
+                  placeholder="Substitute: what you'd send instead (the price is for this)"
                   aria-label={`Instead of ${l.name}`}
                 />
               ) : null}
@@ -89,7 +98,19 @@ export function PricesForm({ token, lines, company }: { token: string; lines: Li
           </div>
         </div>
       ) : null}
-      <textarea name="message" rows={2} className="mt-3 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" placeholder={`A note for ${company} (optional) — delivery time, prices good through…`} />
+      {/* Their own paperwork, sent along with the prices (or instead of typing them). */}
+      <label className="mt-3 flex cursor-pointer flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+        <Paperclip className="h-4 w-4 shrink-0 text-slate-500" />
+        <span className="font-medium text-slate-800">{quote ? quote : attached ? "Your quote is attached — attach another to replace it" : "Attach your quote (optional)"}</span>
+        <span className="text-xs text-slate-500">PDF, photo or Excel · goes with your prices</span>
+        <input
+          type="file"
+          name="quote"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xlsx,application/pdf,image/*"
+          className="sr-only"
+          onChange={(e) => setQuote(e.target.files?.[0]?.name ?? null)}
+        />
+      </label>
       {/* The total and Send, always on screen. */}
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-1">

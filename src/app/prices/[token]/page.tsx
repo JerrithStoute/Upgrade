@@ -38,7 +38,7 @@ export default async function BidPricesPage({ params }: { params: Promise<{ toke
       {closed ? (
         <p className="mt-5 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-700">This bid has been decided — thank you. Questions? Reply to the email you got.</p>
       ) : (
-        <PricesForm token={token} lines={lines} company={company?.name ?? "the builder"} />
+        <PricesForm token={token} lines={lines} company={company?.name ?? "the builder"} attached={!!bid.returnFileId} />
       )}
       <p className="mt-3 text-xs text-slate-400">
         Questions? Reply to the email you got{company?.phone ? `, or call ${company.phone}` : ""}.

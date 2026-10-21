@@ -39,7 +39,7 @@ export default async function BidReplyPage({ params }: { params: Promise<{ id: s
   const ladder = bid.lines.filter((l) => isLadderLine(l));
   const total = items.reduce((s, l) => s + (l.unitPrice ?? 0) * l.quantity, 0);
   const priced = items.filter((l) => l.unitPrice != null).length;
-  const how = online ? "Typed online" : latest?.type === "bid.imported" ? "Their Excel file" : bid.returnFile ? "A file they sent" : "Typed in here";
+  const how = online ? (bid.returnFile ? "Sent online, with their quote" : "Typed online") : latest?.type === "bid.imported" ? "Their Excel file" : bid.returnFile ? "A file they sent" : "Typed in here";
 
   return (
     <div className="space-y-4">
@@ -83,7 +83,7 @@ export default async function BidReplyPage({ params }: { params: Promise<{ id: s
                   <td className="px-3 py-1.5 text-slate-600">{l.unit}</td>
                   <td className="px-3 py-1.5 text-slate-900">
                     {l.name}
-                    {l.substitute ? <span className="block text-xs font-medium text-amber-800">Instead: {l.substitute}</span> : null}
+                    {l.substitute ? <span className="block text-xs font-medium text-amber-800">Sub: {l.substitute}</span> : null}
                     {l.note ? <span className="block text-xs text-slate-500">{l.note}</span> : null}
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{l.unitPrice != null ? money(l.unitPrice) : <span className="text-slate-400">—</span>}</td>
