@@ -127,7 +127,7 @@ export async function quickAddVendor(input: { name: string; contact: string; ema
         },
       });
   revalidatePath("/settings/vendors");
-  return { ok: true as const, vendor: { id: v.id, name: v.name, email: v.email, codes: vendorCodes(v) } };
+  return { ok: true as const, vendor: { id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) } };
 }
 
 /**
@@ -472,4 +472,23 @@ export async function saveBidMessage(input: { projectId: string; bidId: string; 
   revalidatePath(bidsPath(project.id));
   revalidatePath("/settings/vendors");
   return { ok: true, message };
+}
+
+/** A vendor's name, contact, email and phone, changed right on Send to vendors (Settings → Vendors has the rest). */
+export async function quickEditVendor(input: { id: string; name: string; contact: string; email: string; phone: string }) {
+  await requireEdit("estimates", { costs: true });
+  const name = cleanVendorName(input.name ?? "");
+  if (!name) return { ok: false as const, error: "Type the vendor's name" };
+  const email = (input.email ?? "").trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false as const, error: "That email doesn't look right" };
+  const all = await db.vendor.findMany();
+  const me = all.find((v) => v.id === String(input.id));
+  if (!me) return { ok: false as const, error: "That vendor isn't here any more" };
+  if (all.some((v) => v.id !== me.id && vendorKey(v.name) === vendorKey(name))) return { ok: false as const, error: `There's already a vendor called ${name}` };
+  const v = await db.vendor.update({
+    where: { id: me.id },
+    data: { name, email: email || null, phone: input.phone?.trim().slice(0, 60) || null, contact: input.contact?.trim().slice(0, 120) || null },
+  });
+  revalidatePath("/settings/vendors");
+  return { ok: true as const, vendor: { id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) } };
 }

@@ -1,23 +1,25 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { ChevronRight, FileSpreadsheet, Plus, X } from "lucide-react";
+import { ChevronRight, FileSpreadsheet, Pencil, Plus, X } from "lucide-react";
 import { Button, SubmitButton } from "@/components/ui";
 import { cn, money, num } from "@/lib/utils";
 
 type Item = { key: string; name: string; quantity: number; unit: string; extended: number };
 type Group = { codeKey: string; codeLabel: string; items: Item[] };
-export type SendVendor = { id: string; name: string; email: string | null; codes: string[] };
-type NewVendor = { name: string; contact: string; email: string; phone: string };
+export type SendVendor = { id: string; name: string; email: string | null; contact: string | null; phone: string | null; codes: string[] };
+/** The vendor form: a new one, or (with `id`) one being changed. */
+type NewVendor = { id?: string; name: string; contact: string; email: string; phone: string };
 
 /**
  * Send to vendors: pick what goes (by cost code, and item by item inside one), pick the
- * vendors — or add one right here — and a note. Picking cost codes ticks the vendors who
+ * vendors — or add or change one right here — and a note. Picking cost codes ticks the vendors who
  * bid them (until you tick vendors yourself).
  */
 export function RequestBids({
   action,
   addVendor,
+  editVendor,
   projectId,
   groups,
   vendors: initialVendors,
@@ -26,6 +28,7 @@ export function RequestBids({
 }: {
   action: (fd: FormData) => Promise<void>;
   addVendor: (v: NewVendor & { codes: string[] }) => Promise<{ ok: true; vendor: SendVendor } | { ok: false; error: string }>;
+  editVendor: (v: NewVendor & { id: string }) => Promise<{ ok: true; vendor: SendVendor } | { ok: false; error: string }>;
   projectId: string;
   groups: Group[];
   vendors: SendVendor[];
@@ -77,7 +80,7 @@ export function RequestBids({
     if (!adding) return;
     setAddError(null);
     startSaving(async () => {
-      const r = await addVendor({ ...adding, codes: pickedCodes });
+      const r = adding.id ? await editVendor({ ...adding, id: adding.id }) : await addVendor({ ...adding, codes: pickedCodes });
       if (!r.ok) {
         setAddError(r.error);
         return;
@@ -85,8 +88,11 @@ export function RequestBids({
       setVendors((cur) =>
         cur.some((v) => v.id === r.vendor.id) ? cur.map((v) => (v.id === r.vendor.id ? r.vendor : v)) : [...cur, r.vendor].sort((a, b) => a.name.localeCompare(b.name)),
       );
-      setTouched(true);
-      setChosen((cur) => new Set(cur).add(r.vendor.id));
+      // (A new one is ticked; changing one leaves the ticks as they are.)
+      if (!adding.id) {
+        setTouched(true);
+        setChosen((cur) => new Set(cur).add(r.vendor.id));
+      }
       setAdding(null);
     });
   };
@@ -192,6 +198,19 @@ export function RequestBids({
                     <span className="shrink-0 rounded-full bg-emerald-50 px-2 text-[11px] font-medium text-emerald-700">bids these</span>
                   ) : null}
                   {!v.email ? <span className="shrink-0 text-[11px] text-slate-400">no email</span> : null}
+                  <button
+                    type="button"
+                    className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                    title={`Change ${v.name}'s name, email, phone or contact`}
+                    aria-label={`Edit ${v.name}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setAddError(null);
+                      setAdding({ id: v.id, name: v.name, contact: v.contact ?? "", email: v.email ?? "", phone: v.phone ?? "" });
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
                 </label>
               ))}
             </div>
@@ -201,7 +220,7 @@ export function RequestBids({
                   <input
                     className="input col-span-2"
                     placeholder="Vendor name"
-                    aria-label="New vendor name"
+                    aria-label={adding.id ? "Vendor name" : "New vendor name"}
                     value={adding.name}
                     autoFocus
                     onChange={(e) => setAdding({ ...adding, name: e.target.value })}
@@ -238,13 +257,15 @@ export function RequestBids({
                 {addError ? <p className="text-xs text-rose-700">{addError}</p> : null}
                 <div className="flex items-center gap-2">
                   <Button type="button" size="sm" onClick={saveVendor} disabled={saving || !adding.name.trim()}>
-                    {saving ? "Adding…" : "Add vendor"}
+                    {saving ? "Saving…" : adding.id ? "Save changes" : "Add vendor"}
                   </Button>
                   <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(null)}>
                     <X className="h-3.5 w-3.5" /> Cancel
                   </Button>
                   <span className="text-[11px] text-slate-500">
-                    {pickedCodes.length ? "Saved with the cost codes you picked as what they bid." : ""} It&apos;s added to Settings → Vendors too.
+                    {adding.id
+                      ? "Changed in Settings → Vendors too. Bids already made keep the name they were sent with."
+                      : `${pickedCodes.length ? "Saved with the cost codes you picked as what they bid. " : ""}It's added to Settings → Vendors too.`}
                   </span>
                 </div>
               </div>

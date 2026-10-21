@@ -15,7 +15,7 @@ const num = (s: string) => {
 };
 
 /**
- * Their note first; then one short row per item — quantity, item, price box, line total — like a price
+ * Their note and their own quote first; then one short row per item — quantity, item, price box, line total — like a price
  * sheet, with "Sub" on the row to offer something else; the total and Send pinned to the bottom of the screen.
  */
 export function PricesForm({ token, lines, company, attached }: { token: string; lines: Line[]; company: string; attached: boolean }) {
@@ -41,10 +41,23 @@ export function PricesForm({ token, lines, company, attached }: { token: string;
   return (
     <form action={action} className="mt-3">
       <input type="hidden" name="t" value={token} />
-      {/* Their note first, where it's seen. */}
+      {/* Their note and their own quote first, where they're seen. */}
       <label className="mb-3 block">
         <span className="text-xs font-medium text-slate-700">A note for {company} (optional)</span>
         <textarea name="message" rows={2} className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" placeholder="Delivery time, prices good through, anything they should know…" />
+      </label>
+      {/* Their own paperwork, sent along with the prices (or instead of typing them). */}
+      <label className="mb-3 flex cursor-pointer flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+        <Paperclip className="h-4 w-4 shrink-0 text-slate-500" />
+        <span className="font-medium text-slate-800">{quote ? quote : attached ? "Your quote is attached — attach another to replace it" : "Attach your quote (optional)"}</span>
+        <span className="text-xs text-slate-500">PDF, photo or Excel · goes with your prices</span>
+        <input
+          type="file"
+          name="quote"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xlsx,application/pdf,image/*"
+          className="sr-only"
+          onChange={(e) => setQuote(e.target.files?.[0]?.name ?? null)}
+        />
       </label>
       <p className="mb-2 text-xs text-slate-500">Price per unit on each line — leave it blank if you don&apos;t carry it.</p>
       <div className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">
@@ -98,19 +111,6 @@ export function PricesForm({ token, lines, company, attached }: { token: string;
           </div>
         </div>
       ) : null}
-      {/* Their own paperwork, sent along with the prices (or instead of typing them). */}
-      <label className="mt-3 flex cursor-pointer flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
-        <Paperclip className="h-4 w-4 shrink-0 text-slate-500" />
-        <span className="font-medium text-slate-800">{quote ? quote : attached ? "Your quote is attached — attach another to replace it" : "Attach your quote (optional)"}</span>
-        <span className="text-xs text-slate-500">PDF, photo or Excel · goes with your prices</span>
-        <input
-          type="file"
-          name="quote"
-          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xlsx,application/pdf,image/*"
-          className="sr-only"
-          onChange={(e) => setQuote(e.target.files?.[0]?.name ?? null)}
-        />
-      </label>
       {/* The total and Send, always on screen. */}
       <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-1">

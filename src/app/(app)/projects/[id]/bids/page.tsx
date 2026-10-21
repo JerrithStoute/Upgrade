@@ -16,7 +16,7 @@ import { bidEmailText, emailedBids } from "@/lib/bid-email";
 import { makeBidLink } from "@/lib/bid-link";
 import { appUrl } from "@/lib/mail";
 import { EmailAllButton } from "./_components/email-all";
-import { deleteBid, importBid, quickAddVendor, requestBids, takeBids } from "./actions";
+import { deleteBid, importBid, quickAddVendor, quickEditVendor, requestBids, takeBids } from "./actions";
 
 export const metadata = { title: "Send to vendors" };
 
@@ -217,10 +217,11 @@ export default async function BidsPage({
             <RequestBids
               action={requestBids}
               addVendor={quickAddVendor}
+              editVendor={quickEditVendor}
               projectId={project.id}
               groups={groups}
               ladders={ladders}
-              vendors={vendors.map((v) => ({ id: v.id, name: v.name, email: v.email, codes: vendorCodes(v) }))}
+              vendors={vendors.map((v) => ({ id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) }))}
               locked={locked}
             />
           ) : (

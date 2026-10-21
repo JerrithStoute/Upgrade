@@ -5,8 +5,8 @@ import { runAsCompany } from "@/lib/tenant";
 
 /**
  * The bid behind a vendor's price link, read as its company (there's no sign-in here): the lines, the
- * job and who's asking — or null when the link is no good. `closed`: a bid has been taken for every
- * cost code on it, so prices can't change any more.
+ * job and who's asking — or null when the link is no good. `closed`: this bid has been taken, so its
+ * prices can't change any more.
  */
 export async function bidForLink(token: string) {
   const link = await readBidLink(token);
@@ -19,11 +19,11 @@ export async function bidForLink(token: string) {
     if (!bid) return null;
     const [company, awards] = await Promise.all([
       db.company.findFirst({ select: { name: true, phone: true, email: true } }),
-      db.bidAward.findMany({ where: { projectId: bid.projectId }, select: { codeKey: true } }),
+      db.bidAward.findMany({ where: { bidId: bid.id }, select: { id: true } }),
     ]);
-    const taken = new Set(awards.map((a) => a.codeKey));
-    const codes = new Set(bid.lines.map((l) => l.codeKey));
-    const closed = codes.size > 0 && [...codes].every((c) => taken.has(c));
+    // Closed once THIS bid has been taken — not when another vendor's was taken for the same cost code
+    // (concrete from one supplier, the rest of 2102 from the lumber yard: both get answered).
+    const closed = awards.length > 0;
     return { ...link, bid, company, closed };
   });
 }

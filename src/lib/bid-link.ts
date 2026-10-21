@@ -3,7 +3,7 @@ import { getSessionSecret } from "./session-secret";
 
 /**
  * The link in a bid's email for the vendor to type their prices online (/prices/<link>) — no sign-in.
- * It opens that one bid and nothing else, for 30 days (and it closes once a bid is taken for it). Signed,
+ * It opens that one bid and nothing else, for 30 days (and it closes once you take that bid). Signed,
  * so it can't be made up or pointed at another bid; its own key, so it can't pass for a sign-in.
  */
 
