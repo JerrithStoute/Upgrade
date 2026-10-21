@@ -18,9 +18,9 @@ import { bidLineFor } from "./bid-file";
 /** A re-bid this much over the bid you took (same items, today's quantities) gets a warning. */
 export const OVER_WARNING = 0.1;
 
-/** Price list lines (the price ladder): other lengths of a lumber size, priced per board, no quantity. */
-export const LADDER_PREFIX = "ladder:";
-export const isLadderLine = (l: { key: string }) => l.key.startsWith(LADDER_PREFIX);
+// Price list lines (other lengths, priced per board) — kept apart so pages and emails can use them too.
+import { LADDER_PREFIX, isLadderLine } from "./bid-ladder";
+export { LADDER_PREFIX, isLadderLine };
 
 /**
  * The Material list lines worth bidding (something to buy), with their cost codes — less

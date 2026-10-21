@@ -7,7 +7,7 @@ import { CodePicker } from "@/components/code-picker";
 import { vendorCodes } from "@/lib/vendors";
 import { COVERAGE_TYPES, coverageWarning, parseRequired, vendorsCoverage } from "@/lib/purchasing";
 import { fmtDate } from "@/lib/utils";
-import { createVendor, deleteVendor, importVendors, setRequiredCoverage, updateVendor } from "./actions";
+import { createVendor, deleteVendor, importVendors, setBidMessage, setRequiredCoverage, updateVendor } from "./actions";
 import { requireView } from "@/lib/auth";
 
 /** What the paste box shows before you paste. */
@@ -52,14 +52,14 @@ function VendorForm({ action, values, codes }: { action: (fd: FormData) => Promi
   );
 }
 
-export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ edit?: string; added?: string; updated?: string; same?: string; error?: string }> }) {
+export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ edit?: string; added?: string; updated?: string; same?: string; error?: string; bidMessage?: string }> }) {
   await requireView("lists");
-  const { edit, added, updated, same, error } = await searchParams;
+  const { edit, added, updated, same, error, bidMessage } = await searchParams;
   const [vendors, costCodes, coverage, company] = await Promise.all([
     db.vendor.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { bids: true, logins: true } } } }),
     db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true } }),
     vendorsCoverage(),
-    db.company.findFirst({ select: { requiredCoverage: true } }),
+    db.company.findFirst({ select: { requiredCoverage: true, bidMessage: true } }),
   ]);
   const coverageOf = new Map(coverage.map((c) => [c.vendor.id, c.state]));
   const required = parseRequired(company?.requiredCoverage);
@@ -126,6 +126,28 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
           Save
         </Button>
         <span className="text-xs text-slate-500">Open a vendor to add their certificates and portal logins.</span>
+      </form>
+
+      <form action={setBidMessage} className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
+        <p className="font-medium text-slate-800">Your bid email message</p>
+        <p className="text-xs text-slate-500">
+          Your words in the middle of every bid email. The greeting (&ldquo;Hello Pat,&rdquo;), the bid&apos;s own note, the job, the delivery address and your signature are
+          filled in around them for each bid. Leave it blank to use the built-in message. You can also set it from any bid&apos;s email: &ldquo;Use as my standard
+          message&rdquo;.
+        </p>
+        <textarea
+          name="bidMessage"
+          rows={4}
+          className="input"
+          defaultValue={company?.bidMessage ?? ""}
+          placeholder="Please send your prices for the attached list by Friday. Prices good for 30 days, delivered to the job site — call before you come."
+        />
+        <div className="flex items-center gap-3">
+          <Button type="submit" size="sm" variant="secondary">
+            Save
+          </Button>
+          {bidMessage ? <span className="text-xs text-emerald-700">Saved — bid emails start with it now.</span> : null}
+        </div>
       </form>
 
       {vendors.length === 0 ? (

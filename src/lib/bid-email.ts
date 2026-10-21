@@ -1,4 +1,4 @@
-import { isLadderLine } from "./bids";
+import { isLadderLine } from "./bid-ladder";
 import type { Mail } from "./mail-layout";
 
 /**
@@ -9,25 +9,35 @@ import type { Mail } from "./mail-layout";
 
 type Line = { key: string; name: string; quantity: number; unit: string; codeLabel: string };
 
-/** The subject and message a bid's email starts with. `from`: the company's name, address, phone · email. */
+/**
+ * The subject and message a bid's email starts with. `from`: the company's name, address, phone · email.
+ * `standard`: the company's own words for the middle (Company.bidMessage) — the greeting, the bid's note,
+ * the job and the signature still go around them, filled in for each bid.
+ */
 export function bidEmailText(o: {
   bid: { number: number; notes: string | null; lines: Line[] };
   project: { number: number; name: string };
   address: string;
   contact: string | null;
   from: string[];
+  standard?: string | null;
 }): { subject: string; body: string } {
   const items = o.bid.lines.filter((l) => !isLadderLine(l));
   const ladder = o.bid.lines.length - items.length;
   const codes = Array.from(new Set(items.map((l) => l.codeLabel)));
+  const middle = o.standard?.trim()
+    ? [o.standard.trim()]
+    : [
+        `Please send us your prices for the attached list — ${items.length} item${items.length === 1 ? "" : "s"} (${codes.join(", ")}).`,
+        ...(ladder ? ["At the end there's a short price list of other lumber lengths — just a price per board, so we can order the lengths that cost least."] : []),
+        "Just fill in your price per unit (the yellow column in the Excel file) and send it back.",
+      ];
   return {
     subject: `Request for prices — Job #${o.project.number} ${o.project.name} (Bid #${o.bid.number})`,
     body: [
       `Hello${o.contact ? ` ${o.contact.split(" ")[0]}` : ""},`,
       "",
-      `Please send us your prices for the attached list — ${items.length} item${items.length === 1 ? "" : "s"} (${codes.join(", ")}).`,
-      ...(ladder ? ["At the end there's a short price list of other lumber lengths — just a price per board, so we can order the lengths that cost least."] : []),
-      "Just fill in your price per unit (the yellow column in the Excel file) and send it back.",
+      ...middle,
       ...(o.bid.notes ? ["", o.bid.notes] : []),
       "",
       `Job #${o.project.number} — ${o.project.name}`,
@@ -115,4 +125,19 @@ export function emailedBids(activity: { description: string; createdAt: Date }[]
     if (m && !out.has(Number(m[1]))) out.set(Number(m[1]), { to: m[2], at: a.createdAt });
   }
   return out;
+}
+
+/**
+ * Your words out of a bid email as you left it — "Use as my standard message": what's between the
+ * greeting ("Hello Pat,") and the job line ("Job #…"), without the bid's own note (that's per bid).
+ */
+export function standardFromBody(body: string, bidNote: string | null) {
+  const lines = body.replace(/\r\n/g, "\n").split("\n");
+  let start = 0;
+  if (/^\s*(hello|hi|hey|good (morning|afternoon))\b/i.test(lines[0] ?? "")) start = 1;
+  let end = lines.findIndex((l, i) => i >= start && /^\s*Job #\d+/.test(l));
+  if (end < 0) end = lines.length;
+  let middle = lines.slice(start, end).join("\n");
+  if (bidNote?.trim()) middle = middle.replace(bidNote.trim(), "");
+  return middle.replace(/\n{3,}/g, "\n\n").trim();
 }

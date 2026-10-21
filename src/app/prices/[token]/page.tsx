@@ -27,22 +27,20 @@ export default async function BidPricesPage({ params }: { params: Promise<{ toke
   const lines = bid.lines.map((l) => ({ id: l.id, name: l.name, unit: l.unit, quantity: l.quantity, ladder: isLadderLine(l), price: l.unitPrice, substitute: l.substitute }));
   return (
     <Shell>
-      <p className="text-sm font-semibold text-slate-500">{company?.name}</p>
-      <h1 className="mt-1 text-xl font-semibold text-slate-900">Your prices — Bid #{bid.number}</h1>
-      <div className="mt-2 space-y-0.5 text-sm text-slate-600">
-        <p>For: {bid.vendorName}</p>
-        <p>
-          Job #{bid.project.number} — {bid.project.name}
-        </p>
-        {address ? <p>Deliver to: {address}</p> : null}
-        {bid.notes ? <p className="text-slate-800">Note: {bid.notes}</p> : null}
-      </div>
+      <h1 className="text-lg font-semibold text-slate-900">
+        {company?.name} — prices for Bid #{bid.number}
+      </h1>
+      <p className="mt-0.5 text-xs text-slate-600">
+        {bid.vendorName} · Job #{bid.project.number} {bid.project.name}
+        {address ? ` · Deliver to ${address}` : ""}
+      </p>
+      {bid.notes ? <p className="mt-1 text-xs text-slate-800">Note: {bid.notes}</p> : null}
       {closed ? (
         <p className="mt-5 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-700">This bid has been decided — thank you. Questions? Reply to the email you got.</p>
       ) : (
         <PricesForm token={token} lines={lines} company={company?.name ?? "the builder"} />
       )}
-      <p className="mt-6 text-xs text-slate-400">
+      <p className="mt-3 text-xs text-slate-400">
         Questions? Reply to the email you got{company?.phone ? `, or call ${company.phone}` : ""}.
       </p>
     </Shell>
@@ -51,12 +49,12 @@ export default async function BidPricesPage({ params }: { params: Promise<{ toke
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen flex-1 bg-slate-100 px-4 py-6">
+    <main className="min-h-screen flex-1 bg-slate-100 px-3 pb-28 pt-3 sm:px-4">
       <div className="mx-auto max-w-3xl">
-        <div className="mb-4">
-          <StationLine size={26} />
+        <div className="mb-2">
+          <StationLine size={22} />
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6">{children}</div>
+        <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">{children}</div>
       </div>
     </main>
   );

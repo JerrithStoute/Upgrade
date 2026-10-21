@@ -117,6 +117,7 @@ export const SETTINGS: HelpArticle[] = [
           { name: "Add a vendor", what: "Name, contact, phone, email, notes, and **Cost codes they bid**: picked for them when you send a list out for bids." },
           { name: "Have a list? Paste or upload it", what: "Paste rows from Excel or upload a CSV or Excel file (QuickBooks and CoConstruct exports work), one vendor per line, name first. Vendors you have are kept; only their blank details are filled in." },
           { name: "Insurance every sub needs", what: "General liability, Workers' comp, Auto, Umbrella. Applies to every vendor whose insurance you track." },
+          { name: "Your bid email message", what: "Your own words in the middle of every bid email. The greeting, the bid's note, the job, the delivery address and your signature are filled in around them for each bid. Blank uses the built-in message.", how: "Type it and click **Save**, or tick **Use as my standard message** under the message in any bid's email." },
           { name: "Insurance (column)", what: "**Covered**, **Not tracked**, a warning (expired, missing, expiring), certificates they uploaded for you to confirm, and how many portal sign-ins they have." },
           { name: "Edit", what: "Changes a vendor. A new name changes everywhere: Item List, bids, POs." },
           { name: "Delete", what: "Removes the vendor and their certificate files. Their bids stay on your jobs." },

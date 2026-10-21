@@ -42,6 +42,8 @@ model Company {
   allowanceProfit     Boolean         @default(false)
   // Change order defaults ("Use as default"): JSON { introText, closingText, terms, ifDeclined, profitMode, profitValue, profitShown }.
   changeOrderDefaults String?
+  // Bid emails: your own words in the middle of every one (the greeting, the job and the signature are filled in); null = the built-in message.
+  bidMessage          String?
   // Your default Markup, Margin & Tax table for new estimates (JSON).
   markupTable         String?
   // The days you work, 0 = Sunday … 6 = Saturday ("1,2,3,4,5" = Monday–Friday). Schedules count these.

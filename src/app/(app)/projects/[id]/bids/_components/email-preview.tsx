@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Check, Copy, Download, ExternalLink, Mail, Printer, Send, X } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
 import { actionMessage } from "@/lib/action-message";
-import { sendBidEmail } from "../actions";
+import { saveBidMessage, sendBidEmail } from "../actions";
 
 /**
  * The email to a vendor, to read over before it goes: who it's to, the subject and the message (all
@@ -48,6 +48,7 @@ export function EmailPreview({
   const [copied, setCopied] = useState(false);
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ ok?: string; error?: string } | null>(null);
+  const [standard, setStandard] = useState<"saving" | "saved" | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -116,10 +117,44 @@ export function EmailPreview({
                 <span className="label">Subject</span>
                 <input className="input" value={subject} onChange={(e) => setSubject(e.target.value)} />
               </label>
-              <label className="block">
-                <span className="label">Message</span>
-                <textarea className="input" rows={9} value={body} onChange={(e) => setBody(e.target.value)} />
-              </label>
+              <div>
+                <label className="block">
+                  <span className="label">Message</span>
+                  <textarea
+                    className="input"
+                    rows={9}
+                    value={body}
+                    onChange={(e) => {
+                      setBody(e.target.value);
+                      setStandard(null);
+                    }}
+                  />
+                </label>
+                {/* Like "Use as default" on change orders: your words here start every bid email. */}
+                <label className="mt-1 inline-flex items-center gap-1.5 text-xs text-slate-600">
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5 rounded border-slate-300"
+                    checked={standard === "saved"}
+                    disabled={standard === "saved" || standard === "saving"}
+                    onChange={async () => {
+                      setStandard("saving");
+                      try {
+                        const r = await saveBidMessage({ projectId, bidId, body });
+                        if ("ok" in r) setStandard("saved");
+                        else {
+                          setStandard(null);
+                          setResult({ error: r.error });
+                        }
+                      } catch (e) {
+                        setStandard(null);
+                        setResult({ error: actionMessage(e, "Your standard message wasn't saved") });
+                      }
+                    }}
+                  />
+                  {standard === "saved" ? "Saved — every bid email starts with this message (Settings → Vendors to change it)" : "Use as my standard message"}
+                </label>
+              </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
                 <p className="font-medium text-slate-900">Sent with it: a button to type prices online, the Excel file, and a PDF to fill in by hand</p>
                 <p className="text-xs text-slate-600">

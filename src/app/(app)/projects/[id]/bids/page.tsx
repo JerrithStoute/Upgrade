@@ -1,5 +1,5 @@
 import Link from "@/components/link";
-import { AlertTriangle, ArrowLeft, Check, Download, FileSpreadsheet, Lock, Pencil, Printer, Replace } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Check, Download, Eye, FileSpreadsheet, Lock, Pencil, Printer, Replace } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
@@ -84,7 +84,7 @@ export default async function BidsPage({
       })
     : [];
   /** The email to a vendor about a bid — shown to you first (EmailPreview), then sent from here (or opened in your email program). */
-  const emailFor = (b: (typeof cmp.bids)[number], contact: string | null) => bidEmailText({ bid: b, project, address, contact, from });
+  const emailFor = (b: (typeof cmp.bids)[number], contact: string | null) => bidEmailText({ bid: b, project, address, contact, from, standard: company?.bidMessage });
   // Which bids were emailed from here, when, and to whom (the job's activity).
   const emailed = emailedBids(
     await db.activity.findMany({ where: { projectId: project.id, type: "bid.emailed" }, orderBy: { createdAt: "desc" }, select: { description: true, createdAt: true } }),
@@ -306,10 +306,10 @@ export default async function BidsPage({
                         <a href={`${base}/${b.id}/pdf`} target="_blank" rel="noopener" className="mt-1 flex items-center gap-1 font-medium text-blue-700 hover:underline">
                           <Printer className="h-3.5 w-3.5" /> PDF
                         </a>
-                        {b.returnFileId ? (
-                          <a href={`/api/files/${b.returnFileId}?download=1`} className="mt-1 flex items-center gap-1 text-slate-600 hover:underline">
-                            <Download className="h-3.5 w-3.5" /> Returned file
-                          </a>
+                        {b.returnFileId || b.status === "RECEIVED" ? (
+                          <Link href={`${base}/${b.id}/reply`} className="mt-1 flex items-center gap-1 font-medium text-emerald-700 hover:underline" title="Their prices as they sent them">
+                            <Eye className="h-3.5 w-3.5" /> What they sent
+                          </Link>
                         ) : null}
                       </td>
                       <td className="px-4 py-2.5">
@@ -326,7 +326,7 @@ export default async function BidsPage({
                             vendorName={b.vendorName}
                             bidNumber={b.number}
                           />
-                          <ImportButton action={importBid} projectId={project.id} bidId={b.id} label="Import…" variant="ghost" />
+                          <ImportButton action={importBid} projectId={project.id} bidId={b.id} label="Add what they sent…" variant="ghost" />
                           <Link href={`${base}/${b.id}`} className={buttonClasses("ghost", "sm")} title="See the lines, or type in prices the vendor gave you another way">
                             <Pencil className="h-3.5 w-3.5" /> Prices
                           </Link>

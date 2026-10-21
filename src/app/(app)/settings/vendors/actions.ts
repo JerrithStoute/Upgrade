@@ -140,6 +140,16 @@ export const setRequiredCoverage = friendly(async function setRequiredCoverage(f
   redirect(str(fd, "back").startsWith("/settings/vendors") ? str(fd, "back") : PATH);
 });
 
+/** Your standard words in every bid email (Company → bidMessage); blank goes back to the built-in message. */
+export const setBidMessage = friendly(async function setBidMessage(fd: FormData) {
+  await requireEdit("lists");
+  const message = str(fd, "bidMessage").slice(0, 20_000).trim() || null;
+  const company = await db.company.findFirst({ select: { id: true } });
+  if (company) await db.company.update({ where: { id: company.id }, data: { bidMessage: message } });
+  revalidatePath(PATH);
+  redirect(`${PATH}?bidMessage=saved`);
+});
+
 /** Need this vendor's insurance? auto (once they're on a PO for work) / yes / no. */
 export const setInsuranceRequired = friendly(async function setInsuranceRequired(fd: FormData) {
   await requireEdit("lists");

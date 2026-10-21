@@ -16,7 +16,7 @@ import { itemNameKey, substituteLength } from "@/lib/takeoff";
 import { addSubstitution } from "@/lib/substitutions";
 import { newItemPlacement } from "@/lib/item-codes";
 import { cleanVendorName, vendorCodes, vendorKey } from "@/lib/vendors";
-import { bidEmail, bidEmailText, bidFileName, emailedBids } from "@/lib/bid-email";
+import { bidEmail, bidEmailText, bidFileName, emailedBids, standardFromBody } from "@/lib/bid-email";
 import { companyLines } from "@/lib/company";
 import { appUrl, sendMail } from "@/lib/mail";
 import { bidPdf } from "@/lib/bid-pdf";
@@ -141,6 +141,20 @@ export const importBid = friendly(async function importBid(fd: FormData) {
   const file = fd.get("file");
   if (!(file instanceof File) || file.size === 0) back(`error=${encodeURIComponent("Choose the file the vendor sent back")}`);
   const upload = file as File;
+  // Not their Excel file (a PDF they wrote prices on, a photo of it): kept on the bid to look at and type
+  // the prices off — on its own row, since only the Excel file knows which bid it is.
+  if (!/\.xlsx$/i.test(upload.name)) {
+    const rowBid = str(fd, "bidId") ? await db.bid.findFirst({ where: { id: str(fd, "bidId"), projectId: project.id }, select: { id: true, number: true, vendorName: true } }) : null;
+    if (!rowBid) back(`error=${encodeURIComponent("Add a PDF or photo on its bid's row (Add what they sent…), so it goes on the right bid.")}`);
+    const meta = await saveUpload(upload, project.id);
+    const saved = await db.fileAsset.create({
+      data: { ...meta, name: `Returned - ${meta.name}`.slice(0, 200), projectId: project.id, uploadedById: user.id, folder: "Bids", clientVisible: false },
+    });
+    await db.bid.update({ where: { id: rowBid!.id }, data: { returnFileId: saved.id } });
+    await logActivity({ projectId: project.id, userId: user.id, type: "bid.file", description: `Bid #${rowBid!.number} (${rowBid!.vendorName}) — what they sent added: ${meta.name}` });
+    revalidateBids(project.id);
+    redirect(`${bidsPath(project.id)}/${rowBid!.id}?attached=1`);
+  }
   let read: Awaited<ReturnType<typeof readBidWorkbook>>;
   try {
     read = await readBidWorkbook(Buffer.from(await upload.arrayBuffer()));
@@ -367,6 +381,7 @@ async function emailBid(
           address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
           contact: bid.vendor?.contact ?? null,
           from: companyLines(company),
+          standard: company?.bidMessage,
         });
   // Sent with it: the Excel file (prices blank), the PDF to fill in by hand, and the link to type prices online.
   const [excel, pdf] = await Promise.all([
@@ -439,4 +454,22 @@ export async function sendAllBidEmails(input: { projectId: string }): Promise<{ 
   }
   if (sent.length) revalidatePath(bidsPath(project.id));
   return { sent, skipped, failed };
+}
+
+/**
+ * "Use as my standard message" in a bid's email window: your words from it (between the greeting and the
+ * job) go in every bid email from now on — Settings → Vendors shows them, to change or clear.
+ */
+export async function saveBidMessage(input: { projectId: string; bidId: string; body: string }): Promise<{ ok: true; message: string } | { error: string }> {
+  await requireEdit("estimates", { costs: true });
+  const project = await getProject(String(input.projectId));
+  const bid = await db.bid.findFirst({ where: { id: String(input.bidId), projectId: project.id }, select: { notes: true } });
+  const message = standardFromBody(String(input.body ?? "").slice(0, 20_000), bid?.notes ?? null);
+  if (!message) return { error: "Write your message first — what goes between the greeting and the job." };
+  const company = await db.company.findFirst({ select: { id: true } });
+  if (!company) return { error: "Set up your company first (Settings)." };
+  await db.company.update({ where: { id: company.id }, data: { bidMessage: message } });
+  revalidatePath(bidsPath(project.id));
+  revalidatePath("/settings/vendors");
+  return { ok: true, message };
 }

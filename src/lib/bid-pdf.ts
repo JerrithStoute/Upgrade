@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
-import { isLadderLine } from "./bids";
+import { isLadderLine } from "./bid-ladder";
 
 /**
  * A bid as a PDF to print and fill in by hand (sent with the bid's email, next to the Excel file): who
