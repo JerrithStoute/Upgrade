@@ -6,11 +6,13 @@ import { Send } from "lucide-react";
 import { Button } from "@/components/ui";
 import { actionMessage } from "@/lib/action-message";
 import { sendAllBidEmails } from "../actions";
+import { useSendHow } from "./send-how";
 
 /** "Email all": every bid not emailed yet goes to its vendor's email on file, with the usual message. */
 export function EmailAllButton({ projectId, count }: { projectId: string; count: number }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
+  const [how] = useSendHow();
   const [note, setNote] = useState<{ text: string; bad?: boolean } | null>(null);
   return (
     <span className="flex flex-wrap items-center gap-2">
@@ -19,11 +21,12 @@ export function EmailAllButton({ projectId, count }: { projectId: string; count:
         size="sm"
         disabled={busy}
         onClick={async () => {
-          if (!window.confirm(`Email ${count === 1 ? "the bid that hasn't" : `the ${count} bids that haven't`} been emailed yet — each to its vendor, with its Excel file?`)) return;
+          const way = `${how.attach ? "with its Excel file and PDF attached" : "with its link to type prices online (Excel and PDF on that page)"}${how.copyMe ? ", and a copy to you" : ""}`;
+          if (!window.confirm(`Email ${count === 1 ? "the bid that hasn't" : `the ${count} bids that haven't`} been emailed yet — each to its vendor, ${way}?`)) return;
           setBusy(true);
           setNote(null);
           try {
-            const r = await sendAllBidEmails({ projectId });
+            const r = await sendAllBidEmails({ projectId, how });
             if ("error" in r) setNote({ text: r.error, bad: true });
             else {
               const parts = [

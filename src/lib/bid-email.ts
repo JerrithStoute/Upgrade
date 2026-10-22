@@ -28,9 +28,9 @@ export function bidEmailText(o: {
   const middle = o.standard?.trim()
     ? [o.standard.trim()]
     : [
-        `Please send us your prices for the attached list — ${items.length} item${items.length === 1 ? "" : "s"} (${codes.join(", ")}).`,
+        `Please send us your prices for the list below — ${items.length} item${items.length === 1 ? "" : "s"} (${codes.join(", ")}).`,
         ...(ladder ? ["At the end there's a short price list of other lumber lengths — just a price per board, so we can order the lengths that cost least."] : []),
-        "Just fill in your price per unit (the yellow column in the Excel file) and send it back.",
+        "The quickest way is the Type your prices online button. Or fill in the Excel file or the PDF and send it back.",
       ];
   return {
     subject: `Request for prices — Job #${o.project.number} ${o.project.name} (Bid #${o.bid.number})`,
@@ -54,8 +54,10 @@ const qty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).repla
 
 /**
  * The email itself: the message as written, a button to type the prices online, then the items
- * (quantity, unit, item), with the Excel file and the PDF attached. From the company by name, through
- * The Builder Station (our address, so it gets delivered); replies go to whoever sent it.
+ * (quantity, unit, item) — with the Excel file and the PDF attached, or (lighter, so it lands better
+ * from a new sender) on the online page to download instead. From the company by name, through The
+ * Builder Station's bids@ address (a real-looking sender, not "no-reply"); replies go to whoever sent
+ * it, and `copyTo` gets a copy.
  */
 export function bidEmail(o: {
   to: string;
@@ -67,9 +69,14 @@ export function bidEmail(o: {
   attachments: { filename: string; content: Buffer }[];
   /** The link to type prices online (the bid's own page, no sign-in). */
   onlineUrl: string;
+  /** The sender's own copy. */
+  copyTo?: string | null;
 }): Mail {
   const items = o.lines.filter((l) => !isLadderLine(l));
   const files = o.attachments.map((a) => a.filename).join(" and ");
+  const filesLine = files
+    ? `Attached: ${files} — prices typed in the Excel file's yellow column come back in by themselves; the PDF is for writing them in by hand.`
+    : "The Excel file and a PDF to print and fill in are on that page too, to download.";
   const text = [
     o.body,
     "",
@@ -78,7 +85,7 @@ export function bidEmail(o: {
     "The list:",
     ...items.map((l) => `  ${qty(l.quantity)} ${l.unit}  ${l.name}`),
     "",
-    `Attached: ${files}`,
+    filesLine,
   ].join("\n");
   const paragraphs = o.body
     .split(/\n{2,}/)
@@ -95,10 +102,10 @@ export function bidEmail(o: {
 <p style="margin:0 0 18px;font-size:13px;font-weight:600;color:#64748b">${esc(o.companyName)}</p>
 ${paragraphs}
 <p style="margin:22px 0 4px"><a href="${esc(o.onlineUrl)}" style="display:inline-block;background:#1d4ed8;color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:8px">Type your prices online</a></p>
-<p style="margin:0 0 14px;font-size:12px;color:#94a3b8">The quickest way — or fill in the attached Excel file or PDF and send it back.</p>
+<p style="margin:0 0 14px;font-size:12px;color:#94a3b8">The quickest way — or fill in the ${files ? "attached " : ""}Excel file or PDF and send it back.</p>
 <p style="margin:20px 0 6px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b">The list (${items.length} item${items.length === 1 ? "" : "s"})</p>
 <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:14px;color:#0f172a">${rows}</table>
-<p style="margin:18px 0 0;font-size:13px;color:#64748b">Attached: ${esc(files)} — prices typed in the Excel file's yellow column come back in by themselves; the PDF is for writing them in by hand.</p>
+<p style="margin:18px 0 0;font-size:13px;color:#64748b">${esc(filesLine)}</p>
 </div></body></html>`;
   return {
     to: o.to,
@@ -107,8 +114,10 @@ ${paragraphs}
     html,
     // (Like every email the program sends for a company: its name, through The Builder Station.)
     fromName: `${o.companyName} via The Builder Station`,
+    fromLocal: "bids",
     replyTo: o.replyTo ?? undefined,
-    attachments: o.attachments.map((a) => ({ filename: a.filename, content: a.content.toString("base64") })),
+    bcc: o.copyTo && o.copyTo.toLowerCase() !== o.to.toLowerCase() ? [o.copyTo] : undefined,
+    attachments: o.attachments.length ? o.attachments.map((a) => ({ filename: a.filename, content: a.content.toString("base64") })) : undefined,
   };
 }
 

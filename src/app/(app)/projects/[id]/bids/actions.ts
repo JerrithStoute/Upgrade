@@ -356,6 +356,9 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
 // --- Emailing bids from the program ---------------------------------------------------------
 
 type Sent = { ok: true; to: string; at: string } | { error: string };
+/** How a bid email goes: the Excel file and PDF attached (or only on the online page), and a copy to the sender. */
+type SendHow = { attach: boolean; copyMe: boolean };
+const readHow = (h: Partial<SendHow> | undefined): SendHow => ({ attach: h?.attach === true, copyMe: h?.copyMe !== false });
 const looksLikeEmail = (s: string) => /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/.test(s);
 
 /** One bid to its vendor: the message given, the bid's Excel file (prices blank) attached; noted on the job. */
@@ -364,6 +367,7 @@ async function emailBid(
   project: Awaited<ReturnType<typeof getProject>>,
   bidId: string,
   mail: { to: string; subject?: string; body?: string },
+  how: SendHow = { attach: false, copyMe: true },
 ): Promise<Sent> {
   const to = mail.to.trim().toLowerCase();
   if (!looksLikeEmail(to)) return { error: "Put in the vendor's email" };
@@ -383,18 +387,21 @@ async function emailBid(
           from: companyLines(company),
           standard: company?.bidMessage,
         });
-  // Sent with it: the Excel file (prices blank), the PDF to fill in by hand, and the link to type prices online.
-  const [excel, pdf] = await Promise.all([
-    bidWorkbook({ ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) }, project, company),
-    bidPdf({
-      bid,
-      project,
-      address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
-      from: companyLines(company),
-      date: fmtDate(new Date()),
-      replyTo: user.email,
-    }),
-  ]);
+  // The link to type prices online always; the Excel file (prices blank) and the PDF attached only when
+  // asked — a new sender's email with files lands in fewer inboxes (they're on the online page anyway).
+  const [excel, pdf] = how.attach
+    ? await Promise.all([
+        bidWorkbook({ ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) }, project, company),
+        bidPdf({
+          bid,
+          project,
+          address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
+          from: companyLines(company),
+          date: fmtDate(new Date()),
+          replyTo: user.email,
+        }),
+      ])
+    : [null, null];
   try {
     await sendMail(
       bidEmail({
@@ -403,11 +410,15 @@ async function emailBid(
         companyName: company?.name ?? "Your builder",
         replyTo: user.email,
         lines: bid.lines,
-        attachments: [
-          { filename: bidFileName(bid, project), content: Buffer.from(excel) },
-          { filename: bidFileName(bid, project, "pdf"), content: Buffer.from(pdf) },
-        ],
+        attachments:
+          excel && pdf
+            ? [
+                { filename: bidFileName(bid, project), content: Buffer.from(excel) },
+                { filename: bidFileName(bid, project, "pdf"), content: Buffer.from(pdf) },
+              ]
+            : [],
         onlineUrl: appUrl(`/prices/${await makeBidLink(bid.id, bid.companyId)}`),
+        copyTo: how.copyMe ? user.email : null,
       }),
     );
   } catch (e) {
@@ -418,12 +429,12 @@ async function emailBid(
   return { ok: true, to, at: new Date().toISOString() };
 }
 
-/** "Send" in a bid's email window: sends it from the program, as you see it, with the Excel file and PDF attached. */
-export async function sendBidEmail(input: { projectId: string; bidId: string; to: string; subject: string; body: string }): Promise<Sent> {
+/** "Send" in a bid's email window: sends it from the program, as you see it (files attached or not, a copy to you or not). */
+export async function sendBidEmail(input: { projectId: string; bidId: string; to: string; subject: string; body: string; how?: Partial<SendHow> }): Promise<Sent> {
   const user = await requireEdit("estimates", { costs: true });
   const project = await getProject(String(input.projectId));
   if (!String(input.subject ?? "").trim() || !String(input.body ?? "").trim()) return { error: "Give the email a subject and a message" };
-  const r = await emailBid(user, project, String(input.bidId), { to: String(input.to ?? ""), subject: String(input.subject), body: String(input.body) });
+  const r = await emailBid(user, project, String(input.bidId), { to: String(input.to ?? ""), subject: String(input.subject), body: String(input.body) }, readHow(input.how));
   if ("ok" in r) revalidatePath(bidsPath(project.id));
   return r;
 }
@@ -432,7 +443,7 @@ export async function sendBidEmail(input: { projectId: string; bidId: string; to
  * "Email all": every bid on the job that hasn't been emailed yet and isn't back, to its vendor's email
  * on file, with the usual message. Vendors with no email are listed (open their bid's email to add one).
  */
-export async function sendAllBidEmails(input: { projectId: string }): Promise<{ sent: string[]; skipped: string[]; failed: string[] } | { error: string }> {
+export async function sendAllBidEmails(input: { projectId: string; how?: Partial<SendHow> }): Promise<{ sent: string[]; skipped: string[]; failed: string[] } | { error: string }> {
   const user = await requireEdit("estimates", { costs: true });
   const project = await getProject(String(input.projectId));
   const [bids, activity] = await Promise.all([
@@ -449,7 +460,7 @@ export async function sendAllBidEmails(input: { projectId: string }): Promise<{ 
       skipped.push(b.vendorName);
       continue;
     }
-    const r = await emailBid(user, project, b.id, { to });
+    const r = await emailBid(user, project, b.id, { to }, readHow(input.how));
     (("ok" in r) ? sent : failed).push(b.vendorName);
   }
   if (sent.length) revalidatePath(bidsPath(project.id));

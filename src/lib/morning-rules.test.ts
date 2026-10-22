@@ -39,6 +39,9 @@ describe("company emails", () => {
     assert.equal(fromLine(undefined, "The Builder Station <no-reply@x.com>"), "The Builder Station <no-reply@x.com>");
     assert.equal(fromLine("JT&I Custom Homes via The Builder Station", "The Builder Station <no-reply@x.com>"), "JT&I Custom Homes via The Builder Station <no-reply@x.com>");
     assert.equal(fromLine('Evil <a@b.c>\n"', "no-reply@x.com"), "Evil a@b.c <no-reply@x.com>");
+    // Bids go from a real-looking address on the same domain, not "no-reply".
+    assert.equal(fromLine("JT&I Custom Homes via The Builder Station", "The Builder Station <no-reply@x.com>", "bids"), "JT&I Custom Homes via The Builder Station <bids@x.com>");
+    assert.equal(fromLine("JT&I", "no-reply@x.com", "bids <evil>"), "JT&I <no-reply@x.com>", "only a plain first part");
   });
 
   it("lists sections with links, and escapes what people typed", () => {

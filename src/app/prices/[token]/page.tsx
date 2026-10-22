@@ -35,6 +35,15 @@ export default async function BidPricesPage({ params }: { params: Promise<{ toke
         {address ? ` · Deliver to ${address}` : ""}
       </p>
       {bid.notes ? <p className="mt-1 text-xs text-slate-800">Note: {bid.notes}</p> : null}
+      <p className="mt-1.5 flex flex-wrap gap-x-3 text-xs">
+        <span className="text-slate-500">Rather use your own sheet?</span>
+        <a href={`/prices/${token}/file?kind=xlsx`} className="font-medium text-blue-700 hover:underline">
+          Download the Excel file
+        </a>
+        <a href={`/prices/${token}/file?kind=pdf`} target="_blank" rel="noopener" className="font-medium text-blue-700 hover:underline">
+          PDF to print
+        </a>
+      </p>
       {closed ? (
         <p className="mt-5 rounded-md bg-slate-100 px-4 py-3 text-sm text-slate-700">This bid has been decided — thank you. Questions? Reply to the email you got.</p>
       ) : (

@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Download, ExternalLink, Mail, Printer, Send, X } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Link2, Mail, Printer, Send, X } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
 import { actionMessage } from "@/lib/action-message";
 import { saveBidMessage, sendBidEmail } from "../actions";
+import { useSendHow } from "./send-how";
 
 /**
  * The email to a vendor, to read over before it goes: who it's to, the subject and the message (all
@@ -49,6 +50,8 @@ export function EmailPreview({
   const [sending, setSending] = useState(false);
   const [result, setResult] = useState<{ ok?: string; error?: string } | null>(null);
   const [standard, setStandard] = useState<"saving" | "saved" | null>(null);
+  const [how, setHow] = useSendHow();
+  const [linkCopied, setLinkCopied] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -65,7 +68,7 @@ export function EmailPreview({
     setSending(true);
     setResult(null);
     try {
-      const r = await sendBidEmail({ projectId, bidId, to, subject, body });
+      const r = await sendBidEmail({ projectId, bidId, to, subject, body, how });
       if ("ok" in r) {
         setResult({ ok: `Sent to ${r.to}. Their reply comes to your email.` });
         router.refresh();
@@ -156,10 +159,26 @@ export function EmailPreview({
                 </label>
               </div>
               <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                <p className="font-medium text-slate-900">Sent with it: a button to type prices online, the Excel file, and a PDF to fill in by hand</p>
+                <p className="font-medium text-slate-900">Sent with it: a button to type prices online — the Excel file and a PDF are on that page to download</p>
                 <p className="text-xs text-slate-600">
-                  Prices typed online come in by themselves, and you get an email. Replies come to your own email. Sending it yourself with &ldquo;Open in my email&rdquo;? The
-                  online link goes in the message; download the files here and attach them.
+                  Prices typed online come in by themselves, and you get an email. Replies come to your own email. It goes from bids@thebuilderstation.com, with your
+                  company&apos;s name.
+                </p>
+                {/* Remembered on this computer — Email all goes the same way. */}
+                <div className="mt-2 space-y-1 text-xs text-slate-700">
+                  <label className="flex items-start gap-1.5">
+                    <input type="checkbox" className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300" checked={how.attach} onChange={(e) => setHow({ attach: e.target.checked })} />
+                    <span>
+                      Also attach the Excel file and PDF <span className="text-slate-500">— a new sender&apos;s email with files lands in fewer inboxes; leave it off unless they need them attached</span>
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-1.5">
+                    <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300" checked={how.copyMe} onChange={(e) => setHow({ copyMe: e.target.checked })} />
+                    Send me a copy
+                  </label>
+                </div>
+                <p className="mt-2 text-xs text-slate-600">
+                  Sending it yourself with &ldquo;Open in my email&rdquo;? The online link goes in the message; download the files here to attach them.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {excelHref ? (
@@ -202,6 +221,25 @@ export function EmailPreview({
               >
                 <Copy className="h-3.5 w-3.5" /> {copied ? "Copied" : "Copy the email"}
               </Button>
+              {onlineUrl ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  title="The vendor's link to type prices online — text it to them from your phone"
+                  onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(onlineUrl);
+                      setLinkCopied(true);
+                      setTimeout(() => setLinkCopied(false), 2000);
+                    } catch {
+                      /* clipboard blocked */
+                    }
+                  }}
+                >
+                  <Link2 className="h-3.5 w-3.5" /> {linkCopied ? "Link copied — text it to them" : "Copy price link"}
+                </Button>
+              ) : null}
               {emailedTo && !result?.ok ? <span className="text-xs text-slate-500">Already emailed to {emailedTo}.</span> : null}
             </div>
           </div>

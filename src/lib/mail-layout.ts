@@ -11,13 +11,18 @@ export type Mail = {
   replyTo?: string;
   /** Files sent with it (a bid's Excel file): the file's name, and its contents in base64. */
   attachments?: { filename: string; content: string }[];
+  /** The address's own part, when not MAIL_FROM's ("bids" → bids@thebuilderstation.com): a real-looking sender, not "no-reply". */
+  fromLocal?: string;
+  /** A copy to them too, unseen by the one it's to (the sender's own copy). */
+  bcc?: string[];
 };
 
 const DEFAULT_FROM = "The Builder Station <no-reply@thebuilderstation.com>";
-/** MAIL_FROM with another name in front of its address. */
-export function fromLine(fromName: string | undefined, base = process.env.MAIL_FROM || DEFAULT_FROM) {
-  if (!fromName) return base;
-  const address = /<([^>]+)>/.exec(base)?.[1] ?? base.trim();
+/** MAIL_FROM with another name in front of its address — and another first part, with `local` ("bids@…"). */
+export function fromLine(fromName: string | undefined, base = process.env.MAIL_FROM || DEFAULT_FROM, local?: string) {
+  let address = /<([^>]+)>/.exec(base)?.[1] ?? base.trim();
+  if (local && /^[a-z0-9._-]+$/i.test(local)) address = `${local}@${address.split("@")[1]}`;
+  if (!fromName) return local ? `${base.replace(/<[^>]+>/, "").trim() || "The Builder Station"} <${address}>` : base;
   return `${fromName.replace(/[<>"\r\n]/g, "").trim()} <${address}>`;
 }
 

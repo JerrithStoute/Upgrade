@@ -36,13 +36,14 @@ export async function sendMail(mail: Mail) {
       method: "POST",
       headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
       body: JSON.stringify({
-        from: fromLine(mail.fromName),
+        from: fromLine(mail.fromName, undefined, mail.fromLocal),
         to: [mail.to],
         subject: mail.subject,
         html: mail.html,
         text: mail.text,
         ...(mail.replyTo ? { reply_to: mail.replyTo } : {}),
         ...(mail.attachments?.length ? { attachments: mail.attachments } : {}),
+        ...(mail.bcc?.length ? { bcc: mail.bcc } : {}),
       }),
     });
     if (!res.ok) throw new Error(`Couldn't send the email (${res.status})`);
