@@ -24,7 +24,15 @@ const company = async () => (await companyInfo()).name;
 /** The company's own email: its name on top and in the From line. Returns who it reached. */
 export async function sendCompanyMail(
   to: string[],
-  mail: { subject: string; heading: string; lines: string[]; sections?: MailSection[]; button?: { label: string; url: string }; after?: string[]; replyTo?: string },
+  mail: {
+    subject: string;
+    heading: string;
+    lines: string[];
+    sections?: MailSection[];
+    button?: { label: string; url: string };
+    after?: string[];
+    replyTo?: string;
+  },
 ) {
   // A reply goes to whoever sent it — else the company's own address, never our no-reply one.
   const { name: brand, email: office } = await companyInfo();
@@ -69,7 +77,11 @@ export async function emailPoToVendor(poId: string, sender: Person) {
       `Total: ${money(poTotal(po.lines))}${po.deliveryDate ? ` · Needed by ${fmtDate(po.deliveryDate)}` : ""}`,
     ],
     button: portal ? { label: "View and answer", url: appUrl(`/vendor/pos/${po.id}`) } : undefined,
-    after: [portal ? "Sign in to accept or decline it, and to send your bill when the work is done." : `Reply to this email to accept it or with any questions — it goes to ${sender.name}.`],
+    after: [
+      portal
+        ? "Sign in to accept or decline it, and to send your bill when the work is done."
+        : `Reply to this email to accept it or with any questions — it goes to ${sender.name}.`,
+    ],
     replyTo: sender.email,
   });
 }
@@ -142,12 +154,19 @@ export async function emailBidAnswered(bidId: string, o: { priced: number; items
   return sendCompanyMail(
     to.map((u) => u.email),
     {
-      subject: o.priced ? `${bid.vendorName} priced bid #${bid.number} for ${bid.project.name}` : `${bid.vendorName} sent their quote for bid #${bid.number}`,
-      heading: o.priced ? `${bid.vendorName} sent their prices` : `${bid.vendorName} sent their quote`,
+      subject:
+        bid.kind === "SUB" && o.priced
+          ? `${bid.vendorName} sent their bid #${bid.number} for ${bid.project.name}: ${money(o.total)}`
+          : o.priced
+            ? `${bid.vendorName} priced bid #${bid.number} for ${bid.project.name}`
+            : `${bid.vendorName} sent their quote for bid #${bid.number}`,
+      heading: o.priced ? `${bid.vendorName} sent their ${bid.kind === "SUB" ? "bid" : "prices"}` : `${bid.vendorName} sent their quote`,
       lines: [
-        o.priced
-          ? `Bid #${bid.number} for Job #${bid.project.number} ${bid.project.name}: ${o.priced} of ${o.items} items priced${o.total ? `, ${money(o.total)} for what's priced` : ""}${o.file ? ", with their quote attached" : ""}.`
-          : `Bid #${bid.number} for Job #${bid.project.number} ${bid.project.name}: they attached their quote (${o.file}) without typing prices — type them in on the bid's Prices page, with their quote beside.`,
+        bid.kind === "SUB" && o.priced
+          ? `Bid #${bid.number} for Job #${bid.project.number} ${bid.project.name}: ${money(o.total)}${o.items > 1 ? ` for ${o.priced} of ${o.items} trades` : ""}${o.file ? ", with their quote attached" : ""}.`
+          : o.priced
+            ? `Bid #${bid.number} for Job #${bid.project.number} ${bid.project.name}: ${o.priced} of ${o.items} items priced${o.total ? `, ${money(o.total)} for what's priced` : ""}${o.file ? ", with their quote attached" : ""}.`
+            : `Bid #${bid.number} for Job #${bid.project.number} ${bid.project.name}: they attached their quote (${o.file}) without typing prices — type them in on the bid's Prices page, with their quote beside.`,
         ...(o.message ? [`Their note: "${o.message}"`] : []),
         ...(o.priced ? ["The prices are on the bid already — compare and take it on the bids page."] : []),
       ],

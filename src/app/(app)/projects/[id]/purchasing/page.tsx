@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { awardCode } from "@/lib/sub-bids";
 import { ClipboardList, Plus, ShieldAlert } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -54,10 +55,12 @@ export default async function PurchasingPage({ params }: { params: Promise<{ id:
     .map(([codeKey, r]) => ({ codeKey, label: codeName(codeKey), ...r }))
     .sort((a, b) => (codes.findIndex((c) => c.id === a.codeKey) + 1 || 1e9) - (codes.findIndex((c) => c.id === b.codeKey) + 1 || 1e9));
   const awardOptions = awards.map((a) => {
-    const lines = a.bid.lines.filter((l) => l.codeKey === a.codeKey && l.unitPrice != null);
+    // (A sub's bid is filed as "sub:<code>" — its line is the plain code.)
+    const code = awardCode(a.codeKey);
+    const lines = a.bid.lines.filter((l) => l.codeKey === code && l.unitPrice != null);
     return {
-      value: `${a.bidId}|${a.codeKey}`,
-      label: `${a.bid.vendorName} · ${lines[0]?.codeLabel ?? codeName(a.codeKey)} (Bid #${a.bid.number})`,
+      value: `${a.bidId}|${code}`,
+      label: `${a.bid.vendorName} · ${lines[0]?.codeLabel ?? codeName(code)} (Bid #${a.bid.number})`,
       total: lines.reduce((n, l) => n + l.quantity * (l.unitPrice ?? 0), 0),
     };
   });

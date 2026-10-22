@@ -26,6 +26,7 @@ export function EmailPreview({
   onlineUrl,
   vendorName,
   bidNumber,
+  sub = false,
 }: {
   projectId: string;
   bidId: string;
@@ -35,11 +36,13 @@ export function EmailPreview({
   subject: string;
   body: string;
   excelHref: string | null;
-  pdfHref: string;
+  pdfHref: string | null;
   /** The vendor's link to type prices online (the sent email has it as a button). */
   onlineUrl: string;
   vendorName: string;
   bidNumber: number;
+  /** A sub's bid: the plans are on its page — nothing to attach, no standard message (that's for material lists). */
+  sub?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -61,7 +64,7 @@ export function EmailPreview({
   }, [open]);
 
   // Sent yourself, the email carries the online link in its message.
-  const mailBody = onlineUrl ? `${body}\n\nType your prices online (the quickest way): ${onlineUrl}` : body;
+  const mailBody = onlineUrl ? `${body}\n\n${sub ? "See the plans and send your bid" : "Type your prices online (the quickest way)"}: ${onlineUrl}` : body;
   const mailto = `mailto:${encodeURIComponent(to.trim()).replace(/%40/g, "@")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(mailBody)}`;
 
   const send = async () => {
@@ -106,7 +109,12 @@ export function EmailPreview({
               <h3 className="text-base font-semibold text-slate-900">
                 Email to {vendorName} — Bid #{bidNumber}
               </h3>
-              <button type="button" className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700" onClick={() => setOpen(false)} aria-label="Close">
+              <button
+                type="button"
+                className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                onClick={() => setOpen(false)}
+                aria-label="Close"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -134,66 +142,110 @@ export function EmailPreview({
                   />
                 </label>
                 {/* Like "Use as default" on change orders: your words here start every bid email. */}
-                <label className="mt-1 inline-flex items-center gap-1.5 text-xs text-slate-600">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 rounded border-slate-300"
-                    checked={standard === "saved"}
-                    disabled={standard === "saved" || standard === "saving"}
-                    onChange={async () => {
-                      setStandard("saving");
-                      try {
-                        const r = await saveBidMessage({ projectId, bidId, body });
-                        if ("ok" in r) setStandard("saved");
-                        else {
+                {sub ? null : (
+                  <label className="mt-1 inline-flex items-center gap-1.5 text-xs text-slate-600">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded border-slate-300"
+                      checked={standard === "saved"}
+                      disabled={standard === "saved" || standard === "saving"}
+                      onChange={async () => {
+                        setStandard("saving");
+                        try {
+                          const r = await saveBidMessage({ projectId, bidId, body });
+                          if ("ok" in r) setStandard("saved");
+                          else {
+                            setStandard(null);
+                            setResult({ error: r.error });
+                          }
+                        } catch (e) {
                           setStandard(null);
-                          setResult({ error: r.error });
+                          setResult({ error: actionMessage(e, "Your standard message wasn't saved") });
                         }
-                      } catch (e) {
-                        setStandard(null);
-                        setResult({ error: actionMessage(e, "Your standard message wasn't saved") });
-                      }
-                    }}
-                  />
-                  {standard === "saved" ? "Saved — every bid email starts with this message (Settings → Vendors to change it)" : "Use as my standard message"}
-                </label>
-              </div>
-              <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
-                <p className="font-medium text-slate-900">Sent with it: a button to type prices online — the Excel file and a PDF are on that page to download</p>
-                <p className="text-xs text-slate-600">
-                  Prices typed online come in by themselves, and you get an email. Replies come to your own email. It goes from bids@thebuilderstation.com, with your
-                  company&apos;s name.
-                </p>
-                {/* Remembered on this computer — Email all goes the same way. */}
-                <div className="mt-2 space-y-1 text-xs text-slate-700">
-                  <label className="flex items-start gap-1.5">
-                    <input type="checkbox" className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300" checked={how.attach} onChange={(e) => setHow({ attach: e.target.checked })} />
-                    <span>
-                      Also attach the Excel file and PDF <span className="text-slate-500">— a new sender&apos;s email with files lands in fewer inboxes; leave it off unless they need them attached</span>
-                    </span>
+                      }}
+                    />
+                    {standard === "saved" ? "Saved — every bid email starts with this message (Settings → Vendors to change it)" : "Use as my standard message"}
                   </label>
-                  <label className="flex items-center gap-1.5">
-                    <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300" checked={how.copyMe} onChange={(e) => setHow({ copyMe: e.target.checked })} />
+                )}
+              </div>
+              {sub ? (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <p className="font-medium text-slate-900">Sent with it: a button to see the plans and send their bid</p>
+                  <p className="text-xs text-slate-600">
+                    Nothing is attached — the plans open from that page. What they send comes in by itself (and goes in Files → Bids), and you get an email.
+                    Replies come to your own email. It goes from bids@thebuilderstation.com, with your company&apos;s name.
+                  </p>
+                  <label className="mt-2 flex items-center gap-1.5 text-xs text-slate-700">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded border-slate-300"
+                      checked={how.copyMe}
+                      onChange={(e) => setHow({ copyMe: e.target.checked })}
+                    />
                     Send me a copy
                   </label>
                 </div>
-                <p className="mt-2 text-xs text-slate-600">
-                  Sending it yourself with &ldquo;Open in my email&rdquo;? The online link goes in the message; download the files here to attach them.
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {excelHref ? (
-                    <a href={excelHref} className={buttonClasses("secondary", "sm")}>
-                      <Download className="h-3.5 w-3.5" /> Excel file (prices come back in by themselves)
-                    </a>
-                  ) : null}
-                  <a href={pdfHref} target="_blank" rel="noopener" className={buttonClasses("secondary", "sm")}>
-                    <Printer className="h-3.5 w-3.5" /> PDF (to print and fill in)
-                  </a>
+              ) : (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5">
+                  <p className="font-medium text-slate-900">
+                    Sent with it: a button to type prices online — the Excel file and a PDF are on that page to download
+                  </p>
+                  <p className="text-xs text-slate-600">
+                    Prices typed online come in by themselves, and you get an email. Replies come to your own email. It goes from bids@thebuilderstation.com,
+                    with your company&apos;s name.
+                  </p>
+                  {/* Remembered on this computer — Email all goes the same way. */}
+                  <div className="mt-2 space-y-1 text-xs text-slate-700">
+                    <label className="flex items-start gap-1.5">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-3.5 w-3.5 rounded border-slate-300"
+                        checked={how.attach}
+                        onChange={(e) => setHow({ attach: e.target.checked })}
+                      />
+                      <span>
+                        Also attach the Excel file and PDF{" "}
+                        <span className="text-slate-500">
+                          — a new sender&apos;s email with files lands in fewer inboxes; leave it off unless they need them attached
+                        </span>
+                      </span>
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 rounded border-slate-300"
+                        checked={how.copyMe}
+                        onChange={(e) => setHow({ copyMe: e.target.checked })}
+                      />
+                      Send me a copy
+                    </label>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-600">
+                    Sending it yourself with &ldquo;Open in my email&rdquo;? The online link goes in the message; download the files here to attach them.
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {excelHref ? (
+                      <a href={excelHref} className={buttonClasses("secondary", "sm")}>
+                        <Download className="h-3.5 w-3.5" /> Excel file (prices come back in by themselves)
+                      </a>
+                    ) : null}
+                    {pdfHref ? (
+                      <a href={pdfHref} target="_blank" rel="noopener" className={buttonClasses("secondary", "sm")}>
+                        <Printer className="h-3.5 w-3.5" /> PDF (to print and fill in)
+                      </a>
+                    ) : null}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
             {result ? (
-              <p className={result.ok ? "mx-5 mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800" : "mx-5 mb-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"}>
+              <p
+                className={
+                  result.ok
+                    ? "mx-5 mb-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+                    : "mx-5 mb-3 rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"
+                }
+              >
                 {result.ok ? <Check className="mr-1 inline h-4 w-4" /> : null}
                 {result.ok ?? result.error}
               </p>
@@ -226,7 +278,11 @@ export function EmailPreview({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  title="The vendor's link to type prices online — text it to them from your phone"
+                  title={
+                    sub
+                      ? "The sub's link to the plans and their bid — text it to them from your phone"
+                      : "The vendor's link to type prices online — text it to them from your phone"
+                  }
                   onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(onlineUrl);
@@ -237,7 +293,7 @@ export function EmailPreview({
                     }
                   }}
                 >
-                  <Link2 className="h-3.5 w-3.5" /> {linkCopied ? "Link copied — text it to them" : "Copy price link"}
+                  <Link2 className="h-3.5 w-3.5" /> {linkCopied ? "Link copied — text it to them" : sub ? "Copy bid link" : "Copy price link"}
                 </Button>
               ) : null}
               {emailedTo && !result?.ok ? <span className="text-xs text-slate-500">Already emailed to {emailedTo}.</span> : null}

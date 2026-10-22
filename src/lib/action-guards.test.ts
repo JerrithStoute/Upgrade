@@ -39,6 +39,7 @@ const PUBLIC_ROUTES = new Set([
   "api/qbwc/route.ts", // the QuickBooks Web Connector: signs in with its own username and password (src/lib/qb/sync.ts)
   "api/company/logo/route.ts", // reads through the company gatekeeper, which refuses anyone not signed in
   "prices/[token]/file/route.ts", // a vendor's bid files: the signed link is the key to that one bid (bid-link.ts)
+  "prices/[token]/plan/[fileId]/route.ts", // the plans sent with a sub's bid: the signed link, and only the files picked for that bid
 ]);
 
 function files(dir: string, name: (f: string) => boolean): string[] {

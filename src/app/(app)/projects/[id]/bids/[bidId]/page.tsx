@@ -42,6 +42,8 @@ export default async function BidPage({
   const inSection = (l: (typeof bid.lines)[number], key: string) => (key === "__ladder" ? isLadderLine(l) : !isLadderLine(l) && l.codeKey === key);
   const total = bid.lines.reduce((s, l) => s + (l.unitPrice ?? 0) * l.quantity, 0);
   const priced = bid.lines.filter((l) => l.unitPrice != null).length;
+  // A sub's bid: one price per trade, and what it includes (typed in here when they phoned or emailed it).
+  const sub = bid.kind === "SUB";
 
   return (
     <div className="space-y-4">
@@ -57,9 +59,11 @@ export default async function BidPage({
           {bid.afterLock ? " · re-bid" : ""} · {priced} of {bid.lines.length} priced · {money(total)} as sent
         </span>
         <span className="ml-auto flex gap-2">
-          <a href={`/projects/${project.id}/bids/${bid.id}/excel`} className={buttonClasses("secondary", "sm")}>
-            <Download className="h-3.5 w-3.5" /> Excel file
-          </a>
+          {sub ? null : (
+            <a href={`/projects/${project.id}/bids/${bid.id}/excel`} className={buttonClasses("secondary", "sm")}>
+              <Download className="h-3.5 w-3.5" /> Excel file
+            </a>
+          )}
           {bid.returnFileId || bid.status === "RECEIVED" ? (
             <Link href={`/projects/${project.id}/bids/${bid.id}/reply`} className={buttonClasses("secondary", "sm")}>
               <Eye className="h-3.5 w-3.5" /> What they sent
@@ -125,7 +129,18 @@ export default async function BidPage({
                         </td>
                         <td className="px-4 py-1.5 text-xs text-slate-600">
                           {l.substitute ? <span className="block font-medium text-amber-800">Substitute: {l.substitute}</span> : null}
-                          {l.note}
+                          {sub ? (
+                            <textarea
+                              name={`note_${l.id}`}
+                              rows={2}
+                              defaultValue={l.note ?? ""}
+                              className="input min-w-56 text-xs"
+                              placeholder="What's included — and what isn't"
+                              aria-label={`What's included for ${l.name}`}
+                            />
+                          ) : (
+                            l.note
+                          )}
                         </td>
                       </tr>
                     ))}

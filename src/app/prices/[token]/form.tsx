@@ -44,12 +44,19 @@ export function PricesForm({ token, lines, company, attached }: { token: string;
       {/* Their note and their own quote first, where they're seen. */}
       <label className="mb-3 block">
         <span className="text-xs font-medium text-slate-700">A note for {company} (optional)</span>
-        <textarea name="message" rows={2} className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm" placeholder="Delivery time, prices good through, anything they should know…" />
+        <textarea
+          name="message"
+          rows={2}
+          className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+          placeholder="Delivery time, prices good through, anything they should know…"
+        />
       </label>
       {/* Their own paperwork, sent along with the prices (or instead of typing them). */}
       <label className="mb-3 flex cursor-pointer flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
         <Paperclip className="h-4 w-4 shrink-0 text-slate-500" />
-        <span className="font-medium text-slate-800">{quote ? quote : attached ? "Your quote is attached — attach another to replace it" : "Attach your quote (optional)"}</span>
+        <span className="font-medium text-slate-800">
+          {quote ? quote : attached ? "Your quote is attached — attach another to replace it" : "Attach your quote (optional)"}
+        </span>
         <span className="text-xs text-slate-500">PDF, photo or Excel · goes with your prices</span>
         <input
           type="file"
@@ -118,8 +125,100 @@ export function PricesForm({ token, lines, company, attached }: { token: string;
             {priced} of {items.length} priced
           </span>
           <span className="text-sm font-semibold text-slate-900 tabular-nums">Total {money(total)}</span>
-          <button type="submit" disabled={pending} className="ml-auto rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60">
+          <button
+            type="submit"
+            disabled={pending}
+            className="ml-auto rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+          >
             {pending ? "Sending…" : state?.ok ? "Send again" : "Send my prices"}
+          </button>
+          {state?.error ? <p className="w-full text-sm text-rose-700">{state.error}</p> : null}
+          {state?.ok ? <p className="w-full text-sm text-emerald-700">{state.ok}</p> : null}
+        </div>
+      </div>
+    </form>
+  );
+}
+
+type Trade = { id: string; name: string; price: number | null; note: string | null };
+
+/**
+ * A sub's bid: their note and quote first (like the price form), then a price for each trade with what it
+ * includes and doesn't; the total and Send pinned to the bottom of the screen.
+ */
+export function SubBidForm({ token, trades, company, attached }: { token: string; trades: Trade[]; company: string; attached: boolean }) {
+  const [state, action, pending] = useActionState<PricesState, FormData>(submitBidPrices, undefined);
+  const [prices, setPrices] = useState<Record<string, string>>(() => Object.fromEntries(trades.map((t) => [t.id, t.price != null ? String(t.price) : ""])));
+  const [quote, setQuote] = useState<string | null>(null);
+  const total = trades.reduce((s, t) => s + (num(prices[t.id] ?? "") ?? 0), 0);
+  const priced = trades.filter((t) => num(prices[t.id] ?? "") != null).length;
+  return (
+    <form action={action} className="mt-3">
+      <input type="hidden" name="t" value={token} />
+      <label className="mb-3 block">
+        <span className="text-xs font-medium text-slate-700">A note for {company} (optional)</span>
+        <textarea
+          name="message"
+          rows={2}
+          className="mt-0.5 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+          placeholder="Start date, how long the price is good, anything they should know…"
+        />
+      </label>
+      <label className="mb-3 flex cursor-pointer flex-wrap items-center gap-2 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm hover:bg-slate-50">
+        <Paperclip className="h-4 w-4 shrink-0 text-slate-500" />
+        <span className="font-medium text-slate-800">
+          {quote ? quote : attached ? "Your quote is attached — attach another to replace it" : "Attach your quote (optional)"}
+        </span>
+        <span className="text-xs text-slate-500">PDF, photo or Excel · goes with your bid</span>
+        <input
+          type="file"
+          name="quote"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.heic,.xlsx,application/pdf,image/*"
+          className="sr-only"
+          onChange={(e) => setQuote(e.target.files?.[0]?.name ?? null)}
+        />
+      </label>
+      <div className="space-y-3">
+        {trades.map((t) => (
+          <div key={t.id} className="rounded-lg border border-slate-200 p-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="min-w-0 flex-1 font-medium text-slate-900">{t.name}</span>
+              <span className="text-xs text-slate-500">Your price</span>
+              <input
+                name={`price_${t.id}`}
+                inputMode="decimal"
+                className="h-9 w-32 rounded-md border border-slate-300 px-2 text-right text-sm tabular-nums focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600"
+                placeholder="$"
+                aria-label={`Your price for ${t.name}`}
+                value={prices[t.id] ?? ""}
+                onChange={(e) => setPrices((p) => ({ ...p, [t.id]: e.target.value }))}
+              />
+            </div>
+            <textarea
+              name={`note_${t.id}`}
+              rows={2}
+              defaultValue={t.note ?? ""}
+              className="mt-2 w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+              placeholder="What's included — and what isn't"
+              aria-label={`What's included for ${t.name}`}
+            />
+          </div>
+        ))}
+      </div>
+      <div className="fixed inset-x-0 bottom-0 z-10 border-t border-slate-200 bg-white/95 px-4 py-2.5 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] backdrop-blur">
+        <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-x-3 gap-y-1">
+          {trades.length > 1 ? (
+            <span className="text-xs text-slate-500">
+              {priced} of {trades.length} priced
+            </span>
+          ) : null}
+          <span className="text-sm font-semibold text-slate-900 tabular-nums">Total {money(total)}</span>
+          <button
+            type="submit"
+            disabled={pending}
+            className="ml-auto rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:opacity-60"
+          >
+            {pending ? "Sending…" : state?.ok ? "Send again" : "Send my bid"}
           </button>
           {state?.error ? <p className="w-full text-sm text-rose-700">{state.error}</p> : null}
           {state?.ok ? <p className="w-full text-sm text-emerald-700">{state.ok}</p> : null}

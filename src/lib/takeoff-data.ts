@@ -207,7 +207,7 @@ async function withLengthPrices<T extends Awaited<ReturnType<typeof findConditio
   const projectId = priced[0]?.projectId;
   const awarded = projectId
     ? await db.bidAward.findMany({
-        where: { projectId },
+        where: { projectId, bid: { kind: "MATERIAL" } },
         select: { bid: { select: { lines: { where: { unitPrice: { not: null }, substitute: null }, select: { name: true, unitPrice: true } } } } },
       })
     : [];

@@ -135,9 +135,10 @@ export async function bidComparison(projectId: string, opts: { synced?: boolean 
   const [lines, bids, awards] = await Promise.all([
     biddableLines(projectId, opts),
     db.bid.findMany({ where: { projectId }, orderBy: { number: "asc" }, include: { lines: true } }),
-    db.bidAward.findMany({ where: { projectId } }),
+    db.bidAward.findMany({ where: { projectId, NOT: { codeKey: { startsWith: "sub:" } } } }),
   ]);
-  const received = bids.filter((b) => b.status === "RECEIVED");
+  // (Subs' bids are for whole trades — compared on their own, sub-bids.ts.)
+  const received = bids.filter((b) => b.status === "RECEIVED" && b.kind !== "SUB");
   const rows: CodeRow[] = codeGroups(lines).map((g) => {
     const award = awards.find((a) => a.codeKey === g.codeKey) ?? null;
     const here = lines.filter((l) => l.codeKey === g.codeKey);

@@ -11,16 +11,18 @@ import { logActivity } from "@/lib/activity";
 import { bidWorkbook, biddableLines, isLadderLine, ladderLines, parsePrice, priceLadders, readBidWorkbook } from "@/lib/bids";
 import { isJobLocked, setItemPrice } from "@/lib/job-prices";
 import { saveUpload } from "@/lib/uploads";
-import { fmtDate, str } from "@/lib/utils";
+import { fmtDate, money, str } from "@/lib/utils";
 import { itemNameKey, substituteLength } from "@/lib/takeoff";
 import { addSubstitution } from "@/lib/substitutions";
 import { newItemPlacement } from "@/lib/item-codes";
 import { cleanVendorName, vendorCodes, vendorKey } from "@/lib/vendors";
-import { bidEmail, bidEmailText, bidFileName, emailedBids, standardFromBody } from "@/lib/bid-email";
+import { bidEmail, bidEmailText, bidFileName, emailedBids, standardFromBody, subBidEmailText } from "@/lib/bid-email";
 import { companyLines } from "@/lib/company";
 import { appUrl, sendMail } from "@/lib/mail";
 import { bidPdf } from "@/lib/bid-pdf";
 import { makeBidLink } from "@/lib/bid-link";
+import { codeLabelOf } from "@/lib/takeoff-materials";
+import { PLAN_FOLDERS, putSubBidOnEstimate, readPlanIds, subAwardKey } from "@/lib/sub-bids";
 
 const bidsPath = (projectId: string) => `/projects/${projectId}/bids`;
 
@@ -46,10 +48,12 @@ export const requestBids = friendly(async function requestBids(fd: FormData) {
   if (!vendorIds.length) redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("Pick at least one vendor")}`);
   const [vendors, lines] = await Promise.all([db.vendor.findMany({ where: { id: { in: vendorIds } } }), biddableLines(project.id)]);
   const picked = lines.filter((l) => itemKeys.has(l.key));
-  if (!picked.length) redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("Those items aren't on the Material list any more — reload and pick again")}`);
+  if (!picked.length)
+    redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("Those items aren't on the Material list any more — reload and pick again")}`);
   const codeCount = new Set(picked.map((l) => l.codeKey)).size;
   const ladder = fd.get("ladder") === "1" ? await ladderLines(await priceLadders(project.id, lines), picked) : [];
-  if (!vendors.length) redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("That vendor isn't on your vendor list any more — reload the page and pick again")}`);
+  if (!vendors.length)
+    redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("That vendor isn't on your vendor list any more — reload the page and pick again")}`);
   const afterLock = await isJobLocked(project.id);
   const made: string[] = [];
   for (const v of vendors) {
@@ -144,14 +148,21 @@ export const importBid = friendly(async function importBid(fd: FormData) {
   // Not their Excel file (a PDF they wrote prices on, a photo of it): kept on the bid to look at and type
   // the prices off — on its own row, since only the Excel file knows which bid it is.
   if (!/\.xlsx$/i.test(upload.name)) {
-    const rowBid = str(fd, "bidId") ? await db.bid.findFirst({ where: { id: str(fd, "bidId"), projectId: project.id }, select: { id: true, number: true, vendorName: true } }) : null;
+    const rowBid = str(fd, "bidId")
+      ? await db.bid.findFirst({ where: { id: str(fd, "bidId"), projectId: project.id }, select: { id: true, number: true, vendorName: true } })
+      : null;
     if (!rowBid) back(`error=${encodeURIComponent("Add a PDF or photo on its bid's row (Add what they sent…), so it goes on the right bid.")}`);
     const meta = await saveUpload(upload, project.id);
     const saved = await db.fileAsset.create({
       data: { ...meta, name: `Returned - ${meta.name}`.slice(0, 200), projectId: project.id, uploadedById: user.id, folder: "Bids", clientVisible: false },
     });
     await db.bid.update({ where: { id: rowBid!.id }, data: { returnFileId: saved.id } });
-    await logActivity({ projectId: project.id, userId: user.id, type: "bid.file", description: `Bid #${rowBid!.number} (${rowBid!.vendorName}) — what they sent added: ${meta.name}` });
+    await logActivity({
+      projectId: project.id,
+      userId: user.id,
+      type: "bid.file",
+      description: `Bid #${rowBid!.number} (${rowBid!.vendorName}) — what they sent added: ${meta.name}`,
+    });
     revalidateBids(project.id);
     redirect(`${bidsPath(project.id)}/${rowBid!.id}?attached=1`);
   }
@@ -166,7 +177,10 @@ export const importBid = friendly(async function importBid(fd: FormData) {
   const bidId = read.bidId ?? rowBidId;
   const bid = bidId ? await db.bid.findFirst({ where: { id: bidId, projectId: project.id }, include: { lines: true } }) : null;
   // The id inside the file wins over the row it was uploaded on (it can't be put on the wrong bid).
-  if (!bid) back(`error=${encodeURIComponent(read.bidId ? "That file is a bid for a different job." : "Couldn't tell which bid that file is — upload it on its bid's row.")}`);
+  if (!bid)
+    back(
+      `error=${encodeURIComponent(read.bidId ? "That file is a bid for a different job." : "Couldn't tell which bid that file is — upload it on its bid's row.")}`,
+    );
   const b = bid!;
   const byId = new Map(b.lines.map((l) => [l.id, l]));
   let priced = 0;
@@ -187,7 +201,11 @@ export const importBid = friendly(async function importBid(fd: FormData) {
   });
   await db.bid.update({
     where: { id: b.id },
-    data: { status: priced + ladderPriced > 0 ? "RECEIVED" : b.status, receivedAt: priced + ladderPriced > 0 ? new Date() : b.receivedAt, returnFileId: saved.id },
+    data: {
+      status: priced + ladderPriced > 0 ? "RECEIVED" : b.status,
+      receivedAt: priced + ladderPriced > 0 ? new Date() : b.receivedAt,
+      returnFileId: saved.id,
+    },
   });
   await logActivity({
     projectId: project.id,
@@ -210,7 +228,9 @@ export const saveBidPrices = friendly(async function saveBidPrices(fd: FormData)
     if (!fd.has(`price_${l.id}`)) continue;
     const price = parsePrice(str(fd, `price_${l.id}`));
     if (price != null) priced++;
-    if (price !== l.unitPrice) await db.bidLine.update({ where: { id: l.id }, data: { unitPrice: price } });
+    // A sub's trade: what's in their price and what isn't, typed in here too.
+    const note = fd.has(`note_${l.id}`) ? str(fd, `note_${l.id}`).slice(0, 2000) || null : l.note;
+    if (price !== l.unitPrice || note !== l.note) await db.bidLine.update({ where: { id: l.id }, data: { unitPrice: price, note } });
   }
   await db.bid.update({
     where: { id: bid.id },
@@ -326,7 +346,9 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
       }
       if (scope === "JOB") await setItemPrice({ projectId: project.id, materialItemId, unitCost: l.unitPrice, pin: true });
       else {
-        await db.materialItem.update({ where: { id: materialItemId }, data: { unitCost: l.unitPrice, vendor: bid.vendorName, ...PRICE_CHECKED() } }).catch(() => null);
+        await db.materialItem
+          .update({ where: { id: materialItemId }, data: { unitCost: l.unitPrice, vendor: bid.vendorName, ...PRICE_CHECKED() } })
+          .catch(() => null);
         if (!locked)
           await db.takeoffAssemblyItem.updateMany({
             where: { materialItemId, condition: { projectId: project.id } },
@@ -353,6 +375,129 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
   redirect(`${bidsPath(project.id)}?taken=${done.length}&items=${items}&skipped=${skipped}&subbed=${subbed}&kept=${keptOut}&scope=${scope}#compare`);
 });
 
+// --- Send to subs -----------------------------------------------------------------------------
+
+/**
+ * Send to subs: a bid for each sub picked — the trades (cost codes) picked, one line each for their price,
+ * with the job's plans picked (they open them from the bid's page) and when it's due. Emailed from the
+ * Sent list like any bid.
+ */
+export const requestSubBids = friendly(async function requestSubBids(fd: FormData) {
+  const user = await requireEdit("estimates", { costs: true });
+  const project = await getProject(str(fd, "projectId"));
+  const back = (msg: string) => redirect(`${bidsPath(project.id)}?error=${encodeURIComponent(msg)}#subs`);
+  const codeIds = Array.from(new Set(fd.getAll("code").map(String)));
+  const vendorIds = Array.from(new Set(fd.getAll("vendor").map(String)));
+  if (!codeIds.length) back("Pick the trade (cost code) to bid");
+  if (!vendorIds.length) back("Pick at least one sub");
+  const [codes, vendors, files] = await Promise.all([
+    db.costCode.findMany({ where: { id: { in: codeIds } }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
+    db.vendor.findMany({ where: { id: { in: vendorIds } } }),
+    db.fileAsset.findMany({ where: { id: { in: fd.getAll("plan").map(String) }, projectId: project.id, folder: { in: PLAN_FOLDERS } }, select: { id: true } }),
+  ]);
+  if (!codes.length) back("That cost code isn't on your list any more — reload and pick again");
+  if (!vendors.length) back("That sub isn't on your vendor list any more — reload and pick again");
+  // (Midday: the same date in every US time zone.)
+  const due = /^\d{4}-\d{2}-\d{2}$/.test(str(fd, "due")) ? new Date(`${str(fd, "due")}T12:00:00Z`) : null;
+  const note = str(fd, "note").slice(0, 2000) || null;
+  const afterLock = await isJobLocked(project.id);
+  const made: string[] = [];
+  for (const v of vendors) {
+    const last = await db.bid.findFirst({ where: { projectId: project.id }, orderBy: { number: "desc" }, select: { number: true } });
+    const bid = await db.bid.create({
+      data: {
+        projectId: project.id,
+        vendorId: v.id,
+        vendorName: v.name,
+        number: (last?.number ?? 0) + 1,
+        kind: "SUB",
+        afterLock,
+        dueAt: due,
+        notes: note,
+        planFileIds: files.length ? JSON.stringify(files.map((f) => f.id)) : null,
+        lines: {
+          create: codes.map((c, i) => ({
+            key: `trade:${c.id}`,
+            codeKey: c.id,
+            codeLabel: codeLabelOf(c),
+            name: codeLabelOf(c),
+            unit: "ls",
+            quantity: 1,
+            sortOrder: i,
+          })),
+        },
+      },
+    });
+    made.push(`#${bid.number} ${v.name}`);
+  }
+  await logActivity({
+    projectId: project.id,
+    userId: user.id,
+    type: "bid.requested",
+    description: `Sub bid${made.length === 1 ? "" : "s"} ${made.join(", ")} — ${codes.map(codeLabelOf).join(", ")}${files.length ? `, ${files.length} plan file${files.length === 1 ? "" : "s"}` : ""}`,
+  });
+  revalidateBids(project.id);
+  redirect(`${bidsPath(project.id)}?made=${made.length}&subs=1#bids`);
+});
+
+/**
+ * The subs' bids you picked, one per trade: marked as the one taken (closing that bid's page) — and, when
+ * asked, its price put on the job's estimate as that cost code's line (sub-bids.ts).
+ */
+export const takeSubBids = friendly(async function takeSubBids(fd: FormData) {
+  const user = await requireEdit("estimates", { costs: true });
+  const project = await getProject(str(fd, "projectId"));
+  const toBudget = fd.get("budget") === "1";
+  const picks = Array.from(fd.entries())
+    .filter(([k, v]) => k.startsWith("pick:") && typeof v === "string" && v)
+    .map(([k, v]) => ({ codeKey: k.slice(5), bidId: String(v) }));
+  const awards = await db.bidAward.findMany({ where: { projectId: project.id, codeKey: { in: picks.map((p) => subAwardKey(p.codeKey)) } } });
+  const changed = picks.filter((p) => {
+    const a = awards.find((x) => x.codeKey === subAwardKey(p.codeKey));
+    return a?.bidId !== p.bidId || (toBudget && a.scope !== "BUDGET");
+  });
+  if (!changed.length) redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("Pick a sub's bid for a trade first")}#subcompare`);
+  const done: string[] = [];
+  const notes: string[] = [];
+  for (const p of changed) {
+    const bid = await db.bid.findFirst({ where: { id: p.bidId, projectId: project.id, kind: "SUB" }, include: { lines: { where: { codeKey: p.codeKey } } } });
+    const line = bid?.lines[0];
+    if (!bid || !line || line.unitPrice == null) continue;
+    const total = line.unitPrice * line.quantity;
+    let scope = "AWARD";
+    if (toBudget) {
+      const r = await putSubBidOnEstimate(project.id, {
+        codeKey: p.codeKey,
+        codeLabel: line.codeLabel,
+        total,
+        vendorName: bid.vendorName,
+        bidNumber: bid.number,
+      });
+      if (r.ok) {
+        scope = "BUDGET";
+        notes.push(`${line.codeLabel}: ${money(total)} on estimate v${r.version}${r.was != null ? ` (was ${money(r.was)})` : " (new line)"}`);
+      } else notes.push(`${line.codeLabel}: not put in the budget — ${r.why}`);
+    }
+    await db.bidAward.upsert({
+      where: { projectId_codeKey: { projectId: project.id, codeKey: subAwardKey(p.codeKey) } },
+      create: { projectId: project.id, codeKey: subAwardKey(p.codeKey), bidId: bid.id, scope },
+      update: { bidId: bid.id, scope, awardedAt: new Date() },
+    });
+    done.push(`${line.codeLabel} → #${bid.number} ${bid.vendorName} (${money(total)})`);
+  }
+  if (!done.length) redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("That bid has no price for the trade yet")}#subcompare`);
+  await logActivity({
+    projectId: project.id,
+    userId: user.id,
+    type: "bid.taken",
+    description: `Took ${done.join("; ")}${notes.length ? ` — ${notes.join("; ")}` : ""}`,
+  });
+  revalidateBids(project.id);
+  revalidatePath(`/projects/${project.id}/budget`);
+  const msg = `Took ${done.join("; ")}.${notes.length ? ` ${notes.join(". ")}.` : ""}`;
+  redirect(`${bidsPath(project.id)}?subTaken=${encodeURIComponent(msg)}#subcompare`);
+});
+
 // --- Emailing bids from the program ---------------------------------------------------------
 
 type Sent = { ok: true; to: string; at: string } | { error: string };
@@ -372,36 +517,56 @@ async function emailBid(
   const to = mail.to.trim().toLowerCase();
   if (!looksLikeEmail(to)) return { error: "Put in the vendor's email" };
   const [bid, company] = await Promise.all([
-    db.bid.findFirst({ where: { id: bidId, projectId: project.id }, include: { lines: { orderBy: { sortOrder: "asc" } }, vendor: { select: { contact: true } } } }),
+    db.bid.findFirst({
+      where: { id: bidId, projectId: project.id },
+      include: { lines: { orderBy: { sortOrder: "asc" } }, vendor: { select: { contact: true } } },
+    }),
     db.company.findFirst(),
   ]);
   if (!bid) return { error: "That bid isn't here any more" };
+  // A sub's bid: the plans are on its page (named in the email), nothing attached.
+  const plans =
+    bid.kind === "SUB"
+      ? await db.fileAsset
+          .findMany({ where: { id: { in: readPlanIds(bid.planFileIds) }, projectId: project.id }, select: { name: true } })
+          .then((f) => f.map((x) => x.name))
+      : null;
   const text =
     mail.subject && mail.body
       ? { subject: mail.subject.slice(0, 300), body: mail.body.slice(0, 20_000) }
-      : bidEmailText({
-          bid,
-          project,
-          address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
-          contact: bid.vendor?.contact ?? null,
-          from: companyLines(company),
-          standard: company?.bidMessage,
-        });
+      : plans
+        ? subBidEmailText({
+            bid,
+            project,
+            address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
+            contact: bid.vendor?.contact ?? null,
+            from: companyLines(company),
+            plans: plans.length,
+          })
+        : bidEmailText({
+            bid,
+            project,
+            address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
+            contact: bid.vendor?.contact ?? null,
+            from: companyLines(company),
+            standard: company?.bidMessage,
+          });
   // The link to type prices online always; the Excel file (prices blank) and the PDF attached only when
   // asked — a new sender's email with files lands in fewer inboxes (they're on the online page anyway).
-  const [excel, pdf] = how.attach
-    ? await Promise.all([
-        bidWorkbook({ ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) }, project, company),
-        bidPdf({
-          bid,
-          project,
-          address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
-          from: companyLines(company),
-          date: fmtDate(new Date()),
-          replyTo: user.email,
-        }),
-      ])
-    : [null, null];
+  const [excel, pdf] =
+    how.attach && !plans
+      ? await Promise.all([
+          bidWorkbook({ ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) }, project, company),
+          bidPdf({
+            bid,
+            project,
+            address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
+            from: companyLines(company),
+            date: fmtDate(new Date()),
+            replyTo: user.email,
+          }),
+        ])
+      : [null, null];
   try {
     await sendMail(
       bidEmail({
@@ -419,6 +584,7 @@ async function emailBid(
             : [],
         onlineUrl: appUrl(`/prices/${await makeBidLink(bid.id, bid.companyId)}`),
         copyTo: how.copyMe ? user.email : null,
+        plans,
       }),
     );
   } catch (e) {
@@ -430,11 +596,24 @@ async function emailBid(
 }
 
 /** "Send" in a bid's email window: sends it from the program, as you see it (files attached or not, a copy to you or not). */
-export async function sendBidEmail(input: { projectId: string; bidId: string; to: string; subject: string; body: string; how?: Partial<SendHow> }): Promise<Sent> {
+export async function sendBidEmail(input: {
+  projectId: string;
+  bidId: string;
+  to: string;
+  subject: string;
+  body: string;
+  how?: Partial<SendHow>;
+}): Promise<Sent> {
   const user = await requireEdit("estimates", { costs: true });
   const project = await getProject(String(input.projectId));
   if (!String(input.subject ?? "").trim() || !String(input.body ?? "").trim()) return { error: "Give the email a subject and a message" };
-  const r = await emailBid(user, project, String(input.bidId), { to: String(input.to ?? ""), subject: String(input.subject), body: String(input.body) }, readHow(input.how));
+  const r = await emailBid(
+    user,
+    project,
+    String(input.bidId),
+    { to: String(input.to ?? ""), subject: String(input.subject), body: String(input.body) },
+    readHow(input.how),
+  );
   if ("ok" in r) revalidatePath(bidsPath(project.id));
   return r;
 }
@@ -443,12 +622,23 @@ export async function sendBidEmail(input: { projectId: string; bidId: string; to
  * "Email all": every bid on the job that hasn't been emailed yet and isn't back, to its vendor's email
  * on file, with the usual message. Vendors with no email are listed (open their bid's email to add one).
  */
-export async function sendAllBidEmails(input: { projectId: string; how?: Partial<SendHow> }): Promise<{ sent: string[]; skipped: string[]; failed: string[] } | { error: string }> {
+export async function sendAllBidEmails(input: {
+  projectId: string;
+  how?: Partial<SendHow>;
+}): Promise<{ sent: string[]; skipped: string[]; failed: string[] } | { error: string }> {
   const user = await requireEdit("estimates", { costs: true });
   const project = await getProject(String(input.projectId));
   const [bids, activity] = await Promise.all([
-    db.bid.findMany({ where: { projectId: project.id, status: { not: "RECEIVED" } }, orderBy: { number: "asc" }, select: { id: true, number: true, vendorName: true, vendor: { select: { email: true } } } }),
-    db.activity.findMany({ where: { projectId: project.id, type: "bid.emailed" }, orderBy: { createdAt: "desc" }, select: { description: true, createdAt: true } }),
+    db.bid.findMany({
+      where: { projectId: project.id, status: { not: "RECEIVED" } },
+      orderBy: { number: "asc" },
+      select: { id: true, number: true, vendorName: true, vendor: { select: { email: true } } },
+    }),
+    db.activity.findMany({
+      where: { projectId: project.id, type: "bid.emailed" },
+      orderBy: { createdAt: "desc" },
+      select: { description: true, createdAt: true },
+    }),
   ]);
   const done = emailedBids(activity);
   const sent: string[] = [];
@@ -461,7 +651,7 @@ export async function sendAllBidEmails(input: { projectId: string; how?: Partial
       continue;
     }
     const r = await emailBid(user, project, b.id, { to }, readHow(input.how));
-    (("ok" in r) ? sent : failed).push(b.vendorName);
+    ("ok" in r ? sent : failed).push(b.vendorName);
   }
   if (sent.length) revalidatePath(bidsPath(project.id));
   return { sent, skipped, failed };

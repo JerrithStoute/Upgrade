@@ -1583,6 +1583,11 @@ model Bid {
   returnFileId String?
   returnFile   FileAsset? @relation("BidReturnFile", fields: [returnFileId], references: [id], onDelete: SetNull)
   notes        String?
+  // MATERIAL: Material list items, a price each. SUB: a sub bids whole trades (cost codes) from the plans —
+  // one line per trade (1 ls), their price for it; `planFileIds` the job's files they can see (JSON ids).
+  kind         String     @default("MATERIAL")
+  dueAt        DateTime?
+  planFileIds  String?
 
   lines  BidLine[]
   awards BidAward[]
@@ -1615,7 +1620,9 @@ model BidLine {
 }
 
 /// The bid you took for a cost code on a job, and where its prices went:
-/// scope JOB (this job only) or COMPANY (the Item List, every job).
+/// scope JOB (this job only) or COMPANY (the Item List, every job). A sub's bid is filed under
+/// "sub:<cost code id>" (apart from the material bid for the same code), scope BUDGET (its price put on
+/// the estimate) or AWARD (just the one you picked).
 model BidAward {
   id        String   @id @default(cuid())
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).

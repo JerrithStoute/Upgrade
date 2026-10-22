@@ -29,7 +29,9 @@ export function bidEmailText(o: {
     ? [o.standard.trim()]
     : [
         `Please send us your prices for the list below — ${items.length} item${items.length === 1 ? "" : "s"} (${codes.join(", ")}).`,
-        ...(ladder ? ["At the end there's a short price list of other lumber lengths — just a price per board, so we can order the lengths that cost least."] : []),
+        ...(ladder
+          ? ["At the end there's a short price list of other lumber lengths — just a price per board, so we can order the lengths that cost least."]
+          : []),
         "The quickest way is the Type your prices online button. Or fill in the Excel file or the PDF and send it back.",
       ];
   return {
@@ -42,6 +44,42 @@ export function bidEmailText(o: {
       "",
       `Job #${o.project.number} — ${o.project.name}`,
       ...(o.address ? [`Deliver to: ${o.address}`] : []),
+      "",
+      "Thank you,",
+      ...o.from,
+    ].join("\n"),
+  };
+}
+
+/**
+ * The subject and message a sub's bid email starts with: the trades, that the plans are on the page
+ * linked below (not attached — a plan set is too big for email, and files from a new sender land in
+ * fewer inboxes), and when it's due.
+ */
+export function subBidEmailText(o: {
+  bid: { number: number; notes: string | null; lines: Line[]; dueAt: Date | null };
+  project: { number: number; name: string };
+  address: string;
+  contact: string | null;
+  from: string[];
+  plans: number;
+}): { subject: string; body: string } {
+  const trades = Array.from(new Set(o.bid.lines.map((l) => l.codeLabel)));
+  const due = o.bid.dueAt ? o.bid.dueAt.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" }) : null;
+  return {
+    subject: `Request for bid — ${trades.join(", ")} — Job #${o.project.number} ${o.project.name} (Bid #${o.bid.number})`,
+    body: [
+      `Hello${o.contact ? ` ${o.contact.split(" ")[0]}` : ""},`,
+      "",
+      `We'd like your bid for ${trades.join(", ")} on this job.`,
+      o.plans
+        ? "The plans are on the page the button below opens — look them over, then send your price there (or reply to this email with your quote)."
+        : "Send your price on the page the button below opens — or reply to this email with your quote.",
+      ...(due ? ["", `Please have it to us by ${due}.`] : []),
+      ...(o.bid.notes ? ["", o.bid.notes] : []),
+      "",
+      `Job #${o.project.number} — ${o.project.name}`,
+      ...(o.address ? [`Job address: ${o.address}`] : []),
       "",
       "Thank you,",
       ...o.from,
@@ -71,7 +109,10 @@ export function bidEmail(o: {
   onlineUrl: string;
   /** The sender's own copy. */
   copyTo?: string | null;
+  /** A sub's bid: the names of the plans on its page (no list of items — they price the trades). */
+  plans?: string[] | null;
 }): Mail {
+  if (o.plans) return subBidEmail({ ...o, plans: o.plans });
   const items = o.lines.filter((l) => !isLadderLine(l));
   const files = o.attachments.map((a) => a.filename).join(" and ");
   const filesLine = files
@@ -118,6 +159,39 @@ ${paragraphs}
     replyTo: o.replyTo ?? undefined,
     bcc: o.copyTo && o.copyTo.toLowerCase() !== o.to.toLowerCase() ? [o.copyTo] : undefined,
     attachments: o.attachments.length ? o.attachments.map((a) => ({ filename: a.filename, content: a.content.toString("base64") })) : undefined,
+  };
+}
+
+/** A sub's bid email: the message, a button to see the plans and send their bid, and the plans' names. */
+function subBidEmail(o: Parameters<typeof bidEmail>[0] & { plans: string[] }): Mail {
+  const label = o.plans.length ? "See the plans and send your bid" : "Send your bid";
+  const text = [
+    o.body,
+    "",
+    `${label}: ${o.onlineUrl}`,
+    ...(o.plans.length ? ["", `The plans (${o.plans.length}):`, ...o.plans.map((p) => `  ${p}`)] : []),
+  ].join("\n");
+  const paragraphs = o.body
+    .split(/\n{2,}/)
+    .map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.5;color:#334155">${esc(p).replace(/\n/g, "<br>")}</p>`)
+    .join("\n");
+  const plans = o.plans.map((p) => `<li style="margin:0 0 4px">${esc(p)}</li>`).join("");
+  const html = `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif">
+<div style="max-width:620px;margin:24px auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:28px">
+<p style="margin:0 0 18px;font-size:13px;font-weight:600;color:#64748b">${esc(o.companyName)}</p>
+${paragraphs}
+<p style="margin:22px 0 14px"><a href="${esc(o.onlineUrl)}" style="display:inline-block;background:#1d4ed8;color:#fff;text-decoration:none;font-weight:600;padding:11px 18px;border-radius:8px">${label}</a></p>
+${plans ? `<p style="margin:20px 0 6px;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#64748b">The plans (${o.plans.length})</p><ul style="margin:0;padding-left:18px;font-size:14px;color:#0f172a">${plans}</ul>` : ""}
+</div></body></html>`;
+  return {
+    to: o.to,
+    subject: o.subject,
+    text,
+    html,
+    fromName: `${o.companyName} via The Builder Station`,
+    fromLocal: "bids",
+    replyTo: o.replyTo ?? undefined,
+    bcc: o.copyTo && o.copyTo.toLowerCase() !== o.to.toLowerCase() ? [o.copyTo] : undefined,
   };
 }
 

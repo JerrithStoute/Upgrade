@@ -47,6 +47,126 @@ function fit(font: PDFFont, s: string, size: number, width: number) {
   return `${t}…`;
 }
 
+/**
+ * A record of what a vendor or sub typed online — kept in the job's Files → Bids like a quote they emailed:
+ * who, when, each line with their price (and anything they offered instead, or said is or isn't included),
+ * the total and their note.
+ */
+export async function bidRecordPdf(o: {
+  bid: { number: number; vendorName: string; kind: string; lines: (Line & { unitPrice: number | null; substitute: string | null; note: string | null })[] };
+  project: { number: number; name: string };
+  from: string[];
+  at: string;
+  message: string | null;
+  quoteFile: string | null;
+}): Promise<Uint8Array> {
+  const sub = o.bid.kind === "SUB";
+  const doc = await PDFDocument.create();
+  doc.setTitle(`Bid ${o.bid.number} - ${o.bid.vendorName} - typed online`);
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+  let page: PDFPage = doc.addPage([PAGE.w, PAGE.h]);
+  let y = PAGE.h - M;
+  const BOTTOM = M + 30;
+  const text = (s: string, x: number, at: number, size = 10, f = font, color = INK) => page.drawText(drawable(f, s), { x, y: at, size, font: f, color });
+  const right = (s: string, xRight: number, at: number, size = 10, f = font) => {
+    const t = drawable(f, s);
+    page.drawText(t, { x: xRight - f.widthOfTextAtSize(t, size), y: at, size, font: f, color: INK });
+  };
+  const room = (need: number) => {
+    if (y - need >= BOTTOM) return;
+    page = doc.addPage([PAGE.w, PAGE.h]);
+    y = PAGE.h - M;
+  };
+  /** Long text in lines that fit. */
+  const wrap = (s: string, size: number, width: number) => {
+    const out: string[] = [];
+    for (const para of drawable(font, s).split(/ {2,}|\n/)) {
+      let line = "";
+      for (const w of para.split(" ")) {
+        const next = line ? `${line} ${w}` : w;
+        if (font.widthOfTextAtSize(next, size) > width && line) {
+          out.push(line);
+          line = w;
+        } else line = next;
+      }
+      if (line) out.push(line);
+    }
+    return out;
+  };
+  const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+
+  o.from.forEach((l, i) => {
+    text(l, M, y, i === 0 ? 13 : 9.5, i === 0 ? bold : font, i === 0 ? INK : GRAY);
+    y -= i === 0 ? 16 : 12;
+  });
+  y -= 10;
+  text(sub ? `Bid from ${o.bid.vendorName}` : `Prices from ${o.bid.vendorName}`, M, y, 18, bold);
+  right(`Bid #${o.bid.number}`, PAGE.w - M, y + 2, 12, bold);
+  y -= 20;
+  text(`Job #${o.project.number} — ${o.project.name}`, M, y, 10.5);
+  y -= 15;
+  text(`Typed online by ${o.bid.vendorName} on ${o.at}`, M, y, 10, font, GRAY);
+  y -= 24;
+
+  const col = { qty: M + 40, unit: M + 50, item: M + 92, price: PAGE.w - M - 150, total: PAGE.w - M };
+  const itemX = sub ? M + 4 : col.item;
+  const itemWidth = col.price - itemX - 10;
+  page.drawRectangle({ x: M, y: y - 5, width: PAGE.w - 2 * M, height: 17, color: rgb(0.95, 0.96, 0.97) });
+  if (!sub) {
+    right("Qty", col.qty, y, 9, bold);
+    text("Unit", col.unit, y, 9, bold);
+  }
+  text(sub ? "Trade" : "Item", itemX, y, 9, bold);
+  text(sub ? "" : "Unit price", col.price, y, 9, bold);
+  right(sub ? "Price" : "Total", col.total, y, 9, bold);
+  y -= 21;
+  let total = 0;
+  for (const l of o.bid.lines) {
+    const extra = [l.substitute ? `Instead: ${l.substitute}` : "", l.note ?? ""].filter(Boolean).join(" · ");
+    const notes = extra ? wrap(extra, 8.5, itemWidth) : [];
+    room(21 + notes.length * 11);
+    if (!sub && !isLadderLine(l)) {
+      right(qty(l.quantity), col.qty, y);
+      text(l.unit, col.unit, y, 10, font, GRAY);
+    }
+    text(fit(font, drawable(font, l.name), 10, itemWidth), itemX, y);
+    if (l.unitPrice != null) {
+      if (!sub) right(money(l.unitPrice), col.price + 64, y);
+      if (!isLadderLine(l)) {
+        right(money(l.unitPrice * l.quantity), col.total, y);
+        total += l.unitPrice * l.quantity;
+      }
+    } else right("—", col.total, y, 10, font);
+    for (const n of notes) {
+      y -= 11;
+      text(n, itemX, y, 8.5, font, GRAY);
+    }
+    page.drawLine({ start: { x: M, y: y - 6 }, end: { x: PAGE.w - M, y: y - 6 }, thickness: 0.4, color: RULE });
+    y -= 21;
+  }
+  room(30);
+  text("Total", col.price, y, 11, bold);
+  right(money(total), col.total, y, 11, bold);
+  y -= 28;
+  if (o.message) {
+    const lines = wrap(o.message, 10, PAGE.w - 2 * M);
+    room(16 + lines.length * 13);
+    text("Their note", M, y, 10, bold);
+    y -= 14;
+    for (const l of lines) {
+      text(l, M, y, 10);
+      y -= 13;
+    }
+    y -= 8;
+  }
+  if (o.quoteFile) {
+    room(14);
+    text(`They attached their own quote too: ${o.quoteFile} (in Files → Bids).`, M, y, 9.5, font, GRAY);
+  }
+  return doc.save();
+}
+
 export async function bidPdf(o: {
   bid: { number: number; vendorName: string; notes: string | null; lines: Line[] };
   project: { number: number; name: string };

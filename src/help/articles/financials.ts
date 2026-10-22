@@ -117,7 +117,7 @@ export const FINANCIALS: HelpArticle[] = [
     group: "Financials",
     area: "estimates",
     pages: ["/projects/*/bids", "/projects/*/bids/*", "/projects/*/bids/*/print", "/projects/*/bids/*/reply"],
-    what: "The bids page sends parts of your Material list to vendors for prices, brings their prices back in, lets you compare them side by side, and takes the best one for each cost code. A bid you take sets the prices on the job and can become a purchase order.",
+    what: "The bids page sends parts of your Material list to vendors for prices, and asks subs to bid whole trades from your plans (**Send to subs**). It brings their prices back in, lets you compare them side by side, and takes the best one for each cost code. A bid you take sets the prices on the job (a sub's price can go straight into the budget) and can become a purchase order.",
     how: [
       "On the job's **Material list** tab, click **Send to vendors**.",
       "Under **What to send**, tick the cost codes (click one to untick single items), then tick the **Vendors**.",
@@ -125,6 +125,7 @@ export const FINANCIALS: HelpArticle[] = [
       "Under **Sent**, click **Email all** to email every bid that hasn't gone out yet, each to its vendor with a button to type prices online, the Excel file and a PDF attached. Or click **Email** on one vendor's row to read it over and **Send** it.",
       "Vendors who type their prices online are done: the prices land on their bid and you get an email. When a vendor sends a file back instead, click **Add what they sent…** on their row: their Excel file brings its prices in by itself; a PDF or photo is kept on the bid and shown beside **Prices**, to type them in. **What they sent** shows any reply the way it came.",
       "In **Compare and take**, pick a bid for each cost code and click **Take the picked bids**.",
+      "For subs who bid from plans (plumbing, electrical, HVAC…), use **Send to subs** on the same page: tick the trade, the subs and the plans, then email them from **Sent**. Their prices land in **Compare subs**.",
     ],
     sections: [
       {
@@ -137,6 +138,19 @@ export const FINANCIALS: HelpArticle[] = [
           { name: "Also ask a price on every length", what: "For lumber that comes in several lengths: asks the vendor to price each length, not just the ones on your list. On by default." },
           { name: "Note to the vendor (optional)", what: "A line printed on the request, such as \"Please quote by Friday. Deliver to the job site.\"" },
           { name: "Send to N vendors", what: "Makes a bid for each vendor ticked. Emailing them is the next step, under **Sent**." },
+        ],
+      },
+      {
+        heading: "Send to subs",
+        items: [
+          { name: "Trade", what: "The cost code(s) the sub is bidding — each gets its own price back. Type in the box to find one.", how: "Tick more than one if a sub bids them together (rough and finish plumbing)." },
+          { name: "Plans to send", what: "This job's files from the Plans, Documents and Permits folders. Plans are ticked for you; old plan revisions aren't listed. Nothing is attached to the email — the sub opens or downloads them from their bid's page (a plan set is too big for email)." },
+          { name: "Subs", what: "Who gets it. Subs who bid this cost code are ticked for you. **New sub** and the pencil work like they do for vendors." },
+          { name: "Due by / Note", what: "Shown in the email and on their page, such as \"Bid per plans. Include permit.\"" },
+          { name: "Send to N subs", what: "Makes a bid for each sub (marked **sub** under Sent). Email them from **Sent** like any bid: the email has a **See the plans and send your bid** button. **Copy bid link** copies it to text them." },
+          { name: "Their page", what: "No sign-in, works on a phone: the plans to open or download, a price for each trade with **What's included — and what isn't**, a note, and their own quote to attach. They can send again until you take their bid." },
+          { name: "They emailed their quote instead", what: "Click **Add what they sent…** on their row and pick their file, then type their price (and what's included) on **Price**." },
+          { name: "Files → Bids", what: "Everything that comes back is kept in the job's Files → Bids: a quote they attach or you add, and when they type a price online, a PDF of what they typed (who, when, the price, what's included and their note) — each time they send it." },
         ],
       },
       {
@@ -158,7 +172,16 @@ export const FINANCIALS: HelpArticle[] = [
         items: [
           { name: "The comparison", what: "One row per cost code: what the job has now, then each vendor's total. Green is the lowest complete bid. A cell can say how many lines were priced, how many substitutes the vendor offered, or how it compares to the bid you took." },
           { name: "Put the prices on", what: "Where the prices you take go: **This job only**, or **The Item List — every job**." },
+          { name: "Typed online, kept as a PDF", what: "When a vendor types prices online, a PDF of what they sent is saved in Files → Bids, so there's always a record like an emailed quote." },
           { name: "Take the picked bids", what: "Takes the bid you picked for each cost code: its prices go on the job, and you can start a PO from it. Lines the vendor left blank are skipped — those items keep the price they had, never a zero. Getting part of a cost code from another vendor (concrete in Foundation)? Send that item to them as its own bid, take the main bid, then pick theirs for the same cost code and take it too: only what they priced changes. If a vendor offered a substitute item, you choose per line: **Use theirs** or **Keep mine**." },
+        ],
+      },
+      {
+        heading: "Compare subs",
+        items: [
+          { name: "The comparison", what: "One row per trade sent to subs, one column per sub's bid that's back: their price, and what they said is included under it. Green is the lowest. **see it** opens what they sent." },
+          { name: "Put the price in the budget", what: "On by default. Taking the bid puts the sub's price on that cost code's line in the job's draft estimate — your own line for that code if you have one, else the takeoff's line, else a new line (Subcontractor). It's one line, and the takeoff stops changing that cost code on the estimate, so nothing is counted twice. A sent or approved estimate isn't changed (the page says so) — use a new version or a change order." },
+          { name: "Take the picked bids", what: "Marks the sub you picked for each trade (and closes their online page). **Purchasing** can make the PO from it." },
         ],
       },
     ],
