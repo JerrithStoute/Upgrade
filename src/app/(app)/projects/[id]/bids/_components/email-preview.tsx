@@ -27,6 +27,7 @@ export function EmailPreview({
   vendorName,
   bidNumber,
   sub = false,
+  autoOpen = false,
 }: {
   projectId: string;
   bidId: string;
@@ -43,9 +44,11 @@ export function EmailPreview({
   bidNumber: number;
   /** A sub's bid: the plans are on its page — nothing to attach, no standard message (that's for material lists). */
   sub?: boolean;
+  /** Opens by itself (Send to subs just made it). */
+  autoOpen?: boolean;
 }) {
   const router = useRouter();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen);
   const [to, setTo] = useState(initialTo);
   const [subject, setSubject] = useState(initialSubject);
   const [body, setBody] = useState(initialBody);
@@ -58,10 +61,15 @@ export function EmailPreview({
 
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    // Several open at once (Send to subs): Escape closes the one on top only.
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      const all = document.querySelectorAll('[role="dialog"][aria-modal="true"]');
+      if (all[all.length - 1]?.getAttribute("aria-label") === `Email to ${vendorName}`) setOpen(false);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, [open, vendorName]);
 
   // Sent yourself, the email carries the online link in its message.
   const mailBody = onlineUrl ? `${body}\n\n${sub ? "See the plans and send your bid" : "Type your prices online (the quickest way)"}: ${onlineUrl}` : body;

@@ -13,8 +13,8 @@ const fileSize = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed
 
 /**
  * Send to subs: the trade (cost codes) to bid, the subs — ticked for you if they bid that code (or add one
- * here) — the job's plans to go with it, when it's due and a note. Each sub gets a bid in Sent below, to
- * email: a link to the plans and a page to send their price, nothing attached.
+ * here) — the job's plans to go with it, when it's due and a note. Send makes each sub's bid and opens its
+ * email to read over and send: a link to the plans and a page to send their price, nothing attached.
  */
 export function SendToSubs({
   action,
@@ -38,6 +38,7 @@ export function SendToSubs({
   const [find, setFind] = useState("");
   const [chosen, setChosen] = useState<Set<string>>(new Set());
   const [touched, setTouched] = useState(false);
+  const noEmail = vendors.filter((v) => chosen.has(v.id) && !v.email).map((v) => v.name);
   // The plan sheets go by default; other documents when you tick them.
   const [files, setFiles] = useState<Set<string>>(() => new Set(plans.filter((p) => p.folder === "Plans").map((p) => p.id)));
 
@@ -171,7 +172,7 @@ export function SendToSubs({
         </SubmitButton>
         <span className={cn("text-xs", picked.size && chosen.size ? "text-slate-600" : "text-slate-400")}>
           {picked.size && chosen.size
-            ? `Each sub gets a bid in Sent below — email them from there. ${files.size ? `${files.size} file${files.size === 1 ? "" : "s"} go with it.` : "No plans picked."}`
+            ? `Next, each sub's email opens for you to read over and send — with a link to ${files.size ? `the plans (${files.size} file${files.size === 1 ? "" : "s"})` : "send their bid (no plans picked)"}.${noEmail.length ? ` No email on file for ${noEmail.join(", ")} — type it in their email.` : ""}`
             : "Pick the trade and who to send it to."}
         </span>
       </div>

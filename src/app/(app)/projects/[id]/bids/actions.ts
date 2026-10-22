@@ -379,8 +379,8 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
 
 /**
  * Send to subs: a bid for each sub picked — the trades (cost codes) picked, one line each for their price,
- * with the job's plans picked (they open them from the bid's page) and when it's due. Emailed from the
- * Sent list like any bid.
+ * with the job's plans picked (they open them from the bid's page) and when it's due. Each one's email window
+ * opens next, to read over and send.
  */
 export const requestSubBids = friendly(async function requestSubBids(fd: FormData) {
   const user = await requireEdit("estimates", { costs: true });
@@ -402,6 +402,7 @@ export const requestSubBids = friendly(async function requestSubBids(fd: FormDat
   const note = str(fd, "note").slice(0, 2000) || null;
   const afterLock = await isJobLocked(project.id);
   const made: string[] = [];
+  const madeIds: string[] = [];
   for (const v of vendors) {
     const last = await db.bid.findFirst({ where: { projectId: project.id }, orderBy: { number: "desc" }, select: { number: true } });
     const bid = await db.bid.create({
@@ -429,6 +430,7 @@ export const requestSubBids = friendly(async function requestSubBids(fd: FormDat
       },
     });
     made.push(`#${bid.number} ${v.name}`);
+    madeIds.push(bid.id);
   }
   await logActivity({
     projectId: project.id,
@@ -437,7 +439,8 @@ export const requestSubBids = friendly(async function requestSubBids(fd: FormDat
     description: `Sub bid${made.length === 1 ? "" : "s"} ${made.join(", ")} — ${codes.map(codeLabelOf).join(", ")}${files.length ? `, ${files.length} plan file${files.length === 1 ? "" : "s"}` : ""}`,
   });
   revalidateBids(project.id);
-  redirect(`${bidsPath(project.id)}?made=${made.length}&subs=1#bids`);
+  // Their email windows open on the page, one after another, to read over and send.
+  redirect(`${bidsPath(project.id)}?made=${made.length}&subs=1&open=${madeIds.join(",")}#bids`);
 });
 
 /**

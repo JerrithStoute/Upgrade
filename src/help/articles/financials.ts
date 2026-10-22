@@ -125,7 +125,7 @@ export const FINANCIALS: HelpArticle[] = [
       "Under **Sent**, click **Email all** to email every bid that hasn't gone out yet, each to its vendor with a button to type prices online, the Excel file and a PDF attached. Or click **Email** on one vendor's row to read it over and **Send** it.",
       "Vendors who type their prices online are done: the prices land on their bid and you get an email. When a vendor sends a file back instead, click **Add what they sent…** on their row: their Excel file brings its prices in by itself; a PDF or photo is kept on the bid and shown beside **Prices**, to type them in. **What they sent** shows any reply the way it came.",
       "In **Compare and take**, pick a bid for each cost code and click **Take the picked bids**.",
-      "For subs who bid from plans (plumbing, electrical, HVAC…), use **Send to subs** on the same page: tick the trade, the subs and the plans, then email them from **Sent**. Their prices land in **Compare subs**.",
+      "For subs who bid from plans (plumbing, electrical, HVAC…), use **Send to subs** on the same page: tick the trade, the subs and the plans, click **Send to N subs**, then read over each email that opens and click **Send**. Their prices land in **Compare subs**.",
     ],
     sections: [
       {
@@ -147,7 +147,7 @@ export const FINANCIALS: HelpArticle[] = [
           { name: "Plans to send", what: "This job's files from the Plans, Documents and Permits folders. Plans are ticked for you; old plan revisions aren't listed. Nothing is attached to the email — the sub opens or downloads them from their bid's page (a plan set is too big for email)." },
           { name: "Subs", what: "Who gets it. Subs who bid this cost code are ticked for you. **New sub** and the pencil work like they do for vendors." },
           { name: "Due by / Note", what: "Shown in the email and on their page, such as \"Bid per plans. Include permit.\"" },
-          { name: "Send to N subs", what: "Makes a bid for each sub (marked **sub** under Sent). Email them from **Sent** like any bid: the email has a **See the plans and send your bid** button. **Copy bid link** copies it to text them." },
+          { name: "Send to N subs", what: "Makes a bid for each sub (marked **sub** under Sent) and opens each one's email, one after another, to read over and **Send** — type an email in if the sub has none on file. The email has a **See the plans and send your bid** button. Closed one by mistake? Click **Email** on its row. **Copy bid link** copies the link to text them." },
           { name: "Their page", what: "No sign-in, works on a phone: the plans to open or download, a price for each trade with **What's included — and what isn't**, a note, and their own quote to attach. They can send again until you take their bid." },
           { name: "They emailed their quote instead", what: "Click **Add what they sent…** on their row and pick their file, then type their price (and what's included) on **Price**." },
           { name: "Files → Bids", what: "Everything that comes back is kept in the job's Files → Bids: a quote they attach or you add, and when they type a price online, a PDF of what they typed (who, when, the price, what's included and their note) — each time they send it." },

@@ -44,6 +44,8 @@ export default async function BidsPage({
     ladder?: string;
     taken?: string;
     subs?: string;
+    /** Bids whose email window opens by itself (just made by Send to subs). */
+    open?: string;
     subTaken?: string;
     items?: string;
     skipped?: string;
@@ -78,6 +80,7 @@ export default async function BidsPage({
   const ladders = await priceLadders(project.id, cmp.lines);
   const locked = !!project.pricesLockedAt;
   const base = `/projects/${project.id}/bids`;
+  const openNow = new Set((q.open ?? "").split(",").filter(Boolean));
   const importedBid = q.imported ? cmp.bids.find((b) => b.id === q.imported) : null;
   const from = companyLines(company);
   const address = [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", ");
@@ -179,8 +182,8 @@ export default async function BidsPage({
       ) : null}
       {q.made && q.subs ? (
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
-          Made {q.made} sub bid{q.made === "1" ? "" : "s"} — below in Sent, email them (each row&apos;s Email, or Email all). Whatever they send back goes in
-          Files → Bids.
+          Made {q.made} sub bid{q.made === "1" ? "" : "s"} — {q.made === "1" ? "its email is open" : "their emails open one after another"}: read it over and
+          click Send. Closed one by mistake? Click Email on its row below. Whatever they send back goes in Files → Bids.
         </p>
       ) : null}
       {q.subTaken ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">{q.subTaken}</p> : null}
@@ -400,6 +403,7 @@ export default async function BidsPage({
                             excelHref={sub ? null : `${base}/${b.id}/excel`}
                             pdfHref={sub ? null : `${base}/${b.id}/pdf`}
                             sub={sub}
+                            autoOpen={openNow.has(b.id)}
                             onlineUrl={onlineUrls.get(b.id) ?? ""}
                             vendorName={b.vendorName}
                             bidNumber={b.number}
