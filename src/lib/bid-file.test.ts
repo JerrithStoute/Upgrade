@@ -113,3 +113,23 @@ describe("bid file", () => {
     assert.equal(parsePrice(-3), null);
   });
 });
+
+describe("beams in the bid file", () => {
+  it("go out by the piece, priced per beam, and come back per lf", async () => {
+    const { returnedPrice } = await import("./bid-file");
+    const beam = { id: "line_g", key: "item_glulam|pieces:18", codeKey: "c1", codeLabel: "06-100 Framing", name: "Glulam 3-1/2x11-7/8 × 18'-0\"", sku: null, unit: "lf", quantity: 36, unitPrice: null };
+    const file = await bidWorkbook({ ...bid, lines: [beam] }, project, company);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(file as unknown as ArrayBuffer);
+    let row: ExcelJS.Row | null = null;
+    wb.getWorksheet("Bid")!.eachRow((r) => {
+      if (r.getCell(10).value === "line_g") row = r;
+    });
+    assert.ok(row, "the beam's row");
+    assert.equal((row as unknown as ExcelJS.Row).getCell(4).value, 2, "2 beams");
+    assert.equal((row as unknown as ExcelJS.Row).getCell(5).value, "ea");
+    const back = await readBidWorkbook(await vendorFills(file, { [beam.name]: 540 }));
+    const r = back.lines.find((l) => l.lineId === "line_g")!;
+    assert.equal(returnedPrice(r, beam), 30, "$540 a beam, 18' = $30/lf");
+  });
+});

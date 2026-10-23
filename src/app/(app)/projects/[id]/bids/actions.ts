@@ -8,7 +8,8 @@ import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
-import { bidWorkbook, biddableLines, isLadderLine, ladderLines, parsePrice, priceLadders, readBidWorkbook } from "@/lib/bids";
+import { bidWorkbook, biddableLines, isLadderLine, ladderLines, parsePrice, priceLadders, readBidWorkbook, returnedPrice } from "@/lib/bids";
+import { beamLength, toPerLf } from "@/lib/bid-beams";
 import { isJobLocked, setItemPrice } from "@/lib/job-prices";
 import { saveUpload } from "@/lib/uploads";
 import { fmtDate, money, str } from "@/lib/utils";
@@ -188,7 +189,8 @@ export const importBid = friendly(async function importBid(fd: FormData) {
   for (const r of read.lines) {
     const line = byId.get(r.lineId);
     if (!line) continue;
-    await db.bidLine.update({ where: { id: r.lineId }, data: { unitPrice: r.unitPrice, substitute: r.substitute, note: r.note } });
+    // (A beam's price in the file is per beam: kept per lf.)
+    await db.bidLine.update({ where: { id: r.lineId }, data: { unitPrice: returnedPrice(r, line), substitute: r.substitute, note: r.note } });
     if (r.unitPrice == null) continue;
     if (isLadderLine(line)) ladderPriced++;
     else priced++;
@@ -226,7 +228,8 @@ export const saveBidPrices = friendly(async function saveBidPrices(fd: FormData)
   let priced = 0;
   for (const l of bid.lines) {
     if (!fd.has(`price_${l.id}`)) continue;
-    const price = parsePrice(str(fd, `price_${l.id}`));
+    // A beam: typed per beam or per lf, kept per lf.
+    const price = toPerLf(parsePrice(str(fd, `price_${l.id}`)), str(fd, `basis_${l.id}`), beamLength(l));
     if (price != null) priced++;
     // A sub's trade: what's in their price and what isn't, typed in here too.
     const note = fd.has(`note_${l.id}`) ? str(fd, `note_${l.id}`).slice(0, 2000) || null : l.note;
@@ -313,6 +316,18 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
   for (const p of changed) {
     const bid = await db.bid.findFirst({ where: { id: p.bidId, projectId: project.id }, include: { lines: { where: { codeKey: p.codeKey } } } });
     if (!bid) continue;
+    // Beams: every length of a size is one Item List item, priced per lf — it takes the average over
+    // the feet bought (an 18' and a 24' quoted at different rates per foot).
+    const beamFeet = new Map<string, { lf: number; cost: number }>();
+    for (const l of bid.lines)
+      if (l.unitPrice != null && !l.substitute && l.materialItemId && beamLength(l)) {
+        const b = beamFeet.get(l.materialItemId) ?? { lf: 0, cost: 0 };
+        b.lf += l.quantity;
+        b.cost += l.quantity * l.unitPrice;
+        beamFeet.set(l.materialItemId, b);
+      }
+    const beamPrice = new Map([...beamFeet].map(([id, b]) => [id, b.lf > 0 ? Math.round((b.cost / b.lf) * 10000) / 10000 : 0]));
+    const beamDone = new Set<string>();
     for (const l of bid.lines) {
       if (l.unitPrice == null) continue;
       if (l.substitute) {
@@ -344,15 +359,22 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
         skipped++;
         continue;
       }
-      if (scope === "JOB") await setItemPrice({ projectId: project.id, materialItemId, unitCost: l.unitPrice, pin: true });
+      // A beam size: its average per lf, once.
+      const unitCost = beamPrice.get(materialItemId) ?? l.unitPrice;
+      if (beamPrice.has(materialItemId)) {
+        if (beamDone.has(materialItemId)) {
+          items++;
+          continue;
+        }
+        beamDone.add(materialItemId);
+      }
+      if (scope === "JOB") await setItemPrice({ projectId: project.id, materialItemId, unitCost, pin: true });
       else {
-        await db.materialItem
-          .update({ where: { id: materialItemId }, data: { unitCost: l.unitPrice, vendor: bid.vendorName, ...PRICE_CHECKED() } })
-          .catch(() => null);
+        await db.materialItem.update({ where: { id: materialItemId }, data: { unitCost, vendor: bid.vendorName, ...PRICE_CHECKED() } }).catch(() => null);
         if (!locked)
           await db.takeoffAssemblyItem.updateMany({
             where: { materialItemId, condition: { projectId: project.id } },
-            data: { unitCost: l.unitPrice, pricePinned: false },
+            data: { unitCost, pricePinned: false },
           });
       }
       items++;

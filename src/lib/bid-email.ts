@@ -1,4 +1,5 @@
 import { isLadderLine } from "./bid-ladder";
+import { asSent } from "./bid-beams";
 import type { Mail } from "./mail-layout";
 
 /**
@@ -124,7 +125,10 @@ export function bidEmail(o: {
     `Type your prices online (the quickest way): ${o.onlineUrl}`,
     "",
     "The list:",
-    ...items.map((l) => `  ${qty(l.quantity)} ${l.unit}  ${l.name}`),
+    ...items.map((l) => {
+      const sent = asSent({ ...l, unitPrice: null });
+      return `  ${qty(sent.quantity)} ${sent.unit}  ${l.name}`;
+    }),
     "",
     filesLine,
   ].join("\n");
@@ -133,10 +137,10 @@ export function bidEmail(o: {
     .map((p) => `<p style="margin:0 0 14px;font-size:15px;line-height:1.5;color:#334155">${esc(p).replace(/\n/g, "<br>")}</p>`)
     .join("\n");
   const rows = items
-    .map(
-      (l) =>
-        `<tr><td style="padding:6px 10px 6px 0;border-top:1px solid #e2e8f0;text-align:right;white-space:nowrap">${esc(qty(l.quantity))}</td><td style="padding:6px 10px 6px 0;border-top:1px solid #e2e8f0;color:#64748b">${esc(l.unit)}</td><td style="padding:6px 0;border-top:1px solid #e2e8f0">${esc(l.name)}</td></tr>`,
-    )
+    .map((l) => {
+      const sent = asSent({ ...l, unitPrice: null });
+      return `<tr><td style="padding:6px 10px 6px 0;border-top:1px solid #e2e8f0;text-align:right;white-space:nowrap">${esc(qty(sent.quantity))}</td><td style="padding:6px 10px 6px 0;border-top:1px solid #e2e8f0;color:#64748b">${esc(sent.unit)}</td><td style="padding:6px 0;border-top:1px solid #e2e8f0">${esc(l.name)}</td></tr>`;
+    })
     .join("");
   const html = `<!doctype html><html><body style="margin:0;background:#f1f5f9;font-family:Segoe UI,Arial,sans-serif">
 <div style="max-width:620px;margin:24px auto;background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:28px">

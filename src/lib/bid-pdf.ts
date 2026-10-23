@@ -1,5 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { isLadderLine } from "./bid-ladder";
+import { asSent } from "./bid-beams";
 
 /**
  * A bid as a PDF to print and fill in by hand (sent with the bid's email, next to the Excel file): who
@@ -123,16 +124,19 @@ export async function bidRecordPdf(o: {
   y -= 21;
   let total = 0;
   for (const l of o.bid.lines) {
-    const extra = [l.substitute ? `Instead: ${l.substitute}` : "", l.note ?? ""].filter(Boolean).join(" · ");
+    const sent = asSent(l);
+    const extra = [sent.len && l.unitPrice != null ? `${money(l.unitPrice)}/lf` : "", l.substitute ? `Instead: ${l.substitute}` : "", l.note ?? ""]
+      .filter(Boolean)
+      .join(" · ");
     const notes = extra ? wrap(extra, 8.5, itemWidth) : [];
     room(21 + notes.length * 11);
     if (!sub && !isLadderLine(l)) {
-      right(qty(l.quantity), col.qty, y);
-      text(l.unit, col.unit, y, 10, font, GRAY);
+      right(qty(sent.quantity), col.qty, y);
+      text(sent.unit, col.unit, y, 10, font, GRAY);
     }
     text(fit(font, drawable(font, l.name), 10, itemWidth), itemX, y);
     if (l.unitPrice != null) {
-      if (!sub) right(money(l.unitPrice), col.price + 64, y);
+      if (!sub) right(money(sent.unitPrice ?? l.unitPrice), col.price + 64, y);
       if (!isLadderLine(l)) {
         right(money(l.unitPrice * l.quantity), col.total, y);
         total += l.unitPrice * l.quantity;
@@ -246,8 +250,10 @@ export async function bidPdf(o: {
   tableHead(`Items (${items.length})`);
   for (const l of items) {
     if (y < BOTTOM) newPage("Items", false);
-    right(qty(l.quantity), col.qty, y);
-    text(l.unit, col.unit, y, 10, font, GRAY);
+    // A beam: how many, to price per beam.
+    const sent = asSent({ ...l, unitPrice: null });
+    right(qty(sent.quantity), col.qty, y);
+    text(sent.unit, col.unit, y, 10, font, GRAY);
     text(fit(font, drawable(font, l.name), 10, itemWidth), col.item, y);
     // Lines to write the prices on.
     rule(y - 3, col.price, col.price + 64, GRAY);

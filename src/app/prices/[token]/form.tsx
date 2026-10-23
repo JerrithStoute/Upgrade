@@ -5,7 +5,8 @@ import { Paperclip } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { submitBidPrices, type PricesState } from "../actions";
 
-type Line = { id: string; name: string; unit: string; quantity: number; ladder: boolean; price: number | null; substitute: string | null };
+/** `len`: a beam (its length in feet) — priced per beam or per lf, their pick. */
+type Line = { id: string; name: string; unit: string; quantity: number; ladder: boolean; price: number | null; substitute: string | null; len: number | null };
 
 const money = (n: number) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
 const qty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""));
@@ -23,9 +24,12 @@ export function PricesForm({ token, lines, company, attached }: { token: string;
   const [prices, setPrices] = useState<Record<string, string>>(() => Object.fromEntries(lines.map((l) => [l.id, l.price != null ? String(l.price) : ""])));
   const [quote, setQuote] = useState<string | null>(null);
   const [subOpen, setSubOpen] = useState<Record<string, boolean>>(() => Object.fromEntries(lines.filter((l) => l.substitute).map((l) => [l.id, true])));
+  const [basis, setBasis] = useState<Record<string, "beam" | "lf">>({});
   const items = lines.filter((l) => !l.ladder);
   const ladder = lines.filter((l) => l.ladder);
-  const total = items.reduce((s, l) => s + (num(prices[l.id] ?? "") ?? 0) * l.quantity, 0);
+  // A beam priced per lf: × its length too.
+  const lineTotal = (l: Line, p: number) => p * l.quantity * (l.len && basis[l.id] === "lf" ? l.len : 1);
+  const total = items.reduce((s, l) => s + lineTotal(l, num(prices[l.id] ?? "") ?? 0), 0);
   const priced = items.filter((l) => num(prices[l.id] ?? "") != null).length;
   const priceBox = (l: Line) => (
     <input
@@ -77,8 +81,20 @@ export function PricesForm({ token, lines, company, attached }: { token: string;
                   {qty(l.quantity)} {l.unit}
                 </span>
                 <span className="min-w-0 flex-1 leading-tight text-slate-900">{l.name}</span>
+                {l.len ? (
+                  <select
+                    name={`basis_${l.id}`}
+                    value={basis[l.id] ?? "beam"}
+                    onChange={(e) => setBasis((b) => ({ ...b, [l.id]: e.target.value as "beam" | "lf" }))}
+                    className="h-8 shrink-0 rounded-md border border-slate-300 px-1 text-xs"
+                    aria-label={`Price ${l.name} per beam or per lf`}
+                  >
+                    <option value="beam">per beam</option>
+                    <option value="lf">per lf</option>
+                  </select>
+                ) : null}
                 {priceBox(l)}
-                <span className="hidden w-20 shrink-0 text-right text-xs text-slate-500 tabular-nums sm:block">{p != null ? money(p * l.quantity) : ""}</span>
+                <span className="hidden w-20 shrink-0 text-right text-xs text-slate-500 tabular-nums sm:block">{p != null ? money(lineTotal(l, p)) : ""}</span>
                 <button
                   type="button"
                   className={cn(

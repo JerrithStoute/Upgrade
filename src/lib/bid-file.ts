@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 import { companyLines } from "./company";
 import { fmtDate } from "./utils";
 import { itemNameKey } from "./takeoff";
+import { asSent, beamLength, toPerLf } from "./bid-beams";
 
 /**
  * The bid file a vendor fills in: an Excel workbook (bidWorkbook) and reading it back
@@ -19,7 +20,17 @@ type BidForFile = {
   afterLock: boolean;
   notes?: string | null;
   /** `key` "ladder:…" = a price list line (another length, no quantity). */
-  lines: { id: string; key?: string; codeKey: string; codeLabel: string; name: string; sku: string | null; unit: string; quantity: number; unitPrice: number | null }[];
+  lines: {
+    id: string;
+    key?: string;
+    codeKey: string;
+    codeLabel: string;
+    name: string;
+    sku: string | null;
+    unit: string;
+    quantity: number;
+    unitPrice: number | null;
+  }[];
 };
 
 /**
@@ -36,7 +47,10 @@ export async function bidWorkbook(
   const wb = new ExcelJS.Workbook();
   wb.creator = company?.name ?? "The Builder Station";
   wb.created = new Date();
-  const ws = wb.addWorksheet("Bid", { views: [{ state: "frozen", ySplit: 9 }], pageSetup: { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
+  const ws = wb.addWorksheet("Bid", {
+    views: [{ state: "frozen", ySplit: 9 }],
+    pageSetup: { orientation: "portrait", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
   ws.columns = [
     { key: "code", width: 22 },
     { key: "item", width: 42 },
@@ -63,7 +77,7 @@ export async function bidWorkbook(
     ws.getCell("A6").font = { bold: true };
   }
   ws.getCell("A7").value =
-    "Fill in your price per unit in the yellow column, then save this file and send it back. (Total fills itself in. Quoting a different product? Note it under Substitute.)";
+    "Fill in your price per unit in the yellow column (beams: a price per beam), then save this file and send it back. (Total fills itself in. Quoting a different product? Note it under Substitute.)";
   ws.getCell("A7").font = { italic: true, color: { argb: "FF475569" } };
 
   const head = ws.getRow(9);
@@ -100,9 +114,11 @@ export async function bidWorkbook(
       row.getCell(COLS.code).font = { color: { argb: "FF94A3B8" } };
       row.getCell(COLS.item).value = l.name;
       row.getCell(COLS.sku).value = l.sku ?? "";
-      row.getCell(COLS.qty).value = l.quantity;
-      row.getCell(COLS.unit).value = l.unit;
-      priceCell(row, l.unitPrice ?? null);
+      // A beam: how many, priced per beam (kept per lf — readBidWorkbook turns it back).
+      const sent = asSent({ ...l, key: l.key ?? "" });
+      row.getCell(COLS.qty).value = sent.quantity;
+      row.getCell(COLS.unit).value = sent.unit;
+      priceCell(row, sent.unitPrice ?? null);
       const total = row.getCell(COLS.total);
       total.value = { formula: `IF(ISNUMBER(F${r}),D${r}*F${r},"")` };
       total.numFmt = money;
@@ -173,6 +189,9 @@ export function parsePrice(v: ExcelJS.CellValue | string): number | null {
 }
 
 export type ReturnedLine = { lineId: string; unitPrice: number | null; substitute: string | null; note: string | null };
+
+/** A returned file's price for a line, per lf for a beam (the file asks a price per beam). */
+export const returnedPrice = (r: ReturnedLine, line: { key: string; unit: string }) => toPerLf(r.unitPrice, "beam", beamLength(line));
 
 /** Reads a returned bid workbook: the bid it belongs to (if the hidden sheet survived) and each line's price. */
 export async function readBidWorkbook(data: Buffer): Promise<{ bidId: string | null; lines: ReturnedLine[] }> {

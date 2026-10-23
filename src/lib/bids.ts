@@ -5,7 +5,7 @@ import { DEFAULT_STOCK_LENGTHS, itemNameKey, lumberItemName, parseStockLengths }
 import { loadConditions } from "./takeoff-data";
 import { jobPulls } from "./inventory";
 import { toOrder } from "./inventory-math";
-export { bidLineFor, bidWorkbook, parsePrice, readBidWorkbook, type ReturnedLine } from "./bid-file";
+export { bidLineFor, bidWorkbook, parsePrice, readBidWorkbook, returnedPrice, type ReturnedLine } from "./bid-file";
 import { bidLineFor } from "./bid-file";
 
 /**

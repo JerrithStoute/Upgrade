@@ -8,6 +8,7 @@ import { fmtDate, money, num } from "@/lib/utils";
 import { Card, SubmitButton, buttonClasses } from "@/components/ui";
 import { saveBidPrices } from "../actions";
 import { isLadderLine } from "@/lib/bids";
+import { asSent } from "@/lib/bid-beams";
 import { FilePreview } from "@/components/file-preview";
 
 export const metadata = { title: "Bid" };
@@ -112,13 +113,25 @@ export default async function BidPage({
                           {l.name}
                           {l.sku ? <span className="block text-xs text-slate-500">{l.sku}</span> : null}
                         </td>
-                        <td className="px-4 py-1.5 text-right tabular-nums">{isLadderLine(l) ? "" : num(l.quantity)}</td>
-                        <td className="px-4 py-1.5 text-slate-600">{l.unit}</td>
+                        <td className="px-4 py-1.5 text-right tabular-nums">{isLadderLine(l) ? "" : num(asSent(l).quantity)}</td>
+                        <td className="px-4 py-1.5 text-slate-600">{asSent(l).unit}</td>
                         <td className="px-4 py-1.5 text-right">
+                          {/* A beam: per beam (as it shows) or per lf. */}
+                          {asSent(l).len ? (
+                            <select
+                              name={`basis_${l.id}`}
+                              defaultValue="beam"
+                              className="input mr-1 !w-auto !px-1 !py-1 text-xs"
+                              aria-label={`Price ${l.name} per beam or per lf`}
+                            >
+                              <option value="beam">per beam</option>
+                              <option value="lf">per lf</option>
+                            </select>
+                          ) : null}
                           <input
                             name={`price_${l.id}`}
                             inputMode="decimal"
-                            defaultValue={l.unitPrice ?? ""}
+                            defaultValue={asSent(l).unitPrice ?? ""}
                             className="input !w-28 text-right tabular-nums"
                             aria-label={`Unit price for ${l.name}`}
                             placeholder="—"

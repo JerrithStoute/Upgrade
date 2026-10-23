@@ -5,6 +5,7 @@ import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { isLadderLine } from "@/lib/bids";
+import { asSent } from "@/lib/bid-beams";
 import { fmtDateTime, money, num } from "@/lib/utils";
 import { Card, buttonClasses } from "@/components/ui";
 import { FilePreview } from "@/components/file-preview";
@@ -39,7 +40,15 @@ export default async function BidReplyPage({ params }: { params: Promise<{ id: s
   const ladder = bid.lines.filter((l) => isLadderLine(l));
   const total = items.reduce((s, l) => s + (l.unitPrice ?? 0) * l.quantity, 0);
   const priced = items.filter((l) => l.unitPrice != null).length;
-  const how = online ? (bid.returnFile ? "Sent online, with their quote" : "Typed online") : latest?.type === "bid.imported" ? "Their Excel file" : bid.returnFile ? "A file they sent" : "Typed in here";
+  const how = online
+    ? bid.returnFile
+      ? "Sent online, with their quote"
+      : "Typed online"
+    : latest?.type === "bid.imported"
+      ? "Their Excel file"
+      : bid.returnFile
+        ? "A file they sent"
+        : "Typed in here";
 
   return (
     <div className="space-y-4">
@@ -79,14 +88,17 @@ export default async function BidReplyPage({ params }: { params: Promise<{ id: s
             <tbody className="divide-y divide-slate-100">
               {items.map((l) => (
                 <tr key={l.id}>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{num(l.quantity)}</td>
-                  <td className="px-3 py-1.5 text-slate-600">{l.unit}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">{num(asSent(l).quantity)}</td>
+                  <td className="px-3 py-1.5 text-slate-600">{asSent(l).unit}</td>
                   <td className="px-3 py-1.5 text-slate-900">
                     {l.name}
                     {l.substitute ? <span className="block text-xs font-medium text-amber-800">Sub: {l.substitute}</span> : null}
                     {l.note ? <span className="block text-xs text-slate-500">{l.note}</span> : null}
                   </td>
-                  <td className="px-3 py-1.5 text-right tabular-nums">{l.unitPrice != null ? money(l.unitPrice) : <span className="text-slate-400">—</span>}</td>
+                  <td className="px-3 py-1.5 text-right tabular-nums">
+                    {l.unitPrice != null ? money(asSent(l).unitPrice ?? l.unitPrice) : <span className="text-slate-400">—</span>}
+                    {asSent(l).len && l.unitPrice != null ? <span className="block text-xs text-slate-500">{money(l.unitPrice)}/lf</span> : null}
+                  </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">{l.unitPrice != null ? money(l.unitPrice * l.quantity) : ""}</td>
                 </tr>
               ))}
@@ -110,7 +122,9 @@ export default async function BidReplyPage({ params }: { params: Promise<{ id: s
                 {ladder.map((l) => (
                   <tr key={l.id}>
                     <td className="px-3 py-1.5">{l.name}</td>
-                    <td className="px-3 py-1.5 text-right tabular-nums">{l.unitPrice != null ? money(l.unitPrice) : <span className="text-slate-400">—</span>}</td>
+                    <td className="px-3 py-1.5 text-right tabular-nums">
+                      {l.unitPrice != null ? money(l.unitPrice) : <span className="text-slate-400">—</span>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

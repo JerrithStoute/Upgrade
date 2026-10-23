@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Download, ExternalLink, Link2, Mail, Printer, Send, X } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Link2, Mail, MessageSquare, Printer, Send, Share2, X } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
 import { actionMessage } from "@/lib/action-message";
 import { saveBidMessage, sendBidEmail } from "../actions";
@@ -28,6 +28,7 @@ export function EmailPreview({
   bidNumber,
   sub = false,
   autoOpen = false,
+  phone = null,
 }: {
   projectId: string;
   bidId: string;
@@ -46,6 +47,8 @@ export function EmailPreview({
   sub?: boolean;
   /** Opens by itself (Send to subs just made it). */
   autoOpen?: boolean;
+  /** Their phone on file, for "Text it". */
+  phone?: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(autoOpen);
@@ -58,6 +61,11 @@ export function EmailPreview({
   const [standard, setStandard] = useState<"saving" | "saved" | null>(null);
   const [how, setHow] = useSendHow();
   const [linkCopied, setLinkCopied] = useState(false);
+  const [showLink, setShowLink] = useState(false);
+  // The text that goes with the link, and a text message started with it (their number when on file).
+  const textMessage = `${sub ? "Here are the plans for our bid" : "Here's our list for prices"} (Bid #${bidNumber}) — tap the link to ${sub ? "see the plans and send your bid" : "put your prices in"}: ${onlineUrl}`;
+  const smsHref = `sms:${(phone ?? "").replace(/[^\d+]/g, "")}?&body=${encodeURIComponent(textMessage)}`;
+  const canShare = typeof navigator !== "undefined" && typeof navigator.share === "function";
 
   useEffect(() => {
     if (!open) return;
@@ -284,28 +292,67 @@ export function EmailPreview({
               {onlineUrl ? (
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant={showLink ? "secondary" : "ghost"}
                   size="sm"
-                  title={
-                    sub
-                      ? "The sub's link to the plans and their bid — text it to them from your phone"
-                      : "The vendor's link to type prices online — text it to them from your phone"
-                  }
-                  onClick={async () => {
-                    try {
-                      await navigator.clipboard.writeText(onlineUrl);
-                      setLinkCopied(true);
-                      setTimeout(() => setLinkCopied(false), 2000);
-                    } catch {
-                      /* clipboard blocked */
-                    }
-                  }}
+                  title={sub ? "The sub's link to the plans and their bid — to text them" : "The vendor's link to type prices online — to text them"}
+                  onClick={() => setShowLink((v) => !v)}
                 >
-                  <Link2 className="h-3.5 w-3.5" /> {linkCopied ? "Link copied — text it to them" : sub ? "Copy bid link" : "Copy price link"}
+                  <Link2 className="h-3.5 w-3.5" /> Text the link
                 </Button>
               ) : null}
               {emailedTo && !result?.ok ? <span className="text-xs text-slate-500">Already emailed to {emailedTo}.</span> : null}
             </div>
+            {/* The link itself, to see — and to text: straight from a phone, or copied to paste anywhere. */}
+            {onlineUrl && showLink ? (
+              <div className="space-y-2 border-t border-slate-100 bg-slate-50 px-5 py-3 text-sm">
+                <p className="text-xs text-slate-600">
+                  {vendorName}&apos;s link — {sub ? "it opens the plans and their bid" : "it opens their prices page"}, no sign-in. Works 30 days.
+                </p>
+                <input
+                  readOnly
+                  value={onlineUrl}
+                  onFocus={(e) => e.currentTarget.select()}
+                  className="input font-mono text-xs"
+                  aria-label={`${vendorName}'s link`}
+                />
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* On a phone: opens a text to them with the link in it. */}
+                  <a href={smsHref} className={buttonClasses("primary", "sm")}>
+                    <MessageSquare className="h-3.5 w-3.5" /> Text it{phone ? ` to ${phone}` : ""}
+                  </a>
+                  {canShare ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => navigator.share({ text: textMessage }).catch(() => null)}
+                      title="Your phone's share menu — Messages, WhatsApp…"
+                    >
+                      <Share2 className="h-3.5 w-3.5" /> Share…
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(onlineUrl);
+                        setLinkCopied(true);
+                        setTimeout(() => setLinkCopied(false), 2500);
+                      } catch {
+                        /* copying blocked: the link is in the box to select */
+                      }
+                    }}
+                  >
+                    <Copy className="h-3.5 w-3.5" /> {linkCopied ? "Copied — paste it in your text" : "Copy the link"}
+                  </Button>
+                </div>
+                <p className="text-xs text-slate-500">
+                  On a computer: copy it and paste it into a text (or Phone Link), or open this job on your phone and tap <b>Text it</b>.
+                </p>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

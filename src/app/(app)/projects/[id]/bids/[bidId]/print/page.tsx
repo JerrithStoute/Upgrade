@@ -9,6 +9,7 @@ import { getBrand } from "@/lib/company-brand";
 import { fmtDate, num } from "@/lib/utils";
 import { buttonClasses } from "@/components/ui";
 import { isLadderLine } from "@/lib/bids";
+import { asSent } from "@/lib/bid-beams";
 import { PrintButton } from "../../../_components/print-button";
 
 export const metadata = { title: "Request for prices" };
@@ -120,12 +121,12 @@ export default async function BidPrintPage({ params }: { params: Promise<{ id: s
                   <tr key={l.id} className="break-inside-avoid border-b border-slate-100">
                     <td className="py-2 pr-2 text-slate-900">{l.name}</td>
                     <td className="py-2 pr-2 text-xs text-slate-500">{l.sku ?? ""}</td>
-                    <td className="py-2 pr-2 text-right font-medium tabular-nums text-slate-900">{num(l.quantity)}</td>
-                    <td className="py-2 pr-2 text-slate-600">{l.unit}</td>
+                    <td className="py-2 pr-2 text-right font-medium tabular-nums text-slate-900">{num(asSent(l).quantity)}</td>
+                    <td className="py-2 pr-2 text-slate-600">{asSent(l).unit}</td>
                     <td className="py-2 pr-2 align-bottom">
                       <span className="flex items-end gap-1 border-b border-slate-400 text-[10px] text-slate-400">
                         $<span className="flex-1" />
-                        {UNIT_WORDS[l.unit] ?? `per ${l.unit}`}
+                        {asSent(l).len ? "per beam" : (UNIT_WORDS[l.unit] ?? `per ${l.unit}`)}
                       </span>
                     </td>
                     <td className="py-2 align-bottom">

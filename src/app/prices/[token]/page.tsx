@@ -1,5 +1,6 @@
 import { StationLine } from "@/components/station-logo";
 import { isLadderLine } from "@/lib/bids";
+import { asSent } from "@/lib/bid-beams";
 import { BID_LINK_DAYS } from "@/lib/bid-link";
 import { bidForLink } from "../data";
 import { PricesForm, SubBidForm } from "./form";
@@ -25,15 +26,20 @@ export default async function BidPricesPage({ params }: { params: Promise<{ toke
   const { bid, company, closed } = found;
   if (bid.kind === "SUB") return <SubBidPage token={token} found={found} />;
   const address = [bid.project.address, [bid.project.city, bid.project.state].filter(Boolean).join(", ")].filter(Boolean).join(", ");
-  const lines = bid.lines.map((l) => ({
-    id: l.id,
-    name: l.name,
-    unit: l.unit,
-    quantity: l.quantity,
-    ladder: isLadderLine(l),
-    price: l.unitPrice,
-    substitute: l.substitute,
-  }));
+  // Beams by the piece, their price per beam (they can switch the line to per lf).
+  const lines = bid.lines.map((l) => {
+    const sent = asSent(l);
+    return {
+      id: l.id,
+      name: l.name,
+      unit: sent.unit,
+      quantity: sent.quantity,
+      ladder: isLadderLine(l),
+      price: sent.unitPrice,
+      substitute: l.substitute,
+      len: sent.len,
+    };
+  });
   return (
     <Shell>
       <h1 className="text-lg font-semibold text-slate-900">

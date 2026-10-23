@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { runAsCompany } from "@/lib/tenant";
 import { isLadderLine, parsePrice } from "@/lib/bids";
+import { beamLength, toPerLf } from "@/lib/bid-beams";
 import { logActivity } from "@/lib/activity";
 import { emailBidAnswered } from "@/lib/notify";
 import { clientIp } from "@/lib/security-log";
@@ -49,7 +50,10 @@ export async function submitBidPrices(_prev: PricesState, fd: FormData): Promise
       .trim()
       .slice(0, 2000) || null;
   const lines = found.bid.lines;
-  const prices = new Map(lines.map((l) => [l.id, parsePrice(String(fd.get(`price_${l.id}`) ?? ""))]));
+  // A beam's price typed per beam or per lf (their pick on the line), kept per lf.
+  const prices = new Map(
+    lines.map((l) => [l.id, toPerLf(parsePrice(String(fd.get(`price_${l.id}`) ?? "")), String(fd.get(`basis_${l.id}`) ?? ""), beamLength(l))]),
+  );
   const anyPrice = [...prices.values()].some((p) => p != null);
 
   // Their paperwork: checked by what the file really is, before anything is saved.

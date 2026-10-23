@@ -121,7 +121,9 @@ export default async function BidsPage({
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-lg font-semibold text-slate-900">Bids</h2>
-        <span className="text-sm text-slate-500">— send your Material list to vendors and your plans to subs, bring their prices back, compare, and take one per cost code.</span>
+        <span className="text-sm text-slate-500">
+          — send your Material list to vendors and your plans to subs, bring their prices back, compare, and take one per cost code.
+        </span>
       </div>
 
       {q.error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-800">{q.error}</p> : null}
@@ -401,6 +403,7 @@ export default async function BidsPage({
                             pdfHref={sub ? null : `${base}/${b.id}/pdf`}
                             sub={sub}
                             autoOpen={openNow.has(b.id)}
+                            phone={v?.phone ?? null}
                             onlineUrl={onlineUrls.get(b.id) ?? ""}
                             vendorName={b.vendorName}
                             bidNumber={b.number}
