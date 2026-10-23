@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { PRICE_CHECKED } from "./price-recheck";
-import { DEFAULT_STOCK_LENGTHS, LUMBER_METRIC_PREFIX, itemNameKey, lumberItemName, lumberOf, parseStockLengths } from "./takeoff";
+import { LUMBER_METRIC_PREFIX, OPENING_METRIC_PREFIX, WALL_METRIC_PREFIX, itemNameKey, lumberItemName, lumberOf } from "./takeoff";
 
 /**
  * Substitutions on a job: "order this instead of that", wherever the job orders it.
@@ -20,30 +20,6 @@ type Restore = { id: string; materialItemId: string | null; description: string;
 
 export function jobSubstitutions(projectId: string) {
   return db.jobSubstitution.findMany({ where: { projectId }, orderBy: { createdAt: "asc" } });
-}
-
-/**
- * Length substitutions applied to a job's takeoffs as they load: a takeoff of that size
- * doesn't use the replaced length (its pieces come from the other one).
- */
-export function withLengthSubstitutions<T extends { memberSize: string | null; stockLengths: string | null; packLength: number | null }>(
-  conditions: T[],
-  subs: { size: string | null; fromLen: number | null; toLen: number | null }[],
-): T[] {
-  const bySize = subs.filter((s) => s.size && s.fromLen && s.toLen);
-  if (!bySize.length) return conditions;
-  return conditions.map((c) => {
-    const mine = c.memberSize ? bySize.filter((s) => itemNameKey(s.size!) === itemNameKey(c.memberSize!)) : [];
-    if (!mine.length) return c;
-    let stock = parseStockLengths(c.stockLengths) ?? DEFAULT_STOCK_LENGTHS;
-    let packLength = c.packLength;
-    for (const s of mine) {
-      if (!stock.includes(s.fromLen!) && packLength !== s.fromLen) continue;
-      stock = Array.from(new Set([...stock.filter((l) => l !== s.fromLen), s.toLen!])).sort((a, b) => a - b);
-      if (packLength === s.fromLen) packLength = s.toLen;
-    }
-    return { ...c, stockLengths: stock.join(","), packLength };
-  });
 }
 
 /** The job's product substitutions, by the item they replace — for the lumber lines the layout makes. */
@@ -85,7 +61,8 @@ export async function applySubstitutions(projectId: string) {
           })),
         );
       for (const r of rows) {
-        if (!known.has(r.id)) restore.push({ id: r.id, materialItemId: r.materialItemId, description: r.description, unitCost: r.unitCost, pricePinned: r.pricePinned });
+        if (!known.has(r.id))
+          restore.push({ id: r.id, materialItemId: r.materialItemId, description: r.description, unitCost: r.unitCost, pricePinned: r.pricePinned });
         await db.takeoffAssemblyItem.update({
           where: { id: r.id },
           data: { materialItemId: s.toItemId, description: s.toName, unitCost: s.unitCost ?? to.unitCost, pricePinned: s.unitCost != null },
@@ -93,13 +70,19 @@ export async function applySubstitutions(projectId: string) {
         changed = true;
       }
     } else if (s.unitCost != null) {
-      // The length's lines on this job take the substitution's price (kept for this job).
+      // The length's lines on this job take the substitution's price (kept for this job) — joists' and
+      // rafters' boards, and the walls' and openings' own lumber.
       const rows = await db.takeoffAssemblyItem.findMany({
-        where: { condition: { projectId }, metric: { startsWith: LUMBER_METRIC_PREFIX }, materialItem: { nameKey: itemNameKey(s.toName) } },
+        where: {
+          condition: { projectId },
+          OR: [LUMBER_METRIC_PREFIX, WALL_METRIC_PREFIX, OPENING_METRIC_PREFIX].map((p) => ({ metric: { startsWith: p } })),
+          materialItem: { nameKey: itemNameKey(s.toName) },
+        },
       });
       for (const r of rows) {
         if (Math.abs(r.unitCost - s.unitCost) < 1e-9 && r.pricePinned) continue;
-        if (!known.has(r.id)) restore.push({ id: r.id, materialItemId: r.materialItemId, description: r.description, unitCost: r.unitCost, pricePinned: r.pricePinned });
+        if (!known.has(r.id))
+          restore.push({ id: r.id, materialItemId: r.materialItemId, description: r.description, unitCost: r.unitCost, pricePinned: r.pricePinned });
         await db.takeoffAssemblyItem.update({ where: { id: r.id }, data: { unitCost: s.unitCost, pricePinned: true } });
         changed = true;
       }
@@ -129,7 +112,8 @@ export async function addSubstitution(
   if (input.with.kind === "item" && !pickedItem) throw new Error("Pick an item");
   // The same lumber at another length — picked as a length, or as that length's Item List item.
   const toLumber = pickedItem ? lumberOf(pickedItem.name) : null;
-  const length = input.with.kind === "length" ? input.with.length : lumber && toLumber && itemNameKey(toLumber.size) === itemNameKey(lumber.size) ? toLumber.length : null;
+  const length =
+    input.with.kind === "length" ? input.with.length : lumber && toLumber && itemNameKey(toLumber.size) === itemNameKey(lumber.size) ? toLumber.length : null;
   if (length != null) {
     if (!lumber) throw new Error("Only lumber sold by the length can change length");
     if (!(length > 0) || length === lumber.length) throw new Error("Pick another length");
@@ -163,7 +147,10 @@ export async function addSubstitution(
     data = { toItemId: to.id, toName: to.name, size: null, fromLen: null, toLen: null };
     // A bid taken for every job: the new item's Item List price and vendor are the bid's.
     if (input.listPrice && input.unitCost != null)
-      await db.materialItem.update({ where: { id: to.id }, data: { unitCost: input.unitCost, ...PRICE_CHECKED(), ...(input.vendor ? { vendor: input.vendor } : {}) } });
+      await db.materialItem.update({
+        where: { id: to.id },
+        data: { unitCost: input.unitCost, ...PRICE_CHECKED(), ...(input.vendor ? { vendor: input.vendor } : {}) },
+      });
   }
   const sub = await db.jobSubstitution.create({
     data: { projectId, fromItemId: from.id, fromName: from.name, ...data, unitCost: input.unitCost, source: input.source ?? null },

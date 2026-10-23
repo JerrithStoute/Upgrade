@@ -646,7 +646,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Item / SKU / vendor / Used in / Qty / Unit", what: "Each item, which takeoffs use it, and how many to order. Items used by several takeoffs are combined and rounded up once." },
           { name: "Unit cost", what: "The price, before markup. \"No price\" in amber means it's still $0.", how: "Click it, type, press Enter. On a job that isn't locked, it changes the Item List and every job that isn't locked. On a locked job it changes this job only." },
           { name: "Pin", what: "Keeps this job's price when the Item List changes. Click again to follow the Item List." },
-          { name: "Substitute…", what: "Orders something else on this job only: another length of the same lumber, another Item List item, or something new. **Swap back** undoes it." },
+          { name: "Substitute…", what: "Orders something else on this job only: another length of the same lumber, another Item List item, or something new. Another length applies everywhere the job uses that lumber — joists and rafters, and the walls' plates and studs cut from stock (\"2x4 treated × 18'\" → 20': the bottom plates are cut from 20's) — at the substitution's price. **Swap back** undoes it." },
           { name: "Framing cut sheet", what: "What each stock board is cut into, allowing for the saw cut, plus the extra boards for waste." },
         ],
       },

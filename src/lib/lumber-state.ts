@@ -35,10 +35,10 @@ const WRITES = /^(create|update|upsert|delete)/;
 export const changesLumber = (model: string | undefined, operation: string) => !!model && LUMBER_INPUTS.has(model) && WRITES.test(operation);
 
 /**
- * When the way lines are worked out last changed (made-to-order lengths to even feet; lf lines whose item is sold each, in pieces): every job worked
+ * When the way lines are worked out last changed (made-to-order lengths to even feet; lf lines whose item is sold each, in pieces; length substitutions in walls' plates and studs): every job worked
  * out before then is done again once, so its lines follow without anyone touching the takeoff.
  */
-export const LUMBER_RULES_CHANGED = new Date("2026-10-23T14:23:00Z");
+export const LUMBER_RULES_CHANGED = new Date("2026-10-23T14:45:00Z");
 
 /** Up to date: worked out since the last change (and since the rules last changed). Unknown (never worked out) counts as not. */
 export function lumberUpToDate(changedAt: Date | null, syncedAt: Date | null) {
