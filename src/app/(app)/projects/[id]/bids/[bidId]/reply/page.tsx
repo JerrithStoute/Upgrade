@@ -27,6 +27,10 @@ export default async function BidReplyPage({ params }: { params: Promise<{ id: s
     include: { lines: { orderBy: { sortOrder: "asc" } }, returnFile: { select: { id: true, name: true, mimeType: true, createdAt: true } } },
   });
   if (!bid) notFound();
+  // What this job orders instead (Substitute… on the Material list), by the item it replaces.
+  const jobSubs = new Map(
+    (await db.jobSubstitution.findMany({ where: { projectId: project.id }, select: { fromItemId: true, toName: true } })).map((x) => [x.fromItemId, x.toName]),
+  );
   // How it came back, latest first: typed online, their Excel file, or a PDF / photo added.
   const replies = await db.activity.findMany({
     where: { projectId: project.id, type: { in: ["bid.answered", "bid.imported", "bid.file"] }, description: { startsWith: `Bid #${bid.number} (` } },
@@ -93,6 +97,9 @@ export default async function BidReplyPage({ params }: { params: Promise<{ id: s
                   <td className="px-3 py-1.5 text-slate-900">
                     {l.name}
                     {l.substitute ? <span className="block text-xs font-medium text-amber-800">Sub: {l.substitute}</span> : null}
+                    {l.materialItemId && jobSubs.get(l.materialItemId) && jobSubs.get(l.materialItemId) !== l.substitute ? (
+                      <span className="block text-xs text-amber-800">This job orders {jobSubs.get(l.materialItemId)} instead (Material list)</span>
+                    ) : null}
                     {l.note ? <span className="block text-xs text-slate-500">{l.note}</span> : null}
                   </td>
                   <td className="px-3 py-1.5 text-right tabular-nums">

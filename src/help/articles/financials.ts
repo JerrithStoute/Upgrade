@@ -163,7 +163,7 @@ export const FINANCIALS: HelpArticle[] = [
           { name: "emailed / not emailed", what: "Under each bid's number: when it was emailed from here (point at it to see who to). **Email again** sends it once more." },
           { name: "Add what they sent… / Import returned file…", what: "Takes in what a vendor sent back. Their Excel file: the prices go on their bid by themselves (the top button finds the bid from the file). A PDF or a photo (on their row): kept on the bid and in the job's Files → Bids, and shown beside **Prices** so you can type the prices off it." },
           { name: "What they sent", what: "Their reply the way it came: their PDF or photo right on the page, their Excel file to open, or the prices they typed online with their note — and their prices laid out like a quote, with totals and anything they'd send instead. **Print** prints it." },
-          { name: "Prices", what: "The bid's lines, where you can type prices a vendor gave you by phone or on paper. A PDF or photo they sent shows beside them.", how: "Type each **Unit price** and click **Save prices**." },
+          { name: "Prices", what: "The bid's lines, where you can type prices a vendor gave you by phone or on paper — and under **Substitute**, anything they quoted instead (the price is for that). A line this job already substitutes on the Material list says so. A PDF or photo they sent shows beside them.", how: "Type each **Unit price** (and a **Substitute** where they quoted something else), then click **Save prices**. Taking the bid asks **Use theirs / Keep mine** for each substitute." },
           { name: "Delete", what: "Removes the bid. A returned file stays in the job's Files." },
         ],
       },

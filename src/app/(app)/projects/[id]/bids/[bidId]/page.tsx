@@ -4,7 +4,7 @@ import { ArrowLeft, Download, Eye } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
-import { fmtDate, money, num } from "@/lib/utils";
+import { cn, fmtDate, money, num } from "@/lib/utils";
 import { Card, SubmitButton, buttonClasses } from "@/components/ui";
 import { saveBidPrices } from "../actions";
 import { isLadderLine } from "@/lib/bids";
@@ -33,6 +33,10 @@ export default async function BidPage({
     },
   });
   if (!bid) notFound();
+  // What this job orders instead (Substitute… on the Material list), by the item it replaces.
+  const jobSubs = new Map(
+    (await db.jobSubstitution.findMany({ where: { projectId: project.id }, select: { fromItemId: true, toName: true } })).map((x) => [x.fromItemId, x.toName]),
+  );
   // What they sent shows beside the price boxes, to type the prices off it.
   const beside = bid.returnFile && !bid.returnFile.mimeType.includes("spreadsheet") ? bid.returnFile : null;
   // The price list (other lengths, no quantity) gets its own section at the end.
@@ -79,8 +83,8 @@ export default async function BidPage({
         </p>
       ) : null}
       <p className="text-sm text-slate-600">
-        Quantities are as sent. Type in prices the vendor gave you by phone or on paper; leave a price blank if they didn&apos;t quote it. Compare and take bids
-        on the Bids page.
+        Quantities are as sent. Type in prices the vendor gave you by phone or on paper; leave a price blank if they didn&apos;t quote it. Quoted something else
+        on a line? Type it under <b>Substitute</b> — the price is for that. Compare and take bids on the Bids page.
       </p>
       <div className={beside ? "grid items-start gap-4 xl:grid-cols-2" : ""}>
         <form action={saveBidPrices}>
@@ -141,7 +145,24 @@ export default async function BidPage({
                           {l.unitPrice != null && !isLadderLine(l) ? money(l.unitPrice * l.quantity) : ""}
                         </td>
                         <td className="px-4 py-1.5 text-xs text-slate-600">
-                          {l.substitute ? <span className="block font-medium text-amber-800">Substitute: {l.substitute}</span> : null}
+                          {sub ? null : (
+                            <input
+                              name={`sub_${l.id}`}
+                              defaultValue={l.substitute ?? ""}
+                              className={cn("input min-w-48 text-xs", l.substitute && "border-amber-300 bg-amber-50/60")}
+                              placeholder={
+                                l.materialItemId && jobSubs.get(l.materialItemId)
+                                  ? `e.g. ${jobSubs.get(l.materialItemId)}`
+                                  : "Substitute (what they quoted instead)"
+                              }
+                              aria-label={`Substitute for ${l.name}`}
+                            />
+                          )}
+                          {l.materialItemId && jobSubs.get(l.materialItemId) ? (
+                            <span className="mt-0.5 block text-[11px] text-amber-800">
+                              This job orders {jobSubs.get(l.materialItemId)} instead (Material list)
+                            </span>
+                          ) : null}
                           {sub ? (
                             <textarea
                               name={`note_${l.id}`}
@@ -151,9 +172,9 @@ export default async function BidPage({
                               placeholder="What's included — and what isn't"
                               aria-label={`What's included for ${l.name}`}
                             />
-                          ) : (
-                            l.note
-                          )}
+                          ) : l.note ? (
+                            <span className="mt-0.5 block">{l.note}</span>
+                          ) : null}
                         </td>
                       </tr>
                     ))}

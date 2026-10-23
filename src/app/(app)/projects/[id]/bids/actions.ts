@@ -233,7 +233,10 @@ export const saveBidPrices = friendly(async function saveBidPrices(fd: FormData)
     if (price != null) priced++;
     // A sub's trade: what's in their price and what isn't, typed in here too.
     const note = fd.has(`note_${l.id}`) ? str(fd, `note_${l.id}`).slice(0, 2000) || null : l.note;
-    if (price !== l.unitPrice || note !== l.note) await db.bidLine.update({ where: { id: l.id }, data: { unitPrice: price, note } });
+    // What they quoted instead, typed in here (their price is for that).
+    const substitute = fd.has(`sub_${l.id}`) ? str(fd, `sub_${l.id}`).replace(/\s+/g, " ").slice(0, 300) || null : l.substitute;
+    if (price !== l.unitPrice || note !== l.note || substitute !== l.substitute)
+      await db.bidLine.update({ where: { id: l.id }, data: { unitPrice: price, note, substitute } });
   }
   await db.bid.update({
     where: { id: bid.id },
