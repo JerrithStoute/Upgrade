@@ -244,7 +244,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Quantity", what: "What it reports and sends to the estimate. Area: sf, flat plan area, sy, roofing squares, perimeter, or volume in cy. Linear: length, flat length, or wall area. Lumber: members, length, stock length ordered, or board feet." },
           { name: "Pitch (rise / 12)", what: "For sloped work: 6/12 makes the plan area 1.118 times larger. 0 is flat." },
           { name: "Height (ft) / Depth (in)", what: "Linear: length × height gives wall area. Area: area × depth gives concrete volume in cubic yards." },
-          { name: "Walls", what: "Stud size, spacing, wall height, precut or cut-from-stock studs, extra studs per corner, top and bottom plates, and sheathing, drywall and baseboard on none, one or both sides. It orders all of it from what you draw." },
+          { name: "Walls", what: "Stud size, spacing, wall height, precut or cut-from-stock studs, extra studs per corner, top and bottom plates, and sheathing, drywall and baseboard on none, one or both sides. It orders all of it from what you draw. Baseboard is figured in lineal feet; when your Item List sells it **each** (by the stick), it's ordered in sticks — the feet ÷ the stick length (from the item's name, like \"× 16'\" or \"1x6x16\", or the **Piece length** box), rounded up and priced each. Window lining and anything else figured in feet but sold each works the same way." },
           { name: "Openings / Doors / Windows", what: "Header size and plies, king and jack studs, casing, leg and head trim, window stools, aprons and lining." },
           { name: "Joists / Rafters / Beams", what: "Spacing, lap over walls, size (one size or by span table), packing, overhang, member size, stock lengths, bearing and plies.", how: "See **Joists, rafters and beams**." },
           { name: "Where new items go, and their cost codes", what: "For lumber, doors, windows and the like: which Item List category new items go in and which cost code they use. Your answers are remembered for every job." },
@@ -774,7 +774,7 @@ export const TAKEOFF: HelpArticle[] = [
         heading: "Member sizes",
         items: [
           { name: "+ Add member size", what: "A member you can pick on a takeoff: name, kind (lumber, I-joist, truss, LVL), how it's sold, actual size, and default stock lengths." },
-          { name: "Sold as", what: "**Stock lengths**: pieces rounded up, priced each. **Exact length**: made to order, priced per lf. **Lineal feet**: one lf total, priced per lf." },
+          { name: "Sold as", what: "**Stock lengths**: pieces rounded up, priced each. **Made to order**: each member rounded up to the next even foot (10'-3\" → 12', 17' → 18') and priced per lf — glulams, LVLs, I-joists. **Lineal feet**: one lf total, priced per lf." },
           { name: "Report board feet / Its own color", what: "Shows board feet on the list, and gives the size its own color on the plan." },
         ],
       },

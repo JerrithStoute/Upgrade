@@ -7,6 +7,7 @@ import { bidComparison, codeGroups, isLadderLine, overWarnings, OVER_WARNING, pr
 import { vendorCodes } from "@/lib/vendors";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { substituteLength } from "@/lib/takeoff";
+import { beamLength } from "@/lib/bid-beams";
 import { Card, CardBody, CardHeader, ConfirmForm, EmptyState, SubmitButton, buttonClasses } from "@/components/ui";
 import { RequestBids } from "./_components/request-bids";
 import { ImportButton } from "./_components/import-button";
@@ -145,7 +146,7 @@ export default async function BidsPage({
           </p>
           <ul className="mt-2 divide-y divide-amber-200/70">
             {subLines.map((l) => {
-              const length = substituteLength(l.name, l.substitute!);
+              const length = beamLength(l) ? null : substituteLength(l.name, l.substitute!);
               return (
                 <li key={l.id} className="flex flex-wrap items-center gap-x-4 gap-y-1.5 py-2 text-sm">
                   <span className="min-w-0 flex-1">

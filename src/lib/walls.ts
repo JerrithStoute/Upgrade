@@ -4,7 +4,7 @@ import { lumberUpToDate, whileWorkingOut } from "./lumber-state";
 import { newItemPlacement } from "./item-codes";
 import { kindOfLegacyCategory } from "./code-groups";
 import { conditionTotals, loadConditions } from "./takeoff-data";
-import { autoMetricPrefix, itemNameKey } from "./takeoff";
+import { autoMetricPrefix, itemNameKey, pieceLengthFromName } from "./takeoff";
 
 /**
  * Keeps each Walls and Openings condition's material lines in step with its
@@ -50,12 +50,15 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
             costCodeId: place.costCodeId,
           },
         }));
+      // Figured in feet but sold each (baseboard by the 16' stick): ordered in pieces — the feet ÷ the
+      // piece length (from the item's name, or the takeoff's), rounded up, at the price each.
+      const piece = line.unit === "lf" && listItem.unit === "ea" ? (pieceLengthFromName(listItem.name) ?? line.pieceFt ?? 16) : null;
       const shape = {
         description: listItem.name,
         qty: 1,
-        per: 1,
-        unit: line.unit,
-        roundUp: line.unit === "ea",
+        per: piece ?? 1,
+        unit: piece ? "ea" : line.unit,
+        roundUp: piece ? true : line.unit === "ea",
         wastePct: line.waste ? c.wastePct : 0,
       };
       const current = existing.find((i) => i.metric === metric);
@@ -85,7 +88,7 @@ export async function syncWallItems(projectId: string, conditionId?: string) {
         current.roundUp !== shape.roundUp ||
         current.wastePct !== shape.wastePct ||
         current.qty !== 1 ||
-        current.per !== 1 ||
+        current.per !== shape.per ||
         codeNow;
       if (changed) {
         await db.takeoffAssemblyItem.update({

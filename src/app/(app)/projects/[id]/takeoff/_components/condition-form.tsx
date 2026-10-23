@@ -385,7 +385,7 @@ export function ConditionForm({
           ) : (
             <p className="self-end pb-2 text-xs text-slate-500 md:col-span-2">
               {size.soldAs === "EXACT_LF"
-                ? "Made to order: each member is listed at its exact length (to the inch) and priced per lf."
+                ? "Made to order: each member is listed rounded up to the next even foot (10'-3\" → 12') and priced per lf."
                 : "Listed as one lineal-foot total, priced per lf."}
             </p>
           )}

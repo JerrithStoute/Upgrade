@@ -20,7 +20,7 @@ type SizeValues = {
   color: string | null;
 };
 
-const SOLD_AS_SHORT: Record<string, string> = { STOCK: "Stock lengths", EXACT_LF: "Exact length · per lf", LF: "Lineal feet" };
+const SOLD_AS_SHORT: Record<string, string> = { STOCK: "Stock lengths", EXACT_LF: "Made to order · even feet · per lf", LF: "Lineal feet" };
 
 function SizeForm({ action, values }: { action: (fd: FormData) => Promise<void>; values?: SizeValues }) {
   const p = (k: string) => `size-${values?.id ?? "new"}-${k}`;
@@ -108,7 +108,7 @@ export default async function MemberSizesPage({ searchParams }: { searchParams: 
     <div className="space-y-5">
       <p className="text-sm text-slate-600">
         Joist and rafter members you can pick on a takeoff condition. <strong>Sold as</strong> decides how they reach the Material List and estimate: stock-length pieces priced
-        each (&ldquo;2x6 × 20&apos;&rdquo;), made-to-order members listed per exact length and priced per lf (open-web trusses), or one lineal-foot total. Prices live in the Item
+        each (&ldquo;2x6 × 20&apos;&rdquo;), made-to-order members listed per length (rounded up to even feet) and priced per lf (open-web trusses), or one lineal-foot total. Prices live in the Item
         List under Framing Lumber.
       </p>
       <Collapsible

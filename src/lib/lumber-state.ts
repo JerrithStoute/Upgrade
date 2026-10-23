@@ -34,9 +34,15 @@ const WRITES = /^(create|update|upsert|delete)/;
 /** Does this database operation change what a job's lumber lines are worked out from? */
 export const changesLumber = (model: string | undefined, operation: string) => !!model && LUMBER_INPUTS.has(model) && WRITES.test(operation);
 
-/** Up to date: worked out since the last change. Unknown (never worked out) counts as not. */
+/**
+ * When the way lines are worked out last changed (made-to-order lengths to even feet; lf lines whose item is sold each, in pieces): every job worked
+ * out before then is done again once, so its lines follow without anyone touching the takeoff.
+ */
+export const LUMBER_RULES_CHANGED = new Date("2026-10-23T14:23:00Z");
+
+/** Up to date: worked out since the last change (and since the rules last changed). Unknown (never worked out) counts as not. */
 export function lumberUpToDate(changedAt: Date | null, syncedAt: Date | null) {
-  return !!syncedAt && (!changedAt || syncedAt.getTime() >= changedAt.getTime());
+  return !!syncedAt && syncedAt.getTime() >= LUMBER_RULES_CHANGED.getTime() && (!changedAt || syncedAt.getTime() >= changedAt.getTime());
 }
 
 // The working-out's own writes aren't changes (or it would set itself off forever).

@@ -21,7 +21,8 @@ const LENGTHS = Array.from({ length: 17 }, (_, i) => 8 + i * 2);
 export function SubstituteButton({ projectId, line }: { projectId: string; line: { materialItemId: string; name: string; unit: string; quantity: number } }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const lumber = lumberOf(line.name);
+  // Lumber sold by the length (not made-to-order beams, listed in lf: they're one Item List item for every length).
+  const lumber = line.unit === "lf" ? null : lumberOf(line.name);
   const [mode, setMode] = useState<Mode>(lumber ? "length" : "item");
   const [length, setLength] = useState(() => (lumber ? (LENGTHS.find((l) => l > lumber.length) ?? lumber.length + 2) : 0));
   const [items, setItems] = useState<Choice[] | null>(null);

@@ -356,6 +356,9 @@ export function parseStockLengths(text: string | null | undefined): number[] | n
   return out.size ? Array.from(out).sort((x, y) => x - y) : null;
 }
 
+/** A length rounded up to the next even foot (an even length stays): 10.25 → 12, 17 → 18, 12 → 12. */
+export const evenFeet = (feet: number) => Math.max(2, Math.ceil(feet / 2 - 1e-6) * 2);
+
 /**
  * Stock pieces needed for one member: the shortest stock length that fits, or
  * — when a member is longer than the longest stock — full-length pieces plus one
@@ -363,8 +366,8 @@ export function parseStockLengths(text: string | null | undefined): number[] | n
  */
 export function stockPieces(feet: number, stock: number[] | null, soldAs?: string | null): number[] {
   if (feet <= 0) return [];
-  // Made-to-order members are listed at their exact length, to the next inch.
-  if (soldAs === "EXACT_LF") return [Math.ceil(feet * 12 - 1e-6) / 12];
+  // Made-to-order members (glulams, LVLs, I-joists…): the next even foot — 10'-3" → 12', 17' → 18'.
+  if (soldAs === "EXACT_LF") return [evenFeet(feet)];
   if (soldAs === "LF") return [feet];
   if (!stock?.length) return [stockLength(feet)];
   const max = stock[stock.length - 1];
@@ -426,7 +429,7 @@ export type ConditionCalc = {
 export const SOLD_AS = ["STOCK", "EXACT_LF", "LF"] as const;
 export const SOLD_AS_LABELS: Record<(typeof SOLD_AS)[number], string> = {
   STOCK: "Stock lengths — pieces rounded up, priced each",
-  EXACT_LF: "Exact length — made to order, priced per lf",
+  EXACT_LF: "Made to order — rounded up to even feet, priced per lf",
   LF: "Lineal feet — one lf total, priced per lf",
 };
 export const MEMBER_KINDS = ["DIMENSIONAL", "I_JOIST", "OPEN_WEB", "ENGINEERED", "OTHER"] as const;
@@ -1027,9 +1030,22 @@ export function lumberMetric(lengthFt: number) {
 /** "2x6 × 20'" — or the condition name when no member size is set. */
 export function lumberItemName(memberSize: string | null | undefined, conditionName: string, lengthFt: number, exact = false) {
   const base = memberSize?.trim() || conditionName;
-  if (exact) return `${base} × ${feetInches(lengthFt)}`;
+  // Made to order: whole feet as "18'" (they're even feet now), anything else as feet-inches.
+  if (exact) return `${base} × ${Number.isInteger(Math.round(lengthFt * 10000) / 10000) ? `${Math.round(lengthFt)}'` : feetInches(lengthFt)}`;
   const len = Number.isInteger(lengthFt) ? String(lengthFt) : lengthFt.toFixed(2).replace(/0+$/, "");
   return `${base} × ${len}'`;
+}
+
+/**
+ * How long one piece of an item is, from its name: "Baseboard 3-1/4 × 16'", "Base 16 ft", "1x6x16" → 16. Null when
+ * the name doesn't say (inches, like 3-1/4", don't count).
+ */
+export function pieceLengthFromName(name: string): number | null {
+  const t = name.replace(/[′’]/g, "'");
+  // "16'", "16 ft" — or a board's size with its length last, "1x6x16".
+  const m = /(\d+(?:\.\d+)?)\s*(?:'(?!')|ft\b|foot\b|feet\b)/i.exec(t) ?? /\b\d+\s*x\s*\d+\s*x\s*(\d+)\b/i.exec(t);
+  const n = m ? Number(m[1]) : NaN;
+  return n >= 4 && n <= 30 ? n : null;
 }
 
 /** "2x6 × 26'" → { size: "2x6", length: 26 } (lumber sold by the stock length), else null. */
@@ -1258,6 +1274,8 @@ export type WallOptions = {
   drywallSheet: string;
   baseSides: number;
   baseItem: string;
+  /** Baseboard sold each (by the stick): how long a stick is, when its name doesn't say. */
+  basePieceFt: number;
 };
 
 export const DEFAULT_WALL_OPTIONS: WallOptions = {
@@ -1279,6 +1297,7 @@ export const DEFAULT_WALL_OPTIONS: WallOptions = {
   drywallSheet: "4x8",
   baseSides: 0,
   baseItem: "Baseboard",
+  basePieceFt: 16,
 };
 
 /** Openings: header size and stock lengths are the condition's member size and stock lengths. */
@@ -1317,7 +1336,8 @@ export function parseOptions<T extends Record<string, unknown>>(json: string | n
 }
 
 /** A material line the takeoff writes for a Walls or Openings condition. `key` is stable (the estimate line follows it). */
-export type AutoLine = { key: string; name: string; unit: "ea" | "sf" | "lf"; qty: number; category: string; waste: boolean };
+/** `pieceFt`: a line in lf whose item may be sold each — how long one piece is (when its name doesn't say). */
+export type AutoLine = { key: string; name: string; unit: "ea" | "sf" | "lf"; qty: number; category: string; waste: boolean; pieceFt?: number };
 export type WallLine = AutoLine;
 
 /**
@@ -1485,7 +1505,7 @@ export function wallTakeoff(wall: { studSize: string; spacing: number; heightFt:
       waste: true,
     });
   if (o.baseSides > 0 && o.baseItem.trim() && length > 0)
-    lines.push({ key: "base", name: o.baseItem.trim(), unit: "lf", qty: o.baseSides * length, category: "Trim", waste: true });
+    lines.push({ key: "base", name: o.baseItem.trim(), unit: "lf", qty: o.baseSides * length, category: "Trim", waste: true, pieceFt: o.basePieceFt > 0 ? o.basePieceFt : 16 });
   return { lines, length, area, studs };
 }
 

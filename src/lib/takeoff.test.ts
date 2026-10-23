@@ -33,6 +33,7 @@ import {
   wallRun,
   wallNetworks,
   wallTakeoff,
+  pieceLengthFromName,
   arcPath,
   parseArcs,
   parsePoints,
@@ -296,7 +297,12 @@ describe("beams", () => {
     const m = measurementMetrics(c, shape(span), UPF);
     assert.equal(m.members, 3);
     assert.equal(m.member_lf, 55.5);
-    assert.deepEqual(framingBoards(c, [{ m: shape(span), unitsPerFoot: UPF }]).cutList, [[18.5, 3]]);
+    // Made to order, so listed in even feet: 18'-6" → 20'.
+    assert.deepEqual(framingBoards(c, [{ m: shape(span), unitsPerFoot: UPF }]).cutList, [[20, 3]]);
+  });
+
+  it("made-to-order lengths round up to the next even foot", () => {
+    assert.deepEqual([10.25, 12 + 8 / 12, 14 + 10 / 12, 17, 12, 1].map((f) => stockPieces(f, null, "EXACT_LF")[0]), [12, 14, 16, 18, 12, 2]);
   });
 
   it("sold in stock lengths, each beam gets the shortest one that fits (no sharing)", () => {
@@ -876,5 +882,23 @@ describe("windows", () => {
     const qty = (k: string) => lines.find((l) => l.key === k)?.qty ?? 0;
     assert.equal(qty("casing"), 4); // four 6'-8" legs, one per 7' stick
     assert.equal(qty("head"), 1); // two 2'-8" heads on one 8' 1x6
+  });
+});
+
+describe("pieces from a name", () => {
+  it("reads a stick length in feet, not inches", () => {
+    assert.equal(pieceLengthFromName("Baseboard 3-1/4 × 16'"), 16);
+    assert.equal(pieceLengthFromName('3-1/4" MDF Colonial Base 16 ft'), 16);
+    assert.equal(pieceLengthFromName("Base 14′"), 14);
+    assert.equal(pieceLengthFromName("Tongue In Groove Pine 1x6x16"), 16);
+    assert.equal(pieceLengthFromName("1x6x12 Hardi Trim"), 12);
+    assert.equal(pieceLengthFromName('3-1/4" MDF colonial base'), null);
+    assert.equal(pieceLengthFromName("Baseboard"), null);
+  });
+
+  it("walls hand baseboard on in lf, with the takeoff's piece length", () => {
+    const o = { ...DEFAULT_WALL_OPTIONS, baseSides: 2, basePieceFt: 12 };
+    const base = wallTakeoff({ studSize: "2x4", spacing: 16, heightFt: 8 }, o, [{ lengthFt: 40, closed: false, corners: 0 }]).lines.find((l) => l.key === "base");
+    assert.deepEqual([base?.unit, base?.qty, base?.pieceFt], ["lf", 80, 12]);
   });
 });

@@ -120,7 +120,7 @@ export function materialListFrom(conditions: LoadedCondition[], planId?: string 
       for (const i of c.items) {
         const base = assemblyBase(i, totals.metrics, totals.cutList, totals.wall);
         const raw = ((base * i.qty) / (i.per > 0 ? i.per : 1)) * (1 + lineWastePct(i) / 100);
-        // Made-to-order members share one Item List entry (priced per lf) but are listed per exact length.
+        // Made-to-order members share one Item List entry (priced per lf) but are listed per length (even feet).
         const exactLength = i.metric.startsWith(LUMBER_METRIC_PREFIX) && i.unit === "lf";
         const key = exactLength ? `${i.materialItemId}|${i.metric}` : (i.materialItemId ?? `name:${itemNameKey(i.description)}|${i.unit}`);
         add(

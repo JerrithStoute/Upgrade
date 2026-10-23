@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { changesLumber, lumberUpToDate, whileWorkingOut, workingOut } from "./lumber-state";
+import { changesLumber, LUMBER_RULES_CHANGED, lumberUpToDate, whileWorkingOut, workingOut } from "./lumber-state";
 
-const t = (s: number) => new Date(Date.UTC(2026, 9, 11, 12, 0, s));
+const t = (s: number) => new Date(LUMBER_RULES_CHANGED.getTime() + 60_000 + s * 1000);
 
 test("lines are up to date only when worked out since the last change", () => {
   assert.equal(lumberUpToDate(null, null), false, "never worked out");
@@ -11,6 +11,8 @@ test("lines are up to date only when worked out since the last change", () => {
   assert.equal(lumberUpToDate(t(4), t(5)), true);
   assert.equal(lumberUpToDate(t(5), t(5)), true);
   assert.equal(lumberUpToDate(t(6), t(5)), false, "changed after it was worked out");
+  // Worked out before the rules last changed: done again once.
+  assert.equal(lumberUpToDate(null, new Date(LUMBER_RULES_CHANGED.getTime() - 1000)), false, "worked out under the old rules");
 });
 
 test("writes to what the lines come from count as changes; reads and other things don't", () => {

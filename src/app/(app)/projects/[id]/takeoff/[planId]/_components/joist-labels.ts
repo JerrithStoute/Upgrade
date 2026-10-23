@@ -77,7 +77,7 @@ export function pieceLine([a, b]: [Pt, Pt], p: { a: number; b: number }): [Pt, P
   ];
 }
 
-/** "2x8: (10) 14' (3) 18'" — exact lengths (made to order) to the inch. A size you picked for the bay gets a ✎. */
+/** "2x8: (10) 14' (3) 18'" — made-to-order lengths in even feet. A size you picked for the bay gets a ✎. */
 export function joistGroupText(g: JoistGroup) {
   const len = (l: number) => (Number.isInteger(l) ? `${l}'` : feetInches(l));
   return `${g.size}${g.picked ? " ✎" : ""}: ${g.pieces.map(([l, n]) => `(${n}) ${len(l)}`).join(" ")}`;

@@ -336,7 +336,8 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
           continue;
         }
         const fromItemId = l.materialItemId ?? (await lumberItemFor(l.name));
-        const length = substituteLength(l.name, l.substitute);
+        // (A beam is one Item List item for every length: its substitute is a product, not another length.)
+        const length = beamLength(l) ? null : substituteLength(l.name, l.substitute);
         await addSubstitution(project.id, {
           fromItemId,
           with: length ? { kind: "length", length } : { kind: "new", name: l.substitute, unit: l.unit },

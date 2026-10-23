@@ -12,7 +12,7 @@ type LumberLine = { metric: string; description: string; listName: string; listU
  * Keeps each joist/rafter and hip/valley condition's lumber in step with its layout, as assembly
  * items linked to the Item List. How depends on the member size's "sold as":
  * - STOCK (default): one line per stock length, "2x6 × 20'" × 18 ea, priced each;
- * - EXACT_LF: one line per exact length, "14" Open-Web × 21'-4"" as lf, priced per lf;
+ * - EXACT_LF: one line per length rounded up to even feet, "14" Open-Web × 22'-0"" as lf, priced per lf;
  * - LF: one lineal-foot line for the size, priced per lf.
  * Item List entries are created the first time a size (and length, for STOCK) is used.
  *

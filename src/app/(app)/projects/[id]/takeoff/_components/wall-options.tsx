@@ -414,7 +414,7 @@ export function WallOptionsFields({
         </Section>
       </div>
 
-      <Section title="Baseboard" hint="Wall length × sides, in lineal feet.">
+      <Section title="Baseboard" hint="Wall length × sides, in lineal feet — or in sticks, when your Item List sells it each.">
         <Sides name="opt_baseSides" label="Baseboard sides" value={o.baseSides} onChange={(n) => set("baseSides", n)} />
         <Field label="Item" htmlFor={p("baseItem")} className="min-w-48 flex-1">
           <ItemPicker
@@ -426,6 +426,20 @@ export function WallOptionsFields({
             items={items}
             kind="trim"
             disabled={o.baseSides === 0}
+          />
+        </Field>
+        <Field label="Piece length (ft)" htmlFor={p("basePieceFt")}>
+          <input
+            id={p("basePieceFt")}
+            name="opt_basePieceFt"
+            type="number"
+            step="1"
+            min="1"
+            className="input !w-24"
+            value={o.basePieceFt}
+            onChange={(e) => set("basePieceFt", Number(e.target.value) || 16)}
+            disabled={o.baseSides === 0}
+            title="When the item is priced each: how long a stick is (a length in its name, like × 16', wins)"
           />
         </Field>
       </Section>
