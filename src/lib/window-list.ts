@@ -43,17 +43,28 @@ export const WINDOW_TYPES = [
  * A new detail on the company's list — or why not: no name, one every window has already, a repeat, or
  * past 8. (Settings → Windows, and "+ Add a detail" while adding a window.)
  */
-export function withDetail(list: WindowDetail[], rawName: string, kind: string): WindowDetail[] | string {
+export function withDetail(
+  list: WindowDetail[],
+  rawName: string,
+  kind: string,
+  /** Doors use it too: what they're called, what every one already has, and an example. */
+  of: { noun: string; settings: string; builtIn: string[]; example: string } = {
+    noun: "window",
+    settings: "Settings → Windows",
+    builtIn: ["size", "type", "black", "color"],
+    example: "Grids",
+  },
+): WindowDetail[] | string {
   const name = rawName.trim().replace(/\s+/g, " ").slice(0, 40);
-  if (!name) return "Name the detail, like Grids";
-  if (["size", "type", "black", "color"].includes(name.toLowerCase())) return `Every window already has ${name.toLowerCase()}`;
+  if (!name) return `Name the detail, like ${of.example}`;
+  if (of.builtIn.includes(name.toLowerCase())) return `Every ${of.noun} already has ${name.toLowerCase()}`;
   if (list.some((d) => d.name.toLowerCase() === name.toLowerCase())) return `There's already a ${name}`;
-  if (list.length >= 8) return "That's 8 details — take one off in Settings → Windows first";
+  if (list.length >= 8) return `That's 8 details — take one off in ${of.settings} first`;
   return [...list, { name, kind: kind === "text" ? "text" : "yesno" }];
 }
 
-/** How many windows a job's list holds (keys 1–9). */
-export const MAX_LINES = 9;
+/** How many windows a job's list holds — plenty; keys 1–9 pick the first nine. */
+export const MAX_LINES = 40;
 
 const json = (s: string | null | undefined): unknown => {
   try {
@@ -123,7 +134,14 @@ function detailWords(details: WindowDetail[], values: Record<string, string>) {
 }
 
 /** A window's Item List name: "3050 Single Hung", "3050 Single Hung White/Black", "5040 Picture Black/Black Grids". */
-export function windowName(o: { widthIn: number; heightIn: number; type: string; color: WindowColor; details?: WindowDetail[]; values?: Record<string, string> }) {
+export function windowName(o: {
+  widthIn: number;
+  heightIn: number;
+  type: string;
+  color: WindowColor;
+  details?: WindowDetail[];
+  values?: Record<string, string>;
+}) {
   const color = WINDOW_COLORS.find((c) => c.value === o.color)?.name ?? "";
   return [sizeCode(o.widthIn, o.heightIn), o.type.trim() || "Window", color || null, ...detailWords(o.details ?? [], o.values ?? {})].filter(Boolean).join(" ");
 }

@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { MAX_LINES, readColor, readItemDetails, readJobWindows, readWindowDetails } from "@/lib/window-list";
+import { CORE_KEY, JAMB_KEY, MAX_DOOR_LINES, readCore, readDoorDetails, readJamb, readJobDoors } from "@/lib/door-list";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
@@ -57,32 +58,85 @@ export default async function PlanViewerPage({
   const codeChoices = costCodes.map((c) => ({ id: c.id, code: c.code, name: c.name }));
   // Doors and windows to pick from: Item List items of that kind (whatever category they're filed in) with a size.
   const unitsIn = (kind: "doors" | "windows") =>
-    doorItems.filter((d) => itemKind(d) === kind).map((d) => ({ id: d.id, name: d.name, widthIn: d.widthIn!, heightIn: d.heightIn!, exterior: d.exterior, style: d.style }));
+    doorItems
+      .filter((d) => itemKind(d) === kind)
+      .map((d) => ({ id: d.id, name: d.name, widthIn: d.widthIn!, heightIn: d.heightIn!, exterior: d.exterior, style: d.style }));
   const doors = unitsIn("doors");
   const windows = unitsIn("windows");
   // The job's windows: its short list to pick from, how many of each are on the job, and the company's
   // own window details. A job from before the list starts with the windows already on it, most-used first.
-  const [windowCounts, companyWindows] = await Promise.all([
-    db.takeoffMeasurement.groupBy({ by: ["materialItemId"], where: { condition: { projectId: project.id, type: "WINDOW" }, materialItemId: { not: null } }, _count: { _all: true } }),
-    db.company.findFirst({ select: { windowDetails: true } }),
+  const [windowCounts, companyWindows, doorCounts] = await Promise.all([
+    db.takeoffMeasurement.groupBy({
+      by: ["materialItemId"],
+      where: { condition: { projectId: project.id, type: "WINDOW" }, materialItemId: { not: null } },
+      _count: { _all: true },
+    }),
+    db.company.findFirst({ select: { windowDetails: true, doorDetails: true } }),
+    db.takeoffMeasurement.groupBy({
+      by: ["materialItemId"],
+      where: { condition: { projectId: project.id, type: "DOOR" }, materialItemId: { not: null } },
+      _count: { _all: true },
+    }),
   ]);
   const counts = Object.fromEntries(windowCounts.map((c) => [c.materialItemId!, c._count._all]));
   const saved = readJobWindows(project.windowList);
   const windowIds = new Set(windows.map((w) => w.id));
-  const lineIds = project.windowList
-    ? saved.lines.filter((i) => windowIds.has(i))
-    : Object.entries(counts)
-        .filter(([i]) => windowIds.has(i))
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, MAX_LINES)
-        .map(([i]) => i);
+  // The saved list, then any window placed on the job that isn't on it (from before the list, or brought
+  // back with Ctrl+Z after its line was taken off) — most-used first. Every window placed has its line.
+  const listed = project.windowList ? saved.lines.filter((i) => windowIds.has(i)) : [];
+  const lineIds = [
+    ...listed,
+    ...Object.entries(counts)
+      .filter(([i]) => windowIds.has(i) && !listed.includes(i))
+      .sort((a, b) => b[1] - a[1])
+      .map(([i]) => i),
+  ].slice(0, MAX_LINES);
   const byItem = new Map(doorItems.map((d) => [d.id, d]));
   const jobWindows = {
     details: readWindowDetails(companyWindows?.windowDetails),
     counts,
     lines: lineIds.map((i) => {
       const d = byItem.get(i)!;
-      return { id: d.id, name: d.name, widthIn: d.widthIn!, heightIn: d.heightIn!, style: d.style, color: readColor(d.color), details: readItemDetails(d.details) };
+      return {
+        id: d.id,
+        name: d.name,
+        widthIn: d.widthIn!,
+        heightIn: d.heightIn!,
+        style: d.style,
+        color: readColor(d.color),
+        details: readItemDetails(d.details),
+      };
+    }),
+  };
+  // The job's doors, the same way: its short list, how many of each, and the company's own door details.
+  // A job from before the list starts with the doors already on it, most-used first.
+  const dCounts = Object.fromEntries(doorCounts.map((c) => [c.materialItemId!, c._count._all]));
+  const doorIds = new Set(doors.map((d) => d.id));
+  const doorsListed = project.doorList ? readJobDoors(project.doorList).lines.filter((i) => doorIds.has(i)) : [];
+  const doorLineIds = [
+    ...doorsListed,
+    ...Object.entries(dCounts)
+      .filter(([i]) => doorIds.has(i) && !doorsListed.includes(i))
+      .sort((a, b) => b[1] - a[1])
+      .map(([i]) => i),
+  ].slice(0, MAX_DOOR_LINES);
+  const jobDoors = {
+    details: readDoorDetails(companyWindows?.doorDetails),
+    counts: dCounts,
+    lines: doorLineIds.map((i) => {
+      const d = byItem.get(i)!;
+      const { [JAMB_KEY]: jamb, [CORE_KEY]: core, ...details } = readItemDetails(d.details);
+      return {
+        id: d.id,
+        name: d.name,
+        widthIn: d.widthIn!,
+        heightIn: d.heightIn!,
+        style: d.style,
+        exterior: !!d.exterior,
+        jamb: readJamb(jamb),
+        core: readCore(core),
+        details,
+      };
     }),
   };
   if (!plan) notFound();
@@ -121,7 +175,10 @@ export default async function PlanViewerPage({
   let editor = null;
   if (cond === "new" || editing) {
     const [memberSizes, items, spanTables] = await Promise.all([
-      db.memberSize.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, kind: true, soldAs: true, stockLengths: true } }),
+      db.memberSize.findMany({
+        orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+        select: { id: true, name: true, kind: true, soldAs: true, stockLengths: true },
+      }),
       materialItemOptions(),
       db.spanTable.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }], select: { id: true, name: true, use: true } }),
     ]);
@@ -216,6 +273,7 @@ export default async function PlanViewerPage({
       doors={doors}
       windows={windows}
       jobWindows={jobWindows}
+      jobDoors={jobDoors}
       codes={{ costCodes: codeChoices, rules: codeRules }}
       codeAlert={<NeedsCodes key="needs-codes" variant="button" projectId={project.id} items={needsCodes} costCodes={codeChoices} rules={codeRules} />}
       projectId={project.id}
@@ -246,8 +304,28 @@ export default async function PlanViewerPage({
                 : null
       }
       pageNumber={pageNumber}
-      sheet={sheet ? { id: sheet.id, name: sheet.name, unitsPerFoot: sheet.unitsPerFoot, scaleLabel: sheet.scaleLabel, prevSheetId: sheet.prevSheetId, align: sheet.align, upperFloor: sheet.upperFloor } : null}
-      sheets={plan.sheets.map((s) => ({ id: s.id, prevSheetId: s.prevSheetId, pageNumber: s.pageNumber, name: s.name, scaled: !!s.unitsPerFoot, unitsPerFoot: s.unitsPerFoot, count: s._count.measurements }))}
+      sheet={
+        sheet
+          ? {
+              id: sheet.id,
+              name: sheet.name,
+              unitsPerFoot: sheet.unitsPerFoot,
+              scaleLabel: sheet.scaleLabel,
+              prevSheetId: sheet.prevSheetId,
+              align: sheet.align,
+              upperFloor: sheet.upperFloor,
+            }
+          : null
+      }
+      sheets={plan.sheets.map((s) => ({
+        id: s.id,
+        prevSheetId: s.prevSheetId,
+        pageNumber: s.pageNumber,
+        name: s.name,
+        scaled: !!s.unitsPerFoot,
+        unitsPerFoot: s.unitsPerFoot,
+        count: s._count.measurements,
+      }))}
       countMarkers={conditions
         .filter((c) => isCountType(c.type))
         .flatMap((c) =>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { X } from "lucide-react";
+import { Pencil, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { actionMessage } from "@/lib/action-message";
 import { MAX_LINES, WINDOW_COLORS, WINDOW_TYPES, sizeCode, type WindowColor, type WindowDetail } from "@/lib/window-list";
@@ -22,6 +22,7 @@ export function WindowListPanel({
   onPick,
   onAdd,
   onSet,
+  onRemove,
   onAddDetail,
   onRemoveDetail,
   compact,
@@ -37,8 +38,12 @@ export function WindowListPanel({
     type: string;
     color: string;
     values: Record<string, string>;
+    /** Editing a line: the window it was (its placed windows change with it). */
+    replace?: string | null;
   }) => Promise<{ ok: true; lines: JobWindowLine[] } | { ok: false; error: string }>;
   onSet: (change: { lines?: string[] }) => Promise<unknown>;
+  /** × on a line with windows placed: asks, takes them off the plan, and the line off the list. */
+  onRemove?: (line: JobWindowLine, placed: number) => void;
   /** A new detail for every window (the company's list); hands back the list. */
   onAddDetail?: (d: { name: string; kind: string }) => Promise<{ ok: true; details: WindowDetail[] } | { ok: false; error: string }>;
   /** Takes a detail off every window (the company's list). */
@@ -58,20 +63,42 @@ export function WindowListPanel({
   const [error, setError] = useState<string | null>(null);
   const [busy, start] = useTransition();
   const color: WindowColor = lineColor ?? lines[lines.length - 1]?.color ?? "Standard";
+  // ✎ on a line: the form below holds that window, to change — every one placed follows.
+  const [editing, setEditing] = useState<JobWindowLine | null>(null);
+
+  const startEdit = (l: JobWindowLine) => {
+    setEditing(l);
+    setError(null);
+    setSize(sizeCode(l.widthIn, l.heightIn));
+    const t = l.style ?? WINDOW_TYPES[0];
+    setType(t);
+    setOtherType(!WINDOW_TYPES.includes(t) && !usedTypes.includes(t));
+    setLineColor(l.color);
+    setValues({ ...l.details });
+  };
+  const stopEdit = () => {
+    setEditing(null);
+    setSize("");
+    setValues({});
+    setOtherType(false);
+    setType(WINDOW_TYPES[0]);
+  };
 
   const add = () =>
     start(async () => {
       setError(null);
       try {
-        const r = await onAdd({ size, type, color, values });
+        const r = await onAdd({ size, type, color, values, replace: editing?.id ?? null });
         if (!r.ok) return setError(r.error);
-        setSize("");
-        setValues({});
-        setOtherType(false);
-        const added = r.lines.find((l) => !lines.some((x) => x.id === l.id)) ?? r.lines[r.lines.length - 1];
+        const was = editing;
+        stopEdit();
+        // The changed line sits where the old one was.
+        const added = was
+          ? (r.lines[lines.findIndex((x) => x.id === was.id)] ?? r.lines[r.lines.length - 1])
+          : (r.lines.find((l) => !lines.some((x) => x.id === l.id)) ?? r.lines[r.lines.length - 1]);
         if (added) onPick(added.id);
       } catch (e) {
-        setError(actionMessage(e, "The window wasn't added"));
+        setError(actionMessage(e, editing ? "The window wasn't changed" : "The window wasn't added"));
       }
     });
 
@@ -112,22 +139,45 @@ export function WindowListPanel({
                     {extra.length ? <span className="text-slate-500"> · {extra.join(" · ")}</span> : null}
                   </span>
                   <span
-                    className={cn("shrink-0 rounded-full px-1.5 text-[10px] font-medium", l.color === "Standard" ? "bg-slate-100 text-slate-600" : "bg-slate-900 text-white")}
+                    className={cn(
+                      "shrink-0 rounded-full px-1.5 text-[10px] font-medium",
+                      l.color === "Standard" ? "bg-slate-100 text-slate-600" : "bg-slate-900 text-white",
+                    )}
                   >
                     {l.color}
                   </span>
                   <span className="w-6 shrink-0 text-right tabular-nums text-slate-500">{counts[l.id] ?? 0}</span>
                 </button>
-                {!compact && !(counts[l.id] ?? 0) ? (
-                  <button
-                    type="button"
-                    className="shrink-0 rounded p-0.5 text-slate-300 opacity-0 hover:text-slate-600 group-hover:opacity-100"
-                    title="Take it off this job's list (it stays on the Item List)"
-                    aria-label={`Take ${l.name} off the list`}
-                    onClick={() => void onSet({ lines: lines.filter((x) => x.id !== l.id).map((x) => x.id) })}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                {!compact ? (
+                  <>
+                    <button
+                      type="button"
+                      className={cn("shrink-0 rounded p-0.5 hover:text-slate-700", editing?.id === l.id ? "text-blue-700" : "text-slate-400")}
+                      title="Change this window — every one placed on the job changes with it"
+                      aria-label={`Change ${l.name}`}
+                      onClick={() => (editing?.id === l.id ? stopEdit() : startEdit(l))}
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded p-0.5 text-slate-400 hover:text-rose-600"
+                      title={
+                        (counts[l.id] ?? 0)
+                          ? "Take it off the list — and its windows off the plan (asks first)"
+                          : "Take it off this job's list (it stays on the Item List)"
+                      }
+                      aria-label={`Take ${l.name} off the list`}
+                      onClick={() => {
+                        if (editing?.id === l.id) stopEdit();
+                        const placed = counts[l.id] ?? 0;
+                        if (placed && onRemove) onRemove(l, placed);
+                        else void onSet({ lines: lines.filter((x) => x.id !== l.id).map((x) => x.id) });
+                      }}
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </>
                 ) : null}
               </div>
             );
@@ -136,8 +186,13 @@ export function WindowListPanel({
       ) : (
         <p className="text-slate-500">No windows on this job yet — add the first one below.</p>
       )}
-      {!compact && lines.length < MAX_LINES ? (
-        <div className="space-y-1.5 rounded-md border border-dashed border-slate-300 p-1.5">
+      {!compact && (editing || lines.length < MAX_LINES) ? (
+        <div className={cn("space-y-1.5 rounded-md border p-1.5", editing ? "border-blue-300 bg-blue-50/40" : "border-dashed border-slate-300")}>
+          {editing ? (
+            <p className="text-[11px] font-medium text-blue-900">
+              Changing {editing.name} — {counts[editing.id] ?? 0} placed on this job change with it.
+            </p>
+          ) : null}
           <div className="flex items-center gap-1.5">
             <input
               className="input !h-7 !w-16 !px-1.5 !py-0 text-xs"
@@ -309,14 +364,21 @@ export function WindowListPanel({
               <p className="w-full text-[11px] text-slate-500">For every window from now on (Settings → Windows to change).</p>
             </div>
           ) : null}
-          <button
-            type="button"
-            disabled={busy || !size.trim()}
-            className="w-full rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
-            onClick={add}
-          >
-            {busy ? "Adding…" : "Add window"}
-          </button>
+          <div className="flex gap-1.5">
+            <button
+              type="button"
+              disabled={busy || !size.trim()}
+              className="flex-1 rounded-md bg-slate-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-40"
+              onClick={add}
+            >
+              {busy ? (editing ? "Saving…" : "Adding…") : editing ? "Save changes" : "Add window"}
+            </button>
+            {editing ? (
+              <button type="button" className="rounded-md px-2 py-1 text-xs text-slate-600 hover:bg-slate-100" onClick={stopEdit}>
+                Cancel
+              </button>
+            ) : null}
+          </div>
         </div>
       ) : null}
       {error ? <p className="text-rose-700">{error}</p> : null}

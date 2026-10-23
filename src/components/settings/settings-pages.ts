@@ -1,5 +1,6 @@
 import {
   AppWindow,
+  DoorOpen,
   Briefcase,
   Building2,
   CalendarDays,
@@ -68,6 +69,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { href: "/settings/items", label: "Item List", about: "What you buy: prices, units, waste, cost codes", icon: Package },
       { href: "/settings/member-sizes", label: "Member sizes", about: "Lumber sizes and the lengths you buy", icon: Ruler },
       { href: "/settings/windows", label: "Windows", about: "What every window has: size, type, color, and your own details", icon: AppWindow },
+      { href: "/settings/doors", label: "Doors", about: "What every door has: size, int / ext, type, jamb, core, and your own details", icon: DoorOpen },
       { href: "/settings/span-tables", label: "Span tables", about: "How far each size can span", icon: Table2 },
       { href: "/settings/takeoff-templates", label: "Takeoff templates", about: "Your takeoff library", icon: Copy },
     ],

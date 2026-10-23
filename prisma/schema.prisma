@@ -47,6 +47,9 @@ model Company {
   // Windows: more details every window has, past size, type and black (Settings → Windows):
   // JSON [{ "name": "Grids", "kind": "yesno" | "text" }]; null = none.
   windowDetails       String?
+  // Doors: more details every door has, past size, jamb, int/ext, type and core (Settings → Doors):
+  // JSON [{ "name": "Door Swing", "kind": "yesno" | "text" }]; null = none.
+  doorDetails         String?
   // Your default Markup, Margin & Tax table for new estimates (JSON).
   markupTable         String?
   // The days you work, 0 = Sunday … 6 = Saturday ("1,2,3,4,5" = Monday–Friday). Schedules count these.
@@ -234,6 +237,8 @@ model Project {
   // The job's windows (Windows takeoff): JSON { "lines": ["<materialItemId>", …] } — the short list
   // you pick from (keys 1–9), in order. Null = not set up.
   windowList        String?
+  // The job's doors (Doors takeoff): JSON { "lines": ["<materialItemId>", …] }, like windowList.
+  doorList          String?
   // "Pull from JT&I's inventory before ordering?" — YES / NO once answered (null = not asked yet).
   inventoryAnswer   String?
   // A spec house: built to sell, no client (Spec homes, the job's Spec sale tab).

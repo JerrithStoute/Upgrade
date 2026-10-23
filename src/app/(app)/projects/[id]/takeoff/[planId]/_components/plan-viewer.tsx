@@ -116,8 +116,10 @@ import { findDimensions } from "@/lib/room-detect";
 import { buildSnapIndex, findSnap, type SnapHit } from "./snap";
 import { ConditionDrawer, type DrawerCondition } from "./condition-drawer";
 import { TotalsPanel, type PanelView, type TotalsPanelData } from "./totals-panel";
-import { DoorPicker, type DoorChoice, type NewUnit, type UnitCodes } from "./door-picker";
+import type { DoorChoice, UnitCodes } from "./door-picker";
 import { WindowListPanel } from "./window-list-panel";
+import { DoorListPanel } from "./door-list-panel";
+import type { DoorDetail } from "@/lib/door-list";
 import { sizeCode, type WindowDetail } from "@/lib/window-list";
 import type { CodeRules } from "@/lib/code-groups";
 import type { MemberSizeOption } from "../../_components/condition-form";
@@ -134,11 +136,16 @@ import {
   addWindowDetailHere,
   removeWindowDetailHere,
   type JobWindowLine,
+  addJobDoor,
+  setJobDoors,
+  addDoorDetailHere,
+  removeDoorDetailHere,
+  removeJobUnitLine,
+  type JobDoorLine,
   createShapes,
   deleteMeasurement,
   initPlanPages,
   quickCreateCondition,
-  createDoorItem,
   renameSheet,
   setSheetScale,
   updateMeasurement,
@@ -340,7 +347,14 @@ type HistoryEntry =
   | { kind: "delete"; id: string; data: ShapeData }
   | { kind: "update"; id: string; before: ShapePatch; after: ShapePatch }
   // Auto-count: many markers added at once, undone together.
-  | { kind: "createMany"; ids: string[]; conditionId: string; markers: { sheetId: string; x: number; y: number }[]; materialItemId: string | null; cased: boolean | null }
+  | {
+      kind: "createMany";
+      ids: string[];
+      conditionId: string;
+      markers: { sheetId: string; x: number; y: number }[];
+      materialItemId: string | null;
+      cased: boolean | null;
+    }
   // Many shapes deleted (drag-selected, a cleared takeoff) or changed at once, undone together.
   | { kind: "deleteMany"; label: string; ids: string[]; data: ShapeData[] }
   // Many shapes added at once (Find walls), undone together.
@@ -482,7 +496,7 @@ export function PlanViewer({
   doors,
   windows,
   jobWindows,
-  codes,
+  jobDoors,
   codeAlert,
   countMarkers,
   revision,
@@ -540,6 +554,8 @@ export function PlanViewer({
   windows: DoorChoice[];
   /** The job's windows: its short list to pick from (keys 1–9), the company's details, how many of each. */
   jobWindows: { details: WindowDetail[]; counts: Record<string, number>; lines: JobWindowLine[] };
+  /** The job's doors (Doors takeoff), like its windows. */
+  jobDoors: { details: DoorDetail[]; counts: Record<string, number>; lines: JobDoorLine[] };
   /** Cost codes and the remembered "same code for all …" answers, for new doors / windows. */
   codes: UnitCodes;
   /** "3 items need a cost code" — floats over the plan's corner when there are any. */
@@ -618,7 +634,7 @@ export function PlanViewer({
     setWinList({ lines: jobWindows.lines });
   }
   const winLineNo = new Map(winList.lines.map((l, i) => [l.id, i + 1]));
-  const addWindow = async (w: { size: string; type: string; color: string; values: Record<string, string> }) => {
+  const addWindow = async (w: { size: string; type: string; color: string; values: Record<string, string>; replace?: string | null }) => {
     const r = await addJobWindow({ projectId, ...w });
     if (r.ok) {
       setWinList({ lines: r.lines });
@@ -657,6 +673,85 @@ export function PlanViewer({
   };
   const [windowBids, setWindowBids] = useState(false);
   const [windowBidsMin, setWindowBidsMin] = useState(false);
+  // The job's door list and the company's door details — the same way as windows.
+  const [doorList, setDoorList] = useState({ lines: jobDoors.lines });
+  const [doorFrom, setDoorFrom] = useState(jobDoors);
+  if (doorFrom !== jobDoors) {
+    setDoorFrom(jobDoors);
+    setDoorList({ lines: jobDoors.lines });
+  }
+  const doorLineNo = new Map(doorList.lines.map((l, i) => [l.id, i + 1]));
+  const addDoor = async (d: {
+    size: string;
+    exterior: boolean;
+    type: string;
+    jamb: string;
+    core: string;
+    values: Record<string, string>;
+    replace?: string | null;
+  }) => {
+    const r = await addJobDoor({ projectId, ...d });
+    if (r.ok) {
+      setDoorList({ lines: r.lines });
+      router.refresh();
+    }
+    return r;
+  };
+  const setDoors = async (change: { lines?: string[] }) => {
+    if (change.lines) setDoorList((w) => ({ ...w, lines: change.lines!.map((id) => w.lines.find((l) => l.id === id)!).filter(Boolean) }));
+    try {
+      await setJobDoors({ projectId, ...change });
+    } catch (e) {
+      setError(actionMessage(e, "The door list wasn't saved"));
+    }
+  };
+  const [doorDetails, setDoorDetails] = useState(jobDoors.details);
+  const [doorDetailsFrom, setDoorDetailsFrom] = useState(jobDoors.details);
+  if (doorDetailsFrom !== jobDoors.details) {
+    setDoorDetailsFrom(jobDoors.details);
+    setDoorDetails(jobDoors.details);
+  }
+  const addDoorDetail = async (d: { name: string; kind: string }) => {
+    const r = await addDoorDetailHere(d);
+    if (r.ok) setDoorDetails(r.details);
+    return r;
+  };
+  const removeDoorDetail = async (name: string) => {
+    setDoorDetails((list) => list.filter((d) => d.name !== name));
+    try {
+      const r = await removeDoorDetailHere({ name });
+      if (r.ok) setDoorDetails(r.details);
+    } catch (e) {
+      setError(actionMessage(e, "The detail wasn't removed"));
+    }
+  };
+  const removeUnitLine = (kind: "door" | "window") => (line: { id: string; name: string }, placed: number) => {
+    const type = kind === "window" ? "WINDOW" : "DOOR";
+    const here = shapes.filter((m) => m.materialItemId === line.id && condById.get(m.conditionId)?.type === type && !m.pending).map((m) => m.id);
+    const elsewhere = placed - here.length;
+    if (
+      !window.confirm(
+        `Take ${line.name} off the list, and its ${placed} ${kind}${placed === 1 ? "" : "s"} off the plan?` +
+          (elsewhere > 0 ? ` (${elsewhere} on other sheets can't be brought back with Ctrl+Z.)` : " Ctrl+Z brings them back."),
+      )
+    )
+      return;
+    if (here.length) removeMany(here);
+    startTransition(async () => {
+      try {
+        const r = await removeJobUnitLine({ projectId, kind, id: line.id, except: here });
+        if (r.ok) {
+          if (kind === "window") setWinList({ lines: r.lines as JobWindowLine[] });
+          else setDoorList({ lines: r.lines as JobDoorLine[] });
+        }
+        router.refresh();
+      } catch (e) {
+        setError(actionMessage(e, `The ${kind} wasn't taken off`));
+      }
+    });
+  };
+  const [doorBids, setDoorBids] = useState(false);
+  const [doorBidsMin, setDoorBidsMin] = useState(false);
   // Doors: the door the next click places, per Doors takeoff (starts as the last one used there).
   const [doorPick, setDoorPick] = useState<Record<string, string | null>>(() => {
     const last: Record<string, string | null> = {};
@@ -867,7 +962,14 @@ export function PlanViewer({
     } catch {}
   };
   const [upperPicking, setUpperPicking] = useState(false);
-  const [upperPlacing, setUpperPlacing] = useState<{ sourceSheetId: string; walls: Pt[][]; scale: number; turns: number; align: Align; snapped: Pt | null } | null>(null);
+  const [upperPlacing, setUpperPlacing] = useState<{
+    sourceSheetId: string;
+    walls: Pt[][];
+    scale: number;
+    turns: number;
+    align: Align;
+    snapped: Pt | null;
+  } | null>(null);
 
   // The Takeoff tab opens the sheet you were last on (per job).
   useEffect(() => {
@@ -909,7 +1011,10 @@ export function PlanViewer({
 
   const condById = useMemo(() => new Map(conditions.map((c) => [c.id, c])), [conditions]);
   // This floor's traced walls (the floor above snaps to them), and the floor above where it sits.
-  const thisFloorWalls = useMemo(() => measurements.filter((m) => condById.get(m.conditionId)?.type === "WALL").map((m) => m.points as Pt[]), [measurements, condById]);
+  const thisFloorWalls = useMemo(
+    () => measurements.filter((m) => condById.get(m.conditionId)?.type === "WALL").map((m) => m.points as Pt[]),
+    [measurements, condById],
+  );
   const upperWalls = upper && upperShown ? placedWalls(upper.walls as Pt[][], upper.align) : null;
   const startUpperPlacing = (sourceSheetId: string, walls: Pt[][], scale: number, at: Pt | null) => {
     resetDraft();
@@ -918,7 +1023,9 @@ export function PlanViewer({
     setUpperPlacing({ sourceSheetId, walls, scale, turns: 0, align: placement(walls, scale, 0, at ?? pointerPage.current ?? middleOf(walls)), snapped: null });
   };
   const turnUpper = () =>
-    setUpperPlacing((u) => u && { ...u, turns: u.turns + 1, snapped: null, align: placement(u.walls, u.scale, u.turns + 1, applyAlign(u.align, middleOf(u.walls))) });
+    setUpperPlacing(
+      (u) => u && { ...u, turns: u.turns + 1, snapped: null, align: placement(u.walls, u.scale, u.turns + 1, applyAlign(u.align, middleOf(u.walls))) },
+    );
   const saveUpper = (value: UpperFloor | null) => {
     if (!sheet) return;
     const id = sheet.id;
@@ -950,7 +1057,14 @@ export function PlanViewer({
     resetDraft();
     setSelectedId(null);
     const turns = Math.round(alignAngle(upper.align) / (Math.PI / 2));
-    setUpperPlacing({ sourceSheetId: upper.sourceSheetId, walls: upper.walls as Pt[][], scale: alignScale(upper.align), turns, align: upper.align, snapped: null });
+    setUpperPlacing({
+      sourceSheetId: upper.sourceSheetId,
+      walls: upper.walls as Pt[][],
+      scale: alignScale(upper.align),
+      turns,
+      align: upper.align,
+      snapped: null,
+    });
   };
 
   // The takeoff list's order: a dragged takeoff shows in its new place right away; the
@@ -1010,6 +1124,18 @@ export function PlanViewer({
     [measurements, pending, removing, drag, overrides, sheet?.id],
   );
   const selected = shapes.find((m) => m.id === selectedId) ?? null;
+
+  // How many of each window / door the job has — the page's count for every sheet, with this sheet's
+  // own count swapped for what's on it now (placed or deleted since the page loaded).
+  const liveCounts = (type: "DOOR" | "WINDOW", server: Record<string, number>) => {
+    const out = { ...server };
+    const isType = (m: { conditionId: string }) => condById.get(m.conditionId)?.type === type;
+    for (const m of measurements) if (m.materialItemId && isType(m)) out[m.materialItemId] = (out[m.materialItemId] ?? 0) - 1;
+    for (const m of shapes) if (m.materialItemId && isType(m)) out[m.materialItemId] = (out[m.materialItemId] ?? 0) + 1;
+    return out;
+  };
+  const winCounts = liveCounts("WINDOW", jobWindows.counts);
+  const doorCounts = liveCounts("DOOR", jobDoors.counts);
 
   // The takeoff list: the takeoffs used on this page (plus the one you're measuring with and any
   // you just picked); "Show all" lists the whole job. A span-table family shows together.
@@ -1759,7 +1885,10 @@ export function PlanViewer({
           // Below the slider's lowest setting: not the symbol.
           found = looks.filter((m) => m.score >= 0.45);
         }
-        results[page] = { sheetId, matches: found.map((m) => ({ x: m.x / pic.scale, y: m.y / pic.scale, w: m.w / pic.scale, h: m.h / pic.scale, score: m.score })) };
+        results[page] = {
+          sheetId,
+          matches: found.map((m) => ({ x: m.x / pic.scale, y: m.y / pic.scale, w: m.w / pic.scale, h: m.h / pic.scale, score: m.score })),
+        };
         setAuto((a) => a && { ...a, sample: sampleInfo, results: { ...results }, progress: (i + 1) / pages.length });
       }
       if (!ctl.signal.aborted) setAuto((a) => a && { ...a, status: "done", sample: sampleInfo });
@@ -1853,7 +1982,12 @@ export function PlanViewer({
           const pad = isCountType(c.type) ? 10 : 4;
           const xs = m.points.map((q) => q[0]);
           const ys = m.points.map((q) => q[1]);
-          const box = { x: Math.min(...xs) - pad, y: Math.min(...ys) - pad, w: Math.max(...xs) - Math.min(...xs) + 2 * pad, h: Math.max(...ys) - Math.min(...ys) + 2 * pad };
+          const box = {
+            x: Math.min(...xs) - pad,
+            y: Math.min(...ys) - pad,
+            w: Math.max(...xs) - Math.min(...xs) + 2 * pad,
+            h: Math.max(...ys) - Math.min(...ys) + 2 * pad,
+          };
           return diff.changedIn(box.x, box.y, box.w, box.h) > 6 ? [{ m, c, box }] : [];
         })
       : [];
@@ -1904,7 +2038,8 @@ export function PlanViewer({
         }
         if (entry.kind === "replace") {
           // Undo: the new shapes go, the old one comes back. Redo: the other way.
-          const [goIds, back, backIds] = direction === "undo" ? [entry.addedIds, entry.removed, entry.removedIds] : [entry.removedIds, entry.added, entry.addedIds];
+          const [goIds, back, backIds] =
+            direction === "undo" ? [entry.addedIds, entry.removed, entry.removedIds] : [entry.removedIds, entry.added, entry.addedIds];
           await deleteMeasurements({ projectId, ids: goIds.map(resolveId) });
           const { ids } = await createShapes({ projectId, shapes: back });
           backIds.forEach((old, i) => idMap.current.set(resolveId(old), ids[i]));
@@ -1933,7 +2068,9 @@ export function PlanViewer({
             ...(direction === "undo" ? entry.before : entry.after),
           });
         (direction === "undo" ? history.current.redo : history.current.undo).push(entry);
-        setFlash(`${direction === "undo" ? "Undid" : "Redid"} ${entry.kind === "create" ? "adding a shape" : entry.kind === "delete" ? "a delete" : "an edit"}`);
+        setFlash(
+          `${direction === "undo" ? "Undid" : "Redid"} ${entry.kind === "create" ? "adding a shape" : entry.kind === "delete" ? "a delete" : "an edit"}`,
+        );
       } catch (e) {
         setError(actionMessage(e, `Could not ${direction}`));
       } finally {
@@ -2085,9 +2222,14 @@ export function PlanViewer({
       } else if ((e.key === "m" || e.key === "M") && active) {
         setTool("measure");
         setHidden((h) => (h.has(active.id) ? new Set([...h].filter((x) => x !== active.id)) : h));
-      } else if (e.type === "keydown" && /^[1-9]$/.test(e.key) && active?.type === "WINDOW" && winList.lines[Number(e.key) - 1]) {
-        // Windows: its number on the job's list picks it (then click the plan).
-        const id = winList.lines[Number(e.key) - 1].id;
+      } else if (
+        e.type === "keydown" &&
+        /^[1-9]$/.test(e.key) &&
+        (active?.type === "WINDOW" || active?.type === "DOOR") &&
+        (active.type === "WINDOW" ? winList : doorList).lines[Number(e.key) - 1]
+      ) {
+        // Windows and doors: its number on the job's list picks it (then click the plan).
+        const id = (active.type === "WINDOW" ? winList : doorList).lines[Number(e.key) - 1].id;
         setDoorPick((cur) => ({ ...cur, [active.id]: id }));
         if (tool !== "measure") setTool("measure");
       } else if (e.key === "d" || e.key === "D") {
@@ -2106,7 +2248,24 @@ export function PlanViewer({
     };
     // The edit helpers (runHistory, copy/paste) are recreated each render; listening with the latest is intended.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft, selectedId, selected, multi, finishDraft, removeShape, active, zoom, zoomAt, dirFor, finishDirection, tool, upperPlacing, upperPicking, winList]);
+  }, [
+    draft,
+    selectedId,
+    selected,
+    multi,
+    finishDraft,
+    removeShape,
+    active,
+    zoom,
+    zoomAt,
+    dirFor,
+    finishDirection,
+    tool,
+    upperPlacing,
+    upperPicking,
+    winList,
+    doorList,
+  ]);
 
   // --- Framing direction chooser ---------------------------------------------------------
   // The outline being aimed, its default direction, and what the preview shows right now.
@@ -2397,7 +2556,8 @@ export function PlanViewer({
       // One click on a wall: the wall finder follows the connected walls as thick (wall-detect).
       if (!active || !sheet) return;
       if (!unitsPerFoot) return setError("Set this sheet's scale before finding walls.");
-      if (!vectors || !vectors.length) return setError("This sheet has no line work to read (a scanned plan?) — walls can't be found here. Trace them with Measure.");
+      if (!vectors || !vectors.length)
+        return setError("This sheet has no line work to read (a scanned plan?) — walls can't be found here. Trace them with Measure.");
       const r = findWalls(vectors, toPage(e.clientX, e.clientY), { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom });
       if (!r.ok) {
         return setError(
@@ -2417,7 +2577,8 @@ export function PlanViewer({
       // Drawn a different size than this takeoff (2x6 walls, a 2x4 takeoff): said, so it can be undone.
       const drawnAs = drawnStud(r.thicknessIn);
       const takeoffStud = active.memberSize?.match(/2\s*x\s*(4|6|8|10|12)/i)?.[1];
-      const mismatch = drawnAs && takeoffStud && drawnAs !== `2x${takeoffStud}` ? ` — drawn like ${drawnAs}, this takeoff is ${active.memberSize}. Wrong takeoff? Ctrl+Z` : "";
+      const mismatch =
+        drawnAs && takeoffStud && drawnAs !== `2x${takeoffStud}` ? ` — drawn like ${drawnAs}, this takeoff is ${active.memberSize}. Wrong takeoff? Ctrl+Z` : "";
       setFlash(`Added ${r.runs.length} ${r.kind} wall${r.runs.length === 1 ? "" : "s"} · ${num(r.lengthFt)} lf${mismatch}`);
       return;
     }
@@ -2425,7 +2586,8 @@ export function PlanViewer({
       // One click in a room: its floor, to the inside of the walls, added right away (room-detect).
       if (!active || !sheet) return;
       if (!unitsPerFoot) return setError("Set this sheet's scale before finding areas.");
-      if (!vectors || !vectors.length) return setError("This sheet has no line work to read (a scanned plan?) — areas can't be found here. Trace them with Measure.");
+      if (!vectors || !vectors.length)
+        return setError("This sheet has no line work to read (a scanned plan?) — areas can't be found here. Trace them with Measure.");
       const click = toPage(e.clientX, e.clientY);
       const t0 = performance.now();
       const forSheet = sheet.id;
@@ -2442,7 +2604,16 @@ export function PlanViewer({
           // (Moved on to another sheet meanwhile: nothing's added to the wrong one.)
           if (sheetIdRef.current !== forSheet) return;
           // Saved quietly, to improve the room finder from real use (AreaFindLog).
-          const log = { projectId, sheetId: forSheet, conditionId: cond.id, click, unitsPerFoot, version: ROOM_DETECT_VERSION, ms: performance.now() - t0, isDeduction };
+          const log = {
+            projectId,
+            sheetId: forSheet,
+            conditionId: cond.id,
+            click,
+            unitsPerFoot,
+            version: ROOM_DETECT_VERSION,
+            ms: performance.now() - t0,
+            isDeduction,
+          };
           if (!r.ok) {
             if (r.reason === "unreadable") setUnreadableSheet(vectors);
             void logAreaFind({ ...log, ok: false, reason: r.reason });
@@ -2459,7 +2630,11 @@ export function PlanViewer({
             );
           }
           setError(null);
-          createShape(shapeFor(cond, forSheet, r.outline), true, (id) => void logAreaFind({ ...log, ok: true, areaSf: r.areaSf, outline: r.outline, measurementId: id }));
+          createShape(
+            shapeFor(cond, forSheet, r.outline),
+            true,
+            (id) => void logAreaFind({ ...log, ok: true, areaSf: r.areaSf, outline: r.outline, measurementId: id }),
+          );
           setFlash(`${isDeduction ? "Deducted" : "Added"} ${num(r.areaSf)} sf — Ctrl+Z to take it back; click it for ✂ Split`);
         });
       return;
@@ -2522,7 +2697,8 @@ export function PlanViewer({
   };
 
   /** The pointer is on the first point of an outline (or a wall run) being drawn: the next click closes it. */
-  const closingAt = (p: Pt) => tool === "measure" && !!active && (!isLineType(active.type) || active.type === "WALL") && draft.length >= 3 && dist(p, draft[0]) * zoom <= CLOSE_PX;
+  const closingAt = (p: Pt) =>
+    tool === "measure" && !!active && (!isLineType(active.type) || active.type === "WALL") && draft.length >= 3 && dist(p, draft[0]) * zoom <= CLOSE_PX;
   const willClose = !!cursor && closingAt(cursor);
 
   // --- Scale ------------------------------------------------------------------------------
@@ -2549,8 +2725,15 @@ export function PlanViewer({
   const calibLength = (Number(calibFeet) || 0) + (Number(calibInches) || 0) / 12;
   // Measuring (or finding walls) on a sheet with no scale: stop and ask first — nothing drawn would
   // get a length or area. Counts, doors and windows don't need one. "Draw anyway" lets you go on.
-  const needsScale = !!sheet && !unitsPerFoot && !!active && !isCountType(active.type) && (tool === "measure" || tool === "findwalls" || tool === "findarea") && !scaleSkipped.includes(sheet.id);
-  const presetValue = PRESET_SCALES.find((s) => sheet?.unitsPerFoot && Math.abs(s.paperInchesPerFoot * PDF_UNITS_PER_INCH - sheet.unitsPerFoot) < 1e-6)?.label ?? "";
+  const needsScale =
+    !!sheet &&
+    !unitsPerFoot &&
+    !!active &&
+    !isCountType(active.type) &&
+    (tool === "measure" || tool === "findwalls" || tool === "findarea") &&
+    !scaleSkipped.includes(sheet.id);
+  const presetValue =
+    PRESET_SCALES.find((s) => sheet?.unitsPerFoot && Math.abs(s.paperInchesPerFoot * PDF_UNITS_PER_INCH - sheet.unitsPerFoot) < 1e-6)?.label ?? "";
 
   // --- Live readout -----------------------------------------------------------------------
   const preview = draft.length && cursor ? [...draft, draftArcs.includes(draft.length - 1) ? cursor : snap(cursor, draft[draft.length - 1])] : draft;
@@ -2603,19 +2786,7 @@ export function PlanViewer({
   };
 
   const doorById = new Map([...doors, ...windows].map((d) => [d.id, d]));
-  /** Doors or windows to pick from for a Doors / Windows takeoff. */
-  const unitsFor = (type: string) => (type === "WINDOW" ? windows : doors);
   const unitKind = (type: string) => (type === "WINDOW" ? ("window" as const) : ("door" as const));
-  const addUnit = (kind: "door" | "window") => async (unit: NewUnit) => {
-    try {
-      const { id } = await createDoorItem({ ...unit, kind });
-      router.refresh();
-      return id;
-    } catch (e) {
-      setError(actionMessage(e, `Could not add the ${kind}`));
-      return null;
-    }
-  };
   const showTakeoff = (id: string) =>
     setHidden((h) => {
       if (!h.has(id)) return h;
@@ -2647,7 +2818,11 @@ export function PlanViewer({
     const a: Pt = [at[0] - dx * half, at[1] - dy * half];
     const b: Pt = [at[0] + dx * half, at[1] + dy * half];
     const tip = (p: Pt, s: number) =>
-      [[p[0] - s * dx * head + dy * head * 0.6, p[1] - s * dy * head - dx * head * 0.6], p, [p[0] - s * dx * head - dy * head * 0.6, p[1] - s * dy * head + dx * head * 0.6]]
+      [
+        [p[0] - s * dx * head + dy * head * 0.6, p[1] - s * dy * head - dx * head * 0.6],
+        p,
+        [p[0] - s * dx * head - dy * head * 0.6, p[1] - s * dy * head + dx * head * 0.6],
+      ]
         .map((q) => q.join(","))
         .join(" ");
     return (
@@ -2872,7 +3047,12 @@ export function PlanViewer({
       const o = condById.get(piece.owner) ?? c;
       const kind = (m.pitch ?? c.pitch) > 0 ? "rafter" : "joist";
       const boards = stockPieces(piece.length, parseStockLengths(o.stockLengths), o.soldAs);
-      const from = boards.length === 1 && Math.abs(boards[0] - piece.length) > 1e-6 ? ` · from a ${Number.isInteger(boards[0]) ? `${boards[0]}'` : feetInches(boards[0])}` : boards.length > 1 ? ` · ${boards.length} boards` : "";
+      const from =
+        boards.length === 1 && Math.abs(boards[0] - piece.length) > 1e-6
+          ? ` · from a ${Number.isInteger(boards[0]) ? `${boards[0]}'` : feetInches(boards[0])}`
+          : boards.length > 1
+            ? ` · ${boards.length} boards`
+            : "";
       return `${o.memberSize?.trim() || o.name} ${kind} · ${feetInches(piece.length)}${from}`;
     }
     if (c.type === "HIP_VALLEY") return `${c.memberSize?.trim() || c.name} · ${feetInches(hipLength(c, m, unitsPerFoot).length)} true length`;
@@ -2999,8 +3179,8 @@ export function PlanViewer({
             strokeDasharray={door ? undefined : "3 2"}
             {...stroke}
           />
-          {c.type === "WINDOW" && door && winLineNo.get(door.id) ? (
-            // Its number on the job's window list.
+          {(c.type === "WINDOW" ? winLineNo : doorLineNo).get(door?.id ?? "") ? (
+            // Its number on the job's window / door list.
             <text
               x={x}
               y={y}
@@ -3012,10 +3192,18 @@ export function PlanViewer({
               fill={m.cased === false ? color : "white"}
               pointerEvents="none"
             >
-              {winLineNo.get(door.id)}
+              {(c.type === "WINDOW" ? winLineNo : doorLineNo).get(door!.id)}
             </text>
           ) : c.type === "WINDOW" && door ? (
-            <line x1={x - px(isSel ? 9 : 7)} y1={y} x2={x + px(isSel ? 9 : 7)} y2={y} stroke={m.cased === false ? color : "white"} strokeWidth={2} {...stroke} />
+            <line
+              x1={x - px(isSel ? 9 : 7)}
+              y1={y}
+              x2={x + px(isSel ? 9 : 7)}
+              y2={y}
+              stroke={m.cased === false ? color : "white"}
+              strokeWidth={2}
+              {...stroke}
+            />
           ) : null}
           {showLabels ? (
             <text
@@ -3045,7 +3233,16 @@ export function PlanViewer({
       return (
         <g key={m.id} {...common}>
           <polyline points={d} fill="none" stroke="transparent" strokeWidth={16} {...stroke} />
-          <polyline points={d} fill="none" stroke={color} strokeOpacity={0.85} strokeWidth={isSel ? 5 : 3} strokeLinejoin="miter" strokeLinecap="square" {...stroke} />
+          <polyline
+            points={d}
+            fill="none"
+            stroke={color}
+            strokeOpacity={0.85}
+            strokeWidth={isSel ? 5 : 3}
+            strokeLinejoin="miter"
+            strokeLinecap="square"
+            {...stroke}
+          />
           {showLabels && unitsPerFoot && m.points.length >= 2 ? wallLabel(c, m, unitsPerFoot) : null}
         </g>
       );
@@ -3093,9 +3290,15 @@ export function PlanViewer({
           <polyline points={d} fill="none" stroke="transparent" strokeWidth={14} {...stroke} />
           <polyline points={d} fill="none" stroke={color} strokeWidth={isSel ? 6 : 4} strokeLinejoin="round" strokeLinecap="round" {...stroke} />
           {m.points.map((p, i) =>
-            i === 0 || i === m.points.length - 1 ? <circle key={i} cx={p[0]} cy={p[1]} r={px(3.5)} fill="white" stroke={color} strokeWidth={2} {...stroke} /> : null,
+            i === 0 || i === m.points.length - 1 ? (
+              <circle key={i} cx={p[0]} cy={p[1]} r={px(3.5)} fill="white" stroke={color} strokeWidth={2} {...stroke} />
+            ) : null,
           )}
-          {showLabels && unitsPerFoot && m.points.length >= 2 ? (c.type === "BEAM" ? alongLabel(c, m, beamLabel(c, m, unitsPerFoot)) : hipLabel(c, m, unitsPerFoot)) : null}
+          {showLabels && unitsPerFoot && m.points.length >= 2
+            ? c.type === "BEAM"
+              ? alongLabel(c, m, beamLabel(c, m, unitsPerFoot))
+              : hipLabel(c, m, unitsPerFoot)
+            : null}
         </g>
       );
     }
@@ -3181,7 +3384,9 @@ export function PlanViewer({
             <g clipPath={`url(#area-${m.id})`} pointerEvents="none">
               {pieceLines.map(({ key, owner: id, a, b }) => {
                 const owner = shownOwner(id);
-                return owner ? <line key={key} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeOpacity={0.16} strokeWidth={band} strokeLinecap="butt" /> : null;
+                return owner ? (
+                  <line key={key} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={owner.color} strokeOpacity={0.16} strokeWidth={band} strokeLinecap="butt" />
+                ) : null;
               })}
             </g>
           </>
@@ -3570,7 +3775,11 @@ export function PlanViewer({
             <Ruler className="h-3.5 w-3.5" /> Measure
           </ToolButton>
           {active && tool === "measure" && canArc(active.type) ? (
-            <ToolButton active={arcNext} onClick={() => setArcNext((v) => !v)} title="Arc (A) — the next click is a point on the curve, the click after is where it ends">
+            <ToolButton
+              active={arcNext}
+              onClick={() => setArcNext((v) => !v)}
+              title="Arc (A) — the next click is a point on the curve, the click after is where it ends"
+            >
               <Spline className="h-3.5 w-3.5" /> Arc
             </ToolButton>
           ) : null}
@@ -3628,7 +3837,11 @@ export function PlanViewer({
             </ToolButton>
           ) : null}
           {active && !superseded ? (
-            <ToolButton active={clearing} onClick={() => setClearing((v) => !v)} title={`Delete every measurement of ${active.name} (asks first; Ctrl+Z undoes)`}>
+            <ToolButton
+              active={clearing}
+              onClick={() => setClearing((v) => !v)}
+              title={`Delete every measurement of ${active.name} (asks first; Ctrl+Z undoes)`}
+            >
               <Eraser className="h-3.5 w-3.5" /> Clear takeoff
             </ToolButton>
           ) : null}
@@ -3694,10 +3907,18 @@ export function PlanViewer({
             <Printer className="h-3.5 w-3.5" /> Print
           </Link>
           <div className="mx-1 h-6 w-px bg-slate-200" />
-          <ToolButton active={panel === "totals"} onClick={() => togglePanel("totals")} title="Totals — each takeoff on this sheet and the whole job, updated as you measure">
+          <ToolButton
+            active={panel === "totals"}
+            onClick={() => togglePanel("totals")}
+            title="Totals — each takeoff on this sheet and the whole job, updated as you measure"
+          >
             <Sigma className="h-3.5 w-3.5" /> Totals
           </ToolButton>
-          <ToolButton active={panel === "materials"} onClick={() => togglePanel("materials")} title="Material list — everything the takeoff orders, updated as you measure">
+          <ToolButton
+            active={panel === "materials"}
+            onClick={() => togglePanel("materials")}
+            title="Material list — everything the takeoff orders, updated as you measure"
+          >
             <ClipboardList className="h-3.5 w-3.5" /> Material list
           </ToolButton>
           <TakeoffMenu
@@ -3766,24 +3987,24 @@ export function PlanViewer({
           </span>
         ) : tool === "findwalls" ? (
           <span>
-            <strong className="font-medium text-slate-800">Find walls{active ? ` · ${active.name}` : ""}:</strong> click a wall — it and the walls connected to it are added. Ctrl+Z
-            takes them back; pick one and Delete to drop it. Esc = stop.
+            <strong className="font-medium text-slate-800">Find walls{active ? ` · ${active.name}` : ""}:</strong> click a wall — it and the walls connected to
+            it are added. Ctrl+Z takes them back; pick one and Delete to drop it. Esc = stop.
           </span>
         ) : tool === "findarea" ? (
           <span>
-            <strong className="font-medium text-slate-800">Find area{active ? ` · ${active.name}` : ""}:</strong> click inside a room — its floor is added, to the inside of the walls.
-            Ctrl+Z takes it back. Two rooms came as one? Pick it, then ✂ Split. Esc = stop.
+            <strong className="font-medium text-slate-800">Find area{active ? ` · ${active.name}` : ""}:</strong> click inside a room — its floor is added, to
+            the inside of the walls. Ctrl+Z takes it back. Two rooms came as one? Pick it, then ✂ Split. Esc = stop.
             {sheetUnreadable ? <strong className="ml-1 text-amber-700">{UNREADABLE}</strong> : null}
           </span>
         ) : tool === "autocount" ? (
           <span>
-            <strong className="font-medium text-slate-800">Auto-count{active ? ` · ${active.name}` : ""}:</strong> drag a box around one symbol. Found ones show as dashed rings —
-            click a ring to leave it out, then Add. Esc = cancel.
+            <strong className="font-medium text-slate-800">Auto-count{active ? ` · ${active.name}` : ""}:</strong> drag a box around one symbol. Found ones show
+            as dashed rings — click a ring to leave it out, then Add. Esc = cancel.
           </span>
         ) : tool === "ruler" ? (
           <span>
-            <strong className="font-medium text-slate-800">Ruler:</strong> click two points to read the distance — nothing is saved. Click again to start a new one · Shift =
-            straight · Esc = clear.
+            <strong className="font-medium text-slate-800">Ruler:</strong> click two points to read the distance — nothing is saved. Click again to start a new
+            one · Shift = straight · Esc = clear.
             {!unitsPerFoot ? <strong className="ml-1 text-amber-700">Set the scale first.</strong> : null}
           </span>
         ) : tool === "calibrate" ? (
@@ -3920,7 +4141,11 @@ export function PlanViewer({
                           onClick={() => chooseFind(i)}
                           className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === findAt ? "bg-blue-50 text-blue-900" : "text-slate-700")}
                         >
-                          {color ? <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} /> : <Plus className="h-3 w-3 shrink-0 text-blue-700" />}
+                          {color ? (
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} />
+                          ) : (
+                            <Plus className="h-3 w-3 shrink-0 text-blue-700" />
+                          )}
                           <span className="min-w-0 flex-1 truncate">{o.kind === "job" ? o.c.name : `New "${newCondName.trim()}"`}</span>
                           <span className="shrink-0 text-[10px] text-slate-400">
                             {o.kind === "job" ? (CONDITION_TYPE_LABELS[o.c.type as ConditionType] ?? o.c.type) : CONDITION_TYPE_LABELS[newCondType]}
@@ -3933,7 +4158,12 @@ export function PlanViewer({
               ) : null}
             </div>
             <div className="flex gap-2">
-              <select value={newCondType} onChange={(e) => setNewCondType(e.target.value as ConditionType)} className="input !py-1.5 text-xs" aria-label="New takeoff type">
+              <select
+                value={newCondType}
+                onChange={(e) => setNewCondType(e.target.value as ConditionType)}
+                className="input !py-1.5 text-xs"
+                aria-label="New takeoff type"
+              >
                 {CONDITION_TYPES.map((t) => (
                   <option key={t} value={t}>
                     {CONDITION_TYPE_LABELS[t]}
@@ -3944,7 +4174,14 @@ export function PlanViewer({
                 <Plus className="h-3.5 w-3.5" /> Add
               </Button>
             </div>
-            <Button type="button" size="sm" variant="secondary" className="w-full" onClick={() => setLibraryOpen(true)} title="Pull takeoffs from your templates onto this job">
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="w-full"
+              onClick={() => setLibraryOpen(true)}
+              title="Pull takeoffs from your templates onto this job"
+            >
               <Library className="h-3.5 w-3.5" /> Library{library.length ? ` (${library.length})` : ""}
             </Button>
           </form>
@@ -3991,7 +4228,9 @@ export function PlanViewer({
             ) : null}
           </div>
           <ul className="min-h-0 flex-1 overflow-y-auto">
-            {conditions.length === 0 ? <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — pull some from the Library or add one above.</li> : null}
+            {conditions.length === 0 ? (
+              <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — pull some from the Library or add one above.</li>
+            ) : null}
             {conditions.length > 0 && shownList.length === 0 ? (
               <li className="px-3 py-2 text-xs text-slate-500">
                 Nothing measured on this page yet — find a takeoff above (or pull one from the Library) and start measuring.
@@ -4080,7 +4319,10 @@ export function PlanViewer({
                         showTakeoff(c.id);
                       }
                     }}
-                    className={cn("flex cursor-pointer items-start gap-2 border-l-4 px-3 py-2 hover:bg-slate-50", isActive ? "bg-blue-50/60" : "border-transparent")}
+                    className={cn(
+                      "flex cursor-pointer items-start gap-2 border-l-4 px-3 py-2 hover:bg-slate-50",
+                      isActive ? "bg-blue-50/60" : "border-transparent",
+                    )}
                     style={isActive ? { borderLeftColor: c.color } : undefined}
                   >
                     <span
@@ -4189,7 +4431,9 @@ export function PlanViewer({
                       </p>
                       <p>
                         Cost <strong className="tabular-nums text-slate-900">{money(info.cost)}</strong>
-                        {info.unscaled ? <span className="block text-amber-700">{info.unscaled} shape(s) on sheets with no scale aren&apos;t counted</span> : null}
+                        {info.unscaled ? (
+                          <span className="block text-amber-700">{info.unscaled} shape(s) on sheets with no scale aren&apos;t counted</span>
+                        ) : null}
                       </p>
                       {info.lines.length ? (
                         <ul className="space-y-0.5 border-t border-slate-200 pt-1.5">
@@ -4405,19 +4649,33 @@ export function PlanViewer({
                         />
                       ))}
                       {aligning
-                        ? [...aligning.old.map((q, i) => ({ q, c: "#dc2626", n: i + 1 })), ...aligning.now.map((q, i) => ({ q, c: "#1d4ed8", n: i + 1 }))].map(({ q, c, n }) => (
-                            <g key={`${c}${n}`} pointerEvents="none">
-                              <circle cx={q[0]} cy={q[1]} r={7 / zoom} fill="none" stroke={c} strokeWidth={2 / zoom} />
-                              <path d={`M${q[0] - 11 / zoom} ${q[1]} H${q[0] + 11 / zoom} M${q[0]} ${q[1] - 11 / zoom} V${q[1] + 11 / zoom}`} stroke={c} strokeWidth={1.5 / zoom} />
-                              <text x={q[0] + 10 / zoom} y={q[1] - 10 / zoom} fontSize={12 / zoom} fontWeight={700} fill={c}>
-                                {n}
-                              </text>
-                            </g>
-                          ))
+                        ? [...aligning.old.map((q, i) => ({ q, c: "#dc2626", n: i + 1 })), ...aligning.now.map((q, i) => ({ q, c: "#1d4ed8", n: i + 1 }))].map(
+                            ({ q, c, n }) => (
+                              <g key={`${c}${n}`} pointerEvents="none">
+                                <circle cx={q[0]} cy={q[1]} r={7 / zoom} fill="none" stroke={c} strokeWidth={2 / zoom} />
+                                <path
+                                  d={`M${q[0] - 11 / zoom} ${q[1]} H${q[0] + 11 / zoom} M${q[0]} ${q[1] - 11 / zoom} V${q[1] + 11 / zoom}`}
+                                  stroke={c}
+                                  strokeWidth={1.5 / zoom}
+                                />
+                                <text x={q[0] + 10 / zoom} y={q[1] - 10 / zoom} fontSize={12 / zoom} fontWeight={700} fill={c}>
+                                  {n}
+                                </text>
+                              </g>
+                            ),
+                          )
                         : null}
                       {splitting?.a && cursor ? (
                         <g pointerEvents="none">
-                          <line x1={splitting.a[0]} y1={splitting.a[1]} x2={cursor[0]} y2={cursor[1]} stroke="#0f172a" strokeWidth={2 / zoom} strokeDasharray={`${6 / zoom} ${4 / zoom}`} />
+                          <line
+                            x1={splitting.a[0]}
+                            y1={splitting.a[1]}
+                            x2={cursor[0]}
+                            y2={cursor[1]}
+                            stroke="#0f172a"
+                            strokeWidth={2 / zoom}
+                            strokeDasharray={`${6 / zoom} ${4 / zoom}`}
+                          />
                           <circle cx={splitting.a[0]} cy={splitting.a[1]} r={4 / zoom} fill="#0f172a" />
                         </g>
                       ) : null}
@@ -4426,7 +4684,9 @@ export function PlanViewer({
                           rows={autoPlan.pages.find((pg) => pg.page === pageNumber)?.rows ?? []}
                           color={active!.color}
                           zoom={zoom}
-                          onToggle={(key) => setAuto((a) => a && { ...a, rejected: a.rejected.includes(key) ? a.rejected.filter((k) => k !== key) : [...a.rejected, key] })}
+                          onToggle={(key) =>
+                            setAuto((a) => a && { ...a, rejected: a.rejected.includes(key) ? a.rejected.filter((k) => k !== key) : [...a.rejected, key] })
+                          }
                         />
                       ) : null}
                       {autoOn && auto.sample && auto.sample.pageNumber === pageNumber ? (
@@ -4494,7 +4754,8 @@ export function PlanViewer({
                                 if (arcs.includes(i)) return patchShape(selected.id, { points: selected.points, arcs: arcs.filter((j) => j !== i) });
                                 const closed = !isLineType(c.type);
                                 const n = selected.points.length;
-                                if (i === 0 || (!closed && i === n - 1)) return setFlash("An end point can't be an arc point — pick a point between two others");
+                                if (i === 0 || (!closed && i === n - 1))
+                                  return setFlash("An end point can't be an arc point — pick a point between two others");
                                 if (arcs.includes(i - 1) || arcs.includes(closed ? (i + 1) % n : i + 1))
                                   return setFlash("The points on each side of an arc point have to be corners");
                                 patchShape(selected.id, { points: selected.points, arcs: [...arcs, i].sort((a, b) => a - b) });
@@ -4503,7 +4764,8 @@ export function PlanViewer({
                                 e.preventDefault();
                                 e.stopPropagation();
                                 const c = condById.get(selected.conditionId);
-                                if (!c || selected.points.length <= minPoints(c.type)) return setFlash("A shape needs at least " + (c ? minPoints(c.type) : 2) + " points");
+                                if (!c || selected.points.length <= minPoints(c.type))
+                                  return setFlash("A shape needs at least " + (c ? minPoints(c.type) : 2) + " points");
                                 patchShape(selected.id, {
                                   points: selected.points.filter((_, j) => j !== i),
                                   arcs: (selected.arcs ?? []).filter((j) => j !== i).map((j) => (j > i ? j - 1 : j)),
@@ -4575,7 +4837,16 @@ export function PlanViewer({
                           {willClose ? (
                             // About to close: the first point rings green — click anywhere in the ring.
                             <g>
-                              <circle cx={draft[0][0]} cy={draft[0][1]} r={px(CLOSE_PX)} fill="#16a34a" fillOpacity={0.12} stroke="#16a34a" strokeWidth={1.5} {...stroke} />
+                              <circle
+                                cx={draft[0][0]}
+                                cy={draft[0][1]}
+                                r={px(CLOSE_PX)}
+                                fill="#16a34a"
+                                fillOpacity={0.12}
+                                stroke="#16a34a"
+                                strokeWidth={1.5}
+                                {...stroke}
+                              />
                               <text x={draft[0][0]} y={draft[0][1] - px(CLOSE_PX + 4)} textAnchor="middle" fontSize={px(10)} fontWeight={700} fill="#15803d">
                                 Click to close
                               </text>
@@ -4617,7 +4888,17 @@ export function PlanViewer({
                                 (dirCond.spacing / 12) * unitsPerFoot,
                                 memberThickness(dirCond.memberSize, unitsPerFoot, dirCond.memberWidthIn),
                               ).map(([a, b], i) => (
-                                <line key={i} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={dirCond.color} strokeWidth={1.25} strokeDasharray="4 3" {...stroke} />
+                                <line
+                                  key={i}
+                                  x1={a[0]}
+                                  y1={a[1]}
+                                  x2={b[0]}
+                                  y2={b[1]}
+                                  stroke={dirCond.color}
+                                  strokeWidth={1.25}
+                                  strokeDasharray="4 3"
+                                  {...stroke}
+                                />
                               ))
                             : null}
                           {hoverEdge !== null
@@ -4636,7 +4917,8 @@ export function PlanViewer({
                         ? (() => {
                             const a = ruler[0];
                             const b = ruler[1] ?? (cursor ? snap(cursor, a) : null);
-                            if (!b) return <circle cx={a[0]} cy={a[1]} r={px(4)} fill="#0f172a" stroke="white" strokeWidth={2} pointerEvents="none" {...stroke} />;
+                            if (!b)
+                              return <circle cx={a[0]} cy={a[1]} r={px(4)} fill="#0f172a" stroke="white" strokeWidth={2} pointerEvents="none" {...stroke} />;
                             const ang = Math.atan2(b[1] - a[1], b[0] - a[0]);
                             const nx = -Math.sin(ang) * px(7);
                             const ny = Math.cos(ang) * px(7);
@@ -4645,7 +4927,16 @@ export function PlanViewer({
                             const my = (a[1] + b[1]) / 2;
                             return (
                               <g pointerEvents="none">
-                                <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#0f172a" strokeWidth={2} strokeDasharray={ruler[1] ? undefined : "6 4"} {...stroke} />
+                                <line
+                                  x1={a[0]}
+                                  y1={a[1]}
+                                  x2={b[0]}
+                                  y2={b[1]}
+                                  stroke="#0f172a"
+                                  strokeWidth={2}
+                                  strokeDasharray={ruler[1] ? undefined : "6 4"}
+                                  {...stroke}
+                                />
                                 {[a, b].map((p, i) => (
                                   <line key={i} x1={p[0] - nx} y1={p[1] - ny} x2={p[0] + nx} y2={p[1] + ny} stroke="#0f172a" strokeWidth={2} {...stroke} />
                                 ))}
@@ -4675,7 +4966,16 @@ export function PlanViewer({
                           {(() => {
                             const end = calib[1] ?? (cursor ? snap(cursor, calib[0]) : null);
                             return end ? (
-                              <line x1={calib[0][0]} y1={calib[0][1]} x2={end[0]} y2={end[1]} stroke="#dc2626" strokeWidth={2} strokeDasharray="8 4" {...stroke} />
+                              <line
+                                x1={calib[0][0]}
+                                y1={calib[0][1]}
+                                x2={end[0]}
+                                y2={end[1]}
+                                stroke="#dc2626"
+                                strokeWidth={2}
+                                strokeDasharray="8 4"
+                                {...stroke}
+                              />
                             ) : null;
                           })()}
                           {calib.map((p, i) => (
@@ -4716,7 +5016,12 @@ export function PlanViewer({
                   {areaChip && size && !splitting && tool === "select" ? (
                     <div
                       className="absolute z-20"
-                      style={{ left: areaChip.at[0] * zoom, top: areaChip.at[1] * zoom, transform: `rotate(${-rotation}deg) translate(-50%, calc(-100% - 10px))`, transformOrigin: "0 0" }}
+                      style={{
+                        left: areaChip.at[0] * zoom,
+                        top: areaChip.at[1] * zoom,
+                        transform: `rotate(${-rotation}deg) translate(-50%, calc(-100% - 10px))`,
+                        transformOrigin: "0 0",
+                      }}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => e.stopPropagation()}
                     >
@@ -4737,7 +5042,12 @@ export function PlanViewer({
                   {hoverTip && size && !chip ? (
                     <div
                       className="pointer-events-none absolute z-20 whitespace-nowrap rounded bg-slate-900/90 px-1.5 py-0.5 text-xs font-medium text-white shadow"
-                      style={{ left: hoverTip.at[0] * zoom, top: hoverTip.at[1] * zoom, transform: `rotate(${-rotation}deg) translate(12px, -130%)`, transformOrigin: "0 0" }}
+                      style={{
+                        left: hoverTip.at[0] * zoom,
+                        top: hoverTip.at[1] * zoom,
+                        transform: `rotate(${-rotation}deg) translate(12px, -130%)`,
+                        transformOrigin: "0 0",
+                      }}
                     >
                       {hoverTip.text}
                     </div>
@@ -4860,13 +5170,21 @@ export function PlanViewer({
                 <div className="mb-2 flex items-center gap-2">
                   <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: active.color }} />
                   <p className="min-w-0 flex-1 truncate text-sm font-semibold text-slate-900">{active.name}</p>
-                  <button type="button" aria-label="Shrink the pitch card" title="Shrink" className="text-slate-400 hover:text-slate-700" onClick={() => setNextCardMin(true)}>
+                  <button
+                    type="button"
+                    aria-label="Shrink the pitch card"
+                    title="Shrink"
+                    className="text-slate-400 hover:text-slate-700"
+                    onClick={() => setNextCardMin(true)}
+                  >
                     <Minus className="h-4 w-4" />
                   </button>
                 </div>
                 {hasShapePitch(active.type) ? (
                   <>
-                    <p className="text-xs font-medium text-slate-700">{active.type === "HIP_VALLEY" ? "Next line's pitch (side 1 & side 2)" : "Next outline's pitch"}</p>
+                    <p className="text-xs font-medium text-slate-700">
+                      {active.type === "HIP_VALLEY" ? "Next line's pitch (side 1 & side 2)" : "Next outline's pitch"}
+                    </p>
                     <div className="mt-1 flex items-center gap-1.5 text-sm text-slate-700">
                       <input
                         aria-label="Pitch for next shape"
@@ -4952,7 +5270,13 @@ export function PlanViewer({
                 <div className="mb-2 flex items-center gap-2">
                   <span className="h-2.5 w-2.5 rounded-sm" style={{ background: active.color }} />
                   <p className="flex-1 text-sm font-semibold text-slate-900">{active.type === "WINDOW" ? "Window" : "Door"} to place</p>
-                  <button type="button" aria-label="Shrink the door panel" title="Shrink" className="text-slate-400 hover:text-slate-700" onClick={() => setDoorPanelMin(true)}>
+                  <button
+                    type="button"
+                    aria-label="Shrink the door panel"
+                    title="Shrink"
+                    className="text-slate-400 hover:text-slate-700"
+                    onClick={() => setDoorPanelMin(true)}
+                  >
                     <Minus className="h-4 w-4" />
                   </button>
                 </div>
@@ -4961,11 +5285,12 @@ export function PlanViewer({
                     <WindowListPanel
                       lines={winList.lines}
                       details={winDetails}
-                      counts={jobWindows.counts}
+                      counts={winCounts}
                       value={doorPick[active.id] ?? null}
                       onPick={(id) => setDoorPick((cur) => ({ ...cur, [active.id]: id }))}
                       onAdd={addWindow}
                       onSet={setWindows}
+                      onRemove={removeUnitLine("window")}
                       onAddDetail={addWindowDetail}
                       onRemoveDetail={removeWindowDetail}
                     />
@@ -4981,25 +5306,41 @@ export function PlanViewer({
                     </button>
                   </>
                 ) : (
-                  <DoorPicker
-                    key={active.id}
-                    kind={unitKind(active.type)}
-                    doors={unitsFor(active.type)}
-                    value={doorPick[active.id] ?? null}
-                    onChange={(id) => setDoorPick((cur) => ({ ...cur, [active.id]: id }))}
-                    onCreate={addUnit(unitKind(active.type))}
-                    codes={codes}
-                  />
+                  <>
+                    <DoorListPanel
+                      lines={doorList.lines}
+                      details={doorDetails}
+                      counts={doorCounts}
+                      value={doorPick[active.id] ?? null}
+                      onPick={(id) => setDoorPick((cur) => ({ ...cur, [active.id]: id }))}
+                      onAdd={addDoor}
+                      onSet={setDoors}
+                      onRemove={removeUnitLine("door")}
+                      onAddDetail={addDoorDetail}
+                      onRemoveDetail={removeDoorDetail}
+                    />
+                    <button
+                      type="button"
+                      className="mt-2 w-full rounded-md border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      onClick={() => {
+                        setDoorBids(true);
+                        setDoorBidsMin(false);
+                      }}
+                    >
+                      Door bid list
+                    </button>
+                  </>
                 )}
-                {active.type === "WINDOW" ? <CasedSwitch value={casedPick[active.id] ?? true} onChange={(v) => setCasedPick((cur) => ({ ...cur, [active.id]: v }))} /> : null}
+                {active.type === "WINDOW" ? (
+                  <CasedSwitch value={casedPick[active.id] ?? true} onChange={(v) => setCasedPick((cur) => ({ ...cur, [active.id]: v }))} />
+                ) : null}
                 <p className="mt-2 text-[11px] text-slate-500">
-                  {active.type === "WINDOW"
-                    ? "Click a window on the list (or press its number), then click the plan. The number shows on each window placed."
-                    : `Each click places this ${unitKind(active.type)} — change it any time between clicks.`}
+                  {`Click a ${unitKind(active.type)} on the list (or press its number), then click the plan. The number shows on each ${unitKind(active.type)} placed.`}
                 </p>
                 {active.unassignedDoors ? (
                   <p className="mt-1 text-[11px] text-rose-700">
-                    {active.unassignedDoors === 1 ? `1 ${unitKind(active.type)} still needs` : `${active.unassignedDoors} ${unitKind(active.type)}s still need`} one picked (red ?).
+                    {active.unassignedDoors === 1 ? `1 ${unitKind(active.type)} still needs` : `${active.unassignedDoors} ${unitKind(active.type)}s still need`}{" "}
+                    one picked (red ?).
                   </p>
                 ) : null}
               </div>
@@ -5013,13 +5354,19 @@ export function PlanViewer({
               onClick={() => setWindowBidsMin(false)}
               className="absolute left-1/2 top-3 z-20 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-lg hover:bg-slate-50"
             >
-              Window bid list · {Object.entries(jobWindows.counts).reduce((t, [id, n]) => t + (windows.some((w) => w.id === id) ? n : 0), 0)} windows
+              Window bid list · {Object.entries(winCounts).reduce((t, [id, n]) => t + (windows.some((w) => w.id === id) ? n : 0), 0)} windows
             </button>
           ) : windowBids ? (
             <div className="absolute left-1/2 top-3 z-20 w-[min(92%,28rem)] -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
               <div className="mb-2 flex items-center gap-2">
                 <p className="flex-1 text-sm font-semibold text-slate-900">Window bid list</p>
-                <button type="button" aria-label="Shrink the window bid list" title="Shrink" className="text-slate-400 hover:text-slate-700" onClick={() => setWindowBidsMin(true)}>
+                <button
+                  type="button"
+                  aria-label="Shrink the window bid list"
+                  title="Shrink"
+                  className="text-slate-400 hover:text-slate-700"
+                  onClick={() => setWindowBidsMin(true)}
+                >
                   <Minus className="h-4 w-4" />
                 </button>
                 <button type="button" aria-label="Close" className="text-slate-400 hover:text-slate-700" onClick={() => setWindowBids(false)}>
@@ -5028,12 +5375,18 @@ export function PlanViewer({
               </div>
               {(() => {
                 const rows = [
-                  ...winList.lines.map((l) => ({ id: l.id, size: sizeCode(l.widthIn, l.heightIn), type: l.style ?? "Window", color: l.color as string, name: l.name })),
+                  ...winList.lines.map((l) => ({
+                    id: l.id,
+                    size: sizeCode(l.widthIn, l.heightIn),
+                    type: l.style ?? "Window",
+                    color: l.color as string,
+                    name: l.name,
+                  })),
                   ...windows
-                    .filter((w) => !winLineNo.has(w.id) && jobWindows.counts[w.id])
+                    .filter((w) => !winLineNo.has(w.id) && winCounts[w.id])
                     .map((w) => ({ id: w.id, size: sizeCode(w.widthIn, w.heightIn), type: w.style ?? "Window", color: "", name: w.name })),
-                ].filter((r) => jobWindows.counts[r.id]);
-                const total = rows.reduce((t, r) => t + (jobWindows.counts[r.id] ?? 0), 0);
+                ].filter((r) => winCounts[r.id]);
+                const total = rows.reduce((t, r) => t + (winCounts[r.id] ?? 0), 0);
                 return rows.length ? (
                   <>
                     <table className="w-full text-xs">
@@ -5048,7 +5401,7 @@ export function PlanViewer({
                       <tbody className="divide-y divide-slate-100">
                         {rows.map((r) => (
                           <tr key={r.id} title={r.name}>
-                            <td className="py-1 pr-2 text-right tabular-nums">{jobWindows.counts[r.id]}</td>
+                            <td className="py-1 pr-2 text-right tabular-nums">{winCounts[r.id]}</td>
                             <td className="py-1 pr-2 font-medium tabular-nums">{r.size}</td>
                             <td className="py-1 pr-2">{r.type}</td>
                             <td className="py-1">{r.color}</td>
@@ -5071,15 +5424,123 @@ export function PlanViewer({
             </div>
           ) : null}
 
+          {/* The job's door bid list: how many of each door, the way they go out for prices */}
+          {doorBids && doorBidsMin ? (
+            <button
+              type="button"
+              onClick={() => setDoorBidsMin(false)}
+              className="absolute left-1/2 top-3 z-20 inline-flex -translate-x-1/2 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-lg hover:bg-slate-50"
+            >
+              Door bid list · {Object.entries(doorCounts).reduce((t, [id, n]) => t + (doors.some((d) => d.id === id) ? n : 0), 0)} doors
+            </button>
+          ) : doorBids ? (
+            <div className="absolute left-1/2 top-3 z-20 w-[min(92%,32rem)] -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
+              <div className="mb-2 flex items-center gap-2">
+                <p className="flex-1 text-sm font-semibold text-slate-900">Door bid list</p>
+                <button
+                  type="button"
+                  aria-label="Shrink the door bid list"
+                  title="Shrink"
+                  className="text-slate-400 hover:text-slate-700"
+                  onClick={() => setDoorBidsMin(true)}
+                >
+                  <Minus className="h-4 w-4" />
+                </button>
+                <button type="button" aria-label="Close" className="text-slate-400 hover:text-slate-700" onClick={() => setDoorBids(false)}>
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              {(() => {
+                const rows = [
+                  ...doorList.lines.map((l) => ({
+                    id: l.id,
+                    size: sizeCode(l.widthIn, l.heightIn),
+                    where: l.exterior ? "Ext" : "Int",
+                    type: l.style ?? "Door",
+                    jamb: l.jamb as string,
+                    core: l.core as string,
+                    more: doorDetails
+                      .map((d) =>
+                        d.kind === "yesno" ? (l.details[d.name] === "Yes" ? d.name : null) : l.details[d.name] ? `${d.name} ${l.details[d.name]}` : null,
+                      )
+                      .filter(Boolean)
+                      .join(", "),
+                    name: l.name,
+                  })),
+                  ...doors
+                    .filter((d) => !doorLineNo.has(d.id) && doorCounts[d.id])
+                    .map((d) => ({
+                      id: d.id,
+                      size: sizeCode(d.widthIn, d.heightIn),
+                      where: d.exterior ? "Ext" : "Int",
+                      type: d.style ?? d.name,
+                      jamb: "",
+                      core: "",
+                      more: "",
+                      name: d.name,
+                    })),
+                ].filter((r) => doorCounts[r.id]);
+                const total = rows.reduce((t, r) => t + (doorCounts[r.id] ?? 0), 0);
+                return rows.length ? (
+                  <>
+                    <table className="w-full text-xs">
+                      <thead className="text-left text-slate-500">
+                        <tr>
+                          <th className="py-1 pr-2 text-right font-medium">Qty</th>
+                          <th className="py-1 pr-2 font-medium">Size</th>
+                          <th className="py-1 pr-2 font-medium">Int/Ext</th>
+                          <th className="py-1 pr-2 font-medium">Type</th>
+                          <th className="py-1 pr-2 font-medium">Jamb</th>
+                          <th className="py-1 pr-2 font-medium">Core</th>
+                          <th className="py-1 font-medium">More</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {rows.map((r) => (
+                          <tr key={r.id} title={r.name}>
+                            <td className="py-1 pr-2 text-right tabular-nums">{doorCounts[r.id]}</td>
+                            <td className="py-1 pr-2 font-medium tabular-nums">{r.size}</td>
+                            <td className="py-1 pr-2">{r.where}</td>
+                            <td className="py-1 pr-2">{r.type}</td>
+                            <td className="py-1 pr-2">{r.jamb}</td>
+                            <td className="py-1 pr-2">{r.core}</td>
+                            <td className="py-1">{r.more}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      {total} door{total === 1 ? "" : "s"} on the job (every sheet). They go out like anything else:{" "}
+                      <Link href={`/projects/${projectId}/bids`} className="font-medium text-blue-700 hover:underline">
+                        Bids
+                      </Link>
+                      , and tick your doors&apos; cost code.
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-slate-500">No doors placed on this job yet.</p>
+                );
+              })()}
+            </div>
+          ) : null}
+
           {/* Totals / Material list (hidden while a condition is being edited) */}
           {panel && !editor ? (
-            <TotalsPanel data={totalsPanel} view={panel} onView={(v) => writePanel(v)} onClose={() => writePanel("")} materialsHref={`/projects/${projectId}/materials`} />
+            <TotalsPanel
+              data={totalsPanel}
+              view={panel}
+              onView={(v) => writePanel(v)}
+              onClose={() => writePanel("")}
+              materialsHref={`/projects/${projectId}/materials`}
+            />
           ) : null}
 
           {/* Framing direction chooser */}
           {dirFor && dirCond ? (
             <div className="absolute left-1/2 top-3 z-10 w-[min(92%,30rem)] -translate-x-1/2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg">
-              <p className="text-sm font-medium text-slate-900">Which way do the {dirCond.name.toLowerCase().includes("rafter") ? "rafters" : "members"} run?</p>
+              <p className="text-sm font-medium text-slate-900">
+                Which way do the {dirCond.name.toLowerCase().includes("rafter") ? "rafters" : "members"} run?
+              </p>
               <div className="mt-2 flex flex-wrap gap-1.5" onMouseLeave={() => setDirPreview(null)}>
                 <Button
                   type="button"
@@ -5102,7 +5563,8 @@ export function PlanViewer({
                   <MoveVertical className="h-3.5 w-3.5" /> Vertical <kbd className="ml-1 text-[10px] text-slate-400">V</kbd>
                 </Button>
                 <Button type="button" size="sm" variant={edgePick ? "primary" : "secondary"} onClick={() => setEdgePick((v) => !v)}>
-                  <Spline className="h-3.5 w-3.5" /> Parallel to a wall <kbd className={cn("ml-1 text-[10px]", edgePick ? "text-blue-200" : "text-slate-400")}>E</kbd>
+                  <Spline className="h-3.5 w-3.5" /> Parallel to a wall{" "}
+                  <kbd className={cn("ml-1 text-[10px]", edgePick ? "text-blue-200" : "text-slate-400")}>E</kbd>
                 </Button>
                 <Button
                   type="button"
@@ -5133,8 +5595,8 @@ export function PlanViewer({
                   <div className="min-w-0">
                     <p className="font-semibold text-slate-900">Set this sheet&apos;s scale first</p>
                     <p className="mt-0.5 text-sm text-slate-600">
-                      &ldquo;{sheet.name}&rdquo; has no scale yet, so nothing you draw would get a length or area. Pick the scale printed on the sheet, or calibrate from a
-                      dimension you know.
+                      &ldquo;{sheet.name}&rdquo; has no scale yet, so nothing you draw would get a length or area. Pick the scale printed on the sheet, or
+                      calibrate from a dimension you know.
                     </p>
                   </div>
                 </div>
@@ -5174,12 +5636,21 @@ export function PlanViewer({
                     <Ruler className="h-3.5 w-3.5" /> Calibrate
                   </Button>
                   <label className="flex items-center gap-1 text-xs text-slate-600" title="Use this scale on every sheet of this plan">
-                    <input type="checkbox" checked={applyToPlan} onChange={(e) => setApplyToPlan(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+                    <input
+                      type="checkbox"
+                      checked={applyToPlan}
+                      onChange={(e) => setApplyToPlan(e.target.checked)}
+                      className="h-3.5 w-3.5 rounded border-slate-300"
+                    />
                     all sheets
                   </label>
                 </div>
                 <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
-                  <button type="button" className="text-xs text-slate-500 hover:text-slate-800 hover:underline" onClick={() => setScaleSkipped((x) => [...x, sheet.id])}>
+                  <button
+                    type="button"
+                    className="text-xs text-slate-500 hover:text-slate-800 hover:underline"
+                    onClick={() => setScaleSkipped((x) => [...x, sheet.id])}
+                  >
                     Draw anyway, without lengths
                   </button>
                   <button type="button" className="text-xs text-slate-500 hover:text-slate-800 hover:underline" onClick={() => setTool("select")}>
@@ -5291,7 +5762,8 @@ export function PlanViewer({
                           </Button>
                         </div>
                         <p className="text-[11px] text-slate-500">
-                          A copy of {condById.get(multiShapes[0].conditionId)?.name} with its items; these {multiShapes.length} move into it, then its settings open.
+                          A copy of {condById.get(multiShapes[0].conditionId)?.name} with its items; these {multiShapes.length} move into it, then its settings
+                          open.
                         </p>
                       </form>
                     ) : null}
@@ -5300,7 +5772,9 @@ export function PlanViewer({
                         <Trash2 className="h-3.5 w-3.5" /> Delete {multiShapes.length}
                       </Button>
                     </div>
-                    <p className="mt-2 text-[11px] text-slate-500">Shift+click a shape to add or drop it · Shift+drag adds a box · Esc clears · Ctrl+Z undoes</p>
+                    <p className="mt-2 text-[11px] text-slate-500">
+                      Shift+click a shape to add or drop it · Shift+drag adds a box · Esc clears · Ctrl+Z undoes
+                    </p>
                   </div>
                 );
               })()
@@ -5347,7 +5821,7 @@ export function PlanViewer({
                       key={sel.m.id}
                       lines={winList.lines}
                       details={winDetails}
-                      counts={jobWindows.counts}
+                      counts={winCounts}
                       value={sel.m.materialItemId ?? null}
                       onPick={(id) => {
                         patchShape(sel.m.id, { materialItemId: id });
@@ -5358,18 +5832,19 @@ export function PlanViewer({
                       compact
                     />
                   ) : (
-                    <DoorPicker
+                    <DoorListPanel
                       key={sel.m.id}
-                      kind={unitKind(sel.c.type)}
-                      doors={unitsFor(sel.c.type)}
+                      lines={doorList.lines}
+                      details={doorDetails}
+                      counts={doorCounts}
                       value={sel.m.materialItemId ?? null}
-                      onChange={(id) => {
+                      onPick={(id) => {
                         patchShape(sel.m.id, { materialItemId: id });
                         // The next door placed on this takeoff follows the last one picked.
-                        if (id) setDoorPick((cur) => ({ ...cur, [sel.c!.id]: id }));
+                        setDoorPick((cur) => ({ ...cur, [sel.c!.id]: id }));
                       }}
-                      onCreate={addUnit(unitKind(sel.c.type))}
-                      codes={codes}
+                      onAdd={addDoor}
+                      onSet={setDoors}
                       compact
                     />
                   )}
@@ -5443,7 +5918,9 @@ export function PlanViewer({
                 </form>
               ) : null}
               {newLike?.id === sel.m.id ? (
-                <p className="mt-1 text-[11px] text-slate-500">A copy of {sel.c.name} with all its items — change its settings after. Only this shape moves to it.</p>
+                <p className="mt-1 text-[11px] text-slate-500">
+                  A copy of {sel.c.name} with all its items — change its settings after. Only this shape moves to it.
+                </p>
               ) : null}
               {sel.q ? (
                 <p className="mt-1 tabular-nums text-slate-700">
@@ -5467,8 +5944,8 @@ export function PlanViewer({
                     </>
                   ) : (
                     <>
-                      Sized by {sel.c.spanTable} from the longest stretch a joist runs between supports (the walls and beams it crosses). Pick another size above to set it
-                      yourself.
+                      Sized by {sel.c.spanTable} from the longest stretch a joist runs between supports (the walls and beams it crosses). Pick another size
+                      above to set it yourself.
                     </>
                   )}
                 </p>
@@ -5480,7 +5957,13 @@ export function PlanViewer({
               {sel.c.type === "LINEAR" && !sel.m.pending ? renderHeightEditor(sel.m, sel.c) : null}
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {sel.c.type === "FRAMING" ? (
-                  <Button type="button" size="sm" variant="secondary" onClick={() => patchShape(sel.m.id, { angle: sel.m.angle + Math.PI / 2 })} disabled={!!sel.m.pending}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => patchShape(sel.m.id, { angle: sel.m.angle + Math.PI / 2 })}
+                    disabled={!!sel.m.pending}
+                  >
                     <RotateCw className="h-3.5 w-3.5" /> Rotate 90°
                   </Button>
                 ) : null}
@@ -5500,7 +5983,13 @@ export function PlanViewer({
                   </Button>
                 ) : null}
                 {sel.c.type === "AREA" || sel.c.type === "LINEAR" ? (
-                  <Button type="button" size="sm" variant="secondary" onClick={() => patchShape(sel.m.id, { isDeduction: !sel.m.isDeduction })} disabled={!!sel.m.pending}>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => patchShape(sel.m.id, { isDeduction: !sel.m.isDeduction })}
+                    disabled={!!sel.m.pending}
+                  >
                     <Minus className="h-3.5 w-3.5" /> {sel.m.isDeduction ? "Make addition" : "Make deduction"}
                   </Button>
                 ) : null}
