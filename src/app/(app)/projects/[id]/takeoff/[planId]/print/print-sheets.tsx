@@ -180,9 +180,11 @@ export function PrintSheets({
 
   return (
     <div className="space-y-6">
-      {/* One string: a <style> with several children doesn't match between server and browser. */}
+      {/* One string: a <style> with several children doesn't match between server and browser. The letter
+          pages printed on their own (to scale) force no orientation — portrait unless you pick landscape in
+          the print dialog; everything else prints landscape. */}
       <style>
-        {`@media print { @page { size: landscape; margin: 0.35in; } .print-sheet { break-after: page; margin: 0 !important; } .print-sheet:last-child, .print-sheet.last-printed { break-after: auto; } } ${
+        {`@media print { @page { ${printPart === "lists" ? "margin: 0.5in;" : "size: landscape; margin: 0.35in;"} } .print-sheet { break-after: page; margin: 0 !important; } .print-sheet:last-child, .print-sheet.last-printed { break-after: auto; } } ${
           toScale && printPart !== "lists" ? scaleCss(shown.map((s) => ({ n: s.pageNumber, size: sizes[s.pageNumber] }))) : ""
         }`}
       </style>

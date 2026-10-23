@@ -608,7 +608,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Fade the plan", what: "Prints the plan light so the takeoff stands out." },
           { name: "Takeoffs used", what: "Adds a list of the takeoffs and their totals." },
           { name: "Material list & cut sheet", what: "Adds the Material list and cut sheet, on letter paper." },
-          { name: "Print to scale (large format)", what: "For PDF plans: prints the sheets at their real size on a large-format printer. Print at **100% / Actual size**, not \"Fit\"." },
+          { name: "Print to scale (large format)", what: "For PDF plans: prints the sheets at their real size on a large-format printer. Print at **100% / Actual size**, not \"Fit\". The takeoffs used and the Material list & cut sheet print separately on letter paper (their own button) — portrait, or landscape if you pick it in the print dialog." },
           { name: "Sheets / Takeoffs", what: "Which sheets and takeoffs to print. Takeoffs hidden on the plan start off. **Just joists & rafters** leaves everything else off." },
           { name: "Print / Save PDF", what: "Prints, or saves a PDF with your printer's \"Save as PDF\"." },
         ],

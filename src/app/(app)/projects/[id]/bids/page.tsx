@@ -1,5 +1,5 @@
 import Link from "@/components/link";
-import { AlertTriangle, ArrowLeft, Check, Download, Eye, FileSpreadsheet, FileText, Lock, Pencil, Printer, Replace } from "lucide-react";
+import { AlertTriangle, Check, Download, Eye, FileSpreadsheet, FileText, Lock, Pencil, Printer, Replace } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
@@ -21,7 +21,7 @@ import { appUrl } from "@/lib/mail";
 import { EmailAllButton } from "./_components/email-all";
 import { deleteBid, importBid, quickAddVendor, quickEditVendor, requestBids, requestSubBids, takeBids, takeSubBids } from "./actions";
 
-export const metadata = { title: "Send to vendors" };
+export const metadata = { title: "Bids" };
 
 function pctText(p: number) {
   return `${p >= 0 ? "+" : "−"}${Math.round(Math.abs(p) * 100)}%`;
@@ -120,11 +120,8 @@ export default async function BidsPage({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center gap-2">
-        <Link href={`/projects/${project.id}/materials`} className={buttonClasses("ghost", "sm")}>
-          <ArrowLeft className="h-3.5 w-3.5" /> Material list
-        </Link>
-        <h2 className="text-lg font-semibold text-slate-900">Send to vendors</h2>
-        <span className="text-sm text-slate-500">— ask vendors for prices, bring them back, compare, and take one per cost code.</span>
+        <h2 className="text-lg font-semibold text-slate-900">Bids</h2>
+        <span className="text-sm text-slate-500">— send your Material list to vendors and your plans to subs, bring their prices back, compare, and take one per cost code.</span>
       </div>
 
       {q.error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-800">{q.error}</p> : null}

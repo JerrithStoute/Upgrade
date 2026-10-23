@@ -106,7 +106,7 @@ export const FINANCIALS: HelpArticle[] = [
     ],
     tips: [
       "Only approved bills count as the job's cost. A bill waiting for approval doesn't show on the Budget yet.",
-      "The quickest PO is **From a bid you took**: take the vendor's bid first (Material list → **Send to vendors**), and the PO comes with their prices.",
+      "The quickest PO is **From a bid you took**: take the vendor's or sub's bid first (the job's **Bids** tab), and the PO comes with their prices.",
       "Keep vendor insurance up to date in Settings → Vendors. Expired or missing coverage shows in amber on their POs and bills.",
     ],
     related: ["bids", "invoices", "estimate", "item-list"],
@@ -119,7 +119,7 @@ export const FINANCIALS: HelpArticle[] = [
     pages: ["/projects/*/bids", "/projects/*/bids/*", "/projects/*/bids/*/print", "/projects/*/bids/*/reply"],
     what: "The bids page sends parts of your Material list to vendors for prices, and asks subs to bid whole trades from your plans (**Send to subs**). It brings their prices back in, lets you compare them side by side, and takes the best one for each cost code. A bid you take sets the prices on the job (a sub's price can go straight into the budget) and can become a purchase order.",
     how: [
-      "On the job's **Material list** tab, click **Send to vendors**.",
+      "Open the job's **Bids** tab (or click **Send to vendors** on the Material list).",
       "Under **What to send**, tick the cost codes (click one to untick single items), then tick the **Vendors**.",
       "Click **Send to N vendors**. This makes the bids; the emails are the next step.",
       "Under **Sent**, click **Email all** to email every bid that hasn't gone out yet, each to its vendor with a button to type prices online, the Excel file and a PDF attached. Or click **Email** on one vendor's row to read it over and **Send** it.",
