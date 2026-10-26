@@ -1,4 +1,3 @@
-import "server-only";
 import os from "os";
 import { randomUUID } from "crypto";
 import { systemDb } from "./db";

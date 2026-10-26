@@ -494,7 +494,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
 async function statsData(userId: string, now: Date) {
   const [active, invoices, myOpen, myOverdue, pendingSelections, pendingCOs] = await Promise.all([
-    db.project.findMany({ where: { status: { in: ACTIVE } }, select: { id: true, contractAmount: true } }),
+    db.project.findMany({ where: { status: { in: ACTIVE }, isTemplate: false }, select: { id: true, contractAmount: true } }),
     db.invoice.findMany({ where: { status: { not: "VOID" } }, include: { items: true, payments: true } }),
     db.todo.count({ where: { assigneeId: userId, status: "OPEN" } }),
     db.todo.count({ where: { assigneeId: userId, status: "OPEN", dueDate: { lt: now } } }),
@@ -508,7 +508,7 @@ async function statsData(userId: string, now: Date) {
 
 async function projectsData() {
   const activeProjects = await db.project.findMany({
-    where: { status: { in: ACTIVE } },
+    where: { status: { in: ACTIVE }, isTemplate: false },
     include: { client: { select: { firstName: true, lastName: true } } },
     orderBy: [{ status: "asc" }, { startDate: "asc" }],
   });

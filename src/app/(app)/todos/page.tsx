@@ -24,7 +24,7 @@ export default async function TodosPage({ searchParams }: { searchParams: Promis
       include: { assignee: { select: { id: true, name: true } }, project: { select: { id: true, number: true, name: true } } },
     }),
     staffUsers(),
-    db.project.findMany({ where: { status: { notIn: ["COMPLETED", "CANCELLED"] } }, orderBy: { number: "asc" }, select: { id: true, number: true, name: true } }),
+    db.project.findMany({ where: { status: { notIn: ["COMPLETED", "CANCELLED"] }, isTemplate: false }, orderBy: { number: "asc" }, select: { id: true, number: true, name: true } }),
   ]);
   return (
     <div>

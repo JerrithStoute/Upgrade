@@ -56,7 +56,7 @@ export async function refreshJobSite(projectId: string, again = false) {
  */
 export async function findMissingSites(limit = 10) {
   const jobs = await db.project.findMany({
-    where: { siteAddress: null, address: { not: null }, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+    where: { siteAddress: null, address: { not: null }, status: { notIn: ["COMPLETED", "CANCELLED"] }, isTemplate: false },
     select: { id: true },
     take: limit,
   });

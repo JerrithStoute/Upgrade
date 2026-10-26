@@ -33,15 +33,18 @@ const KINDS = [
 ] as const;
 const kindOf = (p: { isSpec: boolean; type: string }) => (p.isSpec ? "spec" : p.type === "NEW_HOME" ? "custom" : "remodel");
 
-export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; managerId?: string }> }) {
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; managerId?: string; templates?: string }> }) {
   await requireStaff();
   const sp = await searchParams;
   const q = (sp.q ?? "").trim();
   const status = (PROJECT_STATUSES as readonly string[]).includes(sp.status ?? "") ? sp.status! : "";
   const managerId = (sp.managerId ?? "").trim();
   const view = projectsView((await cookies()).get(PROJECTS_COOKIE)?.value);
+  // Plan templates (houses kept to copy new jobs from) show only when asked for; never with the jobs.
+  const templates = sp.templates === "1";
 
   const where = {
+    isTemplate: templates,
     ...(status ? { status } : {}),
     ...(managerId ? { managerId } : {}),
     ...(q
@@ -58,8 +61,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       orderBy: { number: "desc" },
     }),
     staffUsers(),
-    db.project.groupBy({ by: ["status"], _count: { _all: true } }),
+    db.project.groupBy({ by: ["status"], where: { isTemplate: false }, _count: { _all: true } }),
   ]);
+  const templateCount = await db.project.count({ where: { isTemplate: true } });
 
   const [values, progressMap] = await Promise.all([Promise.all(projects.map((p) => contractValue(p.id, p.contractAmount))), scheduleProgressByProject(projects.map((p) => p.id))]);
 
@@ -70,6 +74,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     if (q) params.set("q", q);
     if (managerId) params.set("managerId", managerId);
     if (s) params.set("status", s);
+    if (templates) params.set("templates", "1");
     const qs = params.toString();
     return `/projects${qs ? `?${qs}` : ""}`;
   };
@@ -203,8 +208,8 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Projects"
-        description={`${total} total · ${sum(all)} shown`}
+        title={templates ? "Plan templates" : "Projects"}
+        description={templates ? "Houses you build over and over — open one and use ⋯ Copy this job to start a new job from it." : `${total} total · ${sum(all)} shown`}
         actions={
           <ButtonLink href="/projects/new">
             <Plus className="h-4 w-4" /> New project
@@ -234,9 +239,22 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
             {titleCase(s)} <span className="opacity-70">{countFor(s)}</span>
           </Link>
         ))}
+        {templateCount || templates ? (
+          <Link
+            href={templates ? "/projects" : "/projects?templates=1"}
+            className={cn(
+              "rounded-full border px-2.5 py-1 text-xs font-medium",
+              templates ? "border-violet-700 bg-violet-700 text-white" : "border-violet-200 bg-violet-50 text-violet-800 hover:bg-violet-100",
+            )}
+            title="Houses you build over and over, kept to copy new jobs from"
+          >
+            Plan templates <span className="opacity-70">{templateCount}</span>
+          </Link>
+        ) : null}
       </div>
 
       <form method="get" className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+        {templates ? <input type="hidden" name="templates" value="1" /> : null}
         <div className="relative min-w-[220px] flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <input name="q" defaultValue={q} placeholder="Search name, number or address" className="input !pl-9" />

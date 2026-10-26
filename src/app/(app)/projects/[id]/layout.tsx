@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { ButtonLink } from "@/components/ui/button";
 import { ClientViewButton } from "./_components/client-view-button";
 import Link from "@/components/link";
-import { ChevronRight, Pencil } from "lucide-react";
+import { ChevronRight, Copy, Pencil } from "lucide-react";
 import { ProjectHeaderSwitch } from "@/components/layout/topbar-slot";
 import { StickyJobHead } from "@/components/layout/sticky-job-head";
 
@@ -51,6 +51,11 @@ export default async function ProjectLayout({ children, params }: { children: Re
           meta={
             <>
               <Badge status={project.status} />
+              {project.isTemplate ? (
+                <Link href={`${base}/copy`} className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800" title="Kept to copy new jobs from — off the job lists">
+                  Plan template
+                </Link>
+              ) : null}
               {/* Phones: just a pencil here, instead of the buttons row. */}
               <Link href={`${base}/edit`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden" title="Edit project" aria-label="Edit project">
                 <Pencil className="h-4 w-4" />
@@ -62,6 +67,9 @@ export default async function ProjectLayout({ children, params }: { children: Re
           actions={
             <span className="flex flex-wrap items-center gap-2">
               {project.clientId ? <ClientViewButton projectId={project.id} /> : null}
+              <ButtonLink href={`${base}/copy`} variant="secondary" size="sm" title="A new job from this one — its plans, takeoff, estimate and schedule — for another lot">
+                <Copy className="h-3.5 w-3.5" /> {project.isTemplate ? "Use this plan" : "Copy"}
+              </ButtonLink>
               <ButtonLink href={`${base}/edit`} variant="secondary" size="sm">
                 <Pencil className="h-3.5 w-3.5" /> Edit
               </ButtonLink>

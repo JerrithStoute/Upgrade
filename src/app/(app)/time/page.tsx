@@ -25,7 +25,7 @@ export default async function TimeClockPage() {
   const [open, projects, costCodes, mine, me] = await Promise.all([
     openEntry(user.id),
     db.project.findMany({
-      where: { status: { not: "CANCELLED" } },
+      where: { status: { not: "CANCELLED" }, isTemplate: false },
       select: { id: true, number: true, name: true, status: true, address: true, city: true, state: true, zip: true, siteLat: true, siteLng: true },
       orderBy: { number: "desc" },
     }),

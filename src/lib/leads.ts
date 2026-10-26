@@ -41,7 +41,7 @@ export async function syncLeadStages() {
       include: { project: { select: { status: true, estimates: { select: { status: true } } } } },
     }),
     db.project.findMany({
-      where: { status: { in: ["LEAD", "ESTIMATING", "PROPOSAL_SENT"] }, lead: null, isSpec: false },
+      where: { status: { in: ["LEAD", "ESTIMATING", "PROPOSAL_SENT"] }, lead: null, isSpec: false, isTemplate: false },
       include: { client: true, estimates: { select: { status: true } } },
     }),
   ]);

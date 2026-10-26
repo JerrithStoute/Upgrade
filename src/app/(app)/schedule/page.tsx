@@ -18,7 +18,7 @@ export default async function GlobalSchedulePage() {
   const windowEnd = addDays(weekStart, 27);
 
   const projects = await db.project.findMany({
-    where: { status: { in: ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"] } },
+    where: { status: { in: ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"] }, isTemplate: false },
     orderBy: [{ status: "asc" }, { number: "asc" }],
     include: {
       tasks: {

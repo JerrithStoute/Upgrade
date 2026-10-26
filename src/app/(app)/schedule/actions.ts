@@ -80,7 +80,7 @@ export const addHoliday = friendly(async function addHoliday(fd: FormData) {
   if (boolField(fd, "moveWork") && lost > 0) {
     const cal = await loadWorkCal();
     const projects = await db.project.findMany({
-      where: { status: { in: ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"] }, tasks: { some: { percentComplete: { lt: 100 }, endDate: { gte: startDate } } } },
+      where: { status: { in: ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"] }, isTemplate: false, tasks: { some: { percentComplete: { lt: 100 }, endDate: { gte: startDate } } } },
       select: { id: true },
     });
     for (const p of projects) {

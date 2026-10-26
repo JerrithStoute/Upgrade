@@ -20,7 +20,7 @@ export default async function QuickBooksPage() {
   const [conn, list, projects, codes, vendorCount] = await Promise.all([
     db.qbConnection.findFirst(),
     db.qbListItem.findMany({ orderBy: { fullName: "asc" } }),
-    db.project.findMany({ select: { id: true, number: true, name: true, qbListId: true }, orderBy: { number: "desc" } }),
+    db.project.findMany({ where: { isTemplate: false }, select: { id: true, number: true, name: true, qbListId: true }, orderBy: { number: "desc" } }),
     db.costCode.findMany({ where: { active: true }, select: { id: true, code: true, name: true, qbListId: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
     db.vendor.count({ where: { qbListId: { not: null } } }),
   ]);

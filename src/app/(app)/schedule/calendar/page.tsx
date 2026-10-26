@@ -39,7 +39,7 @@ export default async function CalendarPage({
   const [cal, staff, projects, events, todos, yearOff] = await Promise.all([
     loadWorkCal(),
     staffUsers(),
-    db.project.findMany({ where: { status: { notIn: ["COMPLETED", "CANCELLED"] } }, orderBy: { number: "asc" }, select: { id: true, number: true, name: true } }),
+    db.project.findMany({ where: { status: { notIn: ["COMPLETED", "CANCELLED"] }, isTemplate: false }, orderBy: { number: "asc" }, select: { id: true, number: true, name: true } }),
     db.calendarEvent.findMany({
       where: { startDate: { lte: addDays(gridEnd, 1) }, endDate: { gte: addDays(gridStart, -1) } },
       include: { user: { select: { id: true, name: true } } },

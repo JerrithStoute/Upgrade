@@ -82,6 +82,21 @@ export async function saveUpload(file: File, folder: string, maxBytes = MAX_BYTE
   return { name: file.name.slice(0, 200), storagePath: key, mimeType: checked.type, size: file.size };
 }
 
+/**
+ * A stored file copied to a new place in `folder` (a job copied: its plan sets) — inside cloud storage,
+ * or on disk; never through memory. Its new key.
+ */
+export async function copyUpload(storagePath: string, folder: string, name: string) {
+  const from = normalizeKey(storagePath);
+  const to = await newKey(folder, name);
+  if (driver() === cloud) await cloud.copy(from, to);
+  else {
+    await fs.mkdir(path.dirname(path.join(uploadDir(), to)), { recursive: true });
+    await fs.copyFile(path.join(uploadDir(), from), path.join(uploadDir(), to));
+  }
+  return to;
+}
+
 /** Store a file the program made (a bid workbook…); returns storage metadata for a FileAsset row. */
 export async function saveBuffer(data: Buffer, name: string, mimeType: string, folder: string) {
   const key = await newKey(folder, name);

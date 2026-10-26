@@ -243,6 +243,9 @@ model Project {
   inventoryAnswer   String?
   // A spec house: built to sell, no client (Spec homes, the job's Spec sale tab).
   isSpec            Boolean                 @default(false)
+  // A plan template: a house you build over and over, kept to copy new jobs from (⋯ Copy this job; New job →
+  // Start from). Off every list of jobs, the map, the schedule and QuickBooks; Projects → Plan templates shows them.
+  isTemplate        Boolean                 @default(false)
   // QuickBooks Desktop: the Customer:Job it is there (its ListID) — linked by name, or picked.
   qbListId          String?
   estimates         Estimate[]

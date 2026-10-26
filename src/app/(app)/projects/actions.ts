@@ -6,10 +6,11 @@ import { redirect } from "next/navigation";
 import { requireAdmin, requireStaff, type SessionUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { nextProjectNumber } from "@/lib/projects";
+import { getProject, nextProjectNumber } from "@/lib/projects";
 import { refreshJobSite, siteAddressOf } from "@/lib/job-site";
 import { runAsCompany } from "@/lib/tenant";
 import { createProjectEstimate } from "@/lib/estimate-lines";
+import { copyJob } from "@/lib/job-copy";
 import { PROJECT_STATUSES, PROJECT_TYPES } from "@/lib/constants";
 import { parseDateInput, str, strOrNull, titleCase } from "@/lib/utils";
 
@@ -172,4 +173,67 @@ export const saveJobVendors = friendly(async function saveJobVendors(projectId: 
   });
   revalidatePath(`/projects/${projectId}/edit`);
   redirect(`/projects/${projectId}`);
+});
+
+/**
+ * ⋯ Copy this job: a new job from this one — its plans and takeoff, its estimate and its schedule, as
+ * picked (job-copy.ts) — for the new lot, client and address. Or kept as a plan template.
+ */
+export const copyThisJob = friendly(async function copyThisJob(fd: FormData) {
+  const user = await requireStaff();
+  const from = await getProject(str(fd, "fromId"));
+  const isTemplate = fd.get("isTemplate") === "on";
+  const name = str(fd, "name").slice(0, 200);
+  if (!name) throw new Error("Name the new job.");
+  const clientId = isTemplate ? null : strOrNull(fd, "clientId");
+  if (clientId && !(await db.client.findUnique({ where: { id: clientId }, select: { id: true } }))) throw new Error("That client isn't on your list any more.");
+  const what = {
+    takeoff: fd.get("takeoff") === "on",
+    estimate: fd.get("estimate") === "on",
+    schedule: fd.get("schedule") === "on",
+    start: parseDateInput(fd.get("start")),
+  };
+  if (what.schedule && !what.start) throw new Error("Pick the date the schedule starts — or leave the schedule off.");
+  const project = await copyJob(
+    from.id,
+    {
+      name,
+      clientId,
+      address: isTemplate ? null : strOrNull(fd, "address"),
+      city: isTemplate ? null : strOrNull(fd, "city"),
+      state: isTemplate ? null : strOrNull(fd, "state"),
+      zip: isTemplate ? null : strOrNull(fd, "zip"),
+      isTemplate,
+    },
+    what,
+    user.id,
+  );
+  if (!isTemplate) findSiteLater(user, project.id);
+  const parts = [what.takeoff && "plans & takeoff", what.estimate && "estimate", what.schedule && "schedule"].filter(Boolean).join(", ");
+  await logActivity({
+    projectId: project.id,
+    userId: user.id,
+    type: "project.created",
+    description: `${isTemplate ? "Plan template" : "Job"} #${project.number} ${project.name} copied from #${from.number} ${from.name}${parts ? ` (${parts})` : ""}`,
+  });
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  redirect(`/projects/${project.id}`);
+});
+
+/** A job kept as a plan template (off the job lists, to copy new jobs from) — or back to a regular job. */
+export const setPlanTemplate = friendly(async function setPlanTemplate(fd: FormData) {
+  const user = await requireStaff();
+  const project = await getProject(str(fd, "id"));
+  const on = fd.get("on") === "1";
+  await db.project.update({ where: { id: project.id }, data: { isTemplate: on } });
+  await logActivity({
+    projectId: project.id,
+    userId: user.id,
+    type: "project.updated",
+    description: on ? "Kept as a plan template (off the job lists)" : "Back to a regular job (no longer a plan template)",
+  });
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  redirect(`/projects/${project.id}/copy`);
 });

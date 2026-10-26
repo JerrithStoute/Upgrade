@@ -34,7 +34,7 @@ export type JobRow = JobNumbers & {
 export async function jobRows(statuses: string[] = SOLD, asOf = new Date()) {
   await syncCarrying();
   const projects = await db.project.findMany({
-    where: { status: { in: statuses } },
+    where: { status: { in: statuses }, isTemplate: false },
     orderBy: [{ number: "asc" }],
     include: {
       client: { select: { firstName: true, lastName: true } },

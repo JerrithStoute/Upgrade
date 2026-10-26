@@ -23,7 +23,7 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
     db.user.count({ where: { role: { in: ["ADMIN", "STAFF"] } } }),
     db.invite.count(),
     db.client.count(),
-    db.project.findMany({ orderBy: { createdAt: "asc" }, select: { id: true }, take: 3 }),
+    db.project.findMany({ where: { isTemplate: false }, orderBy: { createdAt: "asc" }, select: { id: true }, take: 3 }),
     db.takeoffPlan.count(),
     db.takeoffMeasurement.count(),
     db.materialItem.count(),

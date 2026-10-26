@@ -7,7 +7,7 @@ const managerSelect = { select: { id: true, name: true, phone: true, email: true
 /** All projects belonging to a client, most recently updated first. */
 export async function getClientProjects(clientId: string) {
   return db.project.findMany({
-    where: { clientId },
+    where: { clientId, isTemplate: false },
     orderBy: { updatedAt: "desc" },
     include: { manager: managerSelect },
   });

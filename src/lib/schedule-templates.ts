@@ -61,6 +61,57 @@ export async function applyScheduleTemplate(projectId: string, templateId: strin
   return { template, count: template.tasks.length };
 }
 
+/**
+ * A job's schedule copied onto another job (a job copied from it): the same tasks, lengths in workdays and
+ * what waits on what — laid out again on the work calendar from `start`. Who's assigned (if still active) and
+ * the sub on each task come along; progress and delays don't.
+ */
+export async function copySchedule(fromProjectId: string, toProjectId: string, start: Date) {
+  const [tasks, links, cal] = await Promise.all([
+    db.scheduleTask.findMany({ where: { projectId: fromProjectId }, orderBy: [{ sortOrder: "asc" }, { startDate: "asc" }] }),
+    db.taskLink.findMany({ where: { task: { projectId: fromProjectId } } }),
+    loadWorkCal(),
+  ]);
+  if (!tasks.length) return 0;
+  const plan = planTemplate(
+    cal,
+    tasks.map((t) => ({
+      key: t.id,
+      duration: taskWorkdays(cal, t),
+      isMilestone: t.isMilestone,
+      links: links.filter((l) => l.taskId === t.id).map((l) => ({ key: l.predecessorId, lag: l.lagDays })),
+    })),
+    start,
+  );
+  const users = new Set((await db.user.findMany({ where: { active: true }, select: { id: true } })).map((u) => u.id));
+  await db.$transaction(async (tx) => {
+    const ids = new Map<string, string>();
+    for (const [i, t] of tasks.entries()) {
+      const p = plan.get(t.id)!;
+      const made = await tx.scheduleTask.create({
+        data: {
+          projectId: toProjectId,
+          name: t.name,
+          phase: t.phase,
+          startDate: p.startDate,
+          endDate: p.endDate,
+          isMilestone: t.isMilestone,
+          color: t.color,
+          notes: t.notes,
+          assigneeId: t.assigneeId && users.has(t.assigneeId) ? t.assigneeId : null,
+          vendorId: t.vendorId,
+          sortOrder: i,
+        },
+      });
+      ids.set(t.id, made.id);
+    }
+    for (const l of links)
+      if (ids.has(l.taskId) && ids.has(l.predecessorId) && l.taskId !== l.predecessorId)
+        await tx.taskLink.create({ data: { taskId: ids.get(l.taskId)!, predecessorId: ids.get(l.predecessorId)!, lagDays: l.lagDays } });
+  });
+  return tasks.length;
+}
+
 /** A job's schedule as a new template: lengths in workdays, what waits on what. */
 export async function saveScheduleAsTemplate(projectId: string, name: string) {
   const [tasks, links, cal] = await Promise.all([

@@ -61,6 +61,7 @@ export const JOBS: HelpArticle[] = [
           { name: "Search / All statuses / Any manager / Filter / Clear", what: "Find jobs by name, number or address, and narrow by status or project manager. **Clear** resets." },
           { name: "Widgets (Spec homes, Custom homes, Remodels, All projects, Map)", what: "Groups of jobs, each with its count and total value.", how: "Click a title to tuck it away or open it; drag the grip to reorder. **+ New** in a widget starts a job of that kind. The program remembers your layout." },
           { name: "Map", what: "Every open job as a pin, colored by status. Click a pin for **Directions** or **Open the job**. Jobs not on the map are listed under it; set their spot on their Edit page." },
+          { name: "Plan templates", what: "Houses you build over and over, kept to start new jobs from. They're off every list of jobs, the map, the schedule and QuickBooks.", how: "Click the purple **Plan templates** chip to see them." },
         ],
       },
       {
@@ -73,6 +74,7 @@ export const JOBS: HelpArticle[] = [
           { name: "Address / City / State / ZIP", what: "The job site. The program finds it on the map from the address after you save." },
           { name: "Start date", what: "When work starts." },
           { name: "Estimate template", what: "Starts the job's estimate from one of your templates. You can change every line after." },
+          { name: "Start from a plan template", what: "Shows when you have plan templates: click one to start the new job from it (its plans, takeoff, estimate and schedule), on **Copy this job**." },
         ],
       },
     ],
@@ -96,6 +98,7 @@ export const JOBS: HelpArticle[] = [
         items: [
           { name: "Status badge", what: "Where the job stands. Change it on **Edit**. Some steps change it for you: marking the proposal sent sets Proposal Sent, approval sets Contracted." },
           { name: "Client view", what: "Shows the page you're on exactly as your client sees it in their portal (look only). Shows when the job has a client." },
+          { name: "Copy / Use this plan", what: "Starts a new job from this one: its plans, takeoff, estimate and schedule. Also where you make the job a plan template. See **Copy a job and plan templates**." },
           { name: "Edit", what: "Opens the job's details." },
           { name: "Tabs", what: "Overview, Plans, Material list, Takeoff, Estimate, Selections, Change Orders, Schedule, Spec sale (spec homes), Purchasing, Budget, Invoices, Daily Logs, To-Dos, Files, Messages. You only see the tabs your position allows." },
         ],
@@ -124,6 +127,42 @@ export const JOBS: HelpArticle[] = [
       },
     ],
     related: ["projects", "time-clock"],
+  },
+  {
+    slug: "copy-job",
+    title: "Copy a job and plan templates",
+    group: "Jobs",
+    area: null,
+    pages: ["/projects/*/copy"],
+    what: "Build the same house again on another lot without starting over. **Copy** makes a new job from this one: its plans, takeoff, estimate and schedule, as you pick. Keep a house you build often as a **plan template**: it's off the job lists, ready to copy.",
+    how: [
+      "Open the job and click **Copy** at the top (on a plan template it says **Use this plan**). Or on **New project**, click a plan under **Start from a plan template**.",
+      "Type the new job's name, and pick the client and address if you know them.",
+      "Tick what to bring along. If you bring the schedule, pick its start date.",
+      "Click **Copy job**. The new job opens.",
+    ],
+    sections: [
+      {
+        heading: "What comes along",
+        items: [
+          { name: "Plans & takeoff", what: "The current plan sets, each sheet with its scale, every takeoff with its items, and every shape where it was drawn. The door and window lists and substitutions come too. Lines are worked out again at today's Item List prices." },
+          { name: "Estimate", what: "The newest version, as a new draft. Its lines stay tied to the copied takeoffs, so they follow them." },
+          { name: "Schedule", what: "Every task and what waits on what, laid out again from the start date on your workdays. Progress doesn't come along." },
+          { name: "Never copied", what: "Selections (left blank for the new client), bids, POs, bills, invoices, change orders, daily logs, time, messages, photos and other files. They belong to the first job." },
+        ],
+      },
+      {
+        heading: "Plan templates",
+        items: [
+          { name: "Keep this job as a plan template", what: "Turns the job into a plan template: it leaves the job lists, the schedule, the map and QuickBooks, and shows under **Projects → Plan templates**.", how: "Click **Make it a regular job again** to undo." },
+          { name: "Keep the copy as a plan template", what: "Makes the copy a plan template instead of a real job, with no client or address. Use it to save a clean version of a house from a job you built." },
+        ],
+      },
+    ],
+    tips: [
+      "The copy is its own job. Changing it never changes the job it came from, and changing a plan template never changes jobs already copied from it.",
+    ],
+    related: ["projects", "project-page", "takeoff-screen", "estimate"],
   },
   {
     slug: "selections",

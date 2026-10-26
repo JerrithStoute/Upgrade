@@ -16,8 +16,8 @@ export default async function SpecHomesPage() {
   await requireView("budget");
   const today = new Date();
   const [houses, others] = await Promise.all([
-    db.project.findMany({ where: { isSpec: true }, orderBy: { number: "desc" }, select: { id: true } }),
-    db.project.findMany({ where: { isSpec: false, status: { notIn: ["COMPLETED", "CANCELLED"] } }, orderBy: { number: "desc" }, select: { id: true, number: true, name: true } }),
+    db.project.findMany({ where: { isSpec: true, isTemplate: false }, orderBy: { number: "desc" }, select: { id: true } }),
+    db.project.findMany({ where: { isSpec: false, status: { notIn: ["COMPLETED", "CANCELLED"] }, isTemplate: false }, orderBy: { number: "desc" }, select: { id: true, number: true, name: true } }),
   ]);
   const in30 = addDays(today, 30);
   const rows = await Promise.all(

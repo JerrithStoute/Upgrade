@@ -67,7 +67,7 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
     }),
     db.user.findMany({ where: { active: true, role: { in: ["ADMIN", "STAFF"] } }, select: { id: true, name: true, payRate: true, salaried: true }, orderBy: { name: "asc" } }),
     laborBurden(),
-    db.project.findMany({ where: { status: { not: "CANCELLED" } }, select: { id: true, number: true, name: true }, orderBy: { number: "desc" } }),
+    db.project.findMany({ where: { status: { not: "CANCELLED" }, isTemplate: false }, select: { id: true, number: true, name: true }, orderBy: { number: "desc" } }),
     db.costCode.findMany({
       where: { active: true },
       select: { id: true, code: true, name: true, division: true },
