@@ -11,6 +11,7 @@ import { Badge, Button, ButtonLink, EmptyState, PageHeader, Progress, TBody, THe
 import { PROJECTS_COOKIE, projectsView } from "@/lib/projects-view";
 import { ProjectWidgets, type Widget } from "./_components/project-widgets";
 import { JobsMap } from "@/components/maps/jobs-map";
+import { moveJobPin } from "./actions";
 import { siteAddressOf } from "@/lib/job-site";
 
 /** Pin colors on the map, by status. */
@@ -176,6 +177,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         <div className="space-y-2 p-3">
           <JobsMap
             className="h-[28rem]"
+            move={moveJobPin}
             pins={pinned.map((p) => ({ id: p.id, name: `#${p.number} ${p.name}`, address: siteAddressOf(p), lat: p.siteLat!, lng: p.siteLng!, color: STATUS_COLOR[p.status], href: `/projects/${p.id}` }))}
           />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">

@@ -10,6 +10,7 @@ import { Badge, Card, CardBody, CardHeader, Progress, Stat } from "@/components/
 import { companyClock } from "@/lib/company-zone";
 import { siteAddressOf } from "@/lib/job-site";
 import { JobsMap } from "@/components/maps/jobs-map";
+import { moveJobPin } from "../actions";
 import { Directions } from "@/components/maps/directions";
 
 function TabLink({ href, children = "View all" }: { href: string; children?: React.ReactNode }) {
@@ -205,7 +206,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
             <CardHeader title="Job site" actions={<Directions to={{ lat: project.siteLat, lng: project.siteLng, address: siteAddressOf(project) }} small />} />
             <CardBody className="space-y-2">
               {project.siteLat != null && project.siteLng != null ? (
-                <JobsMap pins={[{ id: project.id, name: project.name, address: siteAddressOf(project), lat: project.siteLat, lng: project.siteLng }]} className="h-56" />
+                <JobsMap pins={[{ id: project.id, name: project.name, address: siteAddressOf(project), lat: project.siteLat, lng: project.siteLng }]} className="h-56" move={moveJobPin} />
               ) : null}
               <p className="text-sm text-slate-600">{siteAddressOf(project) || "No address yet"}</p>
               {project.siteLat == null ? (
@@ -214,7 +215,7 @@ export default async function ProjectOverviewPage({ params }: { params: Promise<
                   <Link href={`${base}/edit`} className="font-medium text-blue-700 hover:underline">
                     set the spot
                   </Link>{" "}
-                  (from the address, or standing at the site).
+                  (tap the map where it is, find it from the address, or stand at the site).
                 </p>
               ) : null}
             </CardBody>

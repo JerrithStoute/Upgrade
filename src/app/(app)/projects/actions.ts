@@ -137,8 +137,17 @@ export const deleteProject = friendly(async function deleteProject(formData: For
   redirect("/projects");
 });
 
-/** The job's spot on the map: where the phone is now (standing at the site), or its address looked up again. */
-export async function setJobSite(projectId: string, spot: { lat: number; lng: number } | "address"): Promise<{ ok: true } | { ok: false; error: string }> {
+/** A job's pin moved on a map (it was in the wrong spot): the job's spot is there now. */
+export async function moveJobPin(projectId: string, spot: { lat: number; lng: number }) {
+  return setJobSite(projectId, spot, "MAP");
+}
+
+/** The job's spot on the map: where the phone is now (standing at the site), moved on the map, or its address looked up again. */
+export async function setJobSite(
+  projectId: string,
+  spot: { lat: number; lng: number } | "address",
+  from: "PHONE" | "MAP" = "PHONE",
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const user = await requireStaff();
   const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, name: true } });
   if (!project) return { ok: false, error: "Project not found." };
@@ -147,13 +156,15 @@ export async function setJobSite(projectId: string, spot: { lat: number; lng: nu
     const p = await db.project.findUnique({ where: { id: projectId }, select: { siteLat: true } });
     if (p?.siteLat == null) return { ok: false, error: "The address wasn't found on the map — stand at the site and use where you are instead." };
   } else {
+    if (from !== "PHONE" && from !== "MAP") return { ok: false, error: "That spot didn't come through." };
     if (!Number.isFinite(spot.lat) || !Number.isFinite(spot.lng) || Math.abs(spot.lat) > 90 || Math.abs(spot.lng) > 180) return { ok: false, error: "That spot didn't come through." };
     // Kept until the address changes: the address it was set against is noted with it.
     const p = await db.project.findUnique({ where: { id: projectId }, select: { address: true, city: true, state: true, zip: true } });
-    await db.project.update({ where: { id: projectId }, data: { siteLat: spot.lat, siteLng: spot.lng, siteFrom: "PHONE", siteAddress: p ? siteAddressOf(p) : null } });
+    await db.project.update({ where: { id: projectId }, data: { siteLat: spot.lat, siteLng: spot.lng, siteFrom: from, siteAddress: p ? siteAddressOf(p) : null } });
   }
-  await logActivity({ projectId, userId: user.id, type: "project.updated", description: spot === "address" ? "Job site found from the address" : "Job site set from a phone at the site" });
+  await logActivity({ projectId, userId: user.id, type: "project.updated", description: spot === "address" ? "Job site found from the address" : from === "MAP" ? "Job site moved on the map" : "Job site set from a phone at the site" });
   revalidatePath(`/projects/${projectId}/edit`);
+  revalidatePath(`/projects/${projectId}`);
   return { ok: true };
 }
 

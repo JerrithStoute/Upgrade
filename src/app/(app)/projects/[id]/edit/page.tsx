@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { getProject, staffUsers } from "@/lib/projects";
 import { Card, CardBody, CardHeader, ConfirmForm } from "@/components/ui";
 import { ProjectForm } from "../../_components/project-form";
-import { deleteProject, saveJobVendors, setJobSite, updateProject } from "../../actions";
+import { deleteProject, moveJobPin, saveJobVendors, setJobSite, updateProject } from "../../actions";
 import { JobVendors } from "../../_components/job-vendors";
 import { JobSite } from "../../_components/job-site";
 
@@ -22,6 +22,13 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
     db.projectVendor.findMany({ where: { projectId: id }, select: { vendorId: true } }),
   ]);
 
+  // A job not on the map yet: the map starts near another job (in the same city if there is one).
+  const near =
+    project.siteLat == null
+      ? ((project.city ? await db.project.findFirst({ where: { city: project.city, siteLat: { not: null } }, select: { siteLat: true, siteLng: true } }) : null) ??
+        (await db.project.findFirst({ where: { siteLat: { not: null } }, orderBy: { updatedAt: "desc" }, select: { siteLat: true, siteLng: true } })))
+      : null;
+
   return (
     <div className="space-y-6">
       <ProjectForm action={updateProject} project={project} clients={clients} managers={managers} teamIds={team.map((t) => t.userId)} />
@@ -30,6 +37,9 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
         site={project.siteLat != null && project.siteLng != null ? { lat: project.siteLat, lng: project.siteLng, from: project.siteFrom } : null}
         hasAddress={!!project.address?.trim()}
         set={setJobSite.bind(null, project.id)}
+        pin={{ id: project.id, name: project.name, address: [project.address, project.city, project.state].filter(Boolean).join(", ") }}
+        move={moveJobPin}
+        near={near ? { lat: near.siteLat!, lng: near.siteLng! } : undefined}
       />
 
       <JobVendors

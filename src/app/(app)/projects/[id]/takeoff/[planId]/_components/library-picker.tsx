@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, Library, Plus, Search, X } from "lucide-react";
-import { Button } from "@/components/ui";
+import { Button, buttonClasses } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { CONDITION_TYPE_LABELS, type ConditionType } from "@/lib/takeoff";
 import type { LibraryTakeoff } from "./plan-viewer";
 
 /**
  * The Library: every takeoff in your templates, big enough to read, to pull onto the job.
- * Stays open so several can be added; Done starts measuring with the last one added.
+ * Click a row to add it. Stays open so several can be added; Done starts measuring with the last one added.
  */
 export function LibraryPicker({
   library,
@@ -112,8 +112,8 @@ export function LibraryPicker({
             ) : null}
             {shown.map((l) => {
               const here = onJob(l);
-              return (
-                <li key={l.id} className="flex items-center gap-3 px-5 py-2.5">
+              const row = (
+                <>
                   <span className="h-3.5 w-3.5 shrink-0 rounded" style={{ background: l.color }} />
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium text-slate-900">{l.name}</p>
@@ -122,14 +122,30 @@ export function LibraryPicker({
                       {templateId ? "" : ` · ${l.template}`}
                     </p>
                   </div>
+                </>
+              );
+              return (
+                <li key={l.id}>
                   {here ? (
-                    <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700">
-                      <Check className="h-3.5 w-3.5" /> On this job
-                    </span>
+                    <div className="flex items-center gap-3 px-5 py-2.5">
+                      {row}
+                      <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-emerald-700">
+                        <Check className="h-3.5 w-3.5" /> On this job
+                      </span>
+                    </div>
                   ) : (
-                    <Button type="button" size="sm" variant="secondary" disabled={busy !== null} onClick={() => add(l)}>
-                      <Plus className="h-3.5 w-3.5" /> {busy === l.id ? "Adding…" : "Add"}
-                    </Button>
+                    // The whole row adds it — no hunting for the Add button.
+                    <button
+                      type="button"
+                      disabled={busy !== null}
+                      onClick={() => add(l)}
+                      className="flex w-full items-center gap-3 px-5 py-2.5 text-left hover:bg-blue-50 disabled:cursor-wait"
+                    >
+                      {row}
+                      <span className={buttonClasses("secondary", "sm", "pointer-events-none shrink-0")}>
+                        <Plus className="h-3.5 w-3.5" /> {busy === l.id ? "Adding…" : "Add"}
+                      </span>
+                    </button>
                   )}
                 </li>
               );

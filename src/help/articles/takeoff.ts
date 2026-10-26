@@ -53,7 +53,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Find or add a takeoff", what: "Finds a takeoff on this job by name, or names a new one.", how: "Start typing. Pick one from the list, or pick a **type** in the box next to it and click **+ Add** to make a new one. It's picked and ready to measure." },
           { name: "Type", what: "How the new takeoff is drawn and counted: Area, Linear, Count, Joists / Rafters, Hip / Valley, Beams, Walls, Openings / Headers, Doors, Windows." },
           { name: "More options", what: "Opens the full form for a new takeoff, with every setting." },
-          { name: "Library", what: "Pulls ready-made takeoffs from your takeoff templates onto this job.", how: "Search or pick a template on the left, click **Add** on the ones you want (it stays open so you can add several), then **Done**." },
+          { name: "Library", what: "Pulls ready-made takeoffs from your takeoff templates onto this job.", how: "Search or pick a template on the left, click the ones you want — anywhere on the row adds it (it stays open so you can add several) — then **Done**." },
           { name: "Just this page / Show all", what: "Lists only the takeoffs used on this sheet, or every takeoff on the job." },
           { name: "Eye (in the header)", what: "Hides every takeoff for a clean look at the plan, or shows them all again." },
           { name: "A takeoff's row", what: "Its color, name and type, then this sheet's quantity and the whole job's (\"Sheet X · All Y\"). A **Reference** badge means it's measured for information only and isn't on the estimate.", how: "Click the row to pick it and start measuring." },
@@ -278,7 +278,7 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "Templates and the Library",
         items: [
-          { name: "Library", what: "On the left panel: adds takeoffs from your templates onto this job, one at a time." },
+          { name: "Library", what: "On the left panel: adds takeoffs from your templates onto this job: click a row to add it." },
           { name: "⋯ Takeoff → Add takeoffs from a template…", what: "Adds a whole template at once. Takeoffs already on the job are skipped." },
           { name: "⋯ Takeoff → Save takeoffs as a template…", what: "Admins: saves this job's takeoffs into a template: add to one you have, make a new one, or replace one." },
         ],

@@ -15,8 +15,8 @@ export function securityHeaders(production: boolean) {
     // Next.js puts small inline scripts in each page; pdf.js decodes plans with WebAssembly. Dev reload needs eval.
     `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' ${TURNSTILE}${production ? "" : " 'unsafe-eval'"}`,
     "style-src 'self' 'unsafe-inline'",
-    // Street map tiles for job maps (src/components/maps/jobs-map.tsx).
-    "img-src 'self' data: blob: https://tile.openstreetmap.org",
+    // Street and satellite map tiles for job maps (src/components/maps/jobs-map.tsx).
+    "img-src 'self' data: blob: https://tile.openstreetmap.org https://server.arcgisonline.com",
     "font-src 'self' data:",
     "connect-src 'self'",
     "worker-src 'self' blob:",
