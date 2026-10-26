@@ -39,8 +39,8 @@ const QUOTE_TYPES = [
 export async function submitBidPrices(_prev: PricesState, fd: FormData): Promise<PricesState> {
   // (A link is hard to guess, but a page anyone can reach gets a limit per address anyway.)
   const ipKey = `bid-prices:${await clientIp()}`;
-  if (retryAfter(ipKey, 30) > 0) return { error: "Too many tries from here — wait a few minutes and send it again." };
-  recordFailure(ipKey, 10 * 60 * 1000);
+  if (await retryAfter(ipKey, 30) > 0) return { error: "Too many tries from here — wait a few minutes and send it again." };
+  await recordFailure(ipKey, 10 * 60 * 1000);
 
   const found = await bidForLink(String(fd.get("t") ?? ""));
   if (!found) return { error: "This link has expired or doesn't work any more — reply to the email instead." };

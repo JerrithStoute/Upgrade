@@ -1,4 +1,5 @@
 import "server-only";
+import { ifFirst } from "./job-lock";
 import { db, systemDb } from "./db";
 import { runAsCompany } from "./tenant";
 import { appUrl, sendMail, simpleEmail } from "./mail";
@@ -66,10 +67,13 @@ export function startLongShiftChecks() {
   if (g.__longShiftTimer) return; // dev reloads re-run register()
   const check = async () => {
     for (const { id } of await systemDb.company.findMany({ select: { id: true } }).catch(() => []))
-      await runAsCompany(id, async () => {
-        const n = await sendLongShiftEmails();
-        if (n) console.log(`[long shift] company ${id}: ${n} email(s)`);
-      }).catch((err) => console.error(`[long shift] company ${id} failed:`, err));
+      // With several copies of the app online, one checks each company (job-lock.ts).
+      await ifFirst(`long-shift:${id}`, 10 * 60 * 1000, () =>
+        runAsCompany(id, async () => {
+          const n = await sendLongShiftEmails();
+          if (n) console.log(`[long shift] company ${id}: ${n} email(s)`);
+        }),
+      ).catch((err) => console.error(`[long shift] company ${id} failed:`, err));
   };
   setTimeout(check, 120_000);
   g.__longShiftTimer = setInterval(check, 15 * 60 * 1000);

@@ -1,6 +1,7 @@
 import "server-only";
 import path from "path";
-import { promises as fs } from "fs";
+import { promises as fs, createReadStream } from "fs";
+import { Readable } from "stream";
 import { randomUUID } from "crypto";
 import { normalizeKey } from "./storage-key";
 import { currentCompanyId } from "./tenant";
@@ -55,11 +56,11 @@ function driver(): Driver {
   throw new Error(`File storage "${kind}" isn't set up yet`);
 }
 
-const MAX_BYTES = 25 * 1024 * 1024;
+export const MAX_BYTES = 25 * 1024 * 1024;
 /** Plan sets uploaded for takeoff are often large. */
 export const PLAN_MAX_BYTES = 100 * 1024 * 1024;
 
-async function newKey(folder: string, name: string) {
+export async function newKey(folder: string, name: string) {
   const ext = path.extname(name).toLowerCase().slice(0, 10);
   return normalizeKey(`${await currentCompanyId()}/${folder}/${randomUUID()}${ext}`);
 }
@@ -95,9 +96,64 @@ export async function writeUpload(key: string, data: Buffer, contentType: string
   return k;
 }
 
-/** A stored file's bytes. */
+/** A stored file's bytes — whole, in memory: only for small files (a logo, a picture). Others: fileResponse / readUploadStream. */
 export function readUpload(storagePath: string) {
   return driver().get(normalizeKey(storagePath));
+}
+
+/**
+ * Files go straight between the browser and cloud storage — not through the server — when it's on
+ * (FILES_DIRECT=on, online). Its bucket needs the CORS rule in GOING-ONLINE.md first, so the plan viewer
+ * may read from it; until then files come through the server as before.
+ */
+export const filesDirect = () => (process.env.STORAGE || "local").toLowerCase() === "cloud" && process.env.FILES_DIRECT === "on";
+
+/** A stored file as a stream — read a piece at a time, never whole in memory. Throws (code ENOENT) when it's not there. */
+export async function readUploadStream(storagePath: string): Promise<{ body: ReadableStream<Uint8Array>; size: number | null }> {
+  const key = normalizeKey(storagePath);
+  if (driver() === cloud) return { body: await cloud.stream(key), size: null };
+  const file = path.join(uploadDir(), key);
+  const { size } = await fs.stat(file);
+  return { body: Readable.toWeb(createReadStream(file)) as ReadableStream<Uint8Array>, size };
+}
+
+/** Types safe to open in the browser; anything else is always saved instead (it could run script). */
+export const INLINE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "application/pdf"]);
+
+function disposition(kind: "inline" | "attachment", name: string) {
+  const ascii = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+  return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
+
+/**
+ * A stored file, as the answer to the browser asking for it — after the route has checked who may see
+ * it. With files direct (filesDirect), a short redirect to a private link straight to the file in cloud
+ * storage: the server never holds it. Otherwise the file itself, streamed. `inline`: opened in the
+ * browser (only types that are safe to) rather than saved.
+ */
+export async function fileResponse(storagePath: string, o: { name: string; mimeType: string; inline: boolean }): Promise<Response> {
+  const inline = o.inline && INLINE_TYPES.has(o.mimeType);
+  if (filesDirect()) {
+    const url = await cloud.signedUrl(normalizeKey(storagePath), {
+      method: "GET",
+      filename: o.name,
+      contentType: inline ? o.mimeType : "application/octet-stream",
+      inline,
+    });
+    return new Response(null, { status: 302, headers: { Location: url, "Cache-Control": "no-store" } });
+  }
+  const { body, size } = await readUploadStream(storagePath);
+  return new Response(body, {
+    headers: {
+      "Content-Type": inline ? o.mimeType : "application/octet-stream",
+      "Content-Disposition": disposition(inline ? "inline" : "attachment", o.name),
+      ...(size != null ? { "Content-Length": String(size) } : {}),
+      "X-Content-Type-Options": "nosniff",
+      // Belt and braces for anything that is rendered. Skipped for PDFs: Chrome's viewer refuses sandboxed ones.
+      ...(o.mimeType === "application/pdf" && inline ? {} : { "Content-Security-Policy": "sandbox" }),
+      "Cache-Control": "private, max-age=3600",
+    },
+  });
 }
 
 export async function deleteUpload(storagePath: string) {

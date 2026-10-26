@@ -33,8 +33,8 @@ export async function requestInvite(_prev: RequestState, fd: FormData): Promise<
 
   const h = await headers();
   const ip = h.get("x-forwarded-for")?.split(",")[0]?.trim() || h.get("x-real-ip") || "unknown";
-  if (retryAfter(`invite-request:${ip}`, 5) > 0) return { error: "We've had a few requests from here already — try again later, or email us." };
-  recordFailure(`invite-request:${ip}`, 60 * 60 * 1000);
+  if (await retryAfter(`invite-request:${ip}`, 5) > 0) return { error: "We've had a few requests from here already — try again later, or email us." };
+  await recordFailure(`invite-request:${ip}`, 60 * 60 * 1000);
 
   const text = inviteRequestText(r);
   await stationLog(null, "invite.requested", text);

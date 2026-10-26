@@ -16,15 +16,15 @@ export async function finishTwoStep(_prev: StepState, fd: FormData): Promise<Ste
   const pending = await readTwoStep();
   if (!pending || pending.step !== "code") return { error: "That took too long — sign in again" };
   const key = `two-step:${pending.userId}`;
-  if (retryAfter(key, 5) > 0) return { error: "Too many wrong codes — wait 15 minutes, or sign in again later" };
+  if (await retryAfter(key, 5) > 0) return { error: "Too many wrong codes — wait 15 minutes, or sign in again later" };
   const result = await checkSecondStep(pending.userId, String(fd.get("code") ?? ""));
   if (result === "wrong") {
-    recordFailure(key, 15 * 60 * 1000);
+    await recordFailure(key, 15 * 60 * 1000);
     const who = await systemDb.user.findUnique({ where: { id: pending.userId }, select: { id: true, companyId: true, name: true } });
     if (who) await logSecurity(who, "failed", "entered a wrong two-step code");
     return { error: "That code isn't right — check the app and try again" };
   }
-  clearFailures(key);
+  await clearFailures(key);
   const user = await systemDb.user.findUniqueOrThrow({ where: { id: pending.userId }, select: { id: true, companyId: true, name: true, role: true, sessionVersion: true } });
   await clearTwoStep();
   if (fd.get("remember") === "on") await trustThisDevice(pending.userId, user.sessionVersion);

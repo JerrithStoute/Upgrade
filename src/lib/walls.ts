@@ -1,6 +1,7 @@
 import "server-only";
 import { db, systemDb } from "./db";
 import { lumberUpToDate, whileWorkingOut } from "./lumber-state";
+import { oneAtATime } from "./job-lock";
 import { newItemPlacement } from "./item-codes";
 import { kindOfLegacyCategory } from "./code-groups";
 import { conditionTotals, loadConditions } from "./takeoff-data";
@@ -117,10 +118,19 @@ export async function syncAutoItems(projectId: string, conditionId?: string) {
   const mine = before
     .catch(() => {})
     .then(async () => {
-      // When it started: a change made while it runs still counts as a change afterwards.
-      const started = new Date();
-      await whileWorkingOut(() => syncAutoItemsNow(projectId, conditionId));
-      if (!conditionId) await systemDb.project.updateMany({ where: { id: projectId }, data: { lumberSyncedAt: started } });
+      // One copy of the app at a time per job (job-lock.ts) — two at once could add the same lines twice.
+      // This copy's own runs already wait for each other (`running`); this covers the other copies.
+      await oneAtATime(
+        `lines:${projectId}`,
+        5 * 60 * 1000,
+        async () => {
+          // When it started: a change made while it runs still counts as a change afterwards.
+          const started = new Date();
+          await whileWorkingOut(() => syncAutoItemsNow(projectId, conditionId));
+          if (!conditionId) await systemDb.project.updateMany({ where: { id: projectId }, data: { lumberSyncedAt: started } });
+        },
+        2 * 60 * 1000,
+      );
     });
   running.set(projectId, mine);
   try {

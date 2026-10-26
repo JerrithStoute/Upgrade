@@ -8,6 +8,7 @@ import { companyTables, connectPg, jsonSource, replaceCompany, sqliteSource } fr
 import { currentCompanyId, runAsCompany } from "./tenant";
 import { normalizeKey } from "./storage-key";
 import { cloud, NotFound } from "./cloud-storage";
+import { ifFirst } from "./job-lock";
 
 /**
  * Backups of one company's records — every one of its rows in every table — and the
@@ -319,7 +320,10 @@ export async function restoreBackup(file: string) {
   return { safety: safety.file, filesBack };
 }
 
-/** Runs from the server: each company is backed up if its last backup is over a day old — checked at start-up, then hourly. */
+/**
+ * Runs from the server: each company is backed up if its last backup is over a day old — checked at start-up,
+ * then hourly. With several copies of the app online, one does each company's (job-lock.ts); the others skip it.
+ */
 export function startNightlyBackups() {
   const g = globalThis as unknown as { __backupTimer?: ReturnType<typeof setInterval> };
   if (g.__backupTimer) return; // dev reloads re-run register()
@@ -331,7 +335,7 @@ export function startNightlyBackups() {
   };
   const check = async () => {
     for (const { id } of await systemDb.company.findMany({ select: { id: true } }).catch(() => []))
-      await runAsCompany(id, checkOne).catch((err) => console.error(`[backup] company ${id} failed:`, err));
+      await ifFirst(`backup:${id}`, 3 * 60 * 60 * 1000, () => runAsCompany(id, checkOne)).catch((err) => console.error(`[backup] company ${id} failed:`, err));
   };
   setTimeout(check, 60_000); // let the server finish starting
   g.__backupTimer = setInterval(check, 60 * 60 * 1000);

@@ -22,8 +22,8 @@ import type pg from "pg";
 const q = (s: string) => `"${s.replace(/"/g, '""')}"`;
 const lit = (s: string) => `'${s.replace(/'/g, "''")}'`;
 
-/** Tables of The Builder Station itself — no company's, and closed to the app's login. */
-export const STATION_TABLES = ["StationUser", "StationLog", "StationBuilder"];
+/** Tables of The Builder Station itself (its people and log, and the claims and sign-in limits every copy of the app shares) — no company's, and closed to the app's login. */
+export const STATION_TABLES = ["StationUser", "StationLog", "StationBuilder", "JobLock", "RateLimit"];
 
 export type RulesReport ={ appRole: string | null; tables: number; links: number; note?: string };
 

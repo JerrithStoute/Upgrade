@@ -21,6 +21,7 @@
     "db:copy-from-sqlite": "tsx --env-file-if-exists=.env scripts/copy-from-sqlite.ts",
     "db:rules": "tsx --env-file-if-exists=.env scripts/tenant-rules.ts",
     "test:isolation": "tsx --env-file-if-exists=.env scripts/isolation-test.ts",
+    "test:copies": "tsx --env-file-if-exists=.env scripts/copies-test.ts",
     "db:migration": "tsx --env-file-if-exists=.env scripts/new-migration.ts",
     "db:deploy": "prisma migrate deploy && npm run db:rules",
     "go-online:copy": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.online scripts/move-online.ts"

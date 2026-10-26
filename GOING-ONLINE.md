@@ -112,3 +112,53 @@ DNS can take a few minutes to an hour.
 - Delete `.env.online`, or keep it somewhere safe.
 - In Render → builderstation-db → **Networking**, limit outside connections to your own IP address. Render's own services always connect.
 - In Settings → Company, click **Back up now** once. Then check that a backup is listed.
+
+## 8. When it needs more power: more copies
+
+The program is safe to run as several copies at once, sharing one database:
+
+- **Background work runs once.** The nightly backup, the morning emails, the long-shift emails and reworking a
+  job's lumber lines each take a claim in the database first (`JobLock`, see `src/lib/job-lock.ts`). Only one
+  copy gets it; the others skip or wait. If a copy stops halfway, its claim runs out and another picks it up.
+- **Sign-in limits are shared.** Wrong passwords, codes and forms sent too often are counted in the database
+  (`RateLimit`), so more copies don't mean more guesses.
+- **Sign-ins work on any copy.** Each one carries its own signed ticket.
+
+To add copies: Render → builderstation → **Scaling** → set the number of instances (Render's plans that allow
+more than one instance). Watch the database too: more copies means more connections. Turn up its plan
+(builderstation-db) if pages start waiting on it.
+
+To check it on this PC: `npm run test:copies` — two separate processes race for the same claims, count the same
+wrong tries, and (with `TEST_JOB_ID` set to a test job) rework the same job's lines at once.
+
+## 9. Files straight to and from Cloudflare (switch on once)
+
+Out of the box, files go through the program: it pulls a plan set out of R2 and passes it on (streamed, a piece at a
+time), and uploads come in through it. Switched on, files go **straight between the browser and R2**: the program
+still checks who may open or upload a file, then hands the browser a private link to R2, good for an hour (opening)
+or one upload. Big plans open faster, opening one again is instant, uploads show real progress, and the program's
+memory stays free.
+
+1. **Cloudflare → R2 → builderstation-files → Settings → CORS policy → Add CORS policy**, paste this, save:
+
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://app.thebuilderstation.com"],
+       "AllowedMethods": ["GET", "HEAD", "PUT"],
+       "AllowedHeaders": ["Content-Type", "Range"],
+       "ExposeHeaders": ["Content-Length", "Content-Range", "Accept-Ranges", "Content-Type", "Content-Disposition", "ETag"],
+       "MaxAgeSeconds": 3600
+     }
+   ]
+   ```
+
+   The bucket stays private (public access off) and no keys change. This only lets the browser, from your own
+   address, use the private links the program gives it.
+
+2. **Render → builderstation → Environment → Add**: `FILES_DIRECT` = `on`. Save (it redeploys).
+
+3. Check: open a plan set on the takeoff, open a PDF in Files, upload a file in Files (a progress bar shows per file)
+   and a plan set on Plans.
+
+To switch back: set `FILES_DIRECT` to `off` (or delete it). Nothing else changes; files are where they always were.

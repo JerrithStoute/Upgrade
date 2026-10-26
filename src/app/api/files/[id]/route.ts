@@ -1,21 +1,15 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { getCurrentUser, isStaff } from "@/lib/auth";
-import { readUpload } from "@/lib/uploads";
+import { fileResponse } from "@/lib/uploads";
 import { recordClientView } from "@/lib/file-views";
 
 /**
- * Types that are safe to render in the browser. Anything else (HTML, SVG, XML,
- * JavaScript…) could run script on this origin, so it is always downloaded.
+ * Serves an uploaded file to authenticated users (clients only see their own project's files). Who may
+ * see it is checked here; the file itself comes straight from cloud storage when files go direct, else
+ * streamed — never whole in the server's memory (uploads.ts fileResponse). Only safe types ever open in
+ * the browser; anything else (HTML, SVG, XML, JavaScript…) is always saved instead.
  */
-const INLINE_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp", "image/avif", "application/pdf"]);
-
-function contentDisposition(kind: "inline" | "attachment", name: string) {
-  const ascii = name.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
-  return `${kind}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
-}
-
-/** Serves an uploaded file to authenticated users (clients only see their own project's files). */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await getCurrentUser();
   if (!user) return new NextResponse("Unauthorized", { status: 401 });
@@ -38,22 +32,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // ?open=1 is a client opening it from its link (not a thumbnail): remembered as seen.
   if (user.role === "CLIENT" && search.get("open") === "1") await recordClientView(file, { id: user.id, name: user.name });
 
-  // ?download=1 saves the file instead of opening it.
-  const inline = INLINE_TYPES.has(file.mimeType) && search.get("download") !== "1";
-
   try {
-    const data = await readUpload(file.storagePath);
-    return new NextResponse(new Uint8Array(data), {
-      headers: {
-        "Content-Type": inline ? file.mimeType : "application/octet-stream",
-        "Content-Disposition": contentDisposition(inline ? "inline" : "attachment", file.name),
-        "X-Content-Type-Options": "nosniff",
-        // Belt and braces for anything that is rendered. Skipped for PDFs because
-        // Chrome's built-in viewer refuses to open sandboxed documents.
-        ...(file.mimeType === "application/pdf" && inline ? {} : { "Content-Security-Policy": "sandbox" }),
-        "Cache-Control": "private, max-age=3600",
-      },
-    });
+    // ?download=1 saves the file instead of opening it.
+    return await fileResponse(file.storagePath, { name: file.name, mimeType: file.mimeType, inline: search.get("download") !== "1" });
   } catch {
     return new NextResponse("File missing on disk", { status: 404 });
   }

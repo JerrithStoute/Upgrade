@@ -2357,3 +2357,24 @@ model StationBuilder {
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 }
+
+/// A claim on a piece of background work — the nightly backup, a morning's emails, reworking a job's
+/// lines — so only one copy of the app does it at a time (job-lock.ts). A claim runs out at `until`,
+/// so a copy that stops mid-way doesn't hold it forever. The Builder Station's own, like the Station's
+/// tables: no company's, closed to the app's login.
+model JobLock {
+  name   String   @id
+  holder String
+  until  DateTime
+  at     DateTime @default(now())
+}
+
+/// Tries that went wrong (a password, a code, a form) per key, in a time window — shared by every copy
+/// of the app (rate-limit.ts). The Builder Station's own: no company's, closed to the app's login.
+model RateLimit {
+  key     String   @id
+  count   Int
+  resetAt DateTime
+
+  @@index([resetAt])
+}

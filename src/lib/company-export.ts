@@ -2,7 +2,8 @@ import "server-only";
 import path from "path";
 import archiver from "archiver";
 import { dumpTables } from "./backup";
-import { readUpload } from "./uploads";
+import { Readable } from "stream";
+import { readUploadStream } from "./uploads";
 
 /**
  * Everything a company has in The Builder Station, as one ZIP an admin can download:
@@ -13,7 +14,12 @@ import { readUpload } from "./uploads";
 type Row = Record<string, unknown>;
 
 /** Windows- and Mac-safe file or folder name. */
-const safe = (s: string) => s.replace(/[<>:"/\\|?*\x00-\x1f]/g, "_").replace(/[. ]+$/, "").trim().slice(0, 120) || "_";
+const safe = (s: string) =>
+  s
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+    .replace(/[. ]+$/, "")
+    .trim()
+    .slice(0, 120) || "_";
 
 function cell(v: unknown): string {
   if (v === null || v === undefined) return "";
@@ -75,15 +81,24 @@ export async function companyExport(companyId: string) {
   const vendors = new Map((tables.Vendor ?? []).map((v) => [v.id, `files/Vendors/${safe(String(v.name))}`]));
   const files: { key: string; as: string }[] = [];
   if (company.logoPath) files.push({ key: String(company.logoPath), as: name("files", `Company logo${extFor(company.logoType as string)}`) });
-  for (const p of tables.Project ?? []) if (p.coverPath) files.push({ key: String(p.coverPath), as: name(projects.get(p.id)!, `Cover picture${path.extname(String(p.coverPath))}`) });
+  for (const p of tables.Project ?? [])
+    if (p.coverPath) files.push({ key: String(p.coverPath), as: name(projects.get(p.id)!, `Cover picture${path.extname(String(p.coverPath))}`) });
   for (const f of tables.FileAsset ?? []) files.push({ key: String(f.storagePath), as: name(projects.get(f.projectId) ?? "files/Other", String(f.name)) });
   for (const c of tables.VendorInsurance ?? [])
-    if (c.storagePath) files.push({ key: String(c.storagePath), as: name(`${vendors.get(c.vendorId) ?? "files/Vendors"}/Insurance`, String(c.fileName ?? `Certificate${path.extname(String(c.storagePath))}`)) });
+    if (c.storagePath)
+      files.push({
+        key: String(c.storagePath),
+        as: name(`${vendors.get(c.vendorId) ?? "files/Vendors"}/Insurance`, String(c.fileName ?? `Certificate${path.extname(String(c.storagePath))}`)),
+      });
 
   (async () => {
     for (const f of files) {
       try {
-        zip.append(await readUpload(f.key), { name: f.as });
+        // A piece at a time, one file after another: the zip never holds a whole plan set in memory.
+        const { body } = await readUploadStream(f.key);
+        const done = new Promise((resolve) => zip.once("entry", resolve));
+        zip.append(Readable.fromWeb(body as import("stream/web").ReadableStream<Uint8Array>), { name: f.as });
+        await done;
       } catch {
         missing.push(f.as);
       }

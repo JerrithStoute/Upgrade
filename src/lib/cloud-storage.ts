@@ -44,7 +44,8 @@ const objectUrl = (key: string) => `${bucketUrl()}/${key.split("/").map(encodeUR
  * re-sends a signed upload as a stream of unknown length — which R2 refuses ("411
  * MissingContentLength"). Uploads go out with the original, which states the size.
  */
-const plainFetch: typeof fetch = (input, init) => ((globalThis.fetch as typeof fetch & { _nextOriginalFetch?: typeof fetch })._nextOriginalFetch ?? globalThis.fetch)(input, init);
+const plainFetch: typeof fetch = (input, init) =>
+  ((globalThis.fetch as typeof fetch & { _nextOriginalFetch?: typeof fetch })._nextOriginalFetch ?? globalThis.fetch)(input, init);
 
 async function call(url: string, init: RequestInit & { headers?: Record<string, string> } = {}) {
   for (let attempt = 0; ; attempt++) {
@@ -69,8 +70,52 @@ export const cloud = {
     if (!res.ok) await fail(res, `save ${key}`);
   },
 
+  /** The file as a stream (read a piece at a time — a 100 MB plan set never sits whole in memory). */
+  async stream(key: string): Promise<ReadableStream<Uint8Array>> {
+    const res = await call(objectUrl(key));
+    if (res.status === 404) throw new NotFound(key);
+    if (!res.ok || !res.body) await fail(res, `read ${key}`);
+    return res.body!;
+  },
+
+  /**
+   * A private link straight to a file in the bucket, for a browser to use itself — no keys in it, only a
+   * signature good for a while. GET: the same link all hour (signed from the top of the hour, good for two),
+   * so the browser can keep the file and opening it again is instant; how it's opened (inline or saved, its
+   * name and type) rides in the link. PUT: a one-time upload link, good for `seconds`.
+   */
+  async signedUrl(key: string, o: { method: "GET" | "PUT"; seconds?: number; filename?: string; contentType?: string; inline?: boolean }) {
+    const url = new URL(objectUrl(key));
+    let datetime: string | undefined;
+    if (o.method === "GET") {
+      const hour = new Date();
+      hour.setUTCMinutes(0, 0, 0);
+      datetime = hour.toISOString().replace(/[:-]|\.\d{3}/g, "");
+      url.searchParams.set("X-Amz-Expires", String(2 * 60 * 60));
+      if (o.contentType) url.searchParams.set("response-content-type", o.contentType);
+      if (o.filename !== undefined) {
+        const ascii = o.filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_");
+        url.searchParams.set(
+          "response-content-disposition",
+          `${o.inline ? "inline" : "attachment"}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(o.filename)}`,
+        );
+      }
+      url.searchParams.set("response-cache-control", "private, max-age=3600");
+    } else url.searchParams.set("X-Amz-Expires", String(o.seconds ?? 15 * 60));
+    const signed = await aws().sign(url.toString(), { method: o.method, aws: { signQuery: true, datetime } });
+    return signed.url;
+  },
+
   async get(key: string): Promise<Buffer> {
     const res = await call(objectUrl(key));
+    if (res.status === 404) throw new NotFound(key);
+    if (!res.ok) await fail(res, `read ${key}`);
+    return Buffer.from(await res.arrayBuffer());
+  },
+
+  /** The first `n` bytes of a file (to check what it really is, without reading all of it). */
+  async head(key: string, n: number): Promise<Buffer> {
+    const res = await call(objectUrl(key), { headers: { Range: `bytes=0-${n - 1}` } });
     if (res.status === 404) throw new NotFound(key);
     if (!res.ok) await fail(res, `read ${key}`);
     return Buffer.from(await res.arrayBuffer());
@@ -91,7 +136,10 @@ export const cloud = {
 
   /** Copies a file inside the bucket, without downloading it. */
   async copy(from: string, to: string) {
-    const res = await call(objectUrl(to), { method: "PUT", headers: { "x-amz-copy-source": `/${encodeURIComponent(process.env.S3_BUCKET!)}/${from.split("/").map(encodeURIComponent).join("/")}` } });
+    const res = await call(objectUrl(to), {
+      method: "PUT",
+      headers: { "x-amz-copy-source": `/${encodeURIComponent(process.env.S3_BUCKET!)}/${from.split("/").map(encodeURIComponent).join("/")}` },
+    });
     if (res.status === 404) throw new NotFound(from);
     if (!res.ok) await fail(res, `copy ${from}`);
   },
@@ -117,4 +165,10 @@ export const cloud = {
 };
 
 const unxml = (s: string) =>
-  s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&amp;/g, "&");
+  s
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, "&");

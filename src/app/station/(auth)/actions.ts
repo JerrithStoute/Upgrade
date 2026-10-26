@@ -39,20 +39,20 @@ export async function stationLogin(_prev: StationFormState, fd: FormData): Promi
 
   const emailKey = `station-login:email:${email}`;
   const ipKey = `station-login:ip:${await clientIp()}`;
-  const wait = Math.max(retryAfter(emailKey, 5), retryAfter(ipKey, 20));
+  const wait = Math.max(await retryAfter(emailKey, 5), await retryAfter(ipKey, 20));
   if (wait > 0) return { error: `Too many failed sign-in attempts. Try again in ${Math.max(1, Math.ceil(wait / 60))} minutes.` };
-  const needsCheck = () => !!robotCheckKey() && Math.max(failures(emailKey), failures(ipKey)) >= CHECK_AFTER;
-  if (needsCheck() && !(await passedRobotCheck(fd))) return { error: ROBOT_CHECK_FAILED, check: true };
+  const needsCheck = async () => !!robotCheckKey() && Math.max(await failures(emailKey), await failures(ipKey)) >= CHECK_AFTER;
+  if ((await needsCheck()) && !(await passedRobotCheck(fd))) return { error: ROBOT_CHECK_FAILED, check: true };
 
   const user = await systemDb.stationUser.findUnique({ where: { email } });
   const ok = await verifyPassword(password, user?.passwordHash ?? (await getDummyHash()));
   if (!user || !user.active || !user.passwordHash || !ok) {
-    recordFailure(emailKey, WINDOW_MS);
-    recordFailure(ipKey, WINDOW_MS);
+    await recordFailure(emailKey, WINDOW_MS);
+    await recordFailure(ipKey, WINDOW_MS);
     if (user && user.active) await stationLog(user.id, "sign-in.failed", `${user.name}: wrong password`);
-    return { error: "Invalid email or password.", check: needsCheck() };
+    return { error: "Invalid email or password.", check: await needsCheck() };
   }
-  clearFailures(emailKey);
+  await clearFailures(emailKey);
   await startStationStep(user.id, user.totpEnabledAt ? "code" : "setup");
   redirect(user.totpEnabledAt ? "/station/two-step" : "/station/two-step/setup");
 }
@@ -62,15 +62,15 @@ export async function finishStationCode(_prev: StationFormState, fd: FormData): 
   const step = await readStationStep();
   if (!step || step.step !== "code") return { error: "That took too long — sign in again" };
   const key = `station-two-step:${step.userId}`;
-  if (retryAfter(key, 5) > 0) return { error: "Too many wrong codes — wait 15 minutes, or sign in again later" };
+  if (await retryAfter(key, 5) > 0) return { error: "Too many wrong codes — wait 15 minutes, or sign in again later" };
   const result = await checkStationCode(step.userId, String(fd.get("code") ?? ""));
   const user = await systemDb.stationUser.findUniqueOrThrow({ where: { id: step.userId }, select: { id: true, name: true } });
   if (result === "wrong") {
-    recordFailure(key, WINDOW_MS);
+    await recordFailure(key, WINDOW_MS);
     await stationLog(user.id, "sign-in.failed", `${user.name}: wrong two-step code`);
     return { error: "That code isn't right — check the app and try again" };
   }
-  clearFailures(key);
+  await clearFailures(key);
   await clearStationStep();
   await createStationSession(user.id);
   await stationLog(user.id, "sign-in", result === "backup" ? `${user.name} signed in with a backup code` : `${user.name} signed in`);

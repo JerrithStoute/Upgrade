@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FilePlus2, Loader2 } from "lucide-react";
 import { buttonClasses } from "@/components/ui";
+import { putFile, startDirect } from "@/components/direct-upload";
 
 /**
  * "New revision": pick the updated plan file; it's saved as the next revision of
@@ -20,12 +21,24 @@ export function RevisionUpload({ projectId, planId, nextRevision }: { projectId:
     setBusy(true);
     setError(null);
     try {
-      const fd = new FormData();
-      fd.append("projectId", projectId);
-      fd.append("revisionOf", planId);
-      fd.append("clientVisible", "false");
-      fd.append("file", file);
-      const res = await fetch("/api/takeoff/plans", { method: "POST", body: fd });
+      // Online, straight to cloud storage first (then checked and recorded); else through the server.
+      const started = await startDirect(projectId, "plan", file);
+      let res: Response;
+      if (started.direct) {
+        await putFile(started.url, file);
+        res = await fetch("/api/takeoff/plans", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId, ticket: started.ticket, clientVisible: false, revisionOf: planId }),
+        });
+      } else {
+        const fd = new FormData();
+        fd.append("projectId", projectId);
+        fd.append("revisionOf", planId);
+        fd.append("clientVisible", "false");
+        fd.append("file", file);
+        res = await fetch("/api/takeoff/plans", { method: "POST", body: fd });
+      }
       const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok || !body.id) throw new Error(body.error ?? `Upload failed (${res.status})`);
       router.push(`/projects/${projectId}/takeoff/${body.id}`);

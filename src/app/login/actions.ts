@@ -43,26 +43,26 @@ export async function login(_prev: LoginState, formData: FormData): Promise<Logi
 
   const emailKey = `login:email:${email}`;
   const ipKey = `login:ip:${await clientIp()}`;
-  const wait = Math.max(retryAfter(emailKey, MAX_FAILURES_PER_EMAIL), retryAfter(ipKey, MAX_FAILURES_PER_IP));
+  const wait = Math.max(await retryAfter(emailKey, MAX_FAILURES_PER_EMAIL), await retryAfter(ipKey, MAX_FAILURES_PER_IP));
   if (wait > 0) return tooMany(wait);
-  const needsCheck = () => !!robotCheckKey() && Math.max(failures(emailKey), failures(ipKey)) >= CHECK_AFTER;
-  if (needsCheck() && !(await passedRobotCheck(formData))) return { error: ROBOT_CHECK_FAILED, check: true };
+  const needsCheck = async () => !!robotCheckKey() && Math.max(await failures(emailKey), await failures(ipKey)) >= CHECK_AFTER;
+  if ((await needsCheck()) && !(await passedRobotCheck(formData))) return { error: ROBOT_CHECK_FAILED, check: true };
 
   // Emails are unique across all companies; signing in comes before knowing the company.
   const user = await systemDb.user.findUnique({ where: { email } });
   const passwordOk = await verifyPassword(password, user?.passwordHash ?? (await getDummyHash()));
   if (!user || !user.active || !passwordOk) {
-    recordFailure(emailKey, WINDOW_MS);
-    recordFailure(ipKey, WINDOW_MS);
+    await recordFailure(emailKey, WINDOW_MS);
+    await recordFailure(ipKey, WINDOW_MS);
     if (user && user.active) await logSecurity(user, "failed", "entered a wrong password");
-    return { error: "Invalid email or password.", check: needsCheck() };
+    return { error: "Invalid email or password.", check: await needsCheck() };
   }
 
   if (!LOGIN_ROLES.includes(user.role)) {
     return { error: "Subcontractor sign-in isn't available yet. Contact your project manager." };
   }
 
-  clearFailures(emailKey);
+  await clearFailures(emailKey);
   if ((await systemDb.stationBuilder.findUnique({ where: { companyId: user.companyId }, select: { status: true } }))?.status === "PAUSED") return { error: PAUSED_MESSAGE };
   await upgradePasswordHash(user.id, password, user.passwordHash);
   if (!user.emailVerifiedAt) return { error: `Confirm your email first — we sent a link to ${user.email} when you signed up.`, unconfirmed: user.email };

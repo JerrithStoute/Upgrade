@@ -16,14 +16,54 @@ export function planKind(file: File): "PDF" | "IMAGE" | null {
  * points at it. Images are one sheet; PDF pages are counted when the plan is first opened.
  * `revisionOf`: it's a new revision of that plan set (Rev 2 of "Electrical"), keeping its name.
  */
-export async function createPlanFromFile(opts: { file: File; projectId: string; userId: string; clientVisible: boolean; name?: string; revisionOf?: string | null }) {
-  const { file, projectId, userId } = opts;
-  const kind = planKind(file);
-  if (!kind) throw new Error(`${file.name}: plans must be a PDF or a PNG, JPG or WebP image`);
-  const prev = opts.revisionOf ? await db.takeoffPlan.findFirst({ where: { id: opts.revisionOf, projectId }, select: { id: true, name: true, revision: true } }) : null;
-  if (opts.revisionOf && !prev) throw new Error("The plan set this revises wasn't found");
-  const meta = await saveUpload(file, projectId, PLAN_MAX_BYTES, "plan");
-  const name = opts.name?.trim() || prev?.name || file.name.replace(/\.[^.]+$/, "");
+export async function createPlanFromFile(opts: {
+  file: File;
+  projectId: string;
+  userId: string;
+  clientVisible: boolean;
+  name?: string;
+  revisionOf?: string | null;
+}) {
+  const { file } = opts;
+  if (!planKind(file)) throw new Error(`${file.name}: plans must be a PDF or a PNG, JPG or WebP image`);
+  await planBeingRevised(opts.projectId, opts.revisionOf);
+  const meta = await saveUpload(file, opts.projectId, PLAN_MAX_BYTES, "plan");
+  return recordPlan({ ...opts, meta });
+}
+
+/** The plan set a new revision replaces (checked before anything is stored), or null for a new plan set. */
+async function planBeingRevised(projectId: string, revisionOf: string | null | undefined) {
+  const prev = revisionOf ? await db.takeoffPlan.findFirst({ where: { id: revisionOf, projectId }, select: { id: true, name: true, revision: true } }) : null;
+  if (revisionOf && !prev) throw new Error("The plan set this revises wasn't found");
+  return prev;
+}
+
+/**
+ * A plan set already stored (sent straight to cloud storage, and checked: direct-upload.ts) — recorded the
+ * same way as one uploaded through the server: in Files → Plans, with a takeoff plan pointing at it.
+ */
+export async function recordPlan(opts: {
+  meta: { name: string; storagePath: string; mimeType: string; size: number };
+  projectId: string;
+  userId: string;
+  clientVisible: boolean;
+  name?: string;
+  revisionOf?: string | null;
+}) {
+  const { meta, projectId, userId } = opts;
+  const kind = meta.mimeType === "application/pdf" ? "PDF" : IMAGE_TYPES.includes(meta.mimeType) ? "IMAGE" : null;
+  if (!kind) {
+    await deleteUpload(meta.storagePath);
+    throw new Error(`${meta.name}: plans must be a PDF or a PNG, JPG or WebP image`);
+  }
+  let prev: Awaited<ReturnType<typeof planBeingRevised>>;
+  try {
+    prev = await planBeingRevised(projectId, opts.revisionOf);
+  } catch (err) {
+    await deleteUpload(meta.storagePath);
+    throw err;
+  }
+  const name = opts.name?.trim() || prev?.name || meta.name.replace(/\.[^.]+$/, "");
   try {
     const plan = await db.$transaction(async (tx) => {
       const asset = await tx.fileAsset.create({

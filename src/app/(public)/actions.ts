@@ -43,9 +43,9 @@ async function clientIp() {
 }
 
 /** Counts an attempt; true when there have been too many lately. */
-function tooMany(key: string, limit: number, windowMs: number) {
-  if (retryAfter(key, limit) > 0) return true;
-  recordFailure(key, windowMs);
+async function tooMany(key: string, limit: number, windowMs: number) {
+  if (await retryAfter(key, limit) > 0) return true;
+  await recordFailure(key, windowMs);
   return false;
 }
 
@@ -67,7 +67,7 @@ export async function signUp(_prev: FormState, fd: FormData): Promise<FormState>
   if (email !== invite.email) return { error: `This invitation is for ${invite.email} — sign up with that email` };
   const problem = passwordProblem(password, email);
   if (problem) return { error: problem };
-  if (tooMany(`signup:ip:${await clientIp()}`, 5, HOUR)) return { error: "Too many sign-ups from here — try again in an hour" };
+  if (await tooMany(`signup:ip:${await clientIp()}`, 5, HOUR)) return { error: "Too many sign-ups from here — try again in an hour" };
   if (await systemDb.user.findUnique({ where: { email }, select: { id: true } }))
     return { error: "There's already an account with that email — sign in, or use “Forgot password?”" };
 
@@ -88,7 +88,7 @@ export async function signUp(_prev: FormState, fd: FormData): Promise<FormState>
 /** "Send the confirmation email again" (from sign-in or the sign-up page). */
 export async function resendConfirmation(_prev: FormState, fd: FormData): Promise<FormState> {
   const email = field(fd, "email").toLowerCase();
-  if (tooMany(`verify:${email}`, 3, HOUR) || tooMany(`verify:ip:${await clientIp()}`, 10, HOUR)) return { error: "We've sent it a few times already — check your spam folder, or try again in an hour" };
+  if ((await tooMany(`verify:${email}`, 3, HOUR)) || (await tooMany(`verify:ip:${await clientIp()}`, 10, HOUR))) return { error: "We've sent it a few times already — check your spam folder, or try again in an hour" };
   const user = emailOk(email) ? await systemDb.user.findUnique({ where: { email } }) : null;
   if (user && user.active && !user.emailVerifiedAt) {
     const company = await systemDb.company.findUnique({ where: { id: user.companyId }, select: { name: true } });
@@ -113,7 +113,7 @@ export async function forgotPassword(_prev: FormState, fd: FormData): Promise<Fo
   if (!emailOk(email)) return { error: "That email doesn't look right" };
   // The same answer whether or not there's an account, so this can't be used to find out who has one.
   const answer: FormState = { ok: `If ${email} has an account, a link to reset the password is on its way. It works for 1 hour.` };
-  if (tooMany(`reset:${email}`, 3, HOUR) || tooMany(`reset:ip:${await clientIp()}`, 10, HOUR)) return answer;
+  if ((await tooMany(`reset:${email}`, 3, HOUR)) || (await tooMany(`reset:ip:${await clientIp()}`, 10, HOUR))) return answer;
   const user = await systemDb.user.findUnique({ where: { email } });
   if (user && user.active && ["ADMIN", "STAFF", "CLIENT", "VENDOR"].includes(user.role)) await sendResetEmail(user);
   return answer;

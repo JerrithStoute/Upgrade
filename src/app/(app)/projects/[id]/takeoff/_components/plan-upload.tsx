@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, FileText, Image as ImageIcon, Loader2, Upload, XCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { putFile, startDirect } from "@/components/direct-upload";
 
 const MAX_BYTES = 100 * 1024 * 1024;
 const ACCEPT = "application/pdf,.pdf,image/png,image/jpeg,image/webp";
@@ -18,8 +19,23 @@ function mb(bytes: number) {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** One file per request so each gets its own progress bar and its own 100 MB limit. */
-function uploadOne(projectId: string, file: File, clientVisible: boolean, onProgress: (pct: number) => void) {
+/**
+ * One file per request so each gets its own progress bar and its own 100 MB limit. Online it goes straight
+ * to cloud storage (not through the server), then is checked and recorded; else through the server.
+ */
+async function uploadOne(projectId: string, file: File, clientVisible: boolean, onProgress: (pct: number) => void) {
+  const started = await startDirect(projectId, "plan", file);
+  if (started.direct) {
+    await putFile(started.url, file, onProgress);
+    const res = await fetch("/api/takeoff/plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId, ticket: started.ticket, clientVisible }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) throw new Error(body.error ?? `Upload failed (${res.status})`);
+    return;
+  }
   return new Promise<void>((resolve, reject) => {
     const fd = new FormData();
     fd.append("projectId", projectId);
@@ -116,7 +132,13 @@ export function PlanUpload({ projectId }: { projectId: string }) {
         />
       </div>
       <label className="flex items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" checked={clientVisible} onChange={(e) => setClientVisible(e.target.checked)} disabled={busy} className="h-4 w-4 rounded border-slate-300" />
+        <input
+          type="checkbox"
+          checked={clientVisible}
+          onChange={(e) => setClientVisible(e.target.checked)}
+          disabled={busy}
+          className="h-4 w-4 rounded border-slate-300"
+        />
         Visible to client in Files
       </label>
       {items.length > 0 ? (

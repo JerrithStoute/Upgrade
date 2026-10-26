@@ -1,45 +1,38 @@
 import "server-only";
+import { systemDb } from "./db";
 
 /**
- * Minimal fixed-window failure counter, kept in memory.
- *
- * The Builder Station runs as a single Node process, so an in-process map is
- * enough. If you ever run several instances behind a load balancer, move this
- * to a shared store (e.g. a table in the database or Redis).
+ * Fixed-window failure counter — wrong passwords, wrong codes, forms sent too often — kept in the
+ * database (RateLimit), so every copy of the app counts the same tries: three copies don't give
+ * three times the guesses. Through the system login (the table is no company's; tenant-rules.ts).
  */
-type Bucket = { count: number; resetAt: number };
-
-const buckets = new Map<string, Bucket>();
-const MAX_KEYS = 10_000;
-
-function sweep(now: number) {
-  if (buckets.size < MAX_KEYS) return;
-  for (const [key, b] of buckets) if (b.resetAt <= now) buckets.delete(key);
-}
 
 /** Seconds until `key` may try again, or 0 if it's under `limit` failures in the current window. */
-export function retryAfter(key: string, limit: number): number {
+export async function retryAfter(key: string, limit: number): Promise<number> {
+  const b = await systemDb.rateLimit.findUnique({ where: { key } });
   const now = Date.now();
-  const b = buckets.get(key);
-  if (!b || b.resetAt <= now) return 0;
-  return b.count >= limit ? Math.ceil((b.resetAt - now) / 1000) : 0;
+  if (!b || b.resetAt.getTime() <= now) return 0;
+  return b.count >= limit ? Math.ceil((b.resetAt.getTime() - now) / 1000) : 0;
 }
 
 /** How many failures `key` has in the current window. */
-export function failures(key: string): number {
-  const b = buckets.get(key);
-  return b && b.resetAt > Date.now() ? b.count : 0;
+export async function failures(key: string): Promise<number> {
+  const b = await systemDb.rateLimit.findUnique({ where: { key } });
+  return b && b.resetAt.getTime() > Date.now() ? b.count : 0;
 }
 
 /** Record a failure for `key` in a window of `windowMs`. */
-export function recordFailure(key: string, windowMs: number) {
-  const now = Date.now();
-  sweep(now);
-  const b = buckets.get(key);
-  if (!b || b.resetAt <= now) buckets.set(key, { count: 1, resetAt: now + windowMs });
-  else b.count += 1;
+export async function recordFailure(key: string, windowMs: number) {
+  const now = new Date();
+  const resetAt = new Date(now.getTime() + windowMs);
+  // One more, counted in the database itself (two copies at once can't lose one)…
+  const b = await systemDb.rateLimit.upsert({ where: { key }, create: { key, count: 1, resetAt }, update: { count: { increment: 1 } } });
+  // …unless its window had run out: a new window, starting with this one.
+  if (b.resetAt.getTime() <= now.getTime()) await systemDb.rateLimit.updateMany({ where: { key, resetAt: { lte: now } }, data: { count: 1, resetAt } });
+  // Now and then, old windows are cleared away.
+  if (Math.random() < 0.02) await systemDb.rateLimit.deleteMany({ where: { resetAt: { lt: now } } }).catch(() => {});
 }
 
-export function clearFailures(key: string) {
-  buckets.delete(key);
+export async function clearFailures(key: string) {
+  await systemDb.rateLimit.deleteMany({ where: { key } });
 }

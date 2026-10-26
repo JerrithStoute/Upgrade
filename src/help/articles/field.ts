@@ -204,7 +204,7 @@ export const FIELD: HelpArticle[] = [
     how: [
       "Open the job's **Files** tab and click **Upload files**.",
       "Pick the folder, choose the files (several at once, up to 25 MB each), and decide **Visible to client**.",
-      "Click **Upload**.",
+      "Click **Upload**. Online, each file shows its own progress bar while it uploads; any that don't make it are named, and the rest are saved.",
     ],
     sections: [
       {

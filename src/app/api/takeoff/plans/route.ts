@@ -2,11 +2,14 @@ import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { getCurrentUser, isStaff } from "@/lib/auth";
-import { createPlanFromFile } from "@/lib/takeoff-plans";
+import { createPlanFromFile, recordPlan } from "@/lib/takeoff-plans";
+import { finishUpload } from "@/lib/direct-upload";
 
 /**
  * Uploads one plan file for takeoff. The Takeoff page posts each dropped or
- * chosen file here separately so it can show progress per file.
+ * chosen file here separately so it can show progress per file. A file sent
+ * straight to cloud storage (api/uploads/start) comes as its ticket instead
+ * (JSON): it's checked and recorded the same way.
  */
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -17,6 +20,34 @@ export async function POST(req: Request) {
   const origin = req.headers.get("origin");
   if (origin && new URL(origin).host !== req.headers.get("host")) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Sent straight to cloud storage: its ticket.
+  if (req.headers.get("content-type")?.includes("application/json")) {
+    let body: { projectId?: unknown; ticket?: unknown; clientVisible?: unknown; revisionOf?: unknown };
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Bad request" }, { status: 400 });
+    }
+    const project = await db.project.findUnique({ where: { id: String(body.projectId ?? "") }, select: { id: true } });
+    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+    try {
+      const meta = await finishUpload(String(body.ticket ?? ""), project.id);
+      const plan = await recordPlan({
+        meta,
+        projectId: project.id,
+        userId: user.id,
+        clientVisible: body.clientVisible === true,
+        revisionOf: typeof body.revisionOf === "string" && body.revisionOf ? body.revisionOf : null,
+      });
+      revalidatePath(`/projects/${project.id}/plans`);
+      revalidatePath(`/projects/${project.id}/takeoff`, "layout");
+      revalidatePath(`/projects/${project.id}/files`);
+      return NextResponse.json({ id: plan.id, name: plan.name });
+    } catch (err) {
+      return NextResponse.json({ error: err instanceof Error ? err.message : "Upload failed" }, { status: 400 });
+    }
   }
 
   let fd: FormData;

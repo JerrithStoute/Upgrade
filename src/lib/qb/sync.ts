@@ -45,10 +45,10 @@ const sameFile = (a: string, b: string) => a.replace(/\//g, "\\").toLowerCase() 
 /** authenticate: [ticket, ""] — "" = whichever company file is open; "nvu" = not a valid user. */
 export async function qbAuthenticate(username: string, password: string): Promise<string[]> {
   const key = `qbwc:${username}`;
-  if (retryAfter(key, 10) > 0) return ["", "nvu"];
+  if (await retryAfter(key, 10) > 0) return ["", "nvu"];
   const c = username ? await systemDb.qbConnection.findUnique({ where: { username } }) : null;
   if (!c || !(await bcrypt.compare(password, c.passwordHash))) {
-    recordFailure(key, 15 * 60_000);
+    await recordFailure(key, 15 * 60_000);
     return ["", "nvu"];
   }
   const ticket = randomBytes(24).toString("hex");

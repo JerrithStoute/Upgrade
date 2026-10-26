@@ -1,4 +1,5 @@
 import "server-only";
+import { ifFirst } from "./job-lock";
 import { db, systemDb } from "./db";
 import { runAsCompany } from "./tenant";
 import { appUrl, type MailSection } from "./mail";
@@ -38,13 +39,22 @@ export async function morningSections(user: Member, now: Date): Promise<MailSect
       take: 40,
     }),
     db.scheduleTask.findMany({
-      where: { startDate: { gte: dayStart, lt: dayEnd }, percentComplete: { lt: 100 }, project: ACTIVE_JOB, OR: [{ assigneeId: user.id }, { project: { managerId: user.id } }] },
+      where: {
+        startDate: { gte: dayStart, lt: dayEnd },
+        percentComplete: { lt: 100 },
+        project: ACTIVE_JOB,
+        OR: [{ assigneeId: user.id }, { project: { managerId: user.id } }],
+      },
       orderBy: [{ projectId: "asc" }, { sortOrder: "asc" }],
       include: { project: { select: { id: true, name: true } }, vendor: { select: { name: true } } },
       take: 40,
     }),
     db.selection.findMany({
-      where: { status: "PENDING", dueDate: { lt: dayEnd }, project: { ...ACTIVE_JOB, ...(admin ? { OR: [{ managerId: user.id }, { managerId: null }] } : { managerId: user.id }) } },
+      where: {
+        status: "PENDING",
+        dueDate: { lt: dayEnd },
+        project: { ...ACTIVE_JOB, ...(admin ? { OR: [{ managerId: user.id }, { managerId: null }] } : { managerId: user.id }) },
+      },
       orderBy: { dueDate: "asc" },
       include: { project: { select: { id: true, name: true } } },
       take: 40,
@@ -65,7 +75,11 @@ export async function morningSections(user: Member, now: Date): Promise<MailSect
   if (tasks.length)
     sections.push({
       title: "Starting today",
-      items: tasks.map((t) => ({ text: t.name, note: [t.project.name, t.vendor?.name].filter(Boolean).join(" · "), url: appUrl(`/projects/${t.project.id}/schedule`) })),
+      items: tasks.map((t) => ({
+        text: t.name,
+        note: [t.project.name, t.vendor?.name].filter(Boolean).join(" · "),
+        url: appUrl(`/projects/${t.project.id}/schedule`),
+      })),
     });
   if (selections.length)
     sections.push({
@@ -123,7 +137,10 @@ export async function sendInsuranceReminders(now = new Date()) {
       // The certificate that sets this type's date (the latest confirmed one).
       const cert = c.vendor.insurance.find((i) => i.confirmed && i.type === e.type && i.expiresAt.getTime() === e.expiresAt.getTime());
       if (!cert) continue;
-      const stage = insuranceStage(Math.round((new Date(e.expiresAt.getFullYear(), e.expiresAt.getMonth(), e.expiresAt.getDate()).getTime() - dayStart.getTime()) / 86400000), cert.reminded);
+      const stage = insuranceStage(
+        Math.round((new Date(e.expiresAt.getFullYear(), e.expiresAt.getMonth(), e.expiresAt.getDate()).getTime() - dayStart.getTime()) / 86400000),
+        cert.reminded,
+      );
       if (stage !== null) due.push({ id: cert.id, type: e.type, expiresAt: e.expiresAt, stage });
     }
     if (!due.length) continue;
@@ -147,21 +164,28 @@ export async function sendInsuranceReminders(now = new Date()) {
   return sent;
 }
 
-/** Runs from the server: every company's morning emails, checked at start-up and then hourly (MORNING_EMAIL=off to disable). */
+/**
+ * Runs from the server: every company's morning emails, checked at start-up and then hourly (MORNING_EMAIL=off to
+ * disable). With several copies of the app online, one sends each company's (job-lock.ts); each email is marked as
+ * sent before it goes, so the next hour's check doesn't send it again.
+ */
 export function startMorningEmails() {
   const g = globalThis as unknown as { __morningTimer?: ReturnType<typeof setInterval> };
   if (g.__morningTimer) return; // dev reloads re-run register()
   const check = async () => {
     for (const { id } of await systemDb.company.findMany({ select: { id: true } }).catch(() => []))
-      await runAsCompany(id, async () => {
-        // Each company's own morning: its clock, its day.
-        const now = (await companyClock()).now;
-        if (!morningWindow(now)) return;
-        const subs = await sendInsuranceReminders(now);
-        const clients = await sendSelectionReminders(now);
-        const team = await sendMorningEmails(now);
-        if (subs || team || clients) console.log(`[morning email] company ${id}: ${team} to the team, ${subs} to subs about insurance, ${clients} to clients about selections`);
-      }).catch((err) => console.error(`[morning email] company ${id} failed:`, err));
+      await ifFirst(`morning:${id}`, 30 * 60 * 1000, () =>
+        runAsCompany(id, async () => {
+          // Each company's own morning: its clock, its day.
+          const now = (await companyClock()).now;
+          if (!morningWindow(now)) return;
+          const subs = await sendInsuranceReminders(now);
+          const clients = await sendSelectionReminders(now);
+          const team = await sendMorningEmails(now);
+          if (subs || team || clients)
+            console.log(`[morning email] company ${id}: ${team} to the team, ${subs} to subs about insurance, ${clients} to clients about selections`);
+        }),
+      ).catch((err) => console.error(`[morning email] company ${id} failed:`, err));
   };
   setTimeout(check, 90_000); // let the server finish starting
   g.__morningTimer = setInterval(check, 60 * 60 * 1000);
