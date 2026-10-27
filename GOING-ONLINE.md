@@ -162,3 +162,6 @@ memory stays free.
    and a plan set on Plans.
 
 To switch back: set `FILES_DIRECT` to `off` (or delete it). Nothing else changes; files are where they always were.
+
+If a plan says "Failed to fetch" with it on: the browser's rules (src/lib/security-headers.ts) must allow the storage
+address — they take it from `S3_ENDPOINT` when the program is built. Check the CORS policy (step 1) too.
