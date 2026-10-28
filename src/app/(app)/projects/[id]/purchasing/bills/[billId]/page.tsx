@@ -35,7 +35,9 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
   ]);
   const total = billTotal(bill.lines);
   const mayDecide = canApproveBills(user);
-  const editable = bill.status === "PENDING" || bill.status === "REJECTED";
+  // From QuickBooks Online: kept there, followed here — nothing to approve, pay or change on this side.
+  const fromQb = !!bill.qbTxnId;
+  const editable = !fromQb && (bill.status === "PENDING" || bill.status === "REJECTED");
   const hidden = (decision: string) => (
     <>
       <input type="hidden" name="projectId" value={project.id} />
@@ -60,7 +62,8 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
           Dated {fmtDate(bill.billDate)}
           {bill.dueDate ? ` · due ${fmtDate(bill.dueDate)}` : ""}
           {bill.fromPortal ? " · uploaded from their portal" : ""}
-          {bill.approvedAt ? ` · approved ${dateTime(bill.approvedAt)}${bill.approvedBy ? ` by ${bill.approvedBy.name}` : ""}` : ""}
+          {fromQb ? " · from QuickBooks" : ""}
+          {bill.approvedAt && !fromQb ? ` · approved ${dateTime(bill.approvedAt)}${bill.approvedBy ? ` by ${bill.approvedBy.name}` : ""}` : ""}
           {bill.paidAt ? ` · paid ${fmtDate(bill.paidAt)}${bill.paidMethod ? ` by ${bill.paidMethod}` : ""}${bill.paidReference ? ` (${bill.paidReference})` : ""}` : ""}
         </p>
         {bill.notes ? <p className="mt-1 text-sm text-slate-700">{bill.notes}</p> : null}
@@ -144,7 +147,11 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
             </p>
           ) : null}
 
-          {!mayDecide ? (
+          {fromQb ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+              This bill comes from QuickBooks, where it&apos;s kept. Change it, pay it or delete it there — this follows on the next update (every 15 minutes).
+            </p>
+          ) : !mayDecide ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
               {bill.status === "PENDING"
                 ? "Waiting for someone who can approve bills (an admin can allow it in Settings → Team)."

@@ -1,7 +1,7 @@
 import { ClientEmailNote } from "@/components/client-email-note";
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Pencil, Printer } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Pencil, Printer } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
@@ -39,6 +39,7 @@ import {
   recordPayment,
   deletePayment,
   setInvoiceTax,
+  resendToQuickBooks,
 } from "../actions";
 
 export default async function InvoiceDetailPage({ params, searchParams }: { params: Promise<{ id: string; invoiceId: string }>; searchParams: Promise<{ edit?: string }> }) {
@@ -51,6 +52,9 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
     include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }, payments: { orderBy: { date: "desc" } } },
   });
   if (!inv) notFound();
+  const qbo = await db.qboConnection.findFirst({ select: { id: true } });
+  // Payments for an invoice in QuickBooks Online come from there (recorded there, they show up here).
+  const qbPayments = !!qbo && !!inv.qbTxnId;
 
   const isDraft = inv.status === "DRAFT";
   const isVoid = inv.status === "VOID";
@@ -118,6 +122,29 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
             <Stat label="Balance due" value={money(isVoid ? 0 : balance)} tone={!isVoid && balance > 0 ? (overdue ? "bad" : "warn") : "default"} />
           </div>
           {inv.notes ? <p className="mt-4 whitespace-pre-line text-sm text-slate-600">{inv.notes}</p> : null}
+          {qbo && !isDraft && inv.qbError ? (
+            <div className="mt-4 space-y-2 rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <p className="flex gap-2">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  <b>Not in QuickBooks.</b> {inv.qbError}
+                </span>
+              </p>
+              <form action={resendToQuickBooks} className="pl-6">
+                <input type="hidden" name="projectId" value={project.id} />
+                <input type="hidden" name="id" value={inv.id} />
+                <SubmitButton size="sm" variant="secondary" pendingText="Sending…">
+                  Send to QuickBooks again
+                </SubmitButton>
+              </form>
+            </div>
+          ) : qbo && inv.qbTxnId ? (
+            <p className="mt-4 flex items-center gap-1.5 text-xs text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5" /> In QuickBooks{inv.qbSentAt ? ` since ${fmtDate(inv.qbSentAt)}` : ""} — payments received there show up here.
+            </p>
+          ) : qbo && isDraft ? (
+            <p className="mt-4 text-xs text-slate-500">Goes to QuickBooks when you mark it sent.</p>
+          ) : null}
         </CardBody>
       </Card>
 
@@ -283,9 +310,13 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
                   </Td>
                   <Td>
                     <span className="flex justify-end">
-                      <ConfirmForm action={deletePayment} hidden={{ ...itemHidden, id: p.id }} message="Remove this payment?" variant="ghost">
-                        <span className="text-rose-700">Remove</span>
-                      </ConfirmForm>
+                      {p.qbTxnId && qbPayments ? (
+                        <span className="text-xs text-slate-500">From QuickBooks</span>
+                      ) : (
+                        <ConfirmForm action={deletePayment} hidden={{ ...itemHidden, id: p.id }} message="Remove this payment?" variant="ghost">
+                          <span className="text-rose-700">Remove</span>
+                        </ConfirmForm>
+                      )}
                     </span>
                   </Td>
                 </Tr>
@@ -304,7 +335,9 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
             </TFoot>
           </Table>
         )}
-        {!isVoid && balance > 0 ? (
+        {qbPayments && !isVoid && balance > 0 ? (
+          <p className="text-sm text-slate-500">Record payments for this invoice in QuickBooks — they show up here on the next update (every 15 minutes).</p>
+        ) : !isVoid && balance > 0 ? (
           <Collapsible summary="Record payment" defaultOpen={inv.status === "SENT" || inv.status === "PARTIAL"}>
             <form action={recordPayment} className="space-y-3">
               <input type="hidden" name="projectId" value={project.id} />

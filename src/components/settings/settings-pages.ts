@@ -95,7 +95,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   {
     title: "Connections",
     icon: Cable,
-    pages: [{ href: "/settings/quickbooks", label: "QuickBooks", about: "Link your QuickBooks Desktop company", icon: Cable }],
+    pages: [{ href: "/settings/quickbooks", label: "QuickBooks", about: "Link QuickBooks Online or Desktop", icon: Cable }],
   },
 ];
 

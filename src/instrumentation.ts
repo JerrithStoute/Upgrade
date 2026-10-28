@@ -3,7 +3,8 @@ import { PHASE_PRODUCTION_BUILD } from "next/constants";
 /**
  * Runs once when the server starts. Checking the session secret here makes a
  * misconfigured production server fail at startup instead of on the first login.
- * It also starts the nightly backups, the morning emails and the long-shift emails.
+ * It also starts the nightly backups, the morning emails, the long-shift emails and the QuickBooks
+ * Online updates.
  */
 export async function register() {
   if (process.env.NEXT_PHASE === PHASE_PRODUCTION_BUILD) return; // `next build` doesn't need the secret
@@ -38,5 +39,11 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.LONG_SHIFT_EMAIL !== "off") {
     const { startLongShiftChecks } = await import("./lib/long-shifts");
     startLongShiftChecks();
+  }
+
+  // QuickBooks Online: each connected company updated every 15 minutes (QBO_SYNC=off to disable).
+  if (process.env.NEXT_RUNTIME === "nodejs" && process.env.QBO_SYNC !== "off") {
+    const { startQboSync } = await import("./lib/qbo/sync");
+    startQboSync();
   }
 }

@@ -15,6 +15,7 @@ export const FINANCIALS: HelpArticle[] = [
       "Click **Mark sent**. The PO is emailed to the vendor (if you have their email), and they can accept it from their portal.",
       "When their bill comes in, open the PO and click **Enter a bill for this PO** (or they upload it from their portal).",
       "Someone who can approve bills opens the bill and clicks **Approve**. The cost lands on the job's Budget. When you pay it, click **Mark paid**.",
+      "Connected to **QuickBooks Online**? Bills entered in QuickBooks on the job come in on their own, already approved (marked **from QuickBooks**). Change, pay or delete those in QuickBooks; they follow here within 15 minutes.",
     ],
     sections: [
       {
@@ -202,6 +203,7 @@ export const FINANCIALS: HelpArticle[] = [
       "Click **Create invoice**. It starts as a draft so you can still change it.",
       "When it's right, click **Mark sent**. It's emailed to the client.",
       "When they pay, open **Record payment**, type the amount, date and method, and click **Record payment**.",
+      "Connected to **QuickBooks Online**? Marking it sent also sends it to QuickBooks. Record its payments in QuickBooks; they show up here on the next update.",
     ],
     sections: [
       {
@@ -236,6 +238,7 @@ export const FINANCIALS: HelpArticle[] = [
           { name: "Add line item", what: "Adds a line to a draft." },
           { name: "Record payment", what: "Records money received: amount (starts at the balance), date, method (check, ACH, card, cash, other) and a reference such as the check number. **Remove** takes a payment back off." },
           { name: "Edit invoice details", what: "Change the title, dates and notes, and the number while it's still a draft." },
+          { name: "In QuickBooks / Not in QuickBooks", what: "With QuickBooks Online connected: whether the invoice went to QuickBooks. If it didn't, it says why; fix that and click **Send to QuickBooks again**." },
         ],
       },
       {

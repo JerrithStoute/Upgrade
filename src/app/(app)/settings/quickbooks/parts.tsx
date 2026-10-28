@@ -4,7 +4,7 @@ import { useActionState, useState } from "react";
 import { Check, Copy, KeyRound } from "lucide-react";
 import { Button } from "@/components/ui";
 import { FormNote } from "@/components/auth-card";
-import type { PasswordState } from "./actions";
+import type { PasswordState, UpdateState } from "./actions";
 
 /** A button that makes a Web Connector password and shows it — this once. */
 export function PasswordButton({ action, children, variant = "primary" }: { action: () => Promise<PasswordState>; children: React.ReactNode; variant?: "primary" | "secondary" }) {
@@ -71,6 +71,19 @@ export function LinkPicker({
           </option>
         ))}
       </select>
+    </form>
+  );
+}
+
+/** Update from QuickBooks Online now — and what it did. */
+export function UpdateButton({ action }: { action: () => Promise<UpdateState> }) {
+  const [state, run, pending] = useActionState<UpdateState, FormData>(() => action(), undefined);
+  return (
+    <form action={run} className="space-y-2">
+      <Button type="submit" variant="secondary" disabled={pending}>
+        {pending ? "Updating…" : "Update now"}
+      </Button>
+      {state?.ok ? <p className="text-xs text-emerald-700">{state.ok}</p> : <FormNote error={state?.error} />}
     </form>
   );
 }

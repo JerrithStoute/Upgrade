@@ -900,22 +900,27 @@ model Expense {
 
 /// status: DRAFT | SENT | PARTIAL | PAID | VOID
 model Invoice {
-  id        String    @id @default(cuid())
+  id          String    @id @default(cuid())
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
-  companyId String    @default(dbgenerated("current_setting('app.company_id'::text)"))
-  projectId String
-  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  number    Int
-  title     String    @default("Invoice")
-  status    String    @default("DRAFT")
-  issueDate DateTime  @default(now())
-  dueDate   DateTime?
-  notes     String?
+  companyId   String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  number      Int
+  title       String    @default("Invoice")
+  status      String    @default("DRAFT")
+  issueDate   DateTime  @default(now())
+  dueDate     DateTime?
+  notes       String?
   // Tax on this invoice, your call each time (null = none). Kept as a tax line among the items.
-  taxPct    Float?
-  taxLabel  String    @default("Sales tax")
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  taxPct      Float?
+  taxLabel    String    @default("Sales tax")
+  // QuickBooks Online: the invoice it is there (Id, SyncToken), when it went, and why it didn't.
+  qbTxnId     String?
+  qbSyncToken String?
+  qbSentAt    DateTime?
+  qbError     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   items    InvoiceItem[]
   payments Payment[]
@@ -953,6 +958,8 @@ model Payment {
   date      DateTime @default(now())
   method    String   @default("CHECK") // CHECK | ACH | CARD | CASH | OTHER
   reference String?
+  // QuickBooks Online: the payment it came from (one there can pay several invoices).
+  qbTxnId   String?
   createdAt DateTime @default(now())
 
   @@index([companyId])
@@ -1850,6 +1857,9 @@ model VendorBill {
   fileId          String?
   // Sent in by the vendor from their portal.
   fromPortal      Boolean          @default(false)
+  // QuickBooks Online: the bill it came from (its Id). A bill there with lines on several jobs is one
+  // bill here per job. Kept in step with QuickBooks — changed there, not here.
+  qbTxnId         String?
   approvedAt      DateTime?
   approvedById    String?
   approvedBy      User?            @relation("BillApprover", fields: [approvedById], references: [id], onDelete: SetNull)
@@ -1863,6 +1873,7 @@ model VendorBill {
   expenses        Expense[]
 
   @@index([companyId])
+  @@index([companyId, qbTxnId])
 }
 
 model VendorBillLine {
@@ -2253,6 +2264,49 @@ model QbListItem {
   seenAt       DateTime @default(now())
 
   @@unique([companyId, kind, listId])
+  @@index([companyId])
+}
+
+/// QuickBooks Online, connected through Intuit (Settings → QuickBooks). A company has this or the
+/// Desktop connection (QbConnection), not both. Tokens are sealed (src/lib/secret-box.ts).
+model QboConnection {
+  id               String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId        String    @unique @default(dbgenerated("current_setting('app.company_id'::text)"))
+  // The QuickBooks company (Intuit's realmId) — tied to one builder only.
+  realmId          String    @unique
+  qbCompany        String?
+  accessToken      String
+  accessExpiresAt  DateTime
+  refreshToken     String
+  refreshExpiresAt DateTime?
+  connectedById    String?
+  // The QuickBooks item invoice lines go out on.
+  invoiceItemId    String?
+  // Bills and payments are read as changed since this (empty: the last 12 months, from scratch).
+  changesSince     DateTime?
+  lastSyncAt       DateTime?
+  lastError        String?
+  // What the last update did ("3 bills, 1 payment").
+  lastSummary      String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+/// A QuickBooks Online bill or payment as last read (data: what's needed of it, JSON). appliedKey:
+/// what was last put into The Builder Station from it — when it no longer matches, it's put in again.
+model QbTxn {
+  id         String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId  String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  kind       String // BILL | PAYMENT
+  txnId      String
+  txnDate    DateTime
+  data       String
+  appliedKey String?
+  seenAt     DateTime @default(now())
+
+  @@unique([companyId, kind, txnId])
   @@index([companyId])
 }
 

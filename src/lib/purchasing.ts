@@ -64,9 +64,9 @@ export function canApproveBills(user: { role: string; access?: { approveBills: b
 
 /**
  * Approves a bill: its lines become the job's actual cost — one expense per cost code
- * (unpaid until the bill is paid).
+ * (unpaid until the bill is paid). `userId` null: approved where it came from (QuickBooks).
  */
-export async function approveBill(billId: string, userId: string) {
+export async function approveBill(billId: string, userId: string | null) {
   const bill = await db.vendorBill.findUnique({ where: { id: billId }, include: { lines: true, purchaseOrder: { select: { number: true, bidId: true } } } });
   if (!bill) throw new Error("Bill not found");
   if (bill.status !== "PENDING" && bill.status !== "REJECTED") throw new Error("This bill is already approved");

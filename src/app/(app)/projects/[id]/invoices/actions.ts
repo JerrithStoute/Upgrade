@@ -13,6 +13,7 @@ import { deriveInvoiceStatus, invoiceTotal, paymentsTotal } from "@/lib/finance"
 import { changeOrderTotals } from "@/lib/change-orders";
 import { billedChangeOrderIds, syncInvoiceTax } from "@/lib/billing-flow";
 import { emailInvoiceToClient } from "@/lib/notify-client";
+import { paymentsFromQuickBooks, pushInvoice } from "@/lib/qbo/invoices";
 
 function invoicePath(projectId: string, invoiceId?: string) {
   return `/projects/${projectId}/invoices${invoiceId ? `/${invoiceId}` : ""}`;
@@ -127,6 +128,8 @@ export const updateInvoice = friendly(async function updateInvoice(formData: For
       notes: strOrNull(formData, "notes"),
     },
   });
+  // Already in QuickBooks: its dates and notes follow.
+  if (inv.qbTxnId) await pushInvoice(id);
   revalidate(projectId, id);
   redirect(invoicePath(projectId, id));
 });
@@ -139,6 +142,8 @@ export const markInvoiceSent = friendly(async function markInvoiceSent(formData:
   if (inv.status !== "DRAFT") throw new Error("Only draft invoices can be sent");
   await db.invoice.update({ where: { id }, data: { status: "SENT" } });
   await syncStatus(id);
+  // To QuickBooks Online, when connected (a problem there shows on the invoice; it's sent here either way).
+  await pushInvoice(id);
   const emailed = await emailInvoiceToClient(id, user);
   await logActivity({
     projectId,
@@ -157,6 +162,7 @@ export const voidInvoice = friendly(async function voidInvoice(formData: FormDat
   const inv = await loadInvoice(projectId, id);
   if (inv.status === "VOID") throw new Error("Invoice is already void");
   await db.invoice.update({ where: { id }, data: { status: "VOID" } });
+  if (inv.qbTxnId) await pushInvoice(id);
   await logActivity({ projectId, userId: user.id, type: "invoice.voided", description: `Invoice #${inv.number} voided` });
   revalidate(projectId, id);
   redirect(invoicePath(projectId, id));
@@ -172,6 +178,19 @@ export const deleteInvoice = friendly(async function deleteInvoice(formData: For
   await logActivity({ projectId, userId: user.id, type: "invoice.deleted", description: `Invoice #${inv.number} deleted` });
   revalidate(projectId);
   redirect(invoicePath(projectId));
+});
+
+/** "Send to QuickBooks again" — after fixing what stopped it. */
+export const resendToQuickBooks = friendly(async function resendToQuickBooks(formData: FormData) {
+  const user = await requireEdit("invoices");
+  const projectId = str(formData, "projectId");
+  const id = str(formData, "id");
+  const inv = await loadInvoice(projectId, id);
+  if (inv.status === "DRAFT") throw new Error("Send the invoice first — it goes to QuickBooks then");
+  const problem = await pushInvoice(id);
+  if (!problem) await logActivity({ projectId, userId: user.id, type: "invoice.quickbooks", description: `Invoice #${inv.number} sent to QuickBooks` });
+  revalidate(projectId, id);
+  redirect(invoicePath(projectId, id));
 });
 
 // --- Items --------------------------------------------------------------------
@@ -241,6 +260,7 @@ export const recordPayment = friendly(async function recordPayment(formData: For
   const invoiceId = str(formData, "invoiceId");
   const inv = await loadInvoice(projectId, invoiceId);
   if (inv.status === "VOID") throw new Error("Cannot record a payment on a void invoice");
+  if (await paymentsFromQuickBooks(inv)) throw new Error("This invoice is in QuickBooks — record the payment there, and it shows up here on the next update");
   const amount = numField(formData, "amount", 0);
   if (amount <= 0) throw new Error("Payment amount must be greater than zero");
   const method = str(formData, "method");
@@ -267,6 +287,7 @@ export const deletePayment = friendly(async function deletePayment(formData: For
   const inv = await loadInvoice(projectId, invoiceId);
   const payment = inv.payments.find((p) => p.id === id);
   if (!payment) throw new Error("Payment not found");
+  if (payment.qbTxnId && (await paymentsFromQuickBooks(inv))) throw new Error("This payment came from QuickBooks — remove it there, and it goes from here on the next update");
   await db.payment.delete({ where: { id } });
   // Re-derive: if nothing is paid any more, fall back to SENT (it must have been sent to be paid).
   const remaining = paymentsTotal(inv.payments.filter((p) => p.id !== id));

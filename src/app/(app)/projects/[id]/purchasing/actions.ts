@@ -265,6 +265,7 @@ export const updateBill = friendly(async function updateBill(fd: FormData) {
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id } });
   if (!bill) throw new Error("Bill not found");
+  if (bill.qbTxnId) throw new Error("This bill comes from QuickBooks — change it there, and it follows here on the next update");
   if (bill.status !== "PENDING" && bill.status !== "REJECTED") throw new Error("Un-approve the bill to change it");
   const lines = readBillLines(fd);
   const codes = new Set((await db.costCode.findMany({ select: { id: true } })).map((c) => c.id));
@@ -293,6 +294,7 @@ export const decideBill = friendly(async function decideBill(fd: FormData) {
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { lines: true } });
   if (!bill) throw new Error("Bill not found");
+  if (bill.qbTxnId) throw new Error("This bill comes from QuickBooks — change it there, and it follows here on the next update");
   const what = str(fd, "decision");
   if (!canApproveBills(user)) throw new Error("You don't have permission to approve bills — an admin can allow it in Settings → Team");
   if (what === "approve") await approveBill(bill.id, user.id);
@@ -314,6 +316,7 @@ export const deleteBill = friendly(async function deleteBill(fd: FormData) {
   const project = await getProject(str(fd, "projectId"));
   const bill = await db.vendorBill.findFirst({ where: { id: str(fd, "id"), projectId: project.id }, include: { lines: true } });
   if (!bill) throw new Error("Bill not found");
+  if (bill.qbTxnId) throw new Error("This bill comes from QuickBooks — change it there, and it follows here on the next update");
   if (bill.status === "APPROVED" || bill.status === "PAID") throw new Error("Un-approve the bill before deleting it");
   await db.vendorBill.delete({ where: { id: bill.id } });
   await logActivity({ projectId: project.id, userId: user.id, type: "bill.deleted", description: `Bill from ${bill.vendorName} (${money(billTotal(bill.lines))}) deleted` });
