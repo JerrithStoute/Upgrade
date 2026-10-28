@@ -6,6 +6,7 @@ import { CheckCircle2, Loader2, XCircle } from "lucide-react";
 import { Field, FormGrid, SubmitButton } from "@/components/ui";
 import { actionMessage } from "@/lib/action-message";
 import { putFile, startDirect } from "@/components/direct-upload";
+import { PhotoPicker } from "@/components/photos/photo-picker";
 
 type Item = { name: string; progress: number; status: "uploading" | "done" | "error"; error?: string };
 
@@ -100,14 +101,7 @@ export function FilesUpload({
           </select>
         </Field>
         <Field label="Files" htmlFor="up-files" className="md:col-span-2">
-          <input
-            id="up-files"
-            type="file"
-            name="files"
-            multiple
-            required
-            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-4 file:py-2.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-50 md:file:px-3 md:file:py-1.5 md:file:text-xs"
-          />
+          <PhotoPicker id="up-files" name="files" required />
           {typesNote}
         </Field>
       </FormGrid>

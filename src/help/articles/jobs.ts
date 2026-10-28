@@ -195,7 +195,7 @@ export const JOBS: HelpArticle[] = [
           { name: "Tags", what: "**Selection** or **Allowance**, and where it stands: Waiting on a choice, Chosen, Not wanted, Approved, Ordered, Installed. **Updated** means someone else changed it since you looked. **Overdue** turns the card red." },
           { name: "Set a deadline / Change", what: "**No deadline**, **A date**, or **A schedule item** with how many days before it. A schedule-based deadline moves when the schedule moves." },
           { name: "Edit in the estimate", what: "The name, spec text and allowance come from the estimate; change them there." },
-          { name: "Files", what: "Drawings, spec sheets, photos for the client. **✓ Client viewed** shows when they've opened one.", how: "Click **Add files** or drop files on the box." },
+          { name: "Files", what: "Drawings, spec sheets, photos for the client. **✓ Client viewed** shows when they've opened one.", how: "Click **Add files** or drop files on the box. Photos show first: tap one to mark it up (draw, arrows, circles, notes, crop), then **Add**." },
           { name: "Original budget", what: "What the estimate has for it: cost lines, profit, total. Only your team sees it." },
           { name: "Comments", what: "A conversation with the client about this selection.", how: "Write a comment and click **Post**. Tick **Team only** to keep it from the client." },
           { name: "Allowance", what: "The amount the client's choice is measured against for over / under. Pick how it's figured from the estimate, in dollars: **your cost, no markup**, or **with your markup**, or the company default." },

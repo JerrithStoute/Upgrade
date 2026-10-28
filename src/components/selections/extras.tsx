@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { FileText, ImagePlus, Paperclip, X } from "lucide-react";
 import { cn, fmtDateTime } from "@/lib/utils";
 import { buttonClasses } from "@/components/ui";
+import { usePhotoCheck } from "@/components/photos/photo-picker";
 
 type Result = { ok: true } | { ok: false; error: string };
 export type CardComment = { id: string; author: string; body: string; internal: boolean; at: Date; mine: boolean };
@@ -38,7 +39,7 @@ export function FileTypesNote({ className, viewOnly }: { className?: string; /**
   return (
     <p
       className={cn("text-[11px] leading-snug text-slate-500", className)}
-      title="PDFs, photos, Word, Excel, CSV or text, CAD drawings (DWG, DXF) or ZIP. PDFs and pictures (JPG, PNG, GIF, WebP) open in the browser; the rest download. iPhone photos (HEIC) download too — set the iPhone to Settings › Camera › Formats › Most Compatible for JPGs."
+      title="PDFs, photos, Word, Excel, CSV or text, CAD drawings (DWG, DXF) or ZIP. PDFs and pictures (JPG, PNG, GIF, WebP) open in the browser; the rest download. iPhone photos (HEIC) are turned into JPGs when added from the iPhone; one uploaded from a PC downloads — set the iPhone to Settings › Camera › Formats › Most Compatible for JPGs."
     >
       Up to 25 MB — PDFs, photos, documents, drawings.
     </p>
@@ -189,10 +190,14 @@ export function FilesBox({
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const { busy, err, run } = useRun();
-  const upload = (list: FileList | null) => {
+  // (Photos among them: shown first, to mark up — then added.)
+  const photos = usePhotoCheck();
+  const upload = async (list: FileList | null) => {
     if (!list?.length) return;
+    const ready = await photos.check(list);
+    if (!ready?.length) return;
     const fd = new FormData();
-    for (const f of Array.from(list)) fd.append("files", f);
+    for (const f of ready) fd.append("files", f);
     run(() => onAdd(fd));
   };
   return (
@@ -206,7 +211,7 @@ export function FilesBox({
       onDrop={(e) => {
         e.preventDefault();
         setOver(false);
-        upload(e.dataTransfer.files);
+        void upload(e.dataTransfer.files);
       }}
     >
       <div className="mb-1 flex items-center justify-between gap-2">
@@ -214,7 +219,17 @@ export function FilesBox({
         <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline" onClick={() => input.current?.click()} disabled={busy}>
           <Paperclip className="h-3.5 w-3.5" /> {busy ? "Adding…" : "Add files"}
         </button>
-        <input ref={input} type="file" multiple hidden onChange={(e) => upload(e.target.files)} />
+        <input
+          ref={input}
+          type="file"
+          multiple
+          hidden
+          onChange={(e) => {
+            const list = e.target.files;
+            void upload(list).finally(() => (e.target.value = ""));
+          }}
+        />
+        {photos.element}
       </div>
       {files.length === 0 ? <p className="text-slate-500">No files — drop them here, or Add files.</p> : null}
       <FileTypesNote className="mb-1.5" />

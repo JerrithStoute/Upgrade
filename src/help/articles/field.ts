@@ -139,7 +139,7 @@ export const FIELD: HelpArticle[] = [
     how: [
       "Open the job's **Daily Logs** tab and click **+ New log**.",
       "Crew and hours are already filled in from today's time clock. Leave the weather blank and it's filled in for the job's ZIP code when you save.",
-      "Type what got done, any issues, and add photos (on a phone you can use the camera).",
+      "Type what got done, any issues, and add photos: on a phone, **Take photo** opens the camera. Tap a photo to mark it up before you save.",
       "Click **Save log**.",
     ],
     sections: [
@@ -151,7 +151,9 @@ export const FIELD: HelpArticle[] = [
           { name: "Weather notes", what: "What the weather did to the work, such as \"Rained out after lunch\". Never filled in for you." },
           { name: "Crew on site / Hours worked", what: "Filled from today's time clock on this job; change them if needed." },
           { name: "Work completed / Issues / delays / Internal notes", what: "What got done, what held things up (safety, inspections), and notes only your team sees." },
-          { name: "Add photos", what: "Pictures for the log. They're also filed in the job's Photos folder." },
+          { name: "Take photo", what: "On a phone or tablet: opens the camera. Take as many as you need, one after another." },
+          { name: "Add photos", what: "Pictures from your phone's library or your computer. They're also filed in the job's Photos folder." },
+          { name: "Mark up", what: "Tap a photo to draw on it before it's saved: **Draw**, **Arrow**, **Circle**, **Text** (a typed note), **Crop** and **Turn**, in red, yellow, blue, white or black. **Undo** takes back the last step; **Save** keeps the marked-up photo (it replaces the original); **Cancel** leaves it as it was. The × takes a photo off before you save." },
           { name: "Visible to client", what: "Ticked, the client sees the log in their portal. Unticked, it's marked **Internal**." },
           { name: "Delete log", what: "On Edit: deletes the log and its photos." },
         ],
@@ -204,6 +206,7 @@ export const FIELD: HelpArticle[] = [
     how: [
       "Open the job's **Files** tab and click **Upload files**.",
       "Pick the folder, choose the files (several at once, up to 25 MB each), and decide **Visible to client**.",
+      "Photos show small before you upload: tap one to mark it up (draw, arrows, circles, notes, crop, turn). On a phone, **Take photo** opens the camera.",
       "Click **Upload**. Online, each file shows its own progress bar while it uploads; any that don't make it are named, and the rest are saved.",
     ],
     sections: [
@@ -218,7 +221,10 @@ export const FIELD: HelpArticle[] = [
         ],
       },
     ],
-    tips: ["iPhone photos (HEIC) download instead of opening. Set the iPhone to Settings › Camera › Formats › Most Compatible to take JPGs."],
+    tips: [
+      "Photos are made web-sized as they're added (2,560 pixels on the long side), so they upload fast on a job-site signal; small pictures are left exactly as they are.",
+      "iPhone photos (HEIC) are turned into JPGs when added from the iPhone. One copied to a PC and uploaded from there stays HEIC and downloads instead of opening: set the iPhone to Settings › Camera › Formats › Most Compatible to take JPGs.",
+    ],
     related: ["takeoff-plans", "daily-logs", "messages"],
   },
   {

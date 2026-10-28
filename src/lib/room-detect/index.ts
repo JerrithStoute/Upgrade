@@ -18,7 +18,7 @@
 import { DEG, bucketOf, distToSeg, grid, toLine, type Line, type Pt } from "../wall-detect";
 
 /** Which rules the room finder runs: saved with each Find area click (AreaFindLog). Change it with them. */
-export const ROOM_DETECT_VERSION = "2026-10-21a";
+export const ROOM_DETECT_VERSION = "2026-10-28a";
 
 export type RoomFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -629,6 +629,9 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       // (Running on well past it both ways, 3' or more — a wall that meets the line in a T, or turns a
       // corner just past it, doesn't count.)
       if (sv > v.s0 + w.half + 3 * upf && sv < v.s1 - w.half - 3 * upf) return true;
+      // (The same, for a wall drawn in pieces end to end — one ending just past the line, the next carrying
+      // on: taken together.)
+      if (wallAcross(w, hx, hy, 3 * upf)) return true;
       // Ending at the line, running on 3' or more to one side: which side (the way v runs from it, as
       // seen across w's line).
       const reach = w.half + v.half + inch;
@@ -639,6 +642,30 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       ends.push([t, facing]);
       return false;
     });
+  };
+  // Whether a wall runs across w's line at (x, y), on past it `run` or more both ways — its pieces taken
+  // together where they meet end to end (a wall is often drawn in pieces, broken where another meets it).
+  const wallAcross = (w: Band, x: number, y: number, run: number) => {
+    const spans: [number, number][] = [];
+    let at = 0;
+    for (const v of bandsNear(x, y, w.half + run + 4 * upf)) {
+      if (v === w || Math.abs(Math.sin(v.ang - w.ang)) < Math.sin(45 * DEG)) continue;
+      if (Math.abs(x * v.nx + y * v.ny - v.rho) > v.half + inch) continue;
+      // (Measured along the first piece's direction, so pieces drawn either way round compare.)
+      if (!spans.length) at = Math.atan2(v.uy, v.ux);
+      spans.push(Math.cos(Math.atan2(v.uy, v.ux) - at) < 0 ? [-v.s1, -v.s0] : [v.s0, v.s1]);
+    }
+    if (!spans.length) return false;
+    const sv = x * Math.cos(at) + y * Math.sin(at);
+    const holds = (lo: number, hi: number) => lo <= sv + w.half + inch && hi >= sv - w.half - inch;
+    spans.sort((p, q) => p[0] - q[0]);
+    let [lo, hi] = spans[0];
+    for (const [a, b] of spans.slice(1)) {
+      if (a <= hi + 2 * inch) hi = Math.max(hi, b);
+      else if (holds(lo, hi)) break;
+      else [lo, hi] = [a, b];
+    }
+    return holds(lo, hi) && lo <= sv - w.half - run && hi >= sv + w.half + run;
   };
   // Whether the opening between a wall's free end and the wall it's stretched to (from s = a to b along
   // it) is a doorway to close: 3' or narrower, or a door swings in it (its hinge on the opening's line
@@ -706,6 +733,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   // standing in the room isn't stretched to the walls.
   const solid = [...bands, ...bridges];
   const nearBy = bandGrid(solid, 2 * upf);
+  const nearReal = bandGrid(bands, 2 * upf);
   // Walls join up into long runs, tens of feet; a letter's strokes (on a plan whose words are drawn as
   // lines) only join each other, a few feet in all. A real wall is part of a run of 8' or more.
   const runOf = new Map<Band, number>();
@@ -833,7 +861,12 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       const [ux, uy] = [(e[0] - d.x) / len, (e[1] - d.y) / len];
       const square = around.some((v) => Math.min(Math.abs(ux * v.nx + uy * v.ny), Math.abs(ux * v.ux + uy * v.uy)) < Math.sin(5 * DEG));
       const [mx, my] = [(d.x + e[0]) / 2, (d.y + e[1]) / 2];
-      const alongWall = nearBy(mx, my, upf).some((v) => Math.abs(ux * v.nx + uy * v.ny) < Math.sin(5 * DEG) && distToBand(mx, my, v) <= 3 * inch);
+      const parallel = (v: Band) => Math.abs(ux * v.nx + uy * v.ny) < Math.sin(5 * DEG);
+      // (Up against a wall, or an opening already closed. Or a drawn wall a few inches off — an open
+      // door's slab is often drawn standing off the wall beside it, by its stop and trim.)
+      const alongWall =
+        nearBy(mx, my, upf).some((v) => parallel(v) && distToBand(mx, my, v) <= 3 * inch) ||
+        nearReal(mx, my, upf).some((v) => parallel(v) && distToBand(mx, my, v) <= 8 * inch);
       return square && !alongWall;
     });
     if (shut.length !== 1) continue;
