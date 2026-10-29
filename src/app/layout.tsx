@@ -4,6 +4,7 @@ import { getBrand } from "@/lib/company-brand";
 import { appIdentity } from "@/lib/app-identity";
 import { AppWorker } from "@/components/phone-app";
 import { ErrorCatcher } from "@/components/error-catcher";
+import { UsageBeacon } from "@/components/usage-beacon";
 import { Suspense } from "react";
 import { ActionErrorToast } from "@/components/action-error-toast";
 import { NavigationProgress } from "@/components/navigation-progress";
@@ -42,6 +43,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <ActionErrorToast />
         <AppWorker />
         <ErrorCatcher />
+        <UsageBeacon />
         <Suspense fallback={null}>
           <NavigationProgress />
         </Suspense>

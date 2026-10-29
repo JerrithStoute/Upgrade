@@ -3,9 +3,10 @@ import { systemDb } from "@/lib/db";
 import { requireStation } from "@/lib/station-auth";
 import { healthFlags, STATUS_LABEL } from "@/lib/builder-status";
 import { Card, CardHeader, PageHeader, Stat } from "@/components/ui";
-import { cn, dateInput, fmtDate, fmtDateTime, titleCase } from "@/lib/utils";
+import { cn, dateInput, fmtDate, fmtDateTime, timeAgo, titleCase } from "@/lib/utils";
 import { builderRows, fmtSize, STATUS_TONE } from "../data";
 import { NotesForm, StatusForm } from "./forms";
+import { builderUsage } from "@/lib/usage";
 
 export const metadata = { title: "Builder" };
 
@@ -21,7 +22,7 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
   const [row] = await builderRows(id);
   if (!row) notFound();
   const where = { companyId: id };
-  const [company, station, people, jobsBy, estimates, measurements, clients, vendors, history] = await Promise.all([
+  const [company, station, people, jobsBy, estimates, measurements, clients, vendors, history, usage] = await Promise.all([
     systemDb.company.findUniqueOrThrow({ where: { id }, select: { address: true, city: true, state: true, zip: true, phone: true, email: true, website: true } }),
     systemDb.stationBuilder.findUnique({ where }),
     systemDb.user.findMany({ where: { ...where, role: { in: ["ADMIN", "STAFF"] } }, orderBy: [{ active: "desc" }, { createdAt: "asc" }], select: { id: true, name: true, email: true, role: true, active: true, lastSignInAt: true } }),
@@ -31,7 +32,10 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
     systemDb.client.count({ where }),
     systemDb.vendor.count({ where }),
     systemDb.stationLog.findMany({ where: { builderId: id }, orderBy: { createdAt: "desc" }, take: 50, include: { stationUser: { select: { name: true } } } }),
+    builderUsage(id),
   ]);
+  const used = usage.areas.filter((a) => a.days > 0);
+  const unused = usage.areas.filter((a) => a.days === 0 && a.area !== "Help");
   const flags = healthFlags(row, today());
   const contact = [company.phone, company.email, company.website].filter(Boolean);
   const address = [company.address, [company.city, company.state].filter(Boolean).join(", "), company.zip].filter(Boolean).join(" · ");
@@ -56,8 +60,50 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
         <Stat label="Jobs" value={row.jobs} hint={jobsBy.map((j) => `${titleCase(j.status.replace(/_/g, " "))} ${j._count._all}`).join(" · ") || "None yet"} />
         <Stat label="Team" value={row.team} hint={`${clients} clients · ${vendors} vendors`} />
         <Stat label="Estimates" value={estimates} hint={`${measurements} takeoff measurements`} />
-        <Stat label="Files" value={fmtSize(row.storage)} hint={row.lastSignIn ? `Last in ${fmtDateTime(row.lastSignIn)}` : "Never signed in"} />
+        <Stat label="Files" value={fmtSize(row.storage)} hint={row.lastActive ? `Last active ${timeAgo(row.lastActive)}` : row.lastSignIn ? `Last in ${fmtDateTime(row.lastSignIn)}` : "Never signed in"} />
       </div>
+      <Card>
+        <CardHeader
+          title="How they use it"
+          description={`The last 30 days: each part of the program, the days it was used and by how many people. ${row.activeDays} of 30 days active.`}
+        />
+        <div className="space-y-4 px-5 pb-5">
+          {/* One block a day, oldest first — filled when their team used it. */}
+          <div className="flex gap-0.5" aria-label={`${row.activeDays} of the last 30 days active`}>
+            {usage.strip.map((d) => (
+              <span key={d.day} title={`${d.day}${d.active ? " — used" : ""}`} className={cn("h-5 flex-1 rounded-sm", d.active ? "bg-emerald-500" : "bg-slate-100")} />
+            ))}
+          </div>
+          {used.length ? (
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="py-1 font-medium">Area</th>
+                  <th className="py-1 text-right font-medium">Days used</th>
+                  <th className="py-1 text-right font-medium">People</th>
+                  <th className="py-1 text-right font-medium">Visits</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {used.map((a) => (
+                  <tr key={a.area}>
+                    <td className="py-1.5">{a.area}</td>
+                    <td className="py-1.5 text-right tabular-nums">{a.days}</td>
+                    <td className="py-1.5 text-right tabular-nums">
+                      {a.people}
+                      {a.area === "Client portal" ? " clients" : a.area === "Sub portal" ? " subs" : ""}
+                    </td>
+                    <td className="py-1.5 text-right tabular-nums text-slate-500">{a.visits}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="text-sm text-slate-500">Nothing in the last 30 days.</p>
+          )}
+          {used.length && unused.length ? <p className="text-xs text-slate-500">Not used in 30 days: {unused.map((a) => a.area).join(", ")}.</p> : null}
+        </div>
+      </Card>
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader title="Status" description={me.role === "OWNER" ? undefined : "Only an owner changes a builder's status."} />
@@ -94,7 +140,9 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
               <span className="min-w-0 flex-1 font-medium">{p.name}</span>
               <span className="w-64 truncate">{p.email}</span>
               <span className="w-20">{p.role === "ADMIN" ? "Admin" : "Staff"}</span>
-              <span className="w-44 text-slate-500">{!p.active ? "Turned off" : p.lastSignInAt ? fmtDateTime(p.lastSignInAt) : "Never signed in"}</span>
+              <span className="w-44 text-slate-500" title={p.lastSignInAt ? `Last signed in ${fmtDateTime(p.lastSignInAt)}` : undefined}>
+                {!p.active ? "Turned off" : usage.lastActiveOf.get(p.id) ? `Active ${timeAgo(usage.lastActiveOf.get(p.id))}` : p.lastSignInAt ? `Signed in ${fmtDate(p.lastSignInAt)}` : "Never signed in"}
+              </span>
             </li>
           ))}
         </ul>

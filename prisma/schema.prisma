@@ -2492,6 +2492,26 @@ model StationProblem {
   @@index([doneAt, createdAt])
 }
 
+/// How builders use the program, for the Station's Builders pages (src/lib/usage.ts): which person, on
+/// which day (the builder's clock), in which part of it, how many times. Counts only — never what's on
+/// the page. The Station's own: closed to the app's login. `builderId` and `userId` are plain ids.
+model StationUsage {
+  id        String   @id @default(cuid())
+  builderId String
+  userId    String
+  // ADMIN | STAFF | CLIENT | VENDOR
+  role      String
+  // yyyy-mm-dd
+  day       String
+  // "Takeoff", "Estimates", "Client portal"… (usage-areas.ts)
+  area      String
+  count     Int      @default(1)
+  lastAt    DateTime @default(now())
+
+  @@unique([builderId, userId, day, area])
+  @@index([builderId, day])
+}
+
 /// Something in the program that broke — on the server or in someone's browser — read on the Station's
 /// Problems tab, and emailed to the Station's owner (src/lib/problems.ts). The same error again is the
 /// same row, counted: `key` is what it is and where it happened.

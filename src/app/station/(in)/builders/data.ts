@@ -1,6 +1,7 @@
 import "server-only";
 import { systemDb } from "@/lib/db";
 import { readStatus, type BuilderStatus } from "@/lib/builder-status";
+import { usageByBuilder } from "@/lib/usage";
 
 /** Station-wide figures about each builder company (the system login: counts and account facts only). */
 export type BuilderRow = {
@@ -15,13 +16,16 @@ export type BuilderRow = {
   jobs: number;
   storage: number;
   lastSignIn: Date | null;
+  /** Anyone's last use of the program (usage.ts), and the team's days using it in the last 30. */
+  lastActive: Date | null;
+  activeDays: number;
 };
 
 const sumBy = <T extends { companyId: string }>(rows: T[], f: (r: T) => number) => new Map(rows.map((r) => [r.companyId, f(r)]));
 
 export async function builderRows(onlyId?: string): Promise<BuilderRow[]> {
   const where = onlyId ? { companyId: onlyId } : {};
-  const [companies, team, lastIn, jobs, files, owners] = await Promise.all([
+  const [companies, team, lastIn, jobs, files, owners, usage] = await Promise.all([
     systemDb.company.findMany({
       where: onlyId ? { id: onlyId } : {},
       select: { id: true, name: true, city: true, state: true, createdAt: true, station: { select: { status: true, trialEndsAt: true } } },
@@ -33,6 +37,7 @@ export async function builderRows(onlyId?: string): Promise<BuilderRow[]> {
     systemDb.fileAsset.groupBy({ by: ["companyId"], where, _sum: { size: true } }),
     // The company's owner: its first admin.
     systemDb.user.findMany({ where: { ...where, role: "ADMIN" }, orderBy: { createdAt: "asc" }, distinct: ["companyId"], select: { companyId: true, name: true, email: true } }),
+    usageByBuilder(),
   ]);
   const teamOf = sumBy(team, (r) => r._count._all);
   const jobsOf = sumBy(jobs, (r) => r._count._all);
@@ -51,6 +56,8 @@ export async function builderRows(onlyId?: string): Promise<BuilderRow[]> {
     jobs: jobsOf.get(c.id) ?? 0,
     storage: filesOf.get(c.id) ?? 0,
     lastSignIn: lastOf.get(c.id) ?? null,
+    lastActive: usage.lastActive.get(c.id) ?? null,
+    activeDays: usage.activeDays.get(c.id) ?? 0,
   }));
 }
 

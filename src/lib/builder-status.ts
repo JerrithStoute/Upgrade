@@ -43,6 +43,8 @@ export type BuilderUsage = {
   signedUp: Date;
   jobs: number;
   lastSignIn: Date | null;
+  /** The last time anyone used the program (usage.ts) — a sign-in lasts weeks, so this is the one to trust. */
+  lastActive?: Date | null;
 };
 
 /** Things worth a look in the Station's Builders list (most pressing first). */
@@ -55,7 +57,8 @@ export function healthFlags(b: BuilderUsage, now: Date): { text: string; tone: "
     else if (d <= 7) out.push({ text: `Trial ends in ${d} day${d === 1 ? "" : "s"}`, tone: "warn" });
   }
   if (b.jobs === 0 && now.getTime() - b.signedUp.getTime() > 3 * DAY) out.push({ text: "No jobs yet", tone: "warn" });
-  if (!b.lastSignIn) out.push({ text: "Never signed in", tone: "warn" });
-  else if (now.getTime() - b.lastSignIn.getTime() > 30 * DAY) out.push({ text: `Quiet ${Math.floor((now.getTime() - b.lastSignIn.getTime()) / DAY)} days`, tone: "info" });
+  const last = b.lastActive ?? b.lastSignIn;
+  if (!last) out.push({ text: "Never signed in", tone: "warn" });
+  else if (now.getTime() - last.getTime() > 7 * DAY) out.push({ text: `No activity in ${Math.floor((now.getTime() - last.getTime()) / DAY)} days`, tone: "warn" });
   return out;
 }

@@ -2,7 +2,7 @@ import Link from "@/components/link";
 import { requireStation } from "@/lib/station-auth";
 import { healthFlags, STATUS_LABEL, type BuilderStatus } from "@/lib/builder-status";
 import { PageHeader, Stat, Table, TBody, Td, Th, THead, Tr } from "@/components/ui";
-import { cn, fmtDate } from "@/lib/utils";
+import { cn, fmtDate, timeAgo } from "@/lib/utils";
 import { builderRows, fmtSize, STATUS_TONE } from "./data";
 
 export const metadata = { title: "Builders" };
@@ -28,7 +28,7 @@ export default async function BuildersPage({ searchParams }: { searchParams: Pro
         <Stat label="Active" value={count("ACTIVE")} />
         <Stat label="Trial" value={count("TRIAL")} />
         <Stat label="Free" value={count("FREE")} />
-        <Stat label="Worth a look" value={needLook} tone={needLook ? "warn" : "default"} hint="Paused, trial ending, no jobs, never signed in" />
+        <Stat label="Worth a look" value={needLook} tone={needLook ? "warn" : "default"} hint="Paused, trial ending, no jobs, no activity in a week" />
       </div>
       <div className="flex flex-wrap gap-2 text-sm">
         {[["", "All"], ...Object.entries(STATUS_LABEL)].map(([k, label]) => (
@@ -51,7 +51,8 @@ export default async function BuildersPage({ searchParams }: { searchParams: Pro
               <Th right>Team</Th>
               <Th right>Jobs</Th>
               <Th right>Files</Th>
-              <Th>Last signed in</Th>
+              <Th>Last active</Th>
+              <Th right>Days active (30)</Th>
               <Th>Worth a look</Th>
             </tr>
           </THead>
@@ -71,7 +72,10 @@ export default async function BuildersPage({ searchParams }: { searchParams: Pro
                 <Td right>{b.team}</Td>
                 <Td right>{b.jobs}</Td>
                 <Td right>{fmtSize(b.storage)}</Td>
-                <Td className="whitespace-nowrap">{b.lastSignIn ? fmtDate(b.lastSignIn) : "—"}</Td>
+                <Td className="whitespace-nowrap">
+                  <span title={b.lastSignIn ? `Last signed in ${fmtDate(b.lastSignIn)}` : "Never signed in"}>{b.lastActive ? timeAgo(b.lastActive) : "—"}</span>
+                </Td>
+                <Td right>{b.activeDays} of 30</Td>
                 <Td>
                   {healthFlags(b, now).map((f) => (
                     <p key={f.text} className={cn("text-xs", FLAG_TONE[f.tone])}>

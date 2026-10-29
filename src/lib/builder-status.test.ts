@@ -35,7 +35,13 @@ test("the Builders list flags what's worth a look", () => {
   );
   assert.deepEqual(
     healthFlags({ ...base, lastSignIn: day(-45) }, now).map((f) => f.text),
-    ["Quiet 45 days"],
+    ["No activity in 45 days"],
+  );
+  // Signed in weeks ago but using it yesterday: active (a sign-in lasts weeks).
+  assert.deepEqual(healthFlags({ ...base, lastSignIn: day(-45), lastActive: day(-1) }, now), []);
+  assert.deepEqual(
+    healthFlags({ ...base, lastActive: day(-9) }, now).map((f) => f.text),
+    ["No activity in 9 days"],
   );
   assert.deepEqual(
     healthFlags({ ...base, status: "TRIAL", trialEndsAt: day(3) }, now).map((f) => f.text),
