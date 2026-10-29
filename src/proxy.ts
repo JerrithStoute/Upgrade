@@ -8,7 +8,7 @@ const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-bs_sessio
 // password, confirm email, accept an invitation, Terms and Privacy, the home-screen app's description, icon, offline page and
 // notification worker, a vendor typing prices from their bid's link (the link
 // is the key: src/lib/bid-link.ts) — and, on this PC only, the test inbox.
-const PUBLIC_PATHS = ["/terms", "/privacy", "/sw.js", "/offline.html", "/api/app-manifest", "/api/app-icon", "/login", "/logout", "/signup", "/forgot", "/reset", "/verify", "/invite", "/prices", "/api/health", "/api/qbwc", "/api/company/logo", ...(process.env.NODE_ENV === "production" ? [] : ["/dev/outbox"])];
+const PUBLIC_PATHS = ["/terms", "/privacy", "/sw.js", "/offline.html", "/api/app-manifest", "/api/app-icon", "/api/problems/error", "/login", "/logout", "/signup", "/forgot", "/reset", "/verify", "/invite", "/prices", "/api/health", "/api/qbwc", "/api/company/logo", ...(process.env.NODE_ENV === "production" ? [] : ["/dev/outbox"])];
 // The website (/site). Until it's turned on, its pages show only to someone signed in to the Station
 // (src/app/site/layout.tsx) — who may have no builder sign-in at all.
 const SITE_PATHS = ["/site"];

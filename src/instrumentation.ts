@@ -47,3 +47,21 @@ export async function register() {
     startQboSync();
   }
 }
+
+/**
+ * Something broke while a page, a form or a download was being made: kept on the Station's Problems
+ * tab, and its owner emailed (src/lib/problems.ts). A form's own "that doesn't look right" message
+ * isn't kept (problem-rules.ts isServerProblem).
+ */
+export async function onRequestError(err: unknown, request: { path: string; headers: Record<string, string | string[] | undefined> }, context: { routeType: string }) {
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  try {
+    const { isServerProblem } = await import("./lib/problem-rules");
+    const e = err as { name?: string; constructor?: { name?: string } };
+    if (!isServerProblem({ name: e?.name, constructorName: e?.constructor?.name }, context.routeType)) return;
+    const { recordServerError, tokenFromCookieHeader } = await import("./lib/problems");
+    await recordServerError(err, request.path, tokenFromCookieHeader(request.headers.cookie));
+  } catch (e) {
+    console.error("[problems] onRequestError", e);
+  }
+}

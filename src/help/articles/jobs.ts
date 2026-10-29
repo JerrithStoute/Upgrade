@@ -22,6 +22,7 @@ export const JOBS: HelpArticle[] = [
           { name: "The menu (left)", what: "The main parts of the program: Dashboard, Leads, Projects, Spec homes, Clients, Schedule, To-Dos, Time clock, Invoices, Bills, Inventory, Reports and Settings. You only see the parts your position allows." },
           { name: "A job's tabs", what: "Inside a job: Overview, Plans, Material list, Takeoff, Estimate, Selections, Change Orders, Schedule, Purchasing, Budget, Invoices, Daily Logs, To-Dos, Files and Messages." },
           { name: "? (Help)", what: "This manual. It opens to the part about the page you're on, with a search box. Press ? on the keyboard too." },
+          { name: "Report a problem (the speech bubble with !)", what: "Something not working, or confusing? Tell The Builder Station in a sentence or two, with a picture if you like. See **Report a problem**." },
           { name: "Bell", what: "Your to-dos." },
           { name: "Your name", what: "Your account: password and two-step sign-in." },
         ],
@@ -39,7 +40,40 @@ export const JOBS: HelpArticle[] = [
         ],
       },
     ],
-    related: ["projects", "takeoff-screen", "estimate"],
+    related: ["projects", "takeoff-screen", "estimate", "report-problem"],
+  },
+  {
+    slug: "report-problem",
+    title: "Report a problem",
+    group: "Getting started",
+    area: null,
+    pages: [],
+    what: "When something doesn't work, or doesn't make sense, tell The Builder Station right from the page you're on. The page is sent along with what you write, so you don't have to explain where you were. Errors are also reported **automatically**: when a page breaks, we're told about it without you doing anything.",
+    how: [
+      "Click the **speech bubble with the !** at the top of any page (next to the **?**).",
+      "Say what you were doing and what happened — a sentence is plenty.",
+      "To show it, click **Add a picture**, or paste a screenshot straight into the box (on Windows: **Win+Shift+S** to take one, then **Ctrl+V**).",
+      "Click **Send**. If we need more, we'll email you.",
+    ],
+    sections: [
+      {
+        heading: "The Report a problem box",
+        items: [
+          { name: "What happened", what: "Your words. The page you're on is sent with it, and which browser you're using." },
+          { name: "Add a picture (or paste a screenshot)", what: "One picture: a screenshot, or a photo of the screen from your phone.", how: "Click it to pick a picture, or paste one into the box. The **X** beside it takes it off." },
+          { name: "Send", what: "Sends it to The Builder Station. Nobody at your company gets it — it's for us." },
+        ],
+      },
+      {
+        heading: "When a page breaks",
+        text: ["You'll see **Something went wrong** in place of the page. We've already been told. **Try again** loads it again; **Tell us what you were doing** opens Report a problem with what the page said already filled in."],
+      },
+    ],
+    tips: [
+      "A form that says what's wrong (like \"That email doesn't look right\") isn't a problem to report — it's telling you what to fix. Report it if you can't see what it wants.",
+      "Clients and subs don't see this button. Problems on their pages are reported to us automatically.",
+    ],
+    related: ["getting-started", "account"],
   },
   {
     slug: "projects",

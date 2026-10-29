@@ -2462,3 +2462,51 @@ model RateLimit {
 
   @@index([resetAt])
 }
+
+/// A problem someone on a builder's team sent with "Report a problem" (top bar), read on the Station's
+/// Problems tab (src/lib/problems.ts). The Station's own: closed to the app's login. `builderId` and
+/// `userId` are plain ids, so the report stays if the company goes.
+model StationProblem {
+  id             String    @id @default(cuid())
+  builderId      String?
+  builderName    String
+  userId         String?
+  userName       String
+  userEmail      String
+  page           String
+  message        String
+  // A picture they added (made smaller, a JPEG).
+  screenshot     Bytes?
+  // What they were using: the browser and the screen's size.
+  device         String?
+  doneAt         DateTime?
+  createdAt      DateTime  @default(now())
+
+  @@index([doneAt, createdAt])
+}
+
+/// Something in the program that broke — on the server or in someone's browser — read on the Station's
+/// Problems tab, and emailed to the Station's owner (src/lib/problems.ts). The same error again is the
+/// same row, counted: `key` is what it is and where it happened.
+model StationError {
+  id              String    @id @default(cuid())
+  key             String    @unique
+  // "server" | "browser"
+  side            String
+  message         String
+  stack           String?
+  page            String
+  count           Int       @default(1)
+  // The last one it happened to (plain ids, like the log's).
+  lastUserName    String?
+  lastBuilderName String?
+  lastBuilderId   String?
+  firstAt         DateTime  @default(now())
+  lastAt          DateTime  @default(now())
+  // When the owner was last emailed about it (at most every few hours).
+  alertedAt       DateTime?
+  // Marked fixed on the Station; happening again opens it again.
+  fixedAt         DateTime?
+
+  @@index([fixedAt, lastAt])
+}

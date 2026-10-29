@@ -1,5 +1,6 @@
 import "server-only";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { SESSION_COOKIE } from "./auth";
 import { unstable_rethrow } from "next/navigation";
 
 /**
@@ -26,7 +27,11 @@ export function friendly<A extends unknown[]>(fn: (...args: A) => Promise<unknow
       let message: string;
       if (isSystemError(e)) {
         console.error(e);
-        message = "Something went wrong saving that — nothing was changed. Try again; if it keeps happening, the details are in the server window.";
+        // Kept for the Station's Problems tab (the form caught it, so the server's own catch never sees it).
+        const { recordServerError } = await import("./problems");
+        const store = await cookies();
+        await recordServerError(e, (await headers()).get("referer")?.replace(/^https?:\/\/[^/]+/, "") ?? "(a form)", store.get(SESSION_COOKIE)?.value ?? null);
+        message = "Something went wrong saving that — nothing was changed. Try again. We were told about it automatically.";
       } else message = e instanceof Error && e.message ? e.message : "Something went wrong — nothing was changed.";
       (await cookies()).set(FLASH_COOKIE, encodeURIComponent(message.slice(0, 600)), { path: "/", maxAge: 60, sameSite: "lax", httpOnly: false });
     }

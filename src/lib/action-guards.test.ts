@@ -40,6 +40,7 @@ const PUBLIC_ROUTES = new Set([
   "api/company/logo/route.ts", // reads through the company gatekeeper, which refuses anyone not signed in
   "api/app-manifest/route.ts", // the home-screen app's name and colors: The Builder Station's, or (signed in) the builder's — nothing private
   "api/app-icon/route.ts", // that app's icon: the same, as a picture
+  "api/problems/error/route.ts", // something broke in a browser (a sign-in page too): a little text in, nothing out, limited per address
   "prices/[token]/file/route.ts", // a vendor's bid files: the signed link is the key to that one bid (bid-link.ts)
   "prices/[token]/plan/[fileId]/route.ts", // the plans sent with a sub's bid: the signed link, and only the files picked for that bid
 ]);

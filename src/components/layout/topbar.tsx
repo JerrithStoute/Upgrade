@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import type { SessionUser } from "@/lib/auth";
 import { TopbarTitle } from "./topbar-slot";
 import { HelpButton } from "@/components/help/help-button";
+import { ReportProblemButton } from "@/components/report-problem";
 
 export function Topbar({ user, title }: { user: SessionUser; title?: string }) {
   return (
@@ -12,6 +13,7 @@ export function Topbar({ user, title }: { user: SessionUser; title?: string }) {
       <TopbarTitle title={title} />
       <div className="flex shrink-0 items-center gap-3">
         <HelpButton role={user.role} access={user.access} />
+        <ReportProblemButton />
         <Link href="/todos" className="rounded-md p-2 text-slate-500 hover:bg-slate-100" title="My to-dos">
           <Bell className="h-4 w-4" />
         </Link>
