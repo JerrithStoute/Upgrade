@@ -1012,12 +1012,13 @@ export function EstimateSheet({
               />
             </label>
           ) : null}
-          <Figure label="Est. cost" value={money(totals.cost)} hint={sqft ? `${money(totals.cost / sqft)} / sq. ft.` : undefined} />
-          {totals.tax ? <Figure label="Sales tax" value={money(totals.tax)} hint="you pay — in the cost" /> : null}
+          {/* The whole cost of the work: the sales tax you pay is part of it (shown on its own too). */}
+          <Figure label="Est. cost" value={money(totals.cost + totals.tax)} hint={sqft ? `${money((totals.cost + totals.tax) / sqft)} / sq. ft.` : undefined} />
+          {totals.tax ? <Figure label="Sales tax" value={money(totals.tax)} hint="you pay — included in Est. cost" /> : null}
           <Figure
             label="Est. profit"
             value={money(totals.profit)}
-            hint={totals.cost + totals.tax > 0 ? `${num((totals.profit / (totals.cost + totals.tax)) * 100, 1)}% on cost${totals.tax ? " with tax" : ""}` : undefined}
+            hint={totals.cost + totals.tax > 0 ? `${num((totals.profit / (totals.cost + totals.tax)) * 100, 1)}% on cost` : undefined}
           />
           {extras.overheadTotal ? <Figure label="Overhead" value={money(extras.overheadTotal)} /> : null}
           <Figure

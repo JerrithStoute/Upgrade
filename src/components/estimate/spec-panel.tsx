@@ -66,7 +66,8 @@ export function SpecPanel({
     <dl className="grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
       <div>
         <dt className="text-xs text-slate-500">Cost</dt>
-        <dd className="font-semibold tabular-nums text-slate-800">{money(totals.cost)}</dd>
+        {/* With the sales tax you pay — Cost + Profit is the price. */}
+        <dd className="font-semibold tabular-nums text-slate-800">{money(totals.cost + totals.tax)}</dd>
       </div>
       <div>
         <dt className="text-xs text-slate-500">Profit</dt>
