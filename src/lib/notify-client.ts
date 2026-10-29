@@ -63,7 +63,7 @@ async function tellClient(
     after = link ? [`Choose a password, and you'll find it under ${mail.where}. The link works for 7 days.`] : [];
   }
   // (No portal sign-in yet: nobody to buzz — the push goes to sign-ins only.)
-  return sendCompanyMail(to.emails, { subject: mail.subject, heading: mail.heading, lines: mail.lines, sections: mail.sections, button, after, replyTo: from?.email, push: mail.push });
+  return sendCompanyMail(to.emails, { subject: mail.subject, heading: mail.heading, lines: mail.lines, sections: mail.sections, button, after, replyTo: from?.email, push: mail.push, customer: to.portal });
 }
 
 const company = async () => (await db.company.findFirst({ select: { name: true } }))?.name ?? "Your builder";

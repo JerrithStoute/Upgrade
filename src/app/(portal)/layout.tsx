@@ -10,7 +10,11 @@ import { Avatar } from "@/components/ui/avatar";
 import { GetTheAppBanner } from "@/components/phone-app";
 import { PortalNav } from "@/components/portal/nav";
 
-export const metadata = { title: "Client Portal" };
+// Tabs read "Selections · JT&I Custom Homes": the builder's name, never The Builder Station's.
+export async function generateMetadata() {
+  const name = (await db.company.findFirst({ select: { name: true } }))?.name ?? "Client Portal";
+  return { title: { default: name, template: `%s · ${name}` } };
+}
 
 export default async function PortalLayout({ children }: { children: React.ReactNode }) {
   const user = await requireClient();
@@ -39,7 +43,8 @@ export default async function PortalLayout({ children }: { children: React.React
       <header className={`no-print sticky ${user.preview ? "top-10" : "top-0"} z-10 border-b border-slate-200 bg-white/95 backdrop-blur`}>
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-3 px-4 md:px-6">
           <Link href="/portal" className="flex min-w-0 items-center gap-2">
-            <BrandMark logoUrl={brand.logoUrl} />
+            {/* (No logo yet: just the builder's name — never The Builder Station's icon.) */}
+            {brand.logoUrl ? <BrandMark logoUrl={brand.logoUrl} /> : null}
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold text-slate-900">{companyName}</span>
               <span className="block text-xs text-slate-500">Client Portal</span>

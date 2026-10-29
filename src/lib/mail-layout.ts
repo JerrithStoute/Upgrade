@@ -5,7 +5,7 @@ export type Mail = {
   subject: string;
   text: string;
   html: string;
-  /** Who it's from, by name ("JT&I Custom Homes via The Builder Station") — the address stays ours. */
+  /** Who it's from, by name ("JT&I Custom Homes") — the address stays ours. */
   fromName?: string;
   /** Where a reply goes (the person who sent it), instead of our no-reply address. */
   replyTo?: string;

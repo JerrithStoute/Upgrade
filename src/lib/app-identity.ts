@@ -1,6 +1,9 @@
 import "server-only";
 import sharp from "sharp";
+import { cookies } from "next/headers";
 import { getCurrentUser } from "./auth";
+import { HOME_COOKIE } from "./customer-brand";
+import { validSlug } from "./sign-in-slug";
 import { db, systemDb } from "./db";
 import { readUpload } from "./uploads";
 
@@ -44,10 +47,14 @@ const STATION: AppIdentity = {
 type Company = { id: string; name: string; brandColor: string | null; logoPath: string | null; updatedAt: Date };
 const COMPANY = { id: true, name: true, brandColor: true, logoPath: true, updatedAt: true } as const;
 
-/** The app for whoever's signed in on this request. */
+/**
+ * The app for whoever's signed in on this request — or, signed out, for the builder this browser's
+ * client or sub signed in to before (customer-brand.ts), so their sign-in page installs their builder's.
+ */
 export async function appIdentity(): Promise<AppIdentity> {
   const me = await getCurrentUser().catch(() => null);
-  if (!me || (me.role !== "CLIENT" && me.role !== "VENDOR")) return me ? STATION : { ...STATION, startUrl: "/" };
+  if (!me) return (await appIdentityForSlug((await cookies()).get(HOME_COOKIE)?.value)) ?? { ...STATION, startUrl: "/" };
+  if (me.role !== "CLIENT" && me.role !== "VENDOR") return STATION;
   const c = await db.company.findFirst({ select: COMPANY });
   return c ? builderApp(c, me.role === "CLIENT" ? "client" : "vendor") : STATION;
 }
@@ -60,6 +67,13 @@ export async function appIdentityFor(companyId: string | null, who: string | nul
   if (!companyId || !/^[a-z0-9]{10,40}$/.test(companyId) || (who !== "client" && who !== "vendor")) return null;
   const c = await systemDb.company.findUnique({ where: { id: companyId }, select: COMPANY });
   return c ? builderApp(c, who) : null;
+}
+
+/** A builder's own sign-in page (/login/<slug>): its app, opening on whichever portal is theirs. */
+export async function appIdentityForSlug(slug: string | null | undefined): Promise<AppIdentity | null> {
+  if (!validSlug(slug)) return null;
+  const c = await systemDb.company.findUnique({ where: { signInSlug: slug }, select: COMPANY });
+  return c ? { ...builderApp(c, "client"), startUrl: "/" } : null;
 }
 
 function builderApp(c: Company, who: "client" | "vendor"): AppIdentity {
@@ -121,4 +135,24 @@ export async function appIcon(app: AppIdentity, size: number, o: { maskable?: bo
     }
   }
   return sharp(Buffer.from(houseSvg(size, pad + Math.round(size * 0.04), "#ffffff", app.color))).png().toBuffer();
+}
+
+/**
+ * A sign-in-type page's title and home-screen app for a client or sub (their builder's — never "· The
+ * Builder Station"), when the page knows the builder; else just the title.
+ */
+export function customerPageMetadata(app: AppIdentity | null, title: string, logoUrl?: string | null) {
+  if (!app) return { title };
+  return {
+    title: { absolute: `${title} · ${app.name}` },
+    description: `${app.name}: your project online.`,
+    manifest: `/api/app-manifest?${app.query}`,
+    icons: { ...(logoUrl ? { icon: logoUrl } : {}), apple: `/api/app-icon?s=180&${app.query}&v=${app.version}` },
+    appleWebApp: { capable: true, title: app.shortName, statusBarStyle: "default" as const },
+  };
+}
+
+/** The app of a client's or sub's builder, by company. */
+export async function appIdentityForCompany(companyId: string, role: string) {
+  return role === "CLIENT" || role === "VENDOR" ? appIdentityFor(companyId, role === "CLIENT" ? "client" : "vendor") : null;
 }

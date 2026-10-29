@@ -1,11 +1,12 @@
-import { StationLine } from "@/components/station-logo";
+import { brandForCompany, type CustomerBrand } from "@/lib/customer-brand";
 import { isLadderLine } from "@/lib/bids";
 import { asSent } from "@/lib/bid-beams";
 import { BID_LINK_DAYS } from "@/lib/bid-link";
 import { bidForLink } from "../data";
 import { PricesForm, SubBidForm } from "./form";
 
-export const metadata = { title: "Your prices", robots: { index: false, follow: false } };
+// (No "· The Builder Station" after it: a vendor sees only the builder.)
+export const metadata = { title: { absolute: "Your prices" }, robots: { index: false, follow: false } };
 
 /**
  * Where a vendor types their prices for a bid — from the link in its email, no sign-in. Their list (with
@@ -24,7 +25,8 @@ export default async function BidPricesPage({ params }: { params: Promise<{ toke
       </Shell>
     );
   const { bid, company, closed } = found;
-  if (bid.kind === "SUB") return <SubBidPage token={token} found={found} />;
+  const brand = await brandForCompany(found.companyId);
+  if (bid.kind === "SUB") return <SubBidPage token={token} found={found} brand={brand} />;
   const address = [bid.project.address, [bid.project.city, bid.project.state].filter(Boolean).join(", ")].filter(Boolean).join(", ");
   // Beams by the piece, their price per beam (they can switch the line to per lf).
   const lines = bid.lines.map((l) => {
@@ -41,7 +43,7 @@ export default async function BidPricesPage({ params }: { params: Promise<{ toke
     };
   });
   return (
-    <Shell>
+    <Shell brand={brand}>
       <h1 className="text-lg font-semibold text-slate-900">
         {company?.name} — prices for Bid #{bid.number}
       </h1>
@@ -71,13 +73,21 @@ export default async function BidPricesPage({ params }: { params: Promise<{ toke
   );
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+/** The page around a vendor's bid: the builder's logo (or name) on top — the vendor sees only the builder. */
+function Shell({ children, brand }: { children: React.ReactNode; brand?: CustomerBrand | null }) {
   return (
     <main className="min-h-screen flex-1 bg-slate-100 px-3 pb-28 pt-3 sm:px-4">
       <div className="mx-auto max-w-3xl">
-        <div className="mb-2">
-          <StationLine size={22} />
-        </div>
+        {brand ? (
+          <div className="mb-2">
+            {brand.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={brand.logoUrl} alt={brand.name} className="max-h-10 max-w-[14rem] object-contain" />
+            ) : (
+              <span className="text-sm font-semibold text-slate-900">{brand.name}</span>
+            )}
+          </div>
+        ) : null}
         <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5">{children}</div>
       </div>
     </main>
@@ -87,13 +97,13 @@ function Shell({ children }: { children: React.ReactNode }) {
 const fileSize = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
 /** A sub's bid page: the job, what's asked and by when, the plans to open or download, and their price per trade. */
-function SubBidPage({ token, found }: { token: string; found: NonNullable<Awaited<ReturnType<typeof bidForLink>>> }) {
+function SubBidPage({ token, found, brand }: { token: string; found: NonNullable<Awaited<ReturnType<typeof bidForLink>>>; brand: CustomerBrand | null }) {
   const { bid, company, closed, plans } = found;
   const address = [bid.project.address, [bid.project.city, bid.project.state].filter(Boolean).join(", ")].filter(Boolean).join(", ");
   const trades = bid.lines.map((l) => ({ id: l.id, name: l.codeLabel || l.name, price: l.unitPrice, note: l.note }));
   const due = bid.dueAt ? bid.dueAt.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", timeZone: "UTC" }) : null;
   return (
-    <Shell>
+    <Shell brand={brand}>
       <h1 className="text-lg font-semibold text-slate-900">
         {company?.name} — bid request #{bid.number}
       </h1>

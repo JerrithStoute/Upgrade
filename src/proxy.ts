@@ -63,11 +63,16 @@ export async function proxy(req: NextRequest) {
 
   if (!authed && !isPublic) {
     const url = req.nextUrl.clone();
-    url.pathname = "/login";
+    // A client's or sub's own builder's sign-in page: named in the link (?b=, from their emails), or
+    // remembered by this browser (customer-brand.ts). (The proxy can't use the database: just the shape.)
+    const home = [req.nextUrl.searchParams.get("b"), req.cookies.get("bs_home")?.value].find((s) => !!s && /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/.test(s));
+    url.searchParams.delete("b");
+    url.pathname = home ? `/login/${home}` : "/login";
     if (pathname !== "/") url.searchParams.set("next", pathname);
     return NextResponse.redirect(url);
   }
-  if (authed && pathname === "/login") {
+  // Signed in already: no sign-in page (the general one, or a builder's own).
+  if (authed && (pathname === "/login" || /^\/login\/(?!two-step)[a-z0-9-]+$/.test(pathname))) {
     const url = req.nextUrl.clone();
     url.pathname = "/";
     url.search = "";

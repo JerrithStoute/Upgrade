@@ -157,8 +157,8 @@ ${paragraphs}
     subject: o.subject,
     text,
     html,
-    // (Like every email the program sends for a company: its name, through The Builder Station.)
-    fromName: `${o.companyName} via The Builder Station`,
+    // (Like every email the program sends for a company: its name — the vendor sees only the builder.)
+    fromName: o.companyName,
     fromLocal: "bids",
     replyTo: o.replyTo ?? undefined,
     bcc: o.copyTo && o.copyTo.toLowerCase() !== o.to.toLowerCase() ? [o.copyTo] : undefined,
@@ -192,7 +192,7 @@ ${plans ? `<p style="margin:20px 0 6px;font-size:13px;font-weight:600;text-trans
     subject: o.subject,
     text,
     html,
-    fromName: `${o.companyName} via The Builder Station`,
+    fromName: o.companyName,
     fromLocal: "bids",
     replyTo: o.replyTo ?? undefined,
     bcc: o.copyTo && o.copyTo.toLowerCase() !== o.to.toLowerCase() ? [o.copyTo] : undefined,

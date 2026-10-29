@@ -1,13 +1,39 @@
 import { StationBlock } from "@/components/station-logo";
 import Link from "@/components/link";
+import { brandCss } from "@/lib/brand";
 
-/** The plain card the sign-in-type pages share (sign up, forgot password, invitations…). */
+/** A client's or sub's builder, on their sign-in pages (src/lib/customer-brand.ts). */
+export type AuthBrand = { name: string; slug: string; color: string | null; logoUrl: string | null };
+
+/** The builder's logo — or its name, when it has no logo yet. Never The Builder Station's. */
+export function BuilderHeader({ brand }: { brand: AuthBrand }) {
+  const css = brandCss(brand.color);
+  return (
+    <>
+      {css ? <style dangerouslySetInnerHTML={{ __html: css }} /> : null}
+      <Link href={`/login/${brand.slug}`} className="mb-6 flex justify-center" aria-label={`${brand.name} — sign in`}>
+        {brand.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={brand.logoUrl} alt={brand.name} className="max-h-20 max-w-[18rem] object-contain" />
+        ) : (
+          <span className="text-center text-2xl font-semibold tracking-tight text-slate-900">{brand.name}</span>
+        )}
+      </Link>
+    </>
+  );
+}
+
+/**
+ * The plain card the sign-in-type pages share (sign up, forgot password, invitations…). With `brand`
+ * (a client's or sub's page), their builder's logo and colors instead of The Builder Station's.
+ */
 export function AuthCard({
   title,
   intro,
   children,
   footer,
   home = "/login",
+  brand,
 }: {
   title: string;
   intro?: React.ReactNode;
@@ -15,13 +41,18 @@ export function AuthCard({
   footer?: React.ReactNode;
   /** Where the logo goes: the builders' sign-in, or the Station's own (/station/login). */
   home?: string;
+  brand?: AuthBrand | null;
 }) {
   return (
     <main className="flex min-h-screen flex-1 items-center justify-center bg-slate-100 p-6">
       <div className="w-full max-w-sm">
-        <Link href={home} className="mb-6 block" aria-label="The Builder Station — sign in">
-          <StationBlock />
-        </Link>
+        {brand ? (
+          <BuilderHeader brand={brand} />
+        ) : (
+          <Link href={home} className="mb-6 block" aria-label="The Builder Station — sign in">
+            <StationBlock />
+          </Link>
+        )}
         <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
           <h1 className="mb-1 text-lg font-semibold">{title}</h1>
           {intro ? <div className="mb-5 text-sm text-slate-500">{intro}</div> : <div className="mb-4" />}

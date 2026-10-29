@@ -1,4 +1,5 @@
 import "server-only";
+import { brandForPerson } from "./customer-brand";
 import { createHash, randomBytes } from "crypto";
 import { systemDb } from "./db";
 import { appUrl, sendMail, simpleEmail } from "./mail";
@@ -43,7 +44,7 @@ export async function redeemLink(token: string, purpose: Purpose) {
 
 /** Checks a link without using it up (to show the form behind it). */
 export async function peekLink(token: string, purpose: Purpose) {
-  const row = token ? await systemDb.authToken.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: { select: { email: true, name: true, active: true } } } }) : null;
+  const row = token ? await systemDb.authToken.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: { select: { email: true, name: true, active: true, companyId: true, role: true } } } }) : null;
   if (!row || row.purpose !== purpose || row.usedAt || row.expiresAt < new Date() || !row.user.active) return null;
   return row.user;
 }
@@ -62,10 +63,21 @@ export async function sendVerifyEmail(user: Person, companyName: string) {
   );
 }
 
+/**
+ * A client's or sub's emails about their login come from their builder, by name — never The Builder
+ * Station (customer-brand.ts). Null for a builder's own team.
+ */
+async function customerMail(email: string) {
+  const brand = await brandForPerson(await systemDb.user.findUnique({ where: { email }, select: { companyId: true, role: true } }));
+  return brand ? { brand: brand.name, fromName: brand.name, slug: brand.slug } : null;
+}
+
 export async function sendResetEmail(user: Person) {
   const token = await issueLink(user, "RESET_PASSWORD");
+  const theirs = await customerMail(user.email);
   await sendMail(
     simpleEmail({
+      ...(theirs ? { brand: theirs.brand, fromName: theirs.fromName } : {}),
       to: user.email,
       subject: "Reset your password",
       heading: "Reset your password",
@@ -78,12 +90,15 @@ export async function sendResetEmail(user: Person) {
 
 export async function sendInviteEmail(invite: { email: string; name: string | null; kind: string }, token: string, companyName: string, fromName: string) {
   const what = invite.kind === "CLIENT" ? `your client portal with ${companyName}` : invite.kind === "VENDOR" ? `${companyName}'s vendor portal` : `${companyName}'s team`;
+  // A client or sub hears from the builder only; the builder's team is joining The Builder Station.
+  const customer = invite.kind === "CLIENT" || invite.kind === "VENDOR";
   await sendMail(
     simpleEmail({
+      ...(customer ? { brand: companyName, fromName: companyName } : {}),
       to: invite.email,
       subject: `${fromName} invited you to ${companyName}`,
       heading: invite.name ? `Hi ${invite.name.split(" ")[0]},` : "You're invited",
-      lines: [`${fromName} invited you to ${what} on The Builder Station.`, "Choose a password to get started."],
+      lines: [`${fromName} invited you to ${what}${customer ? "" : " on The Builder Station"}.`, "Choose a password to get started."],
       button: { label: "Accept the invitation", url: appUrl(`/invite?token=${token}`) },
       after: ["The invitation works for 7 days."],
     }),
@@ -102,13 +117,15 @@ const CHANGES = {
  */
 export async function sendSecurityNotice(user: { email: string; name: string }, change: keyof typeof CHANGES) {
   const c = CHANGES[change];
+  const theirs = await customerMail(user.email).catch(() => null);
   await sendMail(
     simpleEmail({
+      ...(theirs ? { brand: theirs.brand, fromName: theirs.fromName } : {}),
       to: user.email,
       subject: c.subject,
       heading: c.subject,
       lines: [`Hi ${user.name.split(" ")[0]},`, c.line, "If this was you, there's nothing to do."],
-      button: { label: "Wasn't me — reset my password", url: appUrl("/forgot") },
+      button: { label: "Wasn't me — reset my password", url: appUrl(theirs ? `/forgot?b=${theirs.slug}` : "/forgot") },
       after: ["Resetting your password signs every device out of your login."],
     }),
   ).catch((err) => console.error("Security email not sent:", err));

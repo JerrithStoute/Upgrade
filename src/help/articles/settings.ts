@@ -192,6 +192,16 @@ export const SETTINGS: HelpArticle[] = [
         ],
       },
       {
+        heading: "Your clients' sign-in page",
+        items: [
+          {
+            name: "Your clients' sign-in page",
+            what: "Your clients and subs sign in at your own page (app.thebuilderstation.com/login/ and a short name from your company's, like **jti**): your logo, name and colors. They never see The Builder Station: their invitations, emails, password resets, browser tabs, phone app and authenticator code all carry your name. Signing out takes them back to your page. Your own team still uses the general sign-in page.",
+          },
+          { name: "Change the end of the address", what: "Pick a different short name (letters, numbers and dashes). After a change, links already sent open the general sign-in page instead." },
+        ],
+      },
+      {
         heading: "Backups and your data",
         items: [
           { name: "Back up now", what: "Copies everything right away. Backups also happen by themselves once a day, and the last 30 are kept." },

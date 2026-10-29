@@ -4,7 +4,9 @@ import { Download } from "lucide-react";
 import { buttonClasses, Card, CardBody, CardHeader, ConfirmForm, Field, FormGrid, SubmitButton } from "@/components/ui";
 import { MoreList } from "@/components/more-list";
 import path from "path";
-import { backupNow, restoreFromBackup, saveBackupFolder, saveCompany } from "../actions";
+import { backupNow, restoreFromBackup, saveBackupFolder, saveCompany, saveSignInSlug } from "../actions";
+import { ensureSignInSlug } from "@/lib/customer-brand";
+import { appUrl } from "@/lib/mail";
 import { BrandingForm } from "../branding-form";
 import { getBrand } from "@/lib/company-brand";
 import { backupDir, backupHealth, backupsInCloud, companyDefaultDir, listBackups } from "@/lib/backup";
@@ -17,10 +19,10 @@ export const metadata = { title: "Company settings" };
 export default async function CompanySettingsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ saved?: string; backup?: string; branding?: string; restored?: string; undo?: string }>;
+  searchParams: Promise<{ saved?: string; backup?: string; branding?: string; restored?: string; undo?: string; signin?: string }>;
 }) {
   await requireAdmin();
-  const { saved, backup, branding, restored, undo } = await searchParams;
+  const { saved, backup, branding, restored, undo, signin } = await searchParams;
   const { dateTime } = await companyClock();
   const [company, { last, overdue: stale }, brand, folder, backups, punches] = await Promise.all([
     db.company.findFirst(),
@@ -31,6 +33,7 @@ export default async function CompanySettingsPage({
     db.timeEntry.count(),
   ]);
   const ownFolder = await companyDefaultDir();
+  const slug = company ? await ensureSignInSlug(company.id) : null;
   const inCloud = backupsInCloud();
   // Same drive as the program? Then one failed disk takes both.
   const sameDrive = path.parse(folder).root.toLowerCase() === path.parse(process.cwd()).root.toLowerCase() && !/onedrive|dropbox|google drive|icloud/i.test(folder);
@@ -40,6 +43,7 @@ export default async function CompanySettingsPage({
   return (
     <div className="space-y-6">
       {saved ? <p className="rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">Company profile saved.</p> : null}
+      {signin ? <p className="rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">Sign-in page address saved.</p> : null}
       {branding ? (
         <p className="rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800 ring-1 ring-inset ring-emerald-200">Branding saved — the whole program now uses it.</p>
       ) : null}
@@ -165,6 +169,25 @@ export default async function CompanySettingsPage({
           <BrandingForm color={brand.color} style={brand.style} logoUrl={brand.logoUrl} companyName={brand.name} />
         </CardBody>
       </Card>
+      {slug ? (
+        <Card>
+          <CardHeader
+            title="Your clients' sign-in page"
+            description="Your clients and subs sign in here: your logo, name and colors — they never see The Builder Station. Every invitation and email to them links here."
+          />
+          <CardBody className="space-y-3 text-sm">
+            <a href={`/login/${slug}`} target="_blank" rel="noopener" className="break-all font-medium text-blue-700 hover:underline">
+              {appUrl(`/login/${slug}`)}
+            </a>
+            <form action={saveSignInSlug} className="flex flex-wrap items-end gap-2">
+              <Field label="Change the end of the address" htmlFor="signin-slug" hint="Letters, numbers and dashes. After a change, links already sent open the general sign-in page instead.">
+                <input id="signin-slug" name="slug" defaultValue={slug} className="input w-56" maxLength={30} required />
+              </Field>
+              <SubmitButton variant="secondary">Save</SubmitButton>
+            </form>
+          </CardBody>
+        </Card>
+      ) : null}
       <Card>
         <CardHeader title="Company profile" description="Appears on proposals, invoices and the client portal." />
         <CardBody>

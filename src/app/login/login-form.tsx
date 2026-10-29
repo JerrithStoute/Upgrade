@@ -7,7 +7,7 @@ import { RobotCheck } from "@/components/robot-check";
 import { resendConfirmation, type FormState } from "../(public)/actions";
 import { login, type LoginState } from "./actions";
 
-export function LoginForm({ next, robotKey }: { next?: string; robotKey: string | null }) {
+export function LoginForm({ next, robotKey, forgotHref = "/forgot" }: { next?: string; robotKey: string | null; forgotHref?: string }) {
   const [state, action, pending] = useActionState<LoginState, FormData>(login, undefined);
   const [again, resend, resending] = useActionState<FormState, FormData>(resendConfirmation, undefined);
   return (
@@ -20,7 +20,7 @@ export function LoginForm({ next, robotKey }: { next?: string; robotKey: string 
       <div>
         <div className="flex items-baseline justify-between">
           <label className="label" htmlFor="password">Password</label>
-          <Link href="/forgot" className="text-xs font-medium text-blue-700 hover:underline">
+          <Link href={forgotHref} className="text-xs font-medium text-blue-700 hover:underline">
             Forgot password?
           </Link>
         </div>

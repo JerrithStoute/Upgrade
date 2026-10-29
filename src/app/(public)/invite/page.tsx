@@ -3,8 +3,16 @@ import { AuthCard } from "@/components/auth-card";
 import { systemDb } from "@/lib/db";
 import { hashToken } from "@/lib/account";
 import { InviteForm } from "../forms";
+import { brandForCompany } from "@/lib/customer-brand";
+import { appIdentityForCompany, customerPageMetadata } from "@/lib/app-identity";
 
-export const metadata = { title: "Accept invitation" };
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
+  const { token = "" } = await searchParams;
+  const invite = token ? await systemDb.invite.findUnique({ where: { tokenHash: hashToken(token) }, select: { companyId: true, kind: true } }) : null;
+  const customer = invite && (invite.kind === "CLIENT" || invite.kind === "VENDOR") ? invite : null;
+  const [app, brand] = customer ? await Promise.all([appIdentityForCompany(customer.companyId, customer.kind), brandForCompany(customer.companyId)]) : [null, null];
+  return customerPageMetadata(app, "Accept invitation", brand?.logoUrl);
+}
 
 export default async function InvitePage({ searchParams }: { searchParams: Promise<{ token?: string }> }) {
   const { token = "" } = await searchParams;
@@ -19,8 +27,10 @@ export default async function InvitePage({ searchParams }: { searchParams: Promi
       </AuthCard>
     );
   const what = invite.kind === "CLIENT" ? "your client portal" : invite.kind === "VENDOR" ? "the vendor portal" : "the team";
+  // A client or sub sees their builder's logo, not The Builder Station's.
+  const brand = invite.kind === "CLIENT" || invite.kind === "VENDOR" ? await brandForCompany(invite.companyId) : null;
   return (
-    <AuthCard title={`Join ${company.name}`} intro={`You're invited to ${what}. Choose a password to get started.`}>
+    <AuthCard brand={brand} title={`Join ${company.name}`} intro={`You're invited to ${what}. Choose a password to get started.`}>
       <InviteForm token={token} email={invite.email} name={invite.name ?? ""} />
     </AuthCard>
   );

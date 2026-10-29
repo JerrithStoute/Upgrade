@@ -35,6 +35,9 @@ model Company {
   // More of the work screens' look, for the whole company (src/lib/brand-style.ts): JSON { accent, menu, screen, planDim }; null = the built-in look.
   brandStyle          String?
   logoPath            String?
+  // Its clients' and subs' own sign-in page: app.thebuilderstation.com/login/<signInSlug> — its name and
+  // logo, never The Builder Station's (src/lib/customer-brand.ts). Made from its name the first time needed.
+  signInSlug          String?         @unique
   logoType            String?
   // What proposals show by default (JSON, see src/lib/proposal-options.ts); null = the built-in default.
   proposalOptions     String?

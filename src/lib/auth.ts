@@ -1,4 +1,5 @@
 import "server-only";
+import { rememberHome } from "./customer-brand";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
@@ -54,7 +55,7 @@ export async function verifyPassword(password: string, hash: string) {
  * it (signOutEverywhere) ends every sign-in they have, on every device.
  */
 export async function createSession(userId: string) {
-  const user = await systemDb.user.update({ where: { id: userId }, data: { lastSignInAt: new Date() }, select: { sessionVersion: true } });
+  const user = await systemDb.user.update({ where: { id: userId }, data: { lastSignInAt: new Date() }, select: { sessionVersion: true, companyId: true, role: true } });
   const token = await new SignJWT({ sub: userId, v: user.sessionVersion })
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
@@ -68,6 +69,8 @@ export async function createSession(userId: string) {
     path: "/",
     maxAge: SESSION_DAYS * 24 * 60 * 60,
   });
+  // A client's or sub's browser remembers their builder: signing out goes back to its page.
+  await rememberHome(user);
 }
 
 export async function destroySession() {

@@ -4,6 +4,8 @@ import { appUrl, sendMail, simpleEmail, type MailSection } from "./mail";
 import { coverageLabel, poTotal } from "./purchasing";
 import { fmtDate, money } from "./utils";
 import { pushToEmails, type PushKind } from "./push";
+import { ensureSignInSlug, withBuilder } from "./customer-brand";
+import { currentCompanyId } from "./tenant";
 
 /**
  * Emails the program sends as things happen in purchasing: a PO to its vendor, and word
@@ -11,7 +13,8 @@ import { pushToEmails, type PushKind } from "./push";
  *
  * One rule for all of them: an email that can't be sent never stops the work — the PO is
  * still marked sent, the bill still uploaded. The failure goes in the server log.
- * They're "from" the company by name, and a reply goes to a real person. With `push`, the same
+ * They're "from" the company by name (never "via The Builder Station": its clients and subs see only
+ * the builder), and a reply goes to a real person. With `push`, the same
  * people's phones buzz too, if they've turned notifications on (push.ts).
  */
 
@@ -35,14 +38,17 @@ export async function sendCompanyMail(
     after?: string[];
     replyTo?: string;
     push?: PushKind;
+    /** To a client or sub: the button carries their builder, so a phone that's never signed in shows the builder's own sign-in page. */
+    customer?: boolean;
   },
 ) {
   // A reply goes to whoever sent it — else the company's own address, never our no-reply one.
   const { name: brand, email: office } = await companyInfo();
+  if (mail.customer && mail.button) mail = { ...mail, button: { ...mail.button, url: withBuilder(mail.button.url, await ensureSignInSlug(await currentCompanyId())) } };
   const reached: string[] = [];
   for (const address of [...new Set(to.map((t) => t.trim().toLowerCase()).filter(Boolean))]) {
     try {
-      await sendMail(simpleEmail({ ...mail, to: address, brand, fromName: `${brand} via The Builder Station`, replyTo: mail.replyTo ?? office }));
+      await sendMail(simpleEmail({ ...mail, to: address, brand, fromName: brand, replyTo: mail.replyTo ?? office }));
       reached.push(address);
     } catch (e) {
       console.error(`[email] "${mail.subject}" to ${address} failed:`, e instanceof Error ? e.message : e);
@@ -88,6 +94,7 @@ export async function emailPoToVendor(poId: string, sender: Person) {
     ],
     replyTo: sender.email,
     push: "POS",
+    customer: true,
   });
 }
 

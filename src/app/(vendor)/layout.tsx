@@ -8,7 +8,11 @@ import { Avatar } from "@/components/ui/avatar";
 import { GetTheAppBanner } from "@/components/phone-app";
 import { VendorNav } from "@/components/vendor/nav";
 
-export const metadata = { title: "Sub & Vendor Portal" };
+// Tabs read "Purchase orders · JT&I Custom Homes": the builder's name, never The Builder Station's.
+export async function generateMetadata() {
+  const name = (await db.company.findFirst({ select: { name: true } }))?.name ?? "Sub & Vendor Portal";
+  return { title: { default: name, template: `%s · ${name}` } };
+}
 
 /** The portal for subs and vendors: their POs, schedule items, bills and insurance — nothing else. */
 export default async function VendorLayout({ children }: { children: React.ReactNode }) {
@@ -20,7 +24,8 @@ export default async function VendorLayout({ children }: { children: React.React
       <header className="no-print sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-14 w-full max-w-6xl items-center justify-between gap-3 px-4 md:px-6">
           <Link href="/vendor" className="flex min-w-0 items-center gap-2">
-            <BrandMark logoUrl={brand.logoUrl} />
+            {/* (No logo yet: just the builder's name — never The Builder Station's icon.) */}
+            {brand.logoUrl ? <BrandMark logoUrl={brand.logoUrl} /> : null}
             <span className="min-w-0">
               <span className="block truncate text-sm font-semibold text-slate-900">{companyName}</span>
               <span className="block truncate text-xs text-slate-500">Portal for {vendor?.name ?? "subs & vendors"}</span>

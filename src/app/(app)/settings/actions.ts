@@ -12,6 +12,7 @@ import { brandStyleJson } from "@/lib/brand-style";
 import { isZone } from "@/lib/zone";
 import { saveLogo } from "@/lib/company-brand";
 import { deleteUpload } from "@/lib/uploads";
+import { cleanSlug, validSlug } from "@/lib/sign-in-slug";
 
 export const saveCompany = friendly(async function saveCompany(formData: FormData) {
   const user = await requireAdmin();
@@ -35,6 +36,27 @@ export const saveCompany = friendly(async function saveCompany(formData: FormDat
   await logActivity({ userId: user.id, type: "company.updated", description: `Updated company profile for ${name}` });
   revalidatePath("/", "layout");
   redirect("/settings/company?saved=1");
+});
+
+/**
+ * The address of your clients' and subs' own sign-in page (app.thebuilderstation.com/login/<this>).
+ * Links already sent keep working only while it stays the same.
+ */
+export const saveSignInSlug = friendly(async function saveSignInSlug(formData: FormData) {
+  const user = await requireAdmin();
+  const slug = cleanSlug(str(formData, "slug"));
+  if (!validSlug(slug)) throw new Error("Use 3 to 30 letters, numbers or dashes (not a word the program uses itself)");
+  const company = await db.company.findFirst({ select: { id: true, signInSlug: true } });
+  if (!company || company.signInSlug === slug) redirect("/settings/company");
+  try {
+    await db.company.update({ where: { id: company.id }, data: { signInSlug: slug } });
+  } catch (e) {
+    if ((e as { code?: string }).code === "P2002") throw new Error(`"${slug}" is taken by another builder — try another`);
+    throw e;
+  }
+  await logActivity({ userId: user.id, type: "company.updated", description: `Changed the clients' sign-in page to /login/${slug}` });
+  revalidatePath("/settings/company");
+  redirect("/settings/company?signin=1");
 });
 
 /** Admins: take a backup right now (database + uploads). */
