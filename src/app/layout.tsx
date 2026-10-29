@@ -15,7 +15,7 @@ export async function generateMetadata(): Promise<Metadata> {
     description: "Construction project management for builders and remodelers.",
     // The company logo in the browser tab, when there is one; on a home screen, the app's own icon
     // (a client's or sub's: their builder's — src/lib/app-identity.ts).
-    icons: { ...(brand.logoUrl ? { icon: brand.logoUrl } : {}), apple: `/api/app-icon?s=180&v=${app.version}` },
+    icons: { ...(brand.logoUrl ? { icon: brand.logoUrl } : {}), apple: `/api/app-icon?s=180${app.query ? `&${app.query}` : ""}&v=${app.version}` },
     appleWebApp: { capable: true, title: app.shortName, statusBarStyle: "default" },
   };
 }
@@ -25,14 +25,14 @@ export async function generateViewport() {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const brand = await getBrand();
+  const [brand, app] = await Promise.all([getBrand(), appIdentity()]);
   const css = brandCss(brand.color);
   return (
     <html lang="en" className="h-full antialiased">
       <head>
         {css ? <style dangerouslySetInnerHTML={{ __html: css }} /> : null}
         {/* The home-screen app: asked for with the sign-in, so a client gets their builder's (api/app-manifest). */}
-        <link rel="manifest" href="/api/app-manifest" crossOrigin="use-credentials" />
+        <link rel="manifest" href={`/api/app-manifest${app.query ? `?${app.query}` : ""}`} crossOrigin="use-credentials" />
       </head>
       <body className="min-h-full flex flex-col">
         {children}

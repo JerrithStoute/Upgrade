@@ -1,7 +1,7 @@
 import "server-only";
 import sharp from "sharp";
 import { getCurrentUser } from "./auth";
-import { db } from "./db";
+import { db, systemDb } from "./db";
 import { readUpload } from "./uploads";
 
 // The Station's own colors (as src/components/station-logo.tsx — not imported here: it loads a font).
@@ -24,16 +24,46 @@ export type AppIdentity = {
   /** Tells apart the apps on one phone (a client of two builders gets two). */
   id: string;
   version: string;
+  /** Where the phone reads this app's description and icon. A client's or sub's name their builder in
+   * the address — an iPhone fetches the icon on its own, without the sign-in. */
+  query: string;
 };
 
-const STATION: AppIdentity = { who: "team", name: "The Builder Station", shortName: "Builder Station", color: STATION_BLACK, logoPath: null, startUrl: "/dashboard", id: "/?app=station", version: "1" };
+const STATION: AppIdentity = {
+  who: "team",
+  name: "The Builder Station",
+  shortName: "Builder Station",
+  color: STATION_BLACK,
+  logoPath: null,
+  startUrl: "/dashboard",
+  id: "/?app=station",
+  version: "1",
+  query: "",
+};
 
+type Company = { id: string; name: string; brandColor: string | null; logoPath: string | null; updatedAt: Date };
+const COMPANY = { id: true, name: true, brandColor: true, logoPath: true, updatedAt: true } as const;
+
+/** The app for whoever's signed in on this request. */
 export async function appIdentity(): Promise<AppIdentity> {
   const me = await getCurrentUser().catch(() => null);
   if (!me || (me.role !== "CLIENT" && me.role !== "VENDOR")) return me ? STATION : { ...STATION, startUrl: "/" };
-  const c = await db.company.findFirst({ select: { id: true, name: true, brandColor: true, logoPath: true, updatedAt: true } });
-  if (!c) return STATION;
-  const client = me.role === "CLIENT";
+  const c = await db.company.findFirst({ select: COMPANY });
+  return c ? builderApp(c, me.role === "CLIENT" ? "client" : "vendor") : STATION;
+}
+
+/**
+ * The app named in an address (?c=<company>&w=client|vendor) — no sign-in needed: it's the builder's
+ * name, logo and color, nothing private (the logo is public already: /api/company/logo).
+ */
+export async function appIdentityFor(companyId: string | null, who: string | null): Promise<AppIdentity | null> {
+  if (!companyId || !/^[a-z0-9]{10,40}$/.test(companyId) || (who !== "client" && who !== "vendor")) return null;
+  const c = await systemDb.company.findUnique({ where: { id: companyId }, select: COMPANY });
+  return c ? builderApp(c, who) : null;
+}
+
+function builderApp(c: Company, who: "client" | "vendor"): AppIdentity {
+  const client = who === "client";
   const name = c.name || "Your builder";
   return {
     who: client ? "client" : "vendor",
@@ -45,6 +75,7 @@ export async function appIdentity(): Promise<AppIdentity> {
     startUrl: client ? "/portal" : "/vendor",
     id: `/${client ? "portal" : "vendor"}?app=${c.id}`,
     version: String(c.updatedAt.getTime()),
+    query: `c=${c.id}&w=${who}`,
   };
 }
 
