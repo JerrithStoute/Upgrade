@@ -52,7 +52,14 @@ export async function ensureSignInSlug(companyId: string): Promise<string> {
 export async function brandBySlug(slug: string | null | undefined): Promise<CustomerBrand | null> {
   if (!validSlug(slug)) return null;
   const c = await systemDb.company.findUnique({ where: { signInSlug: slug }, select: SELECT });
-  return c ? brandOf(c, slug) : null;
+  if (c) return brandOf(c, slug);
+  // A builder whose address hasn't been made yet, visited by the one it would get ("jti" for JT&I):
+  // made now — nobody has to open Settings first.
+  const waiting = (await systemDb.company.findMany({ where: { signInSlug: null }, select: { id: true, name: true } })).filter((w) => slugFromName(w.name) === slug);
+  if (waiting.length === 1 && (await ensureSignInSlug(waiting[0].id)) === slug) return brandForCompany(waiting[0].id);
+  // (Made a moment ago by the same page's other half — its title — asking at the same time.)
+  const made = await systemDb.company.findUnique({ where: { signInSlug: slug }, select: SELECT });
+  return made ? brandOf(made, slug) : null;
 }
 
 export async function brandForCompany(companyId: string): Promise<CustomerBrand | null> {

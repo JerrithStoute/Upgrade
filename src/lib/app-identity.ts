@@ -2,7 +2,7 @@ import "server-only";
 import sharp from "sharp";
 import { cookies } from "next/headers";
 import { getCurrentUser } from "./auth";
-import { HOME_COOKIE } from "./customer-brand";
+import { HOME_COOKIE, brandBySlug } from "./customer-brand";
 import { validSlug } from "./sign-in-slug";
 import { db, systemDb } from "./db";
 import { readUpload } from "./uploads";
@@ -72,7 +72,9 @@ export async function appIdentityFor(companyId: string | null, who: string | nul
 /** A builder's own sign-in page (/login/<slug>): its app, opening on whichever portal is theirs. */
 export async function appIdentityForSlug(slug: string | null | undefined): Promise<AppIdentity | null> {
   if (!validSlug(slug)) return null;
-  const c = await systemDb.company.findUnique({ where: { signInSlug: slug }, select: COMPANY });
+  // (Through brandBySlug: a builder whose address isn't made yet gets it now.)
+  const brand = await brandBySlug(slug);
+  const c = brand ? await systemDb.company.findUnique({ where: { id: brand.companyId }, select: COMPANY }) : null;
   return c ? { ...builderApp(c, "client"), startUrl: "/" } : null;
 }
 
