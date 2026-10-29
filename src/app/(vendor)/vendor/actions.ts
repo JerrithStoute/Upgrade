@@ -7,7 +7,9 @@ import { requireVendor } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { saveUpload } from "@/lib/uploads";
-import { money, parseDateInput, str, strOrNull } from "@/lib/utils";
+import { fmtDate, money, parseDateInput, str, strOrNull } from "@/lib/utils";
+import { isOpen, warrantyNo } from "@/lib/warranty";
+import { emailWarrantyToClient, emailWarrantyToTeam, photosFrom, saveWarrantyPhotos } from "@/lib/warranty-server";
 import { COVERAGE_TYPES, coverageLabel } from "@/lib/purchasing";
 import { emailBillUploaded, emailInsuranceUploaded, emailPoAnswered } from "@/lib/notify";
 
@@ -112,4 +114,64 @@ export const uploadVendorInsurance = friendly(async function uploadVendorInsuran
   await emailInsuranceUploaded(user.vendorId, type, expiresAt);
   revalidateAll();
   redirect("/vendor/insurance?sent=1");
+});
+
+// --- Warranty work ------------------------------------------------------------------------
+
+async function theirWarranty(id: string, vendorId: string) {
+  const w = await db.warrantyRequest.findFirst({ where: { id, vendorId } });
+  if (!w) throw new Error("That warranty request isn't yours anymore");
+  if (!isOpen(w.status)) throw new Error("This one is already closed");
+  return w;
+}
+
+function revalidateWarranty(projectId: string) {
+  revalidatePath("/vendor/warranty");
+  revalidatePath("/warranty");
+  revalidatePath(`/projects/${projectId}/warranty`, "layout");
+  revalidatePath("/portal", "layout");
+}
+
+/** The day they'll be there: the homeowner and the team hear. */
+export const vendorWarrantyDay = friendly(async function vendorWarrantyDay(fd: FormData) {
+  const user = await requireVendor();
+  const w = await theirWarranty(str(fd, "id"), user.vendorId);
+  const day = parseDateInput(fd.get("scheduledFor"));
+  if (!day) throw new Error("Pick the day you'll be there");
+  await db.warrantyRequest.update({ where: { id: w.id }, data: { scheduledFor: day, status: "SCHEDULED" } });
+  const vendor = await db.vendor.findUnique({ where: { id: user.vendorId }, select: { name: true } });
+  await logActivity({ projectId: w.projectId, userId: user.id, type: "warranty.updated", description: `Warranty ${warrantyNo(w.number)} scheduled by ${user.name} (${vendor?.name ?? "sub"}) for ${fmtDate(day)}` });
+  await emailWarrantyToTeam(w.id, { subject: `${vendor?.name ?? user.name} scheduled warranty ${warrantyNo(w.number)}`, lines: [`${user.name} at ${vendor?.name ?? "the sub"} will be there ${fmtDate(day, "EEEE, MMMM d")}.`] });
+  await emailWarrantyToClient(w.id, null, "SCHEDULED");
+  revalidateWarranty(w.projectId);
+});
+
+/** A note for the builder (and photos) — team only: the builder decides what the homeowner hears. */
+export const vendorWarrantyNote = friendly(async function vendorWarrantyNote(fd: FormData) {
+  const user = await requireVendor();
+  const w = await theirWarranty(str(fd, "id"), user.vendorId);
+  const body = str(fd, "body").slice(0, 4000);
+  const photos = photosFrom(fd);
+  if (!body && !photos.length) throw new Error("Write a note or add a photo");
+  if (body) await db.warrantyNote.create({ data: { requestId: w.id, authorId: user.id, body, teamOnly: true } });
+  const names = await saveWarrantyPhotos(w.id, w.projectId, photos, user.id);
+  await emailWarrantyToTeam(w.id, {
+    subject: `Note from ${user.name} on warranty ${warrantyNo(w.number)}`,
+    lines: [...(body ? [`${user.name} wrote:`, body.slice(0, 600)] : []), ...(names.length ? [`${names.length} photo${names.length === 1 ? "" : "s"} added.`] : [])],
+  });
+  revalidateWarranty(w.projectId);
+});
+
+/** Done: what they did, and after photos. The homeowner and the team hear; the team can reopen it. */
+export const vendorWarrantyDone = friendly(async function vendorWarrantyDone(fd: FormData) {
+  const user = await requireVendor();
+  const w = await theirWarranty(str(fd, "id"), user.vendorId);
+  const closeNote = str(fd, "closeNote").slice(0, 2000);
+  if (!closeNote) throw new Error("Say what you did");
+  await saveWarrantyPhotos(w.id, w.projectId, photosFrom(fd), user.id);
+  await db.warrantyRequest.update({ where: { id: w.id }, data: { status: "DONE", closeNote, closedAt: new Date() } });
+  await logActivity({ projectId: w.projectId, userId: user.id, type: "warranty.closed", description: `Warranty ${warrantyNo(w.number)} marked done by ${user.name}: ${closeNote.slice(0, 200)}` });
+  await emailWarrantyToTeam(w.id, { subject: `Warranty ${warrantyNo(w.number)} done`, lines: [`${user.name} marked it done:`, closeNote.slice(0, 600), "If it isn't, reopen it on the request."] });
+  await emailWarrantyToClient(w.id, null, "DONE");
+  revalidateWarranty(w.projectId);
 });

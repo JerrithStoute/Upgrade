@@ -175,6 +175,7 @@ export const SETTINGS: HelpArticle[] = [
         heading: "Company profile",
         items: [
           { name: "Name / address / phone / email / website / license", what: "Shown on proposals, invoices and the client portal." },
+          { name: "Warranty length (months)", what: "How long a job's warranty runs from its actual end date (12 to start). Clients see the date on their portal's **Warranty** tab." },
           { name: "Time zone", what: "The time clock, the times shown, and the 6 am morning email follow it." },
         ],
       },

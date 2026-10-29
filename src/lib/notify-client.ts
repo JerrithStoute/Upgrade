@@ -48,7 +48,7 @@ async function inviteLink(clientId: string, email: string, name: string, from: P
 }
 
 /** One email to the client about something waiting in their portal. Returns the addresses it reached. */
-async function tellClient(
+export async function tellClient(
   clientId: string | null | undefined,
   from: Person | null,
   mail: { subject: string; heading: string; lines: string[]; sections?: MailSection[]; label: string; path: string; where: string; push: PushKind },
@@ -70,7 +70,7 @@ const company = async () => (await db.company.findFirst({ select: { name: true }
 const staff = (ids: (string | null | undefined)[]) =>
   db.user.findMany({ where: { id: { in: ids.filter((x): x is string => !!x) }, active: true, role: { in: ["ADMIN", "STAFF"] } }, select: { email: true } });
 /** Who on the team hears about a job when nobody in particular sent the thing: its manager, else the admins. */
-async function jobTeam(projectId: string, also: (string | null | undefined)[] = []) {
+export async function jobTeam(projectId: string, also: (string | null | undefined)[] = []) {
   const project = await db.project.findUnique({ where: { id: projectId }, select: { managerId: true } });
   const named = await staff([...also, project?.managerId]);
   if (named.length) return named.map((u) => u.email);

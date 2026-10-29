@@ -222,6 +222,9 @@ export default async function CompanySettingsPage({
               <Field label="License number" htmlFor="licenseNumber">
                 <input id="licenseNumber" name="licenseNumber" className="input" defaultValue={company?.licenseNumber ?? ""} />
               </Field>
+              <Field label="Warranty length (months)" htmlFor="warrantyMonths" hint="From a job's actual end date. Clients see it on their portal's Warranty tab.">
+                <input id="warrantyMonths" name="warrantyMonths" type="number" min={1} max={120} step={1} className="input w-32" defaultValue={company?.warrantyMonths ?? 12} />
+              </Field>
               <Field
                 label="Time zone"
                 htmlFor="timeZone"

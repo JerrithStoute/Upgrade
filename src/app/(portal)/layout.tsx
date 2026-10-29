@@ -9,6 +9,8 @@ import { db } from "@/lib/db";
 import { Avatar } from "@/components/ui/avatar";
 import { GetTheAppBanner } from "@/components/phone-app";
 import { PortalNav } from "@/components/portal/nav";
+import { getClientProjects } from "@/lib/portal";
+import { showsWarranty } from "@/lib/warranty";
 
 // Tabs read "Selections · JT&I Custom Homes": the builder's name, never The Builder Station's.
 export async function generateMetadata() {
@@ -21,6 +23,10 @@ export default async function PortalLayout({ children }: { children: React.React
   const company = await db.company.findFirst();
   const brand = await getBrand();
   const companyName = company?.name ?? "Your Builder";
+  // The Warranty tab: once one of their homes is finished (or already has a request).
+  const projects = await getClientProjects(user.clientId);
+  const warranty =
+    projects.some((p) => showsWarranty(p, 0)) || (projects.length > 0 && (await db.warrantyRequest.count({ where: { projectId: { in: projects.map((p) => p.id) } } })) > 0);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -72,7 +78,7 @@ export default async function PortalLayout({ children }: { children: React.React
         </div>
         <div className="mx-auto w-full max-w-6xl px-4 md:px-6">
           <Suspense fallback={<div className="h-10" />}>
-            <PortalNav />
+            <PortalNav warranty={warranty} />
           </Suspense>
         </div>
       </header>

@@ -14,6 +14,14 @@ import { saveLogo } from "@/lib/company-brand";
 import { deleteUpload } from "@/lib/uploads";
 import { cleanSlug, validSlug } from "@/lib/sign-in-slug";
 
+/** Warranty length: 1 to 120 months (left alone when the box isn't on the form). */
+function warrantyMonths(v: string) {
+  if (!v) return {};
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < 1 || n > 120) throw new Error("Warranty length: 1 to 120 months");
+  return { warrantyMonths: n };
+}
+
 export const saveCompany = friendly(async function saveCompany(formData: FormData) {
   const user = await requireAdmin();
   const name = str(formData, "name");
@@ -29,6 +37,7 @@ export const saveCompany = friendly(async function saveCompany(formData: FormDat
     website: strOrNull(formData, "website"),
     licenseNumber: strOrNull(formData, "licenseNumber"),
     ...(isZone(str(formData, "timeZone")) ? { timeZone: str(formData, "timeZone") } : {}),
+    ...warrantyMonths(str(formData, "warrantyMonths")),
   };
   const existing = await db.company.findFirst();
   if (existing) await db.company.update({ where: { id: existing.id }, data });

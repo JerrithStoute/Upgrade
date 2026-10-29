@@ -23,6 +23,7 @@ import {
   PinOff,
   Menu,
   X,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,7 @@ const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/clients", label: "Clients", icon: Users },
   { href: "/schedule", label: "Schedule", icon: CalendarDays },
   { href: "/todos", label: "To-Dos", icon: CheckSquare },
+  { href: "/warranty", label: "Warranty", icon: ShieldCheck },
   { href: "/time", label: "Time clock", icon: Clock },
   { href: "/invoices", label: "Invoices", icon: Receipt },
   { href: "/bills", label: "Bills", icon: FileInput },

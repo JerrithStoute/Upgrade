@@ -11,6 +11,7 @@ import {
   Receipt,
   Images,
   MessageSquare,
+  ShieldCheck,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -24,16 +25,17 @@ const NAV: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] 
   { href: "/portal/invoices", label: "Invoices", icon: Receipt },
   { href: "/portal/files", label: "Photos & Files", icon: Images },
   { href: "/portal/messages", label: "Messages", icon: MessageSquare },
+  { href: "/portal/warranty", label: "Warranty", icon: ShieldCheck },
 ];
 
-/** Horizontal portal nav. Preserves the `?project=` switcher param across pages. */
-export function PortalNav() {
+/** Horizontal portal nav. Preserves the `?project=` switcher param across pages. Warranty: once a home is finished. */
+export function PortalNav({ warranty }: { warranty: boolean }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const project = params.get("project");
   return (
     <nav className="no-print -mb-px flex gap-1 overflow-x-auto" aria-label="Portal">
-      {NAV.map((item) => {
+      {NAV.filter((item) => warranty || item.href !== "/portal/warranty").map((item) => {
         const active = item.exact ? pathname === item.href : pathname === item.href || pathname.startsWith(item.href + "/");
         const href = project ? `${item.href}?project=${project}` : item.href;
         return (

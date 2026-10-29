@@ -15,6 +15,8 @@ import { fileSeen, requiredFiles } from "@/lib/file-views";
 import { headers } from "next/headers";
 import { clientApprovesProposal, clientDeclinesProposal } from "@/lib/estimate-decide";
 import { emailChangeOrderAnswered, emailMessageFromClient, emailProposalAnswered, emailSelectionChosen } from "@/lib/notify-client";
+import { createWarranty, emailWarrantyReported, emailWarrantyToTeam, photosFrom, saveWarrantyPhotos } from "@/lib/warranty-server";
+import { warrantyNo } from "@/lib/warranty";
 
 function revalidatePortal(projectId: string) {
   revalidatePath("/portal", "layout");
@@ -327,4 +329,52 @@ export const createThread = friendly(async function createThread(formData: FormD
   await emailMessageFromClient(thread.id, body, user.name);
   revalidatePortal(project.id);
   redirect(`/portal/messages?project=${project.id}&thread=${thread.id}`);
+});
+
+// ---------------------------------------------------------------------------
+// Warranty
+// ---------------------------------------------------------------------------
+
+/** The client reports something to fix: the job's manager (else the admins) hear. */
+export const reportWarranty = friendly(async function reportWarranty(fd: FormData) {
+  const user = await requireClient();
+  await stopIfPreview(user);
+  const project = await db.project.findFirst({ where: { id: str(fd, "projectId"), clientId: user.clientId }, select: { id: true } });
+  if (!project) throw new Error("Project not found");
+  const title = str(fd, "title").slice(0, 200);
+  if (!title) throw new Error("Say what needs fixing");
+  const row = await createWarranty({
+    projectId: project.id,
+    title,
+    description: strOrNull(fd, "description")?.slice(0, 4000) ?? null,
+    location: strOrNull(fd, "location")?.slice(0, 120) ?? null,
+    urgent: fd.get("urgent") === "on",
+    fromClient: true,
+    by: user,
+    photos: photosFrom(fd),
+  });
+  await logActivity({ projectId: project.id, userId: user.id, type: "warranty.created", description: `Client reported warranty ${warrantyNo(row.number)}: ${title}` });
+  await emailWarrantyReported(row.id, user.name);
+  revalidatePortal(project.id);
+  revalidatePath("/warranty");
+  redirect(`/portal/warranty?project=${project.id}`);
+});
+
+/** A note or photo from the client on one of their open requests: the team hears. */
+export const clientWarrantyNote = friendly(async function clientWarrantyNote(fd: FormData) {
+  const user = await requireClient();
+  await stopIfPreview(user);
+  const w = await db.warrantyRequest.findFirst({ where: { id: str(fd, "id"), project: { clientId: user.clientId } } });
+  if (!w) throw new Error("Request not found");
+  const body = str(fd, "body").slice(0, 4000);
+  const photos = photosFrom(fd);
+  if (!body && !photos.length) throw new Error("Write a note or add a photo");
+  if (body) await db.warrantyNote.create({ data: { requestId: w.id, authorId: user.id, body } });
+  const names = await saveWarrantyPhotos(w.id, w.projectId, photos, user.id);
+  await emailWarrantyToTeam(w.id, {
+    subject: `${user.name} added to warranty ${warrantyNo(w.number)}`,
+    lines: [...(body ? [`${user.name} wrote:`, body.slice(0, 600)] : []), ...(names.length ? [`${names.length} photo${names.length === 1 ? "" : "s"} added.`] : [])],
+  });
+  revalidatePortal(w.projectId);
+  revalidatePath("/warranty");
 });

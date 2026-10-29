@@ -277,7 +277,18 @@ function doorSize(item: { widthIn: number | null; heightIn: number | null } | nu
 }
 
 /** Totals for one condition across every sheet. */
+// A loaded condition's totals, kept with it: one page asks for them two or three times (the totals panel,
+// the Material list, the estimate lines), and packing a big roof's boards is the slow part. A condition is
+// never changed after it's loaded — a change is saved, and the next page loads it fresh.
+const totalsOf = new WeakMap<LoadedCondition, ConditionTotals>();
+
 export function conditionTotals(c: LoadedCondition): ConditionTotals {
+  let t = totalsOf.get(c);
+  if (!t) totalsOf.set(c, (t = computeTotals(c)));
+  return t;
+}
+
+function computeTotals(c: LoadedCondition): ConditionTotals {
   const calc = withMemberSize(c, c.memberSizeRef);
   let metrics = emptyMetrics();
   const bySheet = new Map<string, ConditionTotals["bySheet"][number]>();

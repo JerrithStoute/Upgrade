@@ -145,6 +145,23 @@ test("enters a bill against the job", async () => {
   await expect(page.getByText("$750.00").first()).toBeVisible();
 });
 
+test("logs a warranty request, sends someone, and closes it", async () => {
+  await page.goto(`${job}/warranty`);
+  await page.getByLabel("What needs fixing?").fill("Door sticks");
+  await page.getByLabel("Where in the house?").fill("Back door");
+  await page.getByRole("button", { name: "Add request" }).click();
+  await expect(page).toHaveURL(/\/warranty\/c[a-z0-9]+$/);
+  await page.getByLabel("Someone on your team").selectOption({ label: "Flo Tester" });
+  await page.getByLabel("Day", { exact: true }).fill("2026-11-02");
+  await page.getByRole("button", { name: "Save", exact: true }).last().click();
+  await expect(page.getByText("Scheduled", { exact: true }).first()).toBeVisible();
+  await page.getByLabel("What was done (or why it isn't covered)").fill("Planed the door and adjusted the hinges.");
+  await page.getByRole("button", { name: "Close request" }).click();
+  await expect(page.getByText("Planed the door and adjusted the hinges.")).toBeVisible();
+  await page.goto("/warranty?show=done");
+  await expect(page.getByRole("link", { name: "Door sticks" })).toBeVisible();
+});
+
 test("reports a problem", async () => {
   await page.getByRole("button", { name: /Report a problem/ }).click();
   await page.getByLabel("What happened").fill("Workflow test — please ignore.");

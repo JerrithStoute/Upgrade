@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { kindsFor, pushOffList, sitePath } from "./push-kinds";
 
 test("each person gets the notifications that are theirs", () => {
-  assert.deepEqual(kindsFor("CLIENT"), ["SELECTIONS", "APPROVALS", "INVOICES", "MESSAGES"]);
-  assert.deepEqual(kindsFor("VENDOR"), ["POS", "MESSAGES"]);
-  assert.deepEqual(kindsFor("ADMIN"), ["CLIENT_ANSWERS", "VENDOR_ANSWERS", "MESSAGES"]);
+  assert.deepEqual(kindsFor("CLIENT"), ["SELECTIONS", "APPROVALS", "INVOICES", "MESSAGES", "WARRANTY"]);
+  assert.deepEqual(kindsFor("VENDOR"), ["POS", "MESSAGES", "WARRANTY"]);
+  assert.deepEqual(kindsFor("ADMIN"), ["CLIENT_ANSWERS", "VENDOR_ANSWERS", "MESSAGES", "WARRANTY"]);
   assert.deepEqual(kindsFor("STAFF"), kindsFor("ADMIN"));
 });
 

@@ -16,6 +16,7 @@ export const PUSH_KINDS = {
   VENDOR_ANSWERS: { label: "Subs and vendors: POs answered, bills, bids and insurance sent in", who: "TEAM" },
   // Everyone's.
   MESSAGES: { label: "New messages", who: "ALL" },
+  WARRANTY: { label: "Warranty requests and their updates", who: "ALL" },
 } as const;
 export type PushKind = keyof typeof PUSH_KINDS;
 

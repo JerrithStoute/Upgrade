@@ -194,7 +194,55 @@ export const FIELD: HelpArticle[] = [
       "Lead follow-ups, calendar reminders and schedule task reminders show up here as to-dos.",
       "You can always change to-dos assigned to you or made by you. Changing other people's needs **Can edit** on the schedule area.",
     ],
-    related: ["company-schedule", "leads"],
+    related: ["company-schedule", "leads", "warranty"],
+  },
+  {
+    slug: "warranty",
+    title: "Warranty requests",
+    group: "Field",
+    area: "field",
+    pages: ["/warranty", "/projects/*/warranty", "/projects/*/warranty/*"],
+    what: "After move-in, your client reports anything that needs fixing from their portal's **Warranty** tab, with photos. You send a sub or someone on your team, set the day, and close it out when it's fixed. **Warranty** in the menu lists every job's requests; a finished job's **Warranty** tab lists that job's.",
+    how: [
+      "When a job is finished, set its **Actual end date** (job → **Edit**). The warranty runs from that day, for the months in **Settings → Company**. The job gets a **Warranty** tab and the client's portal gets one too.",
+      "Your client reports something from their portal. The job's manager (or, with no manager, the admins) gets an email right away. A phone call? Add it yourself: **Add a warranty request** on the job's Warranty tab.",
+      "Open the request. Under **Who's fixing it**, pick a sub, someone on your team, or both, and the day, then click **Save**. The sub gets an email and sees it on their portal's **Warranty** page. The client gets an email with the day.",
+      "When it's fixed, under **Close it out** pick **Done** (or **Not covered**), say what was done, add after photos, and click **Close request**. A sub can also mark it done from their portal.",
+    ],
+    sections: [
+      {
+        heading: "A request",
+        items: [
+          { name: "New / Scheduled / Done / Not covered", what: "Where it stands. It's **Scheduled** once it has a day. The client and the sub see the same words." },
+          { name: "Urgent", what: "Water, no heat or power, something unsafe. Urgent ones go to the top of every list." },
+          { name: "Change what it says", what: "Fix the title, where in the house, or the details. **Delete request** is for one added by mistake (its photos stay in the job's Files, folder Warranty)." },
+          { name: "Who's fixing it", what: "A sub (from Settings → Vendors), someone on your team, and the day. **Email the client the day** tells them when someone's coming." },
+          { name: "Close it out", what: "**Done** or **Not covered**, with what was done or why not. The client reads it, so write it for them. **Reopen** puts it back on the list." },
+          { name: "Notes", what: "Back and forth about the request, with photos. The client sees them unless you tick **Team only**. Notes from a sub are always team only, so you decide what the client hears." },
+        ],
+      },
+      {
+        heading: "What the client and the sub see",
+        items: [
+          { name: "The client's Warranty tab", what: "Shows up once their home is finished. They report something (what, where, details, photos, urgent), see its status and the day someone's coming, read your notes and add their own." },
+          { name: "The sub's Warranty page", what: "Each request they're sent to: the address with directions, the homeowner's name and phone, the photos and notes. They set the day they'll be there, send you a note, or mark it done with after photos. You and the client are emailed each time." },
+          { name: "A sub with no portal sign-in", what: "They get the email with everything in it and reply to you with the day." },
+        ],
+      },
+      {
+        heading: "The Warranty page (menu)",
+        items: [
+          { name: "Open / Closed / All", what: "Which requests to show, across every job." },
+          { name: "Who's fixing it", what: "The sub and team member on each, and its day." },
+        ],
+      },
+    ],
+    tips: [
+      "Warranty is part of **Schedule, daily logs & to-dos** in Settings → Team. A position that can edit it can assign and close requests.",
+      "A request reported after the warranty has ended still comes in. Close it as **Not covered** with the reason, or fix it anyway as a courtesy.",
+      "Phones: the client, the sub and the team can turn on notifications for warranty requests on their **Account** page.",
+    ],
+    related: ["todos", "clients", "vendors", "company-settings"],
   },
   {
     slug: "files",

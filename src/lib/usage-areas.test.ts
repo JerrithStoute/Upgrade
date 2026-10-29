@@ -17,6 +17,8 @@ test("the program's pages, and the portals", () => {
   assert.equal(areaOf("/time/sheets"), "Time clock");
   assert.equal(areaOf("/portal/selections"), "Client portal");
   assert.equal(areaOf("/vendor"), "Sub portal");
+  assert.equal(areaOf("/warranty"), "Warranty");
+  assert.equal(areaOf("/projects/cmuojxca70018ith8o59fkxy1/warranty/cmabc"), "Warranty");
 });
 
 test("pages that aren't part of using the program aren't counted", () => {

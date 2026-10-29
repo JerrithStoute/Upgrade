@@ -24,6 +24,7 @@ export const AREAS = [
   "To-dos",
   "Files",
   "Messages",
+  "Warranty",
   "Clients",
   "Time clock",
   "Inventory",
@@ -53,6 +54,7 @@ const JOB_TABS: Record<string, Area> = {
   todos: "To-dos",
   files: "Files",
   messages: "Messages",
+  warranty: "Warranty",
 };
 
 /** The program's own pages (/<first part>). */
@@ -70,6 +72,7 @@ const PAGES: Record<string, Area> = {
   inventory: "Inventory",
   reports: "Reports",
   settings: "Settings",
+  warranty: "Warranty",
   help: "Help",
   portal: "Client portal",
   vendor: "Sub portal",

@@ -793,7 +793,12 @@ export function packBoards(
   let mode = packMode(opts.mode);
   const fixed = mode === "LENGTH" && opts.length && opts.length > 0 ? opts.length : null;
   if (mode === "LENGTH" && !fixed) mode = "WASTE";
-  const priceOf = (len: number) => boardPrice(len, opts.prices);
+  // Each length's price worked out once — packing asks for the same few lengths thousands of times.
+  const priced = new Map<number, ReturnType<typeof boardPrice>>();
+  const priceOf = (len: number) => {
+    if (!priced.has(len)) priced.set(len, boardPrice(len, opts.prices));
+    return priced.get(len)!;
+  };
   const noPrices = mode === "CHEAPEST" && !priceOf(max);
   if (noPrices) mode = "WASTE";
 
@@ -834,26 +839,51 @@ export function packBoards(
   }
   cuts.sort((a, b) => b - a);
 
+  // Each cut goes in the board it fits most snugly (the first such board on a tie). The boards are
+  // kept in order of how full they are, so the snuggest is found at once instead of by trying every
+  // board — the same boards, fast on a big roof.
   const packInto = (capacity: number) => {
-    const bins: { cuts: number[]; used: number }[] = [];
+    type Bin = { cuts: number[]; used: number; n: number };
+    const bins: Bin[] = [];
+    const byUsed: Bin[] = []; // fullness, then the order made
+    const leftAfter = (bin: Bin, cut: number) => capacity - (bin.used + SAW_KERF_FT + cut);
+    const before = (a: Bin, b: Bin) => a.used < b.used || (a.used === b.used && a.n < b.n);
+    const insert = (bin: Bin) => {
+      let lo = 0;
+      let hi = byUsed.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (before(byUsed[mid], bin)) lo = mid + 1;
+        else hi = mid;
+      }
+      byUsed.splice(lo, 0, bin);
+    };
     for (const cut of cuts) {
-      let best: (typeof bins)[number] | null = null;
-      let bestLeft = Infinity;
-      for (const bin of bins) {
-        const left = capacity - (bin.used + SAW_KERF_FT + cut);
-        if (left >= -1e-9 && left < bestLeft) {
-          best = bin;
-          bestLeft = left;
-        }
+      // The fullest board it still fits (fits only gets harder as boards fill).
+      let lo = 0;
+      let hi = byUsed.length;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        if (leftAfter(byUsed[mid], cut) >= -1e-9) lo = mid + 1;
+        else hi = mid;
       }
-      if (best) {
-        best.cuts.push(cut);
-        best.used += SAW_KERF_FT + cut;
-      } else {
-        bins.push({ cuts: [cut], used: cut });
+      if (lo === 0) {
+        const bin = { cuts: [cut], used: cut, n: bins.length };
+        bins.push(bin);
+        insert(bin);
+        continue;
       }
+      // Boards leaving the same room: the one made first.
+      let at = lo - 1;
+      const least = leftAfter(byUsed[at], cut);
+      for (let i = at - 1; i >= 0 && leftAfter(byUsed[i], cut) === least; i--) if (byUsed[i].n < byUsed[at].n) at = i;
+      const best = byUsed[at];
+      byUsed.splice(at, 1);
+      best.cuts.push(cut);
+      best.used += SAW_KERF_FT + cut;
+      insert(best);
     }
-    return bins;
+    return bins.map(({ cuts, used }) => ({ cuts, used }));
   };
 
   // Each board's length for a packed bin.
