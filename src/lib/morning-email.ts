@@ -24,7 +24,8 @@ import { sendSelectionReminders } from "./notify-client";
  */
 
 type Member = { id: string; name: string; email: string; role: string };
-const ACTIVE_JOB = { status: { notIn: ["COMPLETED", "CANCELLED"] } };
+// (Not the sample job: it isn't real work — sample-job.ts.)
+const ACTIVE_JOB = { status: { notIn: ["COMPLETED", "CANCELLED"] }, isSample: false };
 
 /** What one person's morning email holds (empty: nothing to send). */
 export async function morningSections(user: Member, now: Date): Promise<MailSection[]> {
@@ -33,7 +34,7 @@ export async function morningSections(user: Member, now: Date): Promise<MailSect
   const admin = user.role === "ADMIN";
   const [todos, tasks, selections, coverage] = await Promise.all([
     db.todo.findMany({
-      where: { status: "OPEN", dueDate: { lt: dayEnd }, OR: [{ assigneeId: user.id }, { assigneeId: null, createdById: user.id }] },
+      where: { status: "OPEN", dueDate: { lt: dayEnd }, OR: [{ assigneeId: user.id }, { assigneeId: null, createdById: user.id }], NOT: { project: { isSample: true } } },
       orderBy: { dueDate: "asc" },
       include: { project: { select: { id: true, name: true } }, task: { select: { name: true } } },
       take: 40,

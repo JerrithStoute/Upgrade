@@ -13,8 +13,9 @@ import { invoiceBody, taxProblem } from "./shape";
 export async function pushInvoice(invoiceId: string): Promise<string | null> {
   const conn = await db.qboConnection.findFirst();
   if (!conn) return null;
-  const inv = await db.invoice.findUnique({ where: { id: invoiceId }, include: { items: { orderBy: { sortOrder: "asc" } }, project: { select: { qbListId: true, name: true } } } });
-  if (!inv || inv.status === "DRAFT") return null;
+  const inv = await db.invoice.findUnique({ where: { id: invoiceId }, include: { items: { orderBy: { sortOrder: "asc" } }, project: { select: { qbListId: true, name: true, isSample: true } } } });
+  // (The sample job never goes to QuickBooks.)
+  if (!inv || inv.status === "DRAFT" || inv.project.isSample) return null;
   const fail = async (why: string) => {
     await db.invoice.update({ where: { id: invoiceId }, data: { qbError: why } });
     return why;

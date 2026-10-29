@@ -1,9 +1,11 @@
 import Link from "@/components/link";
 import { cookies } from "next/headers";
-import { CheckCircle2, Circle, X } from "lucide-react";
+import { CheckCircle2, Circle, Sparkles, X } from "lucide-react";
 import { db } from "@/lib/db";
 import { Card, CardHeader } from "@/components/ui";
 import { hideGettingStarted } from "./actions";
+import { addSample } from "../projects/sample-actions";
+import { findSampleJob } from "@/lib/sample-job";
 
 /** The materials a first wall takeoff adds (code-groups.ts). */
 const MATERIAL_KINDS = ["framing lumber", "sheathing", "drywall", "trim"];
@@ -18,12 +20,12 @@ const GETTING_STARTED_COOKIE = "bs_hide_getting_started";
  */
 export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
   if (!isAdmin || (await cookies()).get(GETTING_STARTED_COOKIE)) return null;
-  const [company, people, invites, clients, projects, plans, shapes, items, unpriced, costCodes, codedKinds, rechecked] = await Promise.all([
+  const [company, people, invites, clients, projects, plans, shapes, items, unpriced, costCodes, codedKinds, rechecked, sample] = await Promise.all([
     db.company.findFirst({ select: { logoPath: true } }),
     db.user.count({ where: { role: { in: ["ADMIN", "STAFF"] } } }),
     db.invite.count(),
-    db.client.count(),
-    db.project.findMany({ where: { isTemplate: false }, orderBy: { createdAt: "asc" }, select: { id: true }, take: 3 }),
+    db.client.count({ where: { isSample: false } }),
+    db.project.findMany({ where: { isTemplate: false, isSample: false }, orderBy: { createdAt: "asc" }, select: { id: true }, take: 3 }),
     db.takeoffPlan.count(),
     db.takeoffMeasurement.count(),
     db.materialItem.count(),
@@ -33,6 +35,7 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
     db.itemCodeRule.count({ where: { group: { in: MATERIAL_KINDS }, sameForAll: true, costCodeId: { not: null } } }),
     // Cost codes with a "recheck prices every …" time — theirs to set, none set for them.
     db.costCode.count({ where: { priceRecheckEvery: { gt: 0 } } }),
+    findSampleJob(),
   ]);
   // An established company (a few jobs in) doesn't need it.
   if (projects.length > 2) return null;
@@ -87,6 +90,26 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
           </form>
         }
       />
+      {/* The sample job (sample-job.ts): a made-up house to click through first — or, removed, to add again. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-100 bg-amber-50/60 px-4 py-2.5 text-sm">
+        {sample ? (
+          <>
+            <Sparkles className="h-4 w-4 shrink-0 text-amber-600" />
+            <Link href={`/projects/${sample.id}`} className="font-medium text-blue-700 hover:underline">
+              Explore the sample job
+            </Link>
+            <span className="text-xs text-slate-500">A made-up house with everything filled in — try anything.</span>
+          </>
+        ) : (
+          <form action={addSample} className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <Sparkles className="h-4 w-4 shrink-0 text-amber-600" />
+            <button type="submit" className="font-medium text-blue-700 hover:underline">
+              Add a sample job
+            </button>
+            <span className="text-xs text-slate-500">A made-up house to explore, with everything filled in. Remove it any time.</span>
+          </form>
+        )}
+      </div>
       <ul className="divide-y divide-slate-100">
         {steps.map((s) => (
           <li key={s.label}>

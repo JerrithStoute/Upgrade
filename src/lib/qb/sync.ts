@@ -160,7 +160,7 @@ export async function applyMatches() {
   for (const v of vendors.create)
     await db.vendor.create({ data: { name: cleanVendorName(v.name), contact: v.contact?.slice(0, 120), phone: v.phone?.slice(0, 60), email: v.email?.slice(0, 200), qbListId: v.listId } });
 
-  const jobs = planJobs(of("CUSTOMER"), await db.project.findMany({ where: { isTemplate: false }, select: { id: true, name: true, qbListId: true } }));
+  const jobs = planJobs(of("CUSTOMER"), await db.project.findMany({ where: { isTemplate: false, isSample: false }, select: { id: true, name: true, qbListId: true } }));
   for (const l of jobs.link) await db.project.update({ where: { id: l.projectId }, data: { qbListId: l.listId } });
 
   const codes = planCostCodes(of("ITEM"), await db.costCode.findMany({ select: { id: true, code: true, qbListId: true } }));

@@ -15,6 +15,7 @@ import { addStarterLumber } from "@/lib/starter-lumber";
 import { readBuilderInvite } from "@/lib/builder-invites";
 import { passedRobotCheck, ROBOT_CHECK_FAILED } from "@/lib/turnstile";
 import { STARTER_COST_CODES } from "@/lib/starter-cost-codes";
+import { addSampleJob } from "@/lib/sample-job";
 import { logActivity } from "@/lib/activity";
 
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
@@ -62,6 +63,7 @@ export async function signUp(_prev: FormState, fd: FormData): Promise<FormState>
   const password = String(fd.get("password") ?? "");
   const starter = fd.get("starter") === "standard";
   const starterLumber = fd.get("starterLumber") === "on";
+  const sampleJob = fd.get("sampleJob") === "on";
   if (!companyName || !name) return { error: "Fill in your company name and your name" };
   if (!emailOk(email)) return { error: "That email doesn't look right" };
   if (email !== invite.email) return { error: `This invitation is for ${invite.email} — sign up with that email` };
@@ -76,6 +78,8 @@ export async function signUp(_prev: FormState, fd: FormData): Promise<FormState>
     const u = await db.user.create({ data: { email, name, passwordHash: await hashPassword(password), role: "ADMIN", passwordChangedAt: new Date() } });
     if (starter) await db.costCode.createMany({ data: STARTER_COST_CODES.map((c, i) => ({ code: c.code, name: c.name, division: c.division, sortOrder: i })) });
     if (starterLumber) await addStarterLumber();
+    // A made-up house to explore first (sample-job.ts) — after the cost codes, so it files under theirs.
+    if (sampleJob) await addSampleJob(u.id);
     await logActivity({ userId: u.id, type: "company.created", description: `${name} created ${companyName}` });
     return u;
   });

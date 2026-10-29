@@ -10,6 +10,8 @@ import Link from "@/components/link";
 import { ChevronRight, Copy, Pencil } from "lucide-react";
 import { ProjectHeaderSwitch } from "@/components/layout/topbar-slot";
 import { StickyJobHead } from "@/components/layout/sticky-job-head";
+import { ConfirmForm } from "@/components/ui/confirm-form";
+import { removeSample } from "../sample-actions";
 
 export default async function ProjectLayout({ children, params }: { children: React.ReactNode; params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -51,6 +53,7 @@ export default async function ProjectLayout({ children, params }: { children: Re
           meta={
             <>
               <Badge status={project.status} />
+              {project.isSample ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">Sample</span> : null}
               {project.isTemplate ? (
                 <Link href={`${base}/copy`} className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800" title="Kept to copy new jobs from — off the job lists">
                   Plan template
@@ -77,6 +80,19 @@ export default async function ProjectLayout({ children, params }: { children: Re
           }
         />
       </ProjectHeaderSwitch>
+      {project.isSample ? (
+        // The made-up job to explore (sample-job.ts): what it is, and the way out.
+        <div className="no-print mb-4 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-amber-50 px-4 py-3 text-sm text-amber-950 ring-1 ring-inset ring-amber-200">
+          <p className="min-w-0 flex-1">
+            <span className="font-semibold">This is a sample job</span> — a made-up house to explore. Click anything and change it; nothing here is sent to anyone or to QuickBooks.
+          </p>
+          {user.role === "ADMIN" ? (
+            <ConfirmForm action={removeSample} variant="secondary" message="Remove the sample job and everything in it? You can add it again from Getting started on the dashboard.">
+              Remove sample job
+            </ConfirmForm>
+          ) : null}
+        </div>
+      ) : null}
       <StickyJobHead>
         <Tabs
           items={[

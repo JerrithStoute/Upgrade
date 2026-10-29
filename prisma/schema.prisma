@@ -173,6 +173,8 @@ model Client {
   zip       String?
   notes     String?
   source    String? // referral, website, etc.
+  // The sample job's made-up client (sample-job.ts): never emailed, removed with it.
+  isSample  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -252,6 +254,9 @@ model Project {
   // A plan template: a house you build over and over, kept to copy new jobs from (⋯ Copy this job; New job →
   // Start from). Off every list of jobs, the map, the schedule and QuickBooks; Projects → Plan templates shows them.
   isTemplate        Boolean                 @default(false)
+  // The sample job a new builder explores (sample-job.ts): labeled Sample, never sent to QuickBooks or
+  // in the morning email, and removed — with everything in it — in one click.
+  isSample          Boolean                 @default(false)
   // QuickBooks Desktop: the Customer:Job it is there (its ListID) — linked by name, or picked.
   qbListId          String?
   estimates         Estimate[]
@@ -304,6 +309,8 @@ model CostCode {
   // How often prices under this code go stale (lumber every 3 weeks, windows every 6 months…): blank = never.
   priceRecheckEvery Int?
   priceRecheckUnit  String? // days | weeks | months
+  // Added by the sample job for a company that started blank: removed with it, unless used since.
+  fromSample        Boolean  @default(false)
   createdAt         DateTime @default(now())
 
   estimateItems             EstimateItem[]

@@ -40,7 +40,37 @@ export const JOBS: HelpArticle[] = [
         ],
       },
     ],
-    related: ["projects", "takeoff-screen", "estimate", "report-problem"],
+    related: ["sample-job", "projects", "takeoff-screen", "estimate", "report-problem"],
+  },
+  {
+    slug: "sample-job",
+    title: "The sample job",
+    group: "Getting started",
+    area: null,
+    pages: [],
+    what: "A made-up new home — **Sample Home, 123 Sample Lane** — with everything filled in: an approved estimate with allowances, its budget, selections, a change order, the schedule under way, bills, invoices, a daily log and to-dos. Click through it to see how the program fits together before you put your own work in.",
+    how: [
+      "New companies get it at sign-up (the **Add a sample job to explore** box). Otherwise, admins: **Dashboard → Getting started → Add a sample job**.",
+      "Open it from **Getting started → Explore the sample job**, or from **Projects**. It's labeled **Sample**.",
+      "Change anything you like — it's there to try things on.",
+      "When you're done, click **Remove sample job** in the yellow box at the top of the job.",
+    ],
+    sections: [
+      {
+        heading: "What's safe about it",
+        items: [
+          { name: "Its client", what: "**Sample Client (example)** has no email address, so nothing about the sample job is ever sent to anyone." },
+          { name: "QuickBooks", what: "The sample job is never sent to QuickBooks." },
+          { name: "Your numbers", what: "It's job #1000 and invoices 999 and 1000 — just below yours, so your first real job and invoice keep their usual numbers." },
+          { name: "Morning email", what: "Its to-dos, tasks and selections stay out of your morning email." },
+          { name: "Remove sample job", what: "Takes out the job and everything in it, and its client. Admins only; you can add it again from Getting started." },
+        ],
+      },
+    ],
+    tips: [
+      "If you started with a blank cost code list, the sample adds the cost codes it needs. Removing the sample removes them too — except any you've since used on your own work, which stay.",
+    ],
+    related: ["getting-started", "projects", "estimate"],
   },
   {
     slug: "report-problem",

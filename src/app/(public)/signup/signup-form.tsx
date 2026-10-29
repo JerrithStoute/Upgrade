@@ -87,6 +87,13 @@ export function SignUpForm({ robotKey, invite }: { robotKey: string | null; invi
           </span>
         </span>
       </label>
+      <label className="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="sampleJob" defaultChecked className="mt-1" />
+        <span>
+          Add a sample job to explore
+          <span className="block text-xs text-slate-500">A made-up house with an estimate, schedule, selections and invoices filled in. Remove it in one click when you&apos;re done.</span>
+        </span>
+      </label>
       <RobotCheck siteKey={robotKey} round={state} />
       <FormNote error={state?.error} />
       <button type="submit" disabled={pending} className={authButton}>

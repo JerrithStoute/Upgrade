@@ -116,7 +116,7 @@ async function keepTxn(companyId: string, kind: "BILL" | "PAYMENT", e: Record<st
 
 async function linkMaps() {
   const [projects, codes, vendors] = await Promise.all([
-    db.project.findMany({ where: { qbListId: { not: null }, isTemplate: false }, select: { id: true, qbListId: true } }),
+    db.project.findMany({ where: { qbListId: { not: null }, isTemplate: false, isSample: false }, select: { id: true, qbListId: true } }),
     db.costCode.findMany({ where: { qbListId: { not: null } }, select: { id: true, qbListId: true } }),
     db.vendor.findMany({ where: { qbListId: { not: null } }, select: { id: true, qbListId: true } }),
   ]);
