@@ -47,7 +47,7 @@ export default async function PortalInvoiceDetailPage({ params }: { params: Prom
 
       <div className="space-y-6">
         <Card>
-          <CardBody className="grid gap-6 sm:grid-cols-3">
+          <CardBody className="grid grid-cols-1 gap-6 sm:grid-cols-3">
             <div className="text-sm">
               <p className="label">From</p>
               <PrintLogo logoUrl={brand.logoUrl} className="max-h-12" />

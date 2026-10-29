@@ -68,7 +68,7 @@ export function NewPoForm({
       {source === "budget" ? (
         <fieldset className="space-y-1">
           <legend className="label">Cost codes (the budget&apos;s lines for them, at cost)</legend>
-          <div className="grid gap-1 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
             {budget.map((b) => (
               <label key={b.codeKey} className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" name="code" value={b.codeKey} className="h-4 w-4 rounded border-slate-300" />

@@ -27,7 +27,7 @@ export function JobKindPicker({ isSpec, type, preset }: { isSpec?: boolean; type
     <div className="space-y-2">
       <input type="hidden" name="type" value={typeValue} />
       <input type="hidden" name="isSpec" value={kind === "SPEC" ? "on" : ""} />
-      <div className="grid gap-3 sm:grid-cols-3" role="radiogroup" aria-label="What kind of job">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3" role="radiogroup" aria-label="What kind of job">
         {KINDS.map((k) => {
           const on = kind === k.kind;
           return (

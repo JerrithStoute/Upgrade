@@ -48,7 +48,7 @@ export default function PricingPage() {
     <>
       <SiteHeading title="Simple plans. Unlimited users." intro="Every plan is month to month, with free logins for your clients and vendors." />
       <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-        <div className="grid gap-6 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
           {PLANS.map((p) => (
             <div key={p.name} className={p.featured ? "relative flex flex-col rounded-2xl border-2 border-blue-700 bg-white p-6 shadow-lg" : "flex flex-col rounded-2xl border border-slate-200 bg-white p-6"}>
               {p.featured ? <span className="absolute -top-3 left-6 rounded-full bg-blue-700 px-3 py-0.5 text-xs font-medium text-white">Most builders</span> : null}

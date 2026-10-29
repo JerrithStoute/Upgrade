@@ -543,7 +543,7 @@ export default async function SchedulePage({
           </span>
         }
       >
-        <div className="grid gap-6 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
           <form action={startFromTemplate} className="space-y-3">
             <input type="hidden" name="projectId" value={project.id} />
             <p className="text-sm font-medium text-slate-800">Start from a template</p>

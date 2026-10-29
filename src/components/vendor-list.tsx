@@ -86,7 +86,7 @@ export function VendorList({
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[18rem_1fr]">
+    <div className="grid grid-cols-1 gap-5 lg:grid-cols-[18rem_1fr]">
       {/* Picking — not printed */}
       <div className="no-print space-y-4">
         <div>

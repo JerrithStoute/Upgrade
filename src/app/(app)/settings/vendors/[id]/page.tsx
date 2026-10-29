@@ -160,7 +160,7 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
             </div>
           ) : null}
 
-          <form action={addInsurance} className="grid gap-2 rounded-lg border border-dashed border-slate-300 p-3 sm:grid-cols-2 lg:grid-cols-3">
+          <form action={addInsurance} className="grid grid-cols-1 gap-2 rounded-lg border border-dashed border-slate-300 p-3 sm:grid-cols-2 lg:grid-cols-3">
             <input type="hidden" name="vendorId" value={vendor.id} />
             <p className="text-sm font-medium text-slate-800 sm:col-span-2 lg:col-span-3">Add a certificate</p>
             <select name="type" className="input" aria-label="Coverage" defaultValue={required.find((t) => coverage?.missing.includes(t)) ?? "GL"}>
@@ -241,7 +241,7 @@ export default async function VendorPage({ params }: { params: Promise<{ id: str
               ))}
             </ul>
           ) : null}
-          <form action={createVendorLogin} className="grid gap-2 md:grid-cols-3">
+          <form action={createVendorLogin} className="grid grid-cols-1 gap-2 md:grid-cols-3">
             <input type="hidden" name="vendorId" value={vendor.id} />
             <input name="name" className="input" placeholder="Name (optional)" aria-label="Name" />
             <input

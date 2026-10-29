@@ -125,7 +125,7 @@ export default async function LeadPage({ params, searchParams }: { params: Promi
         <p className="-mt-3 text-xs text-slate-500">Moving it to Estimate makes it a job — its client and project — so you can do the takeoff and estimate.</p>
       ) : null}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_20rem]">
         <div className="space-y-5">
           <Card className={cn(next && "ring-2 ring-blue-400")}>
             <div id="follow-up" className="scroll-mt-24" />

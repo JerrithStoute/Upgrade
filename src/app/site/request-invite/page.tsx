@@ -8,7 +8,7 @@ export default function RequestInvitePage() {
   return (
     <>
       <SiteHeading title="Request an invite" intro="We're opening The Builder Station to builders a few at a time. Tell us about your company and we'll send your invitation." />
-      <section className="mx-auto grid max-w-6xl gap-12 px-4 py-14 sm:px-6 lg:grid-cols-[1.4fr_1fr]">
+      <section className="mx-auto grid grid-cols-1 max-w-6xl gap-12 px-4 py-14 sm:px-6 lg:grid-cols-[1.4fr_1fr]">
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <RequestInviteForm robotKey={robotCheckKey()} />
         </div>

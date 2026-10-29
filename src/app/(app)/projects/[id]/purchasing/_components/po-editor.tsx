@@ -56,7 +56,7 @@ export function PoEditor({
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
         <label className="space-y-1 md:col-span-2">
           <span className="label">Title</span>
           <input className="input" value={title} disabled={readOnly} onChange={(e) => (setTitle(e.target.value), touch())} />

@@ -89,7 +89,7 @@ export function LeadBoard({ cards, lostCount }: { cards: BoardCard[]; lostCount:
     <div className="space-y-2">
       {/* One line for messages, always there — nothing below jumps. */}
       <p className={cn("min-h-5 text-sm", msg?.bad ? "text-rose-700" : "text-blue-800")}>{busy ? "Moving…" : (msg?.text ?? "")}</p>
-      <div className="grid gap-3 overflow-x-auto pb-2 md:grid-cols-[repeat(5,minmax(10rem,1fr))_7rem]">
+      <div className="grid grid-cols-1 gap-3 overflow-x-auto pb-2 md:grid-cols-[repeat(5,minmax(10rem,1fr))_7rem]">
         {LEAD_STAGES.map((s) => {
           const here = cards.filter((c) => stageOf(c) === s.key);
           const total = here.reduce((n, c) => n + (c.value ?? 0), 0);

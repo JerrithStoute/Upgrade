@@ -1,11 +1,36 @@
 /*
  * The Builder Station's service worker: shows phone notifications (src/lib/push.ts) and opens the
- * page one is about when it's tapped. It doesn't keep pages or files — every page comes fresh from
- * the server.
+ * page one is about when it's tapped; with no signal, shows the "You're offline" page instead of the
+ * browser's own error. It keeps only that one page — every other page comes fresh from the server.
  */
 
-self.addEventListener("install", () => self.skipWaiting());
-self.addEventListener("activate", (event) => event.waitUntil(self.clients.claim()));
+const OFFLINE = "/offline.html";
+const CACHE = "offline-v1";
+
+self.addEventListener("install", (event) => {
+  event.waitUntil(
+    caches
+      .open(CACHE)
+      .then((c) => c.add(new Request(OFFLINE, { cache: "reload" })))
+      .then(() => self.skipWaiting()),
+  );
+});
+
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    (async () => {
+      // An older copy of the offline page: gone.
+      for (const k of await caches.keys()) if (k !== CACHE) await caches.delete(k);
+      await self.clients.claim();
+    })(),
+  );
+});
+
+// Opening a page: from the server as always — only when that fails (no signal) the offline page.
+self.addEventListener("fetch", (event) => {
+  if (event.request.mode !== "navigate") return;
+  event.respondWith(fetch(event.request).catch(async () => (await caches.match(OFFLINE)) || Response.error()));
+});
 
 self.addEventListener("push", (event) => {
   let note = { title: "New update", body: "", url: "/", tag: undefined };

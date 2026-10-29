@@ -84,13 +84,13 @@ function InstallSteps({ name, d }: { name: string; d: ReturnType<typeof useDevic
     return (
       <ol className="list-decimal space-y-1 pl-5 text-sm text-slate-700">
         <li>
-          Open this page in <b>Safari</b>.
+          Open this page in <b>Safari</b> itself (not inside Gmail, Facebook or Messages).
         </li>
         <li>
-          Tap the <b>Share</b> button <Share className="inline h-4 w-4 align-text-bottom" /> (bottom of the screen, or top right on an iPad).
+          Tap the <b>Share</b> button <Share className="inline h-4 w-4 align-text-bottom" />. On newer iPhones, tap <b>⋯</b> at the bottom right first, then <b>Share</b>.
         </li>
         <li>
-          Scroll down and tap <b>Add to Home Screen</b>, then <b>Add</b>.
+          Scroll down past the apps and tap <b>Add to Home Screen</b> (not there? <b>Edit Actions…</b> at the bottom adds it), then <b>Add</b>.
         </li>
         <li>Open {name} from your home screen.</li>
       </ol>

@@ -171,7 +171,7 @@ export function ChangeOrderEditor({
       {err ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p> : null}
 
       <Section title="Details">
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <Text label="Title" value={co.title} disabled={!draft} onSave={(v) => save({ title: v })} />
           <Text label="Description (for you)" value={co.description} disabled={!draft} onSave={(v) => save({ description: v })} />
         </div>
@@ -458,7 +458,7 @@ export function ChangeOrderEditor({
           <dt className="border-t border-slate-200 pt-1.5 font-semibold">Total price</dt>
           <dd className="border-t border-slate-200 pt-1.5 text-right font-semibold tabular-nums">{money(effect.total)}</dd>
         </dl>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
           <div>
             <Text label="Terms" value={co.terms} disabled={!draft} onSave={(v) => save({ terms: v })} placeholder="e.g. Payment due on approval" />
             <DefaultBox checked={(defaults.terms ?? "") === co.terms && !!co.terms} disabled={busy || !co.terms} onClick={() => run(() => saveCoDefault("terms", co.terms))} />

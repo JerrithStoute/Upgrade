@@ -374,7 +374,7 @@ function DayPanel({
     <Card className="border-blue-200">
       <CardHeader title={fmtDate(noonOf(day), "EEEE, MMMM d, yyyy")} description={workday ? "A workday" : "Not a workday (day off or holiday)"} />
       <CardBody className="space-y-5">
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div className="space-y-1 text-sm">
             {holidays.map((h) => (
               <div key={h.id} className="flex items-center gap-2 font-semibold text-rose-700">
@@ -443,7 +443,7 @@ function DayPanel({
           </form>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
           <form action={addTimeOff} className="space-y-2 rounded-lg border border-slate-200 p-3">
             <input type="hidden" name="back" value={here} />
             <p className="flex items-center gap-1.5 text-sm font-medium text-slate-800">

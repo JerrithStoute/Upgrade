@@ -345,7 +345,7 @@ export function WallOptionsFields({
         </Field>
       </Section>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Section title="Top plate">
           {countSelect("topPlates", "How many", 10)}
           {sizeSelect("topPlateSize", "Size")}
@@ -379,7 +379,7 @@ export function WallOptionsFields({
         </Section>
       </div>
 
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Section title="Sheathing" hint="Wall length × height × sides, in sheets.">
           <Sides name="opt_sheathingSides" label="Sheathing sides" value={o.sheathingSides} onChange={(n) => set("sheathingSides", n)} />
           <Field label="Item" htmlFor={p("sheathingItem")} className="min-w-48 flex-1">

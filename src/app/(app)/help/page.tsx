@@ -28,7 +28,7 @@ export default async function HelpPage() {
 
       <nav className="rounded-xl border border-slate-200 p-4">
         <p className="mb-2 text-sm font-semibold text-slate-900">Contents</p>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {groups.map(([g, list]) => (
             <div key={g}>
               <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{g}</p>

@@ -58,7 +58,7 @@ export default async function BuilderPage({ params }: { params: Promise<{ id: st
         <Stat label="Estimates" value={estimates} hint={`${measurements} takeoff measurements`} />
         <Stat label="Files" value={fmtSize(row.storage)} hint={row.lastSignIn ? `Last in ${fmtDateTime(row.lastSignIn)}` : "Never signed in"} />
       </div>
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader title="Status" description={me.role === "OWNER" ? undefined : "Only an owner changes a builder's status."} />
           <div className="p-5">

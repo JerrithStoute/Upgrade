@@ -103,11 +103,11 @@ export function CommentsBox({
         <p className="text-slate-400">No comments yet.</p>
       )}
       <p className="mt-2 flex flex-wrap gap-3 text-xs">
-        <button type="button" className="font-medium text-blue-700 hover:underline" onClick={() => setOpen(open === "comments" ? null : "comments")}>
+        <button type="button" className="tap font-medium text-blue-700 hover:underline" onClick={() => setOpen(open === "comments" ? null : "comments")}>
           View / add comments{comments.length ? ` (${comments.length})` : ""}
         </button>
         {log ? (
-          <button type="button" className="font-medium text-blue-700 hover:underline" onClick={() => setOpen(open === "log" ? null : "log")}>
+          <button type="button" className="tap font-medium text-blue-700 hover:underline" onClick={() => setOpen(open === "log" ? null : "log")}>
             View change log{log.length ? ` (${log.length})` : ""}
           </button>
         ) : null}
@@ -216,7 +216,7 @@ export function FilesBox({
     >
       <div className="mb-1 flex items-center justify-between gap-2">
         <p className="font-semibold text-slate-900">Files</p>
-        <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline" onClick={() => input.current?.click()} disabled={busy}>
+        <button type="button" className="tap inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline" onClick={() => input.current?.click()} disabled={busy}>
           <Paperclip className="h-3.5 w-3.5" /> {busy ? "Adding…" : "Add files"}
         </button>
         <input

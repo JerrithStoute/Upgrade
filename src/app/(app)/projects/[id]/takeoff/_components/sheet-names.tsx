@@ -35,7 +35,7 @@ export function SheetNames({ projectId, planId, sheets }: { projectId: string; p
   const toggle = (
     <button
       type="button"
-      className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
+      className="tap inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
       onClick={() => setEditing((v) => !v)}
     >
       {editing ? (
@@ -74,7 +74,7 @@ export function SheetNames({ projectId, planId, sheets }: { projectId: string; p
         <p className="text-xs text-slate-600">Type over a page&apos;s name — it saves when you click away or press Enter. The ↗ opens the page to see what it is.</p>
         {toggle}
       </div>
-      <div className="grid gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-x-4 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
         {sheets.map((sh, i) => {
           const st = status[sh.id];
           return (

@@ -100,7 +100,7 @@ export default async function TimeClockSettingsPage({ searchParams }: { searchPa
 
         <Card>
           <CardHeader title="Overtime" description="For hourly people — salaried people never get overtime. Turn on whichever your state needs." />
-          <CardBody className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+          <CardBody className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_20rem]">
             <div className="space-y-3">
               <Limit name="weeklyAfter" label="Weekly overtime after" value={rules.weeklyAfter} after="hours in a week" />
               <Limit name="dailyAfter" label="Daily overtime after" value={rules.dailyAfter} after="hours in a day" />

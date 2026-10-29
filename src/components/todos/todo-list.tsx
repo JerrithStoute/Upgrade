@@ -185,7 +185,7 @@ export function TodoList({
                     aria-label={done ? "Mark open" : "Mark done"}
                     title={done ? "Mark open" : "Mark done"}
                     className={cn(
-                      "grid h-5 w-5 place-items-center rounded border transition-colors",
+                      "tap grid h-5 w-5 place-items-center rounded border transition-colors",
                       done ? "border-emerald-600 bg-emerald-600 text-white" : "border-slate-300 bg-white text-transparent hover:border-emerald-500 hover:text-emerald-500",
                     )}
                   >

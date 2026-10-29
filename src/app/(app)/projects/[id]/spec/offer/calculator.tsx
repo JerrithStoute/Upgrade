@@ -89,7 +89,7 @@ export function OfferCalculator(p: Props) {
   const closeLabel = closing ? new Date(`${closing}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "closing";
 
   return (
-    <div className="grid gap-6 md:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[minmax(0,24rem)_minmax(0,1fr)]">
       <div className="space-y-3">
         <UnitInput label="Offer price" prefix="$" width="w-52" big autoFocus value={price} onChange={setPrice} />
         <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
@@ -172,7 +172,7 @@ export function OfferCalculator(p: Props) {
           </p>
         </div>
 
-        <div className="grid gap-4 2xl:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
           <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm">
             <p className="mb-1 font-semibold text-slate-900">The net sheet</p>
             {row("Offer", has ? money(parse(price)) : "—")}

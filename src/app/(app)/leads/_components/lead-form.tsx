@@ -137,7 +137,7 @@ export function LeadForm({
       {v ? null : (
         <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-3">
           <p className="mb-2 text-sm font-medium text-slate-800">First follow-up</p>
-          <div className="grid gap-2 sm:grid-cols-[10rem_1fr]">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-[10rem_1fr]">
             <input name="followUp" type="date" className="input" defaultValue={followDefault ?? ""} aria-label="Follow up on" />
             <input name="followNote" className="input" placeholder="e.g. Call to set up a meeting" aria-label="Follow-up note" />
           </div>

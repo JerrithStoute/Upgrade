@@ -589,9 +589,9 @@ export function EstimateSheet({
 
   return (
     <div className="space-y-3">
-      {/* Toolbar — one fixed-height row; its contents change, its size doesn't. */}
-      <div className="flex h-10 items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
+      {/* Toolbar — one fixed-height row; its contents change, its size doesn't. (On a phone it wraps.) */}
+      <div className="flex h-10 items-center justify-between gap-3 max-md:h-auto max-md:flex-wrap">
+        <div className="flex items-center gap-2 max-md:flex-wrap">
           <button type="button" className={buttonClasses("secondary", "sm")} onClick={addCategory}>
             <Plus className="h-3.5 w-3.5" /> Division
           </button>
@@ -602,7 +602,7 @@ export function EstimateSheet({
             Collapse all
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 max-md:flex-wrap">
           {divisionsSetup ? (
             <button
               type="button"

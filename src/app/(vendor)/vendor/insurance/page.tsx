@@ -67,7 +67,7 @@ export default async function VendorInsurancePage({ searchParams }: { searchPara
       <Card>
         <CardHeader title="Upload a certificate" description="Your certificate of insurance (COI) — a PDF or a photo." />
         <CardBody>
-          <form action={uploadVendorInsurance} className="grid gap-3 md:grid-cols-3">
+          <form action={uploadVendorInsurance} className="grid grid-cols-1 gap-3 md:grid-cols-3">
             <label className="space-y-1">
               <span className="label">Coverage</span>
               <select name="type" className="input" defaultValue={coverage?.missing[0] ?? coverage?.expired[0]?.type ?? coverage?.expiring[0]?.type ?? "GL"}>

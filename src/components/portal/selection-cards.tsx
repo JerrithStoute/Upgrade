@@ -118,7 +118,7 @@ function Card({ c }: { c: PortalCard }) {
         </span>
       </header>
 
-      <div className="grid gap-4 p-5 md:grid-cols-[1fr_20rem]">
+      <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-[1fr_20rem]">
         <div className="space-y-3">
           {c.specText ? (
             <Box title="Specification information">

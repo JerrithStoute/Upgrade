@@ -417,7 +417,7 @@ export default async function SpecSalePage({ params }: { params: Promise<{ id: s
               </ConfirmForm>
             </div>
           ) : (
-            <form action={markSold} className="grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            <form action={markSold} className="grid grid-cols-1 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <input type="hidden" name="projectId" value={project.id} />
               <label className="space-y-1">
                 <span className="label">Sold for</span>

@@ -53,7 +53,7 @@ export default async function VendorPoPage({ params }: { params: Promise<{ poId:
       </div>
 
       {po.status === "SENT" ? (
-        <div className="no-print grid gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4 md:grid-cols-2">
+        <div className="no-print grid grid-cols-1 gap-3 rounded-xl border border-blue-200 bg-blue-50/60 p-4 md:grid-cols-2">
           <form action={respondToPo} className="space-y-2">
             <input type="hidden" name="id" value={po.id} />
             <input type="hidden" name="answer" value="accept" />

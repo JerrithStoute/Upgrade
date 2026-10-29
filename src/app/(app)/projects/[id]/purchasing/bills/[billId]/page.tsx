@@ -69,7 +69,7 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
         {bill.notes ? <p className="mt-1 text-sm text-slate-700">{bill.notes}</p> : null}
       </div>
 
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_20rem]">
         <Card>
           <CardHeader
             title={money(total)}

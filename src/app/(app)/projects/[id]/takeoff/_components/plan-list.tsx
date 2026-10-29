@@ -115,7 +115,7 @@ export function ClientSwitch({ projectId, planId, fileId, visible, here }: { pro
         type="submit"
         title={visible ? "The client can see this in their portal — click to hide it" : "Only your team sees this — click to share it with the client"}
         className={cn(
-          "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
+          "tap inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset",
           visible ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-slate-50 text-slate-600 ring-slate-200",
         )}
       >

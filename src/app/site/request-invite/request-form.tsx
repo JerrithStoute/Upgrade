@@ -20,7 +20,7 @@ export function RequestInviteForm({ robotKey }: { robotKey: string | null }) {
       </div>
     );
   return (
-    <form action={action} className="grid gap-4 sm:grid-cols-2">
+    <form action={action} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
       <div>
         <label className="label" htmlFor="name">
           Your name

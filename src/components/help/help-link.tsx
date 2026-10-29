@@ -14,7 +14,7 @@ export function HelpLink({ slug, section, label = "What's this?" }: OpenHelp & {
   return (
     <button
       type="button"
-      className="no-print inline-flex shrink-0 items-center rounded-full p-0.5 align-middle text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+      className="tap no-print inline-flex shrink-0 items-center rounded-full p-0.5 align-middle text-slate-400 hover:bg-slate-100 hover:text-slate-700"
       title={label}
       aria-label={label}
       onClick={(e) => {

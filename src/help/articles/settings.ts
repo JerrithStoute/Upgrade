@@ -300,7 +300,7 @@ export const SETTINGS: HelpArticle[] = [
           {
             name: "Phone app",
             what: "Puts The Builder Station on your phone's home screen, like any app: its own icon, full screen, still signed in. Your clients and subs get the same from their portal, but under your company's name and logo, never The Builder Station's.",
-            how: "On an **iPhone**: open the site in Safari, tap the **Share** button, then **Add to Home Screen**. On **Android**: open it in Chrome, tap **⋮**, then **Install app** (or tap **Install** where the page offers it). A banner on the dashboard (and on the client and sub portals) points the way on phones until it's installed or closed.",
+            how: "On an **iPhone**: open the site in Safari itself (not inside Gmail or Facebook), tap the **Share** button (newer iPhones: **⋯** at the bottom right, then **Share**), scroll down and tap **Add to Home Screen**. On **Android**: open it in Chrome, tap **⋮**, then **Install app** (or tap **Install** where the page offers it). A banner on the dashboard (and on the client and sub portals) points the way on phones until it's installed or closed.",
           },
           {
             name: "Notifications",
@@ -322,6 +322,7 @@ export const SETTINGS: HelpArticle[] = [
       "If your company requires two-step sign-in (Settings → Team), you can't turn it off.",
       "Notifications are per phone: turn them on on each phone or computer you want them on.",
       "Blocked notifications by mistake? On iPhone: Settings → Notifications → the app. On Android: hold the app's icon → App info → Notifications.",
+      "No signal on a job site? The app shows \"You're offline\" instead of an error, and loads the page by itself when the signal comes back. Anything you were typing isn't saved until you're back online.",
     ],
     related: ["team"],
   },

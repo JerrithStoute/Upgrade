@@ -66,7 +66,7 @@ export function SendToSubs({
       {Array.from(files).map((id) => (
         <input key={id} type="hidden" name="plan" value={id} />
       ))}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-3">
           <div>
             <p className="label">Trade</p>

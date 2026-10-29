@@ -205,7 +205,7 @@ export function CodePicker({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-3">
           {groups.length === 0 ? <p className="py-6 text-center text-sm text-slate-500">No cost codes match “{query}”.</p> : null}
-          <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
             {groups.map(([division, list]) => {
               const ids = list.map((c) => c.id);
               const n = ids.filter((id) => picked.has(id)).length;

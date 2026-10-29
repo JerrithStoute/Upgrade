@@ -69,7 +69,8 @@ body {
 .input,
 select.input,
 textarea.input {
-  @apply w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-500;
+  /* (max-width: a box sized to its longest choice never runs off a phone's screen.) */
+  @apply w-full max-w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:bg-slate-50 disabled:text-slate-500;
 }
 
 /* Phones: 16px text in boxes, so tapping one doesn't zoom the page in (iPhone Safari does below 16px). */
@@ -83,6 +84,27 @@ textarea.input {
 
 .label {
   @apply mb-1 block text-xs font-medium uppercase tracking-wide text-slate-500;
+}
+
+/*
+ * Touchscreens: room for a thumb. `.tap` gives a small control (a text link-button, a tick box) an
+ * invisible ring to tap on, so nothing moves; tick boxes and round choices are bigger. A mouse
+ * (pointer: fine) sees no change.
+ */
+@media (pointer: coarse) {
+  .tap {
+    position: relative;
+  }
+  .tap::after {
+    content: "";
+    position: absolute;
+    inset: -10px -6px;
+  }
+  main input[type="checkbox"],
+  main input[type="radio"] {
+    width: 1.25rem;
+    height: 1.25rem;
+  }
 }
 
 /* Print: hide the app chrome, show proposals/invoices cleanly. */

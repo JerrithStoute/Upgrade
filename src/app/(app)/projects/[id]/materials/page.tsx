@@ -64,7 +64,7 @@ export default async function MaterialListPage({ params, searchParams }: { param
             </Link>
           ))}
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           {/* Prices on or off — off for a list to send a supplier. The printout and CSV follow it. */}
           <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs font-medium" role="group" aria-label="Prices">
             <Link href={href({ prices: true })} className={cn("px-2.5 py-1.5", showPrices ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50")}>

@@ -24,7 +24,7 @@ export default function SiteHome() {
     <>
       {/* The pitch */}
       <section className="overflow-hidden">
-        <div className="mx-auto grid max-w-6xl items-center gap-10 px-4 pt-14 pb-16 sm:px-6 lg:grid-cols-[1fr_1.15fr] lg:pt-20">
+        <div className="mx-auto grid grid-cols-1 max-w-6xl items-center gap-10 px-4 pt-14 pb-16 sm:px-6 lg:grid-cols-[1fr_1.15fr] lg:pt-20">
           <div>
             <p className="text-sm font-medium text-blue-700">Built by a custom home builder, for builders</p>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl">From the plans to the keys, in one place.</h1>
@@ -49,7 +49,7 @@ export default function SiteHome() {
       {/* The three big jobs */}
       <section className="border-t border-slate-100 bg-slate-50">
         <div className="mx-auto max-w-6xl space-y-20 px-4 py-20 sm:px-6">
-          <div className="grid items-center gap-10 lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
             <div>
               <p className="text-sm font-medium text-blue-700">Takeoff</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight">Draw the walls once. Get the lumber list.</h2>
@@ -66,7 +66,7 @@ export default function SiteHome() {
             </div>
             <Shot shot="takeoff" />
           </div>
-          <div className="grid items-center gap-10 lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
             <div className="lg:order-2">
               <p className="text-sm font-medium text-blue-700">Estimate</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight">The takeoff prices the estimate.</h2>
@@ -83,7 +83,7 @@ export default function SiteHome() {
             </div>
             <Shot shot="estimate" className="lg:order-1" />
           </div>
-          <div className="grid items-center gap-10 lg:grid-cols-2">
+          <div className="grid grid-cols-1 items-center gap-10 lg:grid-cols-2">
             <div>
               <p className="text-sm font-medium text-blue-700">Schedule & budget</p>
               <h2 className="mt-2 text-3xl font-semibold tracking-tight">Know where the job stands — and where the money went.</h2>
@@ -108,7 +108,7 @@ export default function SiteHome() {
         <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
           <h2 className="max-w-2xl text-3xl font-semibold tracking-tight">And the rest of running a job.</h2>
           <p className="mt-3 max-w-2xl text-slate-600">All of it in the same program, sharing the same job — nothing to re-type.</p>
-          <div className="mt-10 grid gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-10 grid grid-cols-1 gap-x-8 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
             {EVERYTHING_ELSE.map((f) => (
               <div key={f.title} className="flex gap-3">
                 <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-blue-50 text-blue-700">
@@ -126,7 +126,7 @@ export default function SiteHome() {
 
       {/* Why it's easy to start */}
       <section className="border-t border-slate-100 bg-slate-50">
-        <div className="mx-auto grid max-w-6xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-2">
+        <div className="mx-auto grid grid-cols-1 max-w-6xl gap-10 px-4 py-20 sm:px-6 lg:grid-cols-2">
           <div>
             <h2 className="text-3xl font-semibold tracking-tight">Easy to start. Easy to stay.</h2>
             <p className="mt-3 text-slate-600">No month of setup before your first estimate. Your lists fill in as you work.</p>

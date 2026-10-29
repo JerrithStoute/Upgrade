@@ -36,7 +36,7 @@ export default async function InventoryPage() {
       <Card>
         <CardHeader title="Add to inventory" description="Stock you bought for the shelf, or what's already there. Pick an Item List item so jobs that use it find it." />
         <CardBody>
-          <form action={addInventory} className="grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+          <form action={addInventory} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-6">
             <input name="item" required list="inventory-item-list" className="input lg:col-span-2" placeholder="Item (from your Item List, or type one)" aria-label="Item" />
             <datalist id="inventory-item-list">
               {itemList.map((i) => (

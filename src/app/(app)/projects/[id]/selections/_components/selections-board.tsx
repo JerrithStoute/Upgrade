@@ -86,11 +86,11 @@ export function SelectionsBoard({
   }
   const current = cards.find((c) => c.selectionId === openId) ?? cards[0];
   return (
-    <div className="grid items-start gap-4 lg:grid-cols-[17rem_1fr]">
+    <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-[17rem_1fr]">
       <aside className="space-y-2 rounded-xl border border-slate-300 bg-white p-2 shadow-sm lg:sticky lg:top-28 lg:max-h-[calc(100vh-8rem)] lg:overflow-y-auto">
         <div className="flex items-center justify-between gap-2 px-1.5 pt-1">
           <p className="text-sm font-semibold text-slate-900">Selections · {cards.length}</p>
-          <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline" onClick={() => setBulk(true)}>
+          <button type="button" className="tap inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline" onClick={() => setBulk(true)}>
             <CalendarClock className="h-3.5 w-3.5" /> Deadlines
           </button>
         </div>
@@ -226,7 +226,7 @@ function Card({
           </p>
           <p className="mt-1 text-xs text-slate-700">
             <RequestedBy c={c} />{" "}
-            <button type="button" className="ml-1 font-medium text-blue-700 hover:underline" onClick={() => setEditDeadline((o) => !o)}>
+            <button type="button" className="tap ml-1 font-medium text-blue-700 hover:underline" onClick={() => setEditDeadline((o) => !o)}>
               {c.deadline.date ? "Change" : "Set a deadline"}
             </button>
           </p>
@@ -237,7 +237,7 @@ function Card({
         </Link>
       </header>
 
-      <div className="grid gap-4 p-5 md:grid-cols-[1fr_20rem]">
+      <div className="grid grid-cols-1 gap-4 p-5 md:grid-cols-[1fr_20rem]">
         <div className="space-y-3">
           <Box title="Specification information">
             {c.specText ? <p className="whitespace-pre-line">{c.specText}</p> : <Empty>No spec text yet — add it in the estimate.</Empty>}
@@ -303,7 +303,7 @@ function Card({
           <h4 className="text-sm font-semibold text-slate-900">Choices</h4>
           {c.allowance !== null ? (
             // How the allowance is figured from the estimate, in dollars: what the items cost you, or that plus your markup.
-            <span className="flex flex-wrap items-center justify-end gap-2 text-sm">
+            <span className="flex min-w-0 max-w-full flex-wrap items-center justify-end gap-2 text-sm">
               <span className="font-medium text-slate-800">Allowance</span>
               <select
                 className="input !h-8 !w-auto !py-0 text-sm font-semibold"
@@ -583,7 +583,7 @@ function ChoiceForm({
         onChange={(e) => setV({ ...v, description: e.target.value })}
         aria-label="Description"
       />
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <input className="input" placeholder="Vendor" value={v.vendor} onChange={(e) => setV({ ...v, vendor: e.target.value })} aria-label="Vendor" />
         <input className="input" placeholder="Model #" value={v.modelNumber} onChange={(e) => setV({ ...v, modelNumber: e.target.value })} aria-label="Model number" />
       </div>

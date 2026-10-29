@@ -47,7 +47,7 @@ export default async function ProposalDefaultsPage({ searchParams }: { searchPar
     <form action={saveProposalDefaults} className="space-y-6">
       {saved ? <p className="rounded-md bg-emerald-50 px-4 py-2 text-sm text-emerald-800">Saved — proposals that follow your defaults show it this way.</p> : null}
       <p className="text-sm text-slate-500">Proposals follow these unless an estimate has its own (set beside the proposal, with &ldquo;Save for this estimate&rdquo;).</p>
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Group title="Page">
           <Field label="Heading" htmlFor="p-heading">
             <input id="p-heading" name="heading" className="input" defaultValue={o.heading} placeholder="Proposal" />

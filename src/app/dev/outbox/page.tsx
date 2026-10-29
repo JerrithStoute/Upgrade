@@ -23,7 +23,7 @@ export default async function OutboxPage({ searchParams }: { searchParams: Promi
         {all.length === 0 ? (
           <p className="rounded-lg border border-dashed border-slate-300 bg-white p-6 text-sm text-slate-500">No emails yet.</p>
         ) : (
-          <div className="grid gap-4 md:grid-cols-[18rem_1fr]">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-[18rem_1fr]">
             <ul className="divide-y divide-slate-100 overflow-hidden rounded-lg border border-slate-200 bg-white">
               {all.slice(0, 50).map((m) => (
                 <li key={m.id}>

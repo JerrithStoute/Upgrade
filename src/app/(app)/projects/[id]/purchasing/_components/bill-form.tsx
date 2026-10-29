@@ -47,7 +47,7 @@ export function BillForm({
       <input type="hidden" name="projectId" value={projectId} />
       {billId ? <input type="hidden" name="id" value={billId} /> : null}
       <input type="hidden" name="lines" value={JSON.stringify(lines.map(({ key: _k, ...l }) => (void _k, l)))} />
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
         {billId ? null : (
           <label className="space-y-1 md:col-span-2">
             <span className="label">For PO</span>

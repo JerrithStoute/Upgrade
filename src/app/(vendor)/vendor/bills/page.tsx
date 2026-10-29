@@ -41,7 +41,7 @@ export default async function VendorBillsPage({ searchParams }: { searchParams: 
           {pos.length === 0 ? (
             <p className="text-sm text-slate-500">You don&apos;t have an open PO with us right now. Call us if you need to bill for something.</p>
           ) : (
-            <form action={uploadVendorBill} className="grid gap-3 md:grid-cols-4">
+            <form action={uploadVendorBill} className="grid grid-cols-1 gap-3 md:grid-cols-4">
               <label className="space-y-1 md:col-span-2">
                 <span className="label">PO</span>
                 <select name="purchaseOrderId" className="input" defaultValue={poId ?? pos[0].id} required>

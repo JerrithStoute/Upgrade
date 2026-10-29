@@ -108,7 +108,7 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
         />
       </div>
 
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
           <h2 className="px-4 pt-3 text-sm font-semibold text-slate-900">Pipeline now</h2>
           <table className="w-full text-left text-sm">

@@ -12,7 +12,7 @@ export function InviteBuilderForm({ fill }: { fill?: { email?: string; name?: st
   const [copied, setCopied] = useState(false);
   return (
     <div className="space-y-4">
-      <form action={action} className="grid gap-3 md:grid-cols-3">
+      <form action={action} className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <Field label="Builder's email" htmlFor="email">
           <input id="email" name="email" type="email" required className="input" placeholder="sam@samhomes.com" defaultValue={fill?.email} />
         </Field>

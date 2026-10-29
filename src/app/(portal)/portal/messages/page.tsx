@@ -67,7 +67,7 @@ export default async function PortalMessagesPage({ searchParams }: { searchParam
         {threads.length === 0 ? (
           <EmptyState icon={MessageSquare} title="No conversations yet" description="Start one above and your project team will be notified." />
         ) : (
-          <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[320px_1fr]">
             <Card className="overflow-hidden">
               <CardHeader title="Conversations" description={`${threads.length} thread${threads.length === 1 ? "" : "s"}`} />
               <ul className="max-h-[70vh] divide-y divide-slate-100 overflow-y-auto">

@@ -103,7 +103,7 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
             }
           />
           <CardBody>
-            <div className="grid gap-5 md:grid-cols-3">
+            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Project manager</p>
                 {project.manager ? (

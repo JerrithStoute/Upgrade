@@ -80,7 +80,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
           {Number(same) > 0 ? `, ${same} you already had were left as they are` : ""}.
         </p>
       ) : null}
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
         <Collapsible
           defaultOpen={false}
           summary={

@@ -90,7 +90,7 @@ export default async function CostCodesSettingsPage({ searchParams }: { searchPa
               Enclosure, 5000 Finishing Trades, 6000 Completion &amp; Inspection. Common residential codes to start from (not NAHB&apos;s own list): rename, add to or switch off
               any of them. Codes you already have, by number, are left alone.
             </p>
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {missingGroups.map((g) => (
                 <fieldset key={g.division} className="space-y-1">
                   <legend className="text-xs font-semibold uppercase tracking-wide text-slate-500">{g.division}</legend>

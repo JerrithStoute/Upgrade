@@ -240,7 +240,7 @@ export default async function PullFromInventoryPage({ params, searchParams }: { 
           description="Material left over from this job goes back on the shelf. The job is credited what it cost — so the next job that pulls it pays for it."
         />
         <CardBody className="space-y-3">
-          <form action={returnLeftovers} className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+          <form action={returnLeftovers} className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-5">
             <input type="hidden" name="projectId" value={project.id} />
             <input name="item" required list="leftover-items" className="input lg:col-span-2" placeholder="Item (from the list, or type one)" aria-label="Item" />
             <datalist id="leftover-items">

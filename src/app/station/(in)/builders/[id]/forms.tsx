@@ -25,7 +25,7 @@ export function StatusForm({ companyId, status, trialEndsAt }: { companyId: stri
       }}
     >
       <input type="hidden" name="companyId" value={companyId} />
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Status" htmlFor="status">
           <select id="status" name="status" className="input" value={pick} onChange={(e) => setPick(e.target.value as BuilderStatus)}>
             {BUILDER_STATUSES.map((s) => (

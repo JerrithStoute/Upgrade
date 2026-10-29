@@ -59,7 +59,7 @@ export function ChangeOrderDocument({
           </p>
         ) : null}
       </section>
-      <section className="mt-4 grid gap-6 text-sm leading-relaxed sm:grid-cols-2">
+      <section className="mt-4 grid grid-cols-1 gap-6 text-sm leading-relaxed sm:grid-cols-2">
         <div>
           <p className="font-semibold">{d.company.name}</p>
           {d.company.lines.map((l) => (

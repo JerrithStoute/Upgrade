@@ -90,7 +90,7 @@ export default async function PortalSelectionDetailPage({ params }: { params: Pr
             {selection.options.length === 0 ? (
               <EmptyState title="No choices yet" description="Your team is still putting choices together for this item." />
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
                 {selection.options.map((o) => {
                   const isChosen = o.id === selection.chosenOptionId;
                   const delta = o.price - selection.allowance;

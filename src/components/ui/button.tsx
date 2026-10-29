@@ -15,9 +15,10 @@ const variants: Record<Variant, string> = {
   success: "bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm",
 };
 
+// (Touchscreens: a little taller, for a thumb.)
 const sizes: Record<Size, string> = {
-  sm: "h-8 px-2.5 text-xs",
-  md: "h-9 px-3.5 text-sm",
+  sm: "h-8 px-2.5 text-xs pointer-coarse:h-10",
+  md: "h-9 px-3.5 text-sm pointer-coarse:h-11",
 };
 
 export function buttonClasses(variant: Variant = "primary", size: Size = "md", className?: string) {

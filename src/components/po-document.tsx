@@ -27,7 +27,7 @@ export function PoDocument({ d }: { d: PoDoc }) {
         </div>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-2">
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">To</p>
           <p className="font-medium">{d.to.name}</p>
@@ -89,7 +89,7 @@ export function PoDocument({ d }: { d: PoDoc }) {
 
       <p className="text-xs text-slate-600">Please put PO-{po.number} on your bill. Work or materials beyond this PO need a change approved before they&apos;re done.</p>
 
-      <section className="grid gap-8 pt-6 sm:grid-cols-2">
+      <section className="grid grid-cols-1 gap-8 pt-6 sm:grid-cols-2">
         {["Accepted by", "Date"].map((s) => (
           <div key={s}>
             <div className="h-8 border-b border-slate-400" />
