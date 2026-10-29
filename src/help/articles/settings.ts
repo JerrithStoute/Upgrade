@@ -291,12 +291,22 @@ export const SETTINGS: HelpArticle[] = [
     group: "Getting started",
     area: null,
     pages: [],
-    what: "**Your account** (click your name at the top right) is where you change your password, turn on two-step sign-in, choose the morning email, and sign out everywhere.",
+    what: "**Your account** (click your name at the top right) is where you put the app on your phone, turn on notifications, change your password, turn on two-step sign-in, choose the morning email, and sign out everywhere.",
     how: ["Click your name at the top right.", "Change what you need. Each part has its own button."],
     sections: [
       {
         heading: "On the page",
         items: [
+          {
+            name: "Phone app",
+            what: "Puts The Builder Station on your phone's home screen, like any app: its own icon, full screen, still signed in. Your clients and subs get the same from their portal, but under your company's name and logo, never The Builder Station's.",
+            how: "On an **iPhone**: open the site in Safari, tap the **Share** button, then **Add to Home Screen**. On **Android**: open it in Chrome, tap **⋮**, then **Install app** (or tap **Install** where the page offers it). A banner on the dashboard (and on the client and sub portals) points the way on phones until it's installed or closed.",
+          },
+          {
+            name: "Notifications",
+            what: "A buzz on your phone when something's waiting for you, alongside the email. Your team: clients picking selections or answering proposals and change orders; subs answering POs and sending bills, bids and insurance; new messages. Clients: selections waiting or due, proposals and change orders to approve, new invoices, your messages. Subs: new POs and messages.",
+            how: "Click **Turn on notifications on this phone** and allow them. A test one arrives right away. Untick anything you don't want under **Notify me about**. On an iPhone, add the app to your home screen first and turn notifications on from inside it (Apple only allows them there). **Turn off here** stops them on that phone.",
+          },
           { name: "Password", what: "Type your current password and the new one twice (at least 10 characters). Changing it signs out your other devices." },
           {
             name: "Two-step sign-in",
@@ -308,7 +318,11 @@ export const SETTINGS: HelpArticle[] = [
         ],
       },
     ],
-    tips: ["If your company requires two-step sign-in (Settings → Team), you can't turn it off."],
+    tips: [
+      "If your company requires two-step sign-in (Settings → Team), you can't turn it off.",
+      "Notifications are per phone: turn them on on each phone or computer you want them on.",
+      "Blocked notifications by mistake? On iPhone: Settings → Notifications → the app. On Android: hold the app's icon → App info → Notifications.",
+    ],
     related: ["team"],
   },
 ];

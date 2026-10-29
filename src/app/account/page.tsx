@@ -1,5 +1,5 @@
 import Link from "@/components/link";
-import { ArrowLeft, KeyRound, LogOut, Mail, ShieldCheck, UserPlus } from "lucide-react";
+import { ArrowLeft, KeyRound, LogOut, Mail, ShieldCheck, Smartphone, UserPlus } from "lucide-react";
 import { requireUser } from "@/lib/auth";
 import { systemDb } from "@/lib/db";
 import { setupSecret } from "@/lib/two-step-setup";
@@ -9,6 +9,9 @@ import { PasswordForm, TwoStepOnForms } from "./forms";
 import { setMorningEmail, signOutAll, startStationOwner } from "./actions";
 import { isPlatformAdmin } from "@/lib/builder-invites";
 import { companyClock } from "@/lib/company-zone";
+import { PhoneAppCard } from "@/components/phone-app";
+import { appIdentity } from "@/lib/app-identity";
+import { PUSH_KINDS, kindsFor, pushOffList, pushPublicKey } from "@/lib/push";
 
 export const metadata = { title: "Your account" };
 
@@ -17,9 +20,11 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
   const { dateTime } = await companyClock();
   const sp = await searchParams;
   const [user, company] = await Promise.all([
-    systemDb.user.findUniqueOrThrow({ where: { id: me.id }, select: { email: true, name: true, totpEnabledAt: true, morningEmail: true, backupCodes: true, passwordChangedAt: true, lastSignInAt: true } }),
+    systemDb.user.findUniqueOrThrow({ where: { id: me.id }, select: { email: true, name: true, totpEnabledAt: true, morningEmail: true, backupCodes: true, passwordChangedAt: true, lastSignInAt: true, pushOff: true } }),
     systemDb.company.findUnique({ where: { id: me.companyId }, select: { name: true, requireTwoStep: true } }),
   ]);
+  const app = await appIdentity();
+  const off = pushOffList(user.pushOff);
   const home = me.role === "CLIENT" ? "/portal" : me.role === "VENDOR" ? "/vendor" : "/dashboard";
   const team = me.role === "ADMIN" || me.role === "STAFF";
   const backupLeft = user.backupCodes ? (JSON.parse(user.backupCodes) as string[]).length : 0;
@@ -59,6 +64,14 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             </form>
           </section>
         ) : null}
+
+        <section id="app" className={card}>
+          <h2 className="mb-1 flex items-center gap-2 font-semibold text-slate-900">
+            <Smartphone className="h-4 w-4 text-slate-400" /> Phone app
+          </h2>
+          <p className="mb-4 text-sm text-slate-500">{app.name} on your home screen, like any app — and a notification when something&apos;s waiting for you.</p>
+          <PhoneAppCard name={app.name} publicKey={pushPublicKey()} kinds={kindsFor(me.role).map((k) => ({ key: k, label: PUSH_KINDS[k].label, on: !off.includes(k) }))} />
+        </section>
 
         <section className={card}>
           <h2 className="mb-1 flex items-center gap-2 font-semibold text-slate-900">

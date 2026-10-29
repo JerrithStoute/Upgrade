@@ -7,6 +7,7 @@ import { getBrand } from "@/lib/company-brand";
 import { requireClient } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { Avatar } from "@/components/ui/avatar";
+import { GetTheAppBanner } from "@/components/phone-app";
 import { PortalNav } from "@/components/portal/nav";
 
 export const metadata = { title: "Client Portal" };
@@ -71,7 +72,10 @@ export default async function PortalLayout({ children }: { children: React.React
         </div>
       </header>
       <main className="flex-1 px-4 py-6 md:px-6 md:py-8">
-        <div className="mx-auto w-full max-w-6xl">{children}</div>
+        <div className="mx-auto w-full max-w-6xl">
+          <GetTheAppBanner name={companyName} />
+          {children}
+        </div>
       </main>
       <footer className="no-print border-t border-slate-200 bg-white px-4 py-4 text-center text-xs text-slate-500">
         {companyName}

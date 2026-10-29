@@ -6,6 +6,7 @@ import { sendCompanyMail } from "./notify";
 import { changeOrderTotals } from "./change-orders";
 import { invoiceTotal } from "./finance";
 import { fmtDate, money } from "./utils";
+import type { PushKind } from "./push";
 
 /**
  * Emails to and about the client: a proposal, change order or invoice sent to them, a message,
@@ -50,7 +51,7 @@ async function inviteLink(clientId: string, email: string, name: string, from: P
 async function tellClient(
   clientId: string | null | undefined,
   from: Person | null,
-  mail: { subject: string; heading: string; lines: string[]; sections?: MailSection[]; label: string; path: string; where: string },
+  mail: { subject: string; heading: string; lines: string[]; sections?: MailSection[]; label: string; path: string; where: string; push: PushKind },
 ) {
   const to = await clientContacts(clientId);
   if (!to.emails.length || !clientId) return [];
@@ -61,7 +62,8 @@ async function tellClient(
     button = link ? { label: "Set up your sign-in", url: link } : undefined;
     after = link ? [`Choose a password, and you'll find it under ${mail.where}. The link works for 7 days.`] : [];
   }
-  return sendCompanyMail(to.emails, { subject: mail.subject, heading: mail.heading, lines: mail.lines, sections: mail.sections, button, after, replyTo: from?.email });
+  // (No portal sign-in yet: nobody to buzz — the push goes to sign-ins only.)
+  return sendCompanyMail(to.emails, { subject: mail.subject, heading: mail.heading, lines: mail.lines, sections: mail.sections, button, after, replyTo: from?.email, push: mail.push });
 }
 
 const company = async () => (await db.company.findFirst({ select: { name: true } }))?.name ?? "Your builder";
@@ -88,6 +90,7 @@ export async function emailProposalToClient(estimateId: string, total: number, s
     label: "Review the proposal",
     path: `/portal/proposals/${est.id}`,
     where: "Proposals",
+    push: "APPROVALS",
   });
 }
 
@@ -106,6 +109,7 @@ export async function emailChangeOrderToClient(coId: string, sender: Person) {
     label: "Review and approve",
     path: `/portal/change-orders/${co.id}`,
     where: "Change Orders",
+    push: "APPROVALS",
   });
 }
 
@@ -120,6 +124,7 @@ export async function emailInvoiceToClient(invoiceId: string, sender: Person) {
     label: "View the invoice",
     path: `/portal/invoices/${inv.id}`,
     where: "Invoices",
+    push: "INVOICES",
   });
 }
 
@@ -135,6 +140,7 @@ export async function emailMessageToClient(threadId: string, body: string, sende
     label: "Read and reply",
     path: `/portal/messages?project=${thread.projectId}&thread=${thread.id}`,
     where: "Messages",
+    push: "MESSAGES",
   });
 }
 
@@ -153,6 +159,7 @@ export async function emailProposalAnswered(estimateId: string) {
       ...(est.status === "APPROVED" ? ["When you're ready, use it as the budget on the estimate."] : []),
     ],
     button: { label: "Open the estimate", url: appUrl(`/projects/${est.projectId}/estimate?estimate=${est.id}`) },
+    push: "CLIENT_ANSWERS",
   });
 }
 
@@ -170,6 +177,7 @@ export async function emailChangeOrderAnswered(coId: string) {
       ...(word === "approved" && co.status !== "APPROVED" ? ["It still needs your team's approval before it's final."] : []),
     ],
     button: { label: "Open the change order", url: appUrl(`/projects/${co.projectId}/change-orders/${co.id}`) },
+    push: "CLIENT_ANSWERS",
   });
 }
 
@@ -187,6 +195,7 @@ export async function emailSelectionChosen(selectionId: string) {
     heading: sel.title,
     lines: [`${who} ${what} for ${sel.title} on ${sel.project.name}.`],
     button: { label: "Open selections", url: appUrl(`/projects/${sel.projectId}/selections`) },
+    push: "CLIENT_ANSWERS",
   });
 }
 
@@ -200,6 +209,7 @@ export async function emailMessageFromClient(threadId: string, body: string, cli
     heading: thread.subject,
     lines: [`${clientName} wrote about ${thread.project.name}:`, body.length > 600 ? `${body.slice(0, 600)}…` : body],
     button: { label: "Read and reply", url: appUrl(`/projects/${thread.projectId}/messages?thread=${thread.id}`) },
+    push: "MESSAGES",
   });
 }
 
@@ -259,6 +269,7 @@ export async function sendSelectionReminders(now: Date) {
       label: "Make your selections",
       path: `/portal/selections?project=${list[0].sel.projectId}`,
       where: "Selections",
+      push: "SELECTIONS",
     });
     sent += reached.length;
   }

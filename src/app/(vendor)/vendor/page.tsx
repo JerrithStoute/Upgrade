@@ -38,7 +38,7 @@ export default async function VendorHome() {
           <ShieldCheck className="h-4 w-4" /> Your insurance is up to date with us.
         </p>
       ) : null}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <Card>
           <CardHeader title="POs waiting for your answer" description={waiting.length ? "Look them over and accept or decline." : undefined} />
           {waiting.length ? (

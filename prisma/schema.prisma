@@ -83,26 +83,29 @@ model Company {
 
 /// ADMIN: full access. STAFF: internal team. CLIENT: portal only. SUB: subcontractor (limited).
 model User {
-  id                String    @id @default(cuid())
+  id                String       @id @default(cuid())
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
-  companyId         String    @default(dbgenerated("current_setting('app.company_id'::text)"))
-  email             String    @unique
+  companyId         String       @default(dbgenerated("current_setting('app.company_id'::text)"))
+  email             String       @unique
   passwordHash      String
   name              String
-  role              String    @default("STAFF") // ADMIN | STAFF | CLIENT | SUB
+  role              String       @default("STAFF") // ADMIN | STAFF | CLIENT | SUB
   phone             String?
   title             String?
-  active            Boolean   @default(true)
+  active            Boolean      @default(true)
   // Their position (Project manager, Estimator…; src/lib/access.ts) — none: Staff. Admins get everything.
   positionId        String?
-  position          Position? @relation(fields: [positionId], references: [id], onDelete: SetNull)
+  position          Position?    @relation(fields: [positionId], references: [id], onDelete: SetNull)
   // Just this person's changes from their position (JSON, only what differs).
   access            String?
   // Vacation days a year (null = not tracked).
   vacationDays      Float?
   // Sign-in security.
   emailVerifiedAt   DateTime? // confirmed the email is theirs (sign-up / invite link)
-  sessionVersion    Int       @default(0) // bumped to sign them out everywhere (password change, deactivation)
+  sessionVersion    Int          @default(0) // bumped to sign them out everywhere (password change, deactivation)
+  // Phone notifications they've turned off (JSON list of kinds — src/lib/push.ts); empty = all on.
+  pushOff           String?
+  pushDevices       PushDevice[]
   passwordChangedAt DateTime?
   lastSignInAt      DateTime?
   totpSecret        String? // two-step sign-in: the authenticator app's secret, encrypted
@@ -110,17 +113,17 @@ model User {
   backupCodes       String? // JSON: hashes of unused one-time backup codes
   // Time clock: pay per hour (null = not set) and salaried (no overtime).
   payRate           Float?
-  salaried          Boolean   @default(false)
+  salaried          Boolean      @default(false)
   // Their dashboard: the cards they picked, in order (JSON ["stats", "projects", …]); null = the default.
   dashboardCards    String?
   // The morning email (what's due today): on unless they turn it off; the last day it went out ("2026-10-13").
-  morningEmail      Boolean   @default(true)
+  morningEmail      Boolean      @default(true)
   morningEmailOn    String?
   // A vendor portal login (role VENDOR): the vendor it signs in for.
   vendorId          String?
-  vendor            Vendor?   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
-  createdAt         DateTime  @default(now())
-  updatedAt         DateTime  @updatedAt
+  vendor            Vendor?      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   client          Client?
   timeOff         CalendarEvent[] @relation("TimeOffFor")
@@ -2265,6 +2268,27 @@ model QbListItem {
 
   @@unique([companyId, kind, listId])
   @@index([companyId])
+}
+
+/// A phone or computer that gets notifications for someone (the installed app, or a browser they
+/// allowed). Removed when the device says it's gone, or they turn notifications off on it.
+model PushDevice {
+  id         String    @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId  String    @default(dbgenerated("current_setting('app.company_id'::text)"))
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint   String
+  p256dh     String
+  auth       String
+  // What kind of device ("iPhone", "Android", "Windows"…), to tell them apart.
+  label      String?
+  createdAt  DateTime  @default(now())
+  lastSentAt DateTime?
+
+  @@unique([companyId, endpoint])
+  @@index([companyId])
+  @@index([userId])
 }
 
 /// QuickBooks Online, connected through Intuit (Settings → QuickBooks). A company has this or the

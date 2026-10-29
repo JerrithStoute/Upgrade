@@ -3,6 +3,7 @@ import { db } from "./db";
 import { appUrl, sendMail, simpleEmail, type MailSection } from "./mail";
 import { coverageLabel, poTotal } from "./purchasing";
 import { fmtDate, money } from "./utils";
+import { pushToEmails, type PushKind } from "./push";
 
 /**
  * Emails the program sends as things happen in purchasing: a PO to its vendor, and word
@@ -10,7 +11,8 @@ import { fmtDate, money } from "./utils";
  *
  * One rule for all of them: an email that can't be sent never stops the work — the PO is
  * still marked sent, the bill still uploaded. The failure goes in the server log.
- * They're "from" the company by name, and a reply goes to a real person.
+ * They're "from" the company by name, and a reply goes to a real person. With `push`, the same
+ * people's phones buzz too, if they've turned notifications on (push.ts).
  */
 
 type Person = { name: string; email: string };
@@ -32,6 +34,7 @@ export async function sendCompanyMail(
     button?: { label: string; url: string };
     after?: string[];
     replyTo?: string;
+    push?: PushKind;
   },
 ) {
   // A reply goes to whoever sent it — else the company's own address, never our no-reply one.
@@ -45,6 +48,7 @@ export async function sendCompanyMail(
       console.error(`[email] "${mail.subject}" to ${address} failed:`, e instanceof Error ? e.message : e);
     }
   }
+  if (mail.push) await pushToEmails(to, mail.push, { title: mail.subject, body: mail.lines[0] ?? "", url: mail.button?.url ?? "/" });
   return reached;
 }
 
@@ -83,6 +87,7 @@ export async function emailPoToVendor(poId: string, sender: Person) {
         : `Reply to this email to accept it or with any questions — it goes to ${sender.name}.`,
     ],
     replyTo: sender.email,
+    push: "POS",
   });
 }
 
@@ -99,6 +104,7 @@ export async function emailPoAnswered(poId: string, by: string) {
       heading: `PO-${po.number} ${word}`,
       lines: [`${by} at ${po.vendorName} ${word} "${po.title}" for ${po.project.name}.`, ...(po.responseNote ? [`Their note: "${po.responseNote}"`] : [])],
       button: { label: "Open the PO", url: appUrl(`/projects/${po.project.id}/purchasing/po/${po.id}`) },
+      push: "VENDOR_ANSWERS",
     },
   );
 }
@@ -115,6 +121,7 @@ export async function emailBillUploaded(poId: string, amount: number) {
       heading: `${po.vendorName} sent a bill`,
       lines: [`${money(amount)} on PO-${po.number} ("${po.title}") for ${po.project.name}.`, "It's waiting for approval."],
       button: { label: "Review the bill", url: appUrl(`/projects/${po.project.id}/purchasing/po/${po.id}`) },
+      push: "VENDOR_ANSWERS",
     },
   );
 }
@@ -133,6 +140,7 @@ export async function emailInsuranceUploaded(vendorId: string, type: string, exp
       heading: "Insurance certificate to confirm",
       lines: [`${vendor.name} uploaded ${coverageLabel(type)}, good until ${fmtDate(expiresAt)}.`, "It counts once you've looked at it and confirmed it."],
       button: { label: "Open their page", url: appUrl(`/settings/vendors/${vendorId}`) },
+      push: "VENDOR_ANSWERS",
     },
   );
 }
@@ -171,6 +179,7 @@ export async function emailBidAnswered(bidId: string, o: { priced: number; items
         ...(o.priced ? ["The prices are on the bid already — compare and take it on the bids page."] : []),
       ],
       button: { label: "See what they sent", url: appUrl(`/projects/${bid.project.id}/bids/${bid.id}/reply`) },
+      push: "VENDOR_ANSWERS",
     },
   );
 }
