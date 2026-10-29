@@ -58,7 +58,8 @@ export async function refreshFormulaQuantities(estimateId: string) {
   if (!est || est.status !== "DRAFT") return;
   const items = await db.estimateItem.findMany({
     where: { estimateId },
-    select: { id: true, quantity: true, unitCost: true, markupPct: true, isOptional: true, costType: true, qtyFormula: true, costFormula: true },
+    // (taxPct too: the price that "Sales price" lines are figured from includes the sales tax — as on the sheet.)
+    select: { id: true, quantity: true, unitCost: true, markupPct: true, taxPct: true, isOptional: true, costType: true, qtyFormula: true, costFormula: true },
   });
   if (!items.some((i) => i.qtyFormula || i.costFormula)) return;
   const values = await estimateValues(estimateId);

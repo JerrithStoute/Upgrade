@@ -2,10 +2,11 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { settleSales } from "./sales-price";
 
-const line = (p: { quantity?: number; unitCost: number; markupPct?: number; qtyFormula?: string | null; costFormula?: string | null }) => ({
+const line = (p: { quantity?: number; unitCost: number; markupPct?: number; taxPct?: number; qtyFormula?: string | null; costFormula?: string | null }) => ({
   quantity: p.quantity ?? 1,
   unitCost: p.unitCost,
   markupPct: p.markupPct ?? 0,
+  taxPct: p.taxPct ?? 0,
   isOptional: false,
   costType: "OTHER",
   qtyFormula: p.qtyFormula ?? null,
@@ -13,6 +14,11 @@ const line = (p: { quantity?: number; unitCost: number; markupPct?: number; qtyF
 });
 
 describe("sales price", () => {
+  it("the sales tax you pay is part of the price a fee is figured from", () => {
+    const { sales } = settleSales([line({ unitCost: 100_000, taxPct: 8.25 }), line({ qtyFormula: "[#sales]", unitCost: 0.01 })], {}, null, []);
+    // 108,250 is 99% of the price.
+    assert.equal(sales, 109_343.43);
+  });
   it("a 6% realtor fee is 6% of the final price — fee included — in one step", () => {
     const { sales, lines } = settleSales([line({ unitCost: 94_000 }), line({ qtyFormula: "[#sales]", unitCost: 0.06 })], {}, null, []);
     assert.equal(sales, 100_000);
