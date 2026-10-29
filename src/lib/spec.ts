@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { lineCost, lineTax } from "./utils";
+import { lineCost } from "./utils";
 import { accrued, closedMonths, dailyRate, loanOn, dayNo, DEFAULT_CLOSING_LINES, type Carry, type ClosingLine, type Sheet } from "./spec-math";
 
 /**
@@ -165,14 +165,7 @@ export async function specPicture(projectId: string, today = new Date()) {
   const stop = spec?.soldAt ?? null;
   const key = (id: string | null) => id ?? "none";
   const est = new Map<string, number>();
-  // (Kept apart too, to show what The house is made of: the estimate, its sales tax, change orders.)
-  const estOnly = new Map<string, number>();
-  const taxOnly = new Map<string, number>();
-  for (const i of estimate?.items ?? []) {
-    est.set(key(i.costCodeId), (est.get(key(i.costCodeId)) ?? 0) + lineCost(i));
-    estOnly.set(key(i.costCodeId), (estOnly.get(key(i.costCodeId)) ?? 0) + i.quantity * i.unitCost);
-    taxOnly.set(key(i.costCodeId), (taxOnly.get(key(i.costCodeId)) ?? 0) + lineTax(i));
-  }
+  for (const i of estimate?.items ?? []) est.set(key(i.costCodeId), (est.get(key(i.costCodeId)) ?? 0) + lineCost(i));
   for (const co of cos) for (const i of co.items) est.set(key(i.costCodeId), (est.get(key(i.costCodeId)) ?? 0) + lineCost(i));
   const spent = new Map<string, number>();
   let carryingPosted = 0;
@@ -185,19 +178,10 @@ export async function specPicture(projectId: string, today = new Date()) {
   // Carrying-cost codes count only what's been spent by hand there (the rest is in carrying).
   let build = 0;
   let buildSpent = 0;
-  const parts = { estimate: 0, tax: 0, changeOrders: 0, overEstimate: 0 };
   for (const k of new Set([...est.keys(), ...spent.keys()])) {
     const s = spent.get(k) ?? 0;
     buildSpent += s;
-    const e = est.get(k) ?? 0;
-    build += carryCodes.has(k) ? s : Math.max(e, s);
-    if (carryCodes.has(k)) parts.overEstimate += s;
-    else {
-      parts.estimate += estOnly.get(k) ?? 0;
-      parts.tax += taxOnly.get(k) ?? 0;
-      parts.changeOrders += e - (estOnly.get(k) ?? 0) - (taxOnly.get(k) ?? 0);
-      parts.overEstimate += Math.max(0, s - e);
-    }
+    build += carryCodes.has(k) ? s : Math.max(est.get(k) ?? 0, s);
   }
   const iso = (d: Date) => d.toISOString();
   const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
@@ -254,8 +238,6 @@ export async function specPicture(projectId: string, today = new Date()) {
     defaults,
     sheet,
     build,
-    /** What The house is made of: the estimate's cost, its sales tax, approved change orders, and spending past the estimate. */
-    buildParts: parts,
     buildSpent,
     /** Still to spend on the house — drawn on the loan as it's built. */
     toFinish: Math.max(0, build - buildSpent),

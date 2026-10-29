@@ -75,7 +75,7 @@ export const FINANCIALS_2: HelpArticle[] = [
       {
         heading: "The Spec sale tab",
         items: [
-          { name: "The house / Carrying so far / Break-even / Profit at list", what: "What the house costs: the estimate, its sales tax and approved change orders (or what's been spent, where that's more) — the line under it shows each piece, so it adds up to the estimate's **Est. cost**; holding costs so far and per day, the lowest price that breaks even, and profit at list." },
+          { name: "The house / Carrying so far / Break-even / Profit at list", what: "What the house costs (spent, plus the rest from the estimate, sales tax included — the same as the estimate's **Est. cost**), holding costs so far and per day, the lowest price that breaks even, and profit at list." },
           {
             name: "Carrying costs",
             what: "What the house costs to hold. Each month's charge goes on the Budget under its cost code.",

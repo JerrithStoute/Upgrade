@@ -70,7 +70,8 @@ export const ESTIMATES: HelpArticle[] = [
         heading: "The bar at the bottom",
         items: [
           { name: "Total sq. ft.", what: "The job's size, for $ per square foot." },
-          { name: "Est. cost / Sales tax / Est. profit / Overhead / Est. total", what: "The estimate's totals. **Est. cost** is the whole cost of the work, sales tax included; **Sales tax** shows how much of it is tax you pay." },
+          { name: "Est. cost / Est. profit / Overhead / Est. total", what: "The estimate's totals. **Est. cost** is the whole cost of the work, sales tax you pay included." },
+          { name: "Totals (the last row of the table)", what: "Each column added up — Ext. cost, Tax, Profit $, Total price and the rest you have showing — so you can see what makes the totals above. Ext. cost + Tax is **Est. cost**; add Profit $ (and any Overhead row) for **Est. total**. Optional items aren't in it." },
           { name: "Base price / Use estimate total", what: "The price that goes on the proposal. It can match the estimate total or be your own number; it tells you how far off the estimate it is and your profit at that price." },
           { name: "Discard", what: "Throws away every change since the last save." },
           { name: "Save changes", what: "Saves. On a draft you choose **Save over vN** or **Save as new version**. A sent version stays as it was; your changes become the next version." },

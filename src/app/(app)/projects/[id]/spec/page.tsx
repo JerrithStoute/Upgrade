@@ -18,13 +18,6 @@ const FREQ: Record<string, string> = { MONTHLY: "a month", YEARLY: "a year", ONC
 const ENTRY: Record<string, string> = { DRAW: "Draw", PAYDOWN: "Paydown", RATE: "Rate change", ACTUAL: "Bank's interest" };
 const OFFER_STATUS: Record<string, string> = { OPEN: "Open", COUNTERED: "Countered", ACCEPTED: "Accepted", REJECTED: "Rejected" };
 
-/** What The house is made of, so it adds up: "Estimate $250,838 + sales tax $5,572 · $0 spent so far". */
-function houseHint(parts: { estimate: number; tax: number; changeOrders: number; overEstimate: number }, spent: number) {
-  const signed = (label: string, n: number) => (Math.abs(n) < 0.5 ? "" : `${n < 0 ? " − " : " + "}${label} ${money(Math.abs(n), true)}`);
-  const sum = `Estimate ${money(parts.estimate, true)}${signed("sales tax", parts.tax)}${signed("change orders", parts.changeOrders)}${signed("spent past the estimate", parts.overEstimate)}`;
-  return `${sum} · ${money(spent, true)} spent so far`;
-}
-
 /** A spec house: its listing, what it costs to hold, offers, and selling it. */
 export default async function SpecSalePage({ params }: { params: Promise<{ id: string }> }) {
   await requireView("budget");
@@ -102,7 +95,7 @@ export default async function SpecSalePage({ params }: { params: Promise<{ id: s
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="The house" value={money(p.build, true)} hint={houseHint(p.buildParts, p.buildSpent)} />
+        <Stat label="The house" value={money(p.build, true)} hint={`${money(p.buildSpent, true)} spent · the rest from the estimate`} />
         <Stat
           label="Carrying so far"
           value={money(p.carryingToDate, true)}

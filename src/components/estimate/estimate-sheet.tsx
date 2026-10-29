@@ -973,6 +973,27 @@ export function EstimateSheet({
                   </tbody>
                 );
               })}
+              {/* Totals: each column added up (optional items left out, as in the totals bar), so the bar's figures can be traced. */}
+              <tfoot className="border-t-2 border-slate-300 bg-slate-50">
+                {extras.overheadTotal ? (
+                  <tr>
+                    <td />
+                    <td className="px-2 py-1.5 text-sm font-medium text-slate-600">Overhead</td>
+                    {cols.map((c) => (
+                      <td key={c.key} className="px-2 py-1.5 text-right font-medium tabular-nums text-slate-700">
+                        {c.key === "price" ? money(extras.overheadTotal) : ""}
+                      </td>
+                    ))}
+                    <td />
+                  </tr>
+                ) : null}
+                <tr>
+                  <td />
+                  <td className="px-2 py-2 text-sm font-semibold uppercase tracking-wide text-slate-900">Totals</td>
+                  <TotalsCells ctx={{ ...ctx, total: totals.price + extras.overheadTotal }} t={{ ...totals, price: totals.price + extras.overheadTotal }} strong />
+                  <td />
+                </tr>
+              </tfoot>
             </table>
           )}
         </div>
@@ -1012,9 +1033,12 @@ export function EstimateSheet({
               />
             </label>
           ) : null}
-          {/* The whole cost of the work: the sales tax you pay is part of it (shown on its own too). */}
-          <Figure label="Est. cost" value={money(totals.cost + totals.tax)} hint={sqft ? `${money((totals.cost + totals.tax) / sqft)} / sq. ft.` : undefined} />
-          {totals.tax ? <Figure label="Sales tax" value={money(totals.tax)} hint="you pay — included in Est. cost" /> : null}
+          {/* The whole cost of the work: the sales tax you pay is part of it. */}
+          <Figure
+            label="Est. cost"
+            value={money(totals.cost + totals.tax)}
+            hint={[sqft ? `${money((totals.cost + totals.tax) / sqft)} / sq. ft.` : "", totals.tax ? "tax included" : ""].filter(Boolean).join(" · ") || undefined}
+          />
           <Figure
             label="Est. profit"
             value={money(totals.profit)}
