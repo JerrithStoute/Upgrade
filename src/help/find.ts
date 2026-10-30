@@ -2,7 +2,7 @@ import { allows, type Access } from "@/lib/access";
 import type { HelpArticle, HelpGroup } from "./types";
 
 /** The manual's chapters, in order. */
-export const GROUPS: HelpGroup[] = ["Getting started", "Takeoff", "Jobs", "Estimates", "Financials", "Field", "Settings"];
+export const GROUPS: HelpGroup[] = ["Getting started", "Takeoff", "Jobs", "Estimates", "Financials", "Field", "Catalog", "Settings"];
 
 /** The articles this person sees: their position's areas (admins see everything). */
 export function visibleArticles(articles: HelpArticle[], role: string, access: Access) {

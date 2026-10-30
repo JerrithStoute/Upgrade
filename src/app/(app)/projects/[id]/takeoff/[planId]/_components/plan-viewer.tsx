@@ -117,10 +117,8 @@ import { buildSnapIndex, findSnap, type SnapHit } from "./snap";
 import { ConditionDrawer, type DrawerCondition } from "./condition-drawer";
 import { TotalsPanel, type PanelView, type TotalsPanelData } from "./totals-panel";
 import type { DoorChoice, UnitCodes } from "./door-picker";
-import { WindowListPanel } from "./window-list-panel";
-import { DoorListPanel } from "./door-list-panel";
-import type { DoorDetail } from "@/lib/door-list";
-import { sizeCode, type WindowDetail } from "@/lib/window-list";
+import { UnitBidList, UnitListPanel } from "./unit-list-panel";
+import type { UnitKind, UnitPart } from "@/lib/unit-parts";
 import type { CodeRules } from "@/lib/code-groups";
 import type { MemberSizeOption } from "../../_components/condition-form";
 import type { ItemOption } from "../../_components/assembly-form";
@@ -131,17 +129,11 @@ import {
   deleteMeasurements,
   createMeasurement,
   logAreaFind,
-  addJobWindow,
-  setJobWindows,
-  addWindowDetailHere,
-  removeWindowDetailHere,
-  type JobWindowLine,
-  addJobDoor,
-  setJobDoors,
-  addDoorDetailHere,
-  removeDoorDetailHere,
+  addJobUnit,
+  setJobUnits,
+  addUnitChoice,
   removeJobUnitLine,
-  type JobDoorLine,
+  type JobUnitLine,
   createShapes,
   deleteMeasurement,
   initPlanPages,
@@ -503,6 +495,7 @@ export function PlanViewer({
   library,
   menu,
   notice,
+  noticeAt,
 }: {
   projectId: string;
   plan: {
@@ -543,6 +536,8 @@ export function PlanViewer({
   menu: TakeoffMenuData;
   /** A note to show on arrival (e.g. "Added 4 takeoffs from the template"). */
   notice?: string | null;
+  /** When it was sent: the same note again (saved twice) shows again. */
+  noticeAt?: string;
   conditions: ViewerCondition[];
   measurements: ViewerMeasurement[];
   /** The condition edit panel, when open (?cond=<id> or ?cond=new). */
@@ -552,10 +547,10 @@ export function PlanViewer({
   doors: DoorChoice[];
   /** Windows on the Item List (category Windows, with a size) for the Windows takeoff. */
   windows: DoorChoice[];
-  /** The job's windows: its short list to pick from (keys 1–9), the company's details, how many of each. */
-  jobWindows: { details: WindowDetail[]; counts: Record<string, number>; lines: JobWindowLine[] };
+  /** The job's windows: its short list to pick from (keys 1–9), what a window is described by (Catalog → Windows), how many of each. */
+  jobWindows: { parts: UnitPart[]; counts: Record<string, number>; lines: JobUnitLine[] };
   /** The job's doors (Doors takeoff), like its windows. */
-  jobDoors: { details: DoorDetail[]; counts: Record<string, number>; lines: JobDoorLine[] };
+  jobDoors: { parts: UnitPart[]; counts: Record<string, number>; lines: JobUnitLine[] };
   /** Cost codes and the remembered "same code for all …" answers, for new doors / windows. */
   codes: UnitCodes;
   /** "3 items need a cost code" — floats over the plan's corner when there are any. */
@@ -570,7 +565,7 @@ export function PlanViewer({
     nextColor: string;
     /** Admins: takeoff templates a new takeoff can also go into. */
     toolbox?: { id: string; name: string }[];
-    /** Settings → Span tables, for joists / rafters sized by span. */
+    /** Catalog → Span tables, for joists / rafters sized by span. */
     spanTables?: { id: string; name: string; use: string }[];
   } | null;
 }) {
@@ -626,7 +621,7 @@ export function PlanViewer({
   const [nextCardMin, setNextCardMin] = useState(false);
   // Windows: whether the next window placed is cased, per Windows takeoff (cased unless switched off).
   const [casedPick, setCasedPick] = useState<Record<string, boolean>>({});
-  // The job's window list (and black) as last saved — an added window shows at once; the page's copy follows.
+  // The job's window and door lists as last saved — one added shows at once; the page's copy follows.
   const [winList, setWinList] = useState({ lines: jobWindows.lines });
   const [winFrom, setWinFrom] = useState(jobWindows);
   if (winFrom !== jobWindows) {
@@ -634,46 +629,8 @@ export function PlanViewer({
     setWinList({ lines: jobWindows.lines });
   }
   const winLineNo = new Map(winList.lines.map((l, i) => [l.id, i + 1]));
-  const addWindow = async (w: { size: string; type: string; color: string; values: Record<string, string>; replace?: string | null }) => {
-    const r = await addJobWindow({ projectId, ...w });
-    if (r.ok) {
-      setWinList({ lines: r.lines });
-      router.refresh();
-    }
-    return r;
-  };
-  const setWindows = async (change: { lines?: string[] }) => {
-    if (change.lines) setWinList((w) => ({ ...w, lines: change.lines!.map((id) => w.lines.find((l) => l.id === id)!).filter(Boolean) }));
-    try {
-      await setJobWindows({ projectId, ...change });
-    } catch (e) {
-      setError(actionMessage(e, "The window list wasn't saved"));
-    }
-  };
-  // The company's window details (a new one, added while adding a window, shows at once).
-  const [winDetails, setWinDetails] = useState(jobWindows.details);
-  const [winDetailsFrom, setWinDetailsFrom] = useState(jobWindows.details);
-  if (winDetailsFrom !== jobWindows.details) {
-    setWinDetailsFrom(jobWindows.details);
-    setWinDetails(jobWindows.details);
-  }
-  const addWindowDetail = async (d: { name: string; kind: string }) => {
-    const r = await addWindowDetailHere(d);
-    if (r.ok) setWinDetails(r.details);
-    return r;
-  };
-  const removeWindowDetail = async (name: string) => {
-    setWinDetails((list) => list.filter((d) => d.name !== name));
-    try {
-      const r = await removeWindowDetailHere({ name });
-      if (r.ok) setWinDetails(r.details);
-    } catch (e) {
-      setError(actionMessage(e, "The detail wasn't removed"));
-    }
-  };
   const [windowBids, setWindowBids] = useState(false);
   const [windowBidsMin, setWindowBidsMin] = useState(false);
-  // The job's door list and the company's door details — the same way as windows.
   const [doorList, setDoorList] = useState({ lines: jobDoors.lines });
   const [doorFrom, setDoorFrom] = useState(jobDoors);
   if (doorFrom !== jobDoors) {
@@ -681,49 +638,40 @@ export function PlanViewer({
     setDoorList({ lines: jobDoors.lines });
   }
   const doorLineNo = new Map(doorList.lines.map((l, i) => [l.id, i + 1]));
-  const addDoor = async (d: {
-    size: string;
-    exterior: boolean;
-    type: string;
-    jamb: string;
-    core: string;
-    values: Record<string, string>;
-    replace?: string | null;
-  }) => {
-    const r = await addJobDoor({ projectId, ...d });
+  const setUnitList = (kind: UnitKind) => (kind === "window" ? setWinList : setDoorList);
+  const addUnit = (kind: UnitKind) => async (u: { size: string; values: Record<string, string>; replace?: string | null }) => {
+    const r = await addJobUnit({ projectId, kind, ...u });
     if (r.ok) {
-      setDoorList({ lines: r.lines });
+      setUnitList(kind)({ lines: r.lines });
       router.refresh();
     }
     return r;
   };
-  const setDoors = async (change: { lines?: string[] }) => {
-    if (change.lines) setDoorList((w) => ({ ...w, lines: change.lines!.map((id) => w.lines.find((l) => l.id === id)!).filter(Boolean) }));
+  const setUnits = (kind: UnitKind) => async (change: { lines?: string[] }) => {
+    if (change.lines) setUnitList(kind)((w) => ({ ...w, lines: change.lines!.map((id) => w.lines.find((l) => l.id === id)!).filter(Boolean) }));
     try {
-      await setJobDoors({ projectId, ...change });
+      await setJobUnits({ projectId, kind, ...change });
     } catch (e) {
-      setError(actionMessage(e, "The door list wasn't saved"));
+      setError(actionMessage(e, `The ${kind} list wasn't saved`));
     }
   };
-  const [doorDetails, setDoorDetails] = useState(jobDoors.details);
-  const [doorDetailsFrom, setDoorDetailsFrom] = useState(jobDoors.details);
-  if (doorDetailsFrom !== jobDoors.details) {
-    setDoorDetailsFrom(jobDoors.details);
-    setDoorDetails(jobDoors.details);
+  // What a window / door is described by (a choice added while adding one shows at once).
+  const [winParts, setWinParts] = useState(jobWindows.parts);
+  const [winPartsFrom, setWinPartsFrom] = useState(jobWindows.parts);
+  if (winPartsFrom !== jobWindows.parts) {
+    setWinPartsFrom(jobWindows.parts);
+    setWinParts(jobWindows.parts);
   }
-  const addDoorDetail = async (d: { name: string; kind: string }) => {
-    const r = await addDoorDetailHere(d);
-    if (r.ok) setDoorDetails(r.details);
+  const [doorParts, setDoorParts] = useState(jobDoors.parts);
+  const [doorPartsFrom, setDoorPartsFrom] = useState(jobDoors.parts);
+  if (doorPartsFrom !== jobDoors.parts) {
+    setDoorPartsFrom(jobDoors.parts);
+    setDoorParts(jobDoors.parts);
+  }
+  const addChoice = (kind: UnitKind) => async (key: string, value: string) => {
+    const r = await addUnitChoice({ kind, key, value });
+    if (r.ok) (kind === "window" ? setWinParts : setDoorParts)(r.parts);
     return r;
-  };
-  const removeDoorDetail = async (name: string) => {
-    setDoorDetails((list) => list.filter((d) => d.name !== name));
-    try {
-      const r = await removeDoorDetailHere({ name });
-      if (r.ok) setDoorDetails(r.details);
-    } catch (e) {
-      setError(actionMessage(e, "The detail wasn't removed"));
-    }
   };
   const removeUnitLine = (kind: "door" | "window") => (line: { id: string; name: string }, placed: number) => {
     const type = kind === "window" ? "WINDOW" : "DOOR";
@@ -741,8 +689,7 @@ export function PlanViewer({
       try {
         const r = await removeJobUnitLine({ projectId, kind, id: line.id, except: here });
         if (r.ok) {
-          if (kind === "window") setWinList({ lines: r.lines as JobWindowLine[] });
-          else setDoorList({ lines: r.lines as JobDoorLine[] });
+          if (r.ok) setUnitList(kind)({ lines: r.lines });
         }
         router.refresh();
       } catch (e) {
@@ -1003,6 +950,10 @@ export function PlanViewer({
     // Undo history is per sheet.
     history.current = { undo: [], redo: [] };
   }, [pageNumber]);
+  // A note from a save that stayed on this page ("Saved", "Saved in your Library"): the viewer isn't remade, so it's shown here.
+  useEffect(() => {
+    if (notice) setFlash(notice);
+  }, [notice, noticeAt]);
   useEffect(() => {
     if (!flash) return;
     const t = window.setTimeout(() => setFlash(null), 2500);
@@ -2294,9 +2245,15 @@ export function PlanViewer({
   } | null>(null);
   const suppressClick = useRef(false);
   const suppressContext = useRef(false);
-  const panning = tool === "pan" || spaceHeld;
+  // The last click on the plan added a point to the shape being drawn (so a second click right after it is a double-click finish).
+  const lastClickAdded = useRef(false);
+  const panning =tool === "pan" || spaceHeld;
 
   const onPointerDown = (e: React.PointerEvent) => {
+    // A new press: whatever the last drag meant to swallow is over. (A right- or middle-drag pan ends
+    // with no click to swallow — kept, it ate the next real click on the plan.)
+    suppressClick.current = false;
+    suppressContext.current = false;
     const el = scrollRef.current;
     if (!el) return;
     // Auto-count: drag a box around the sample symbol (clicks on found rings toggle them instead).
@@ -2504,6 +2461,8 @@ export function PlanViewer({
   };
 
   const onClick = (e: React.MouseEvent) => {
+    const addedBefore = lastClickAdded.current;
+    lastClickAdded.current = false;
     // No scale yet: the card in the middle of the plan asks for one before anything is drawn.
     if (needsScale) return;
     if (suppressClick.current) {
@@ -2672,10 +2631,13 @@ export function PlanViewer({
       return;
     }
     // Second click of a double-click finishes the shape (the first click already added the point).
-    if (e.detail >= 2) {
+    // Only when it did: clicking again fast because the first one didn't take adds the point instead.
+    if (e.detail >= 2 && addedBefore) {
       finishDraft(draft);
       return;
     }
+    // A third click right after a double-click finish isn't a new shape's first point.
+    if (e.detail >= 3) return;
     if (closingAt(pointer) || closingAt(raw)) {
       // A wall run that comes back to its first corner closes the building; an outline closes on its first point.
       finishDraft(active.type === "WALL" ? [...draft, draft[0]] : draft);
@@ -2686,6 +2648,7 @@ export function PlanViewer({
       setDraftArcs((a) => [...a, draft.length]);
       setArcNext(false);
       setDraft((d) => [...d, raw]);
+      lastClickAdded.current = true;
       return;
     }
     // An opening is one line across it: the second click saves it.
@@ -2694,6 +2657,7 @@ export function PlanViewer({
       return;
     }
     setDraft((d) => [...d, snap(raw, d[d.length - 1])]);
+    lastClickAdded.current = true;
   };
 
   /** The pointer is on the first point of an outline (or a wall run) being drawn: the next click closes it. */
@@ -5282,17 +5246,17 @@ export function PlanViewer({
                 </div>
                 {active.type === "WINDOW" ? (
                   <>
-                    <WindowListPanel
+                    <UnitListPanel
+                      kind="window"
+                      parts={winParts}
                       lines={winList.lines}
-                      details={winDetails}
                       counts={winCounts}
                       value={doorPick[active.id] ?? null}
                       onPick={(id) => setDoorPick((cur) => ({ ...cur, [active.id]: id }))}
-                      onAdd={addWindow}
-                      onSet={setWindows}
+                      onAdd={addUnit("window")}
+                      onSet={setUnits("window")}
                       onRemove={removeUnitLine("window")}
-                      onAddDetail={addWindowDetail}
-                      onRemoveDetail={removeWindowDetail}
+                      onAddChoice={addChoice("window")}
                     />
                     <button
                       type="button"
@@ -5307,17 +5271,17 @@ export function PlanViewer({
                   </>
                 ) : (
                   <>
-                    <DoorListPanel
+                    <UnitListPanel
+                      kind="door"
+                      parts={doorParts}
                       lines={doorList.lines}
-                      details={doorDetails}
                       counts={doorCounts}
                       value={doorPick[active.id] ?? null}
                       onPick={(id) => setDoorPick((cur) => ({ ...cur, [active.id]: id }))}
-                      onAdd={addDoor}
-                      onSet={setDoors}
+                      onAdd={addUnit("door")}
+                      onSet={setUnits("door")}
                       onRemove={removeUnitLine("door")}
-                      onAddDetail={addDoorDetail}
-                      onRemoveDetail={removeDoorDetail}
+                      onAddChoice={addChoice("door")}
                     />
                     <button
                       type="button"
@@ -5373,54 +5337,14 @@ export function PlanViewer({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              {(() => {
-                const rows = [
-                  ...winList.lines.map((l) => ({
-                    id: l.id,
-                    size: sizeCode(l.widthIn, l.heightIn),
-                    type: l.style ?? "Window",
-                    color: l.color as string,
-                    name: l.name,
-                  })),
-                  ...windows
-                    .filter((w) => !winLineNo.has(w.id) && winCounts[w.id])
-                    .map((w) => ({ id: w.id, size: sizeCode(w.widthIn, w.heightIn), type: w.style ?? "Window", color: "", name: w.name })),
-                ].filter((r) => winCounts[r.id]);
-                const total = rows.reduce((t, r) => t + (winCounts[r.id] ?? 0), 0);
-                return rows.length ? (
-                  <>
-                    <table className="w-full text-xs">
-                      <thead className="text-left text-slate-500">
-                        <tr>
-                          <th className="py-1 pr-2 text-right font-medium">Qty</th>
-                          <th className="py-1 pr-2 font-medium">Size</th>
-                          <th className="py-1 pr-2 font-medium">Type</th>
-                          <th className="py-1 font-medium">Color</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {rows.map((r) => (
-                          <tr key={r.id} title={r.name}>
-                            <td className="py-1 pr-2 text-right tabular-nums">{winCounts[r.id]}</td>
-                            <td className="py-1 pr-2 font-medium tabular-nums">{r.size}</td>
-                            <td className="py-1 pr-2">{r.type}</td>
-                            <td className="py-1">{r.color}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <p className="mt-2 text-[11px] text-slate-500">
-                      {total} window{total === 1 ? "" : "s"} on the job (every sheet). They go out like anything else:{" "}
-                      <Link href={`/projects/${projectId}/bids`} className="font-medium text-blue-700 hover:underline">
-                        Send to vendors
-                      </Link>
-                      , and tick your windows&apos; cost code.
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-xs text-slate-500">No windows placed on this job yet.</p>
-                );
-              })()}
+              <UnitBidList
+                kind="window"
+                parts={winParts}
+                lines={winList.lines}
+                others={windows.filter((w) => !winLineNo.has(w.id))}
+                counts={winCounts}
+                bidsHref={`/projects/${projectId}/bids`}
+              />
             </div>
           ) : null}
 
@@ -5450,77 +5374,14 @@ export function PlanViewer({
                   <X className="h-4 w-4" />
                 </button>
               </div>
-              {(() => {
-                const rows = [
-                  ...doorList.lines.map((l) => ({
-                    id: l.id,
-                    size: sizeCode(l.widthIn, l.heightIn),
-                    where: l.exterior ? "Ext" : "Int",
-                    type: l.style ?? "Door",
-                    jamb: l.jamb as string,
-                    core: l.core as string,
-                    more: doorDetails
-                      .map((d) =>
-                        d.kind === "yesno" ? (l.details[d.name] === "Yes" ? d.name : null) : l.details[d.name] ? `${d.name} ${l.details[d.name]}` : null,
-                      )
-                      .filter(Boolean)
-                      .join(", "),
-                    name: l.name,
-                  })),
-                  ...doors
-                    .filter((d) => !doorLineNo.has(d.id) && doorCounts[d.id])
-                    .map((d) => ({
-                      id: d.id,
-                      size: sizeCode(d.widthIn, d.heightIn),
-                      where: d.exterior ? "Ext" : "Int",
-                      type: d.style ?? d.name,
-                      jamb: "",
-                      core: "",
-                      more: "",
-                      name: d.name,
-                    })),
-                ].filter((r) => doorCounts[r.id]);
-                const total = rows.reduce((t, r) => t + (doorCounts[r.id] ?? 0), 0);
-                return rows.length ? (
-                  <>
-                    <table className="w-full text-xs">
-                      <thead className="text-left text-slate-500">
-                        <tr>
-                          <th className="py-1 pr-2 text-right font-medium">Qty</th>
-                          <th className="py-1 pr-2 font-medium">Size</th>
-                          <th className="py-1 pr-2 font-medium">Int/Ext</th>
-                          <th className="py-1 pr-2 font-medium">Type</th>
-                          <th className="py-1 pr-2 font-medium">Jamb</th>
-                          <th className="py-1 pr-2 font-medium">Core</th>
-                          <th className="py-1 font-medium">More</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {rows.map((r) => (
-                          <tr key={r.id} title={r.name}>
-                            <td className="py-1 pr-2 text-right tabular-nums">{doorCounts[r.id]}</td>
-                            <td className="py-1 pr-2 font-medium tabular-nums">{r.size}</td>
-                            <td className="py-1 pr-2">{r.where}</td>
-                            <td className="py-1 pr-2">{r.type}</td>
-                            <td className="py-1 pr-2">{r.jamb}</td>
-                            <td className="py-1 pr-2">{r.core}</td>
-                            <td className="py-1">{r.more}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                    <p className="mt-2 text-[11px] text-slate-500">
-                      {total} door{total === 1 ? "" : "s"} on the job (every sheet). They go out like anything else:{" "}
-                      <Link href={`/projects/${projectId}/bids`} className="font-medium text-blue-700 hover:underline">
-                        Bids
-                      </Link>
-                      , and tick your doors&apos; cost code.
-                    </p>
-                  </>
-                ) : (
-                  <p className="text-xs text-slate-500">No doors placed on this job yet.</p>
-                );
-              })()}
+              <UnitBidList
+                kind="door"
+                parts={doorParts}
+                lines={doorList.lines}
+                others={doors.filter((d) => !doorLineNo.has(d.id))}
+                counts={doorCounts}
+                bidsHref={`/projects/${projectId}/bids`}
+              />
             </div>
           ) : null}
 
@@ -5817,25 +5678,27 @@ export function PlanViewer({
                 <div className="mb-2 border-b border-slate-100 pb-2">
                   <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-500">Which {unitKind(sel.c.type)} is this?</p>
                   {sel.c.type === "WINDOW" ? (
-                    <WindowListPanel
+                    <UnitListPanel
+                      kind="window"
                       key={sel.m.id}
+                      parts={winParts}
                       lines={winList.lines}
-                      details={winDetails}
                       counts={winCounts}
                       value={sel.m.materialItemId ?? null}
                       onPick={(id) => {
                         patchShape(sel.m.id, { materialItemId: id });
                         setDoorPick((cur) => ({ ...cur, [sel.c!.id]: id }));
                       }}
-                      onAdd={addWindow}
-                      onSet={setWindows}
+                      onAdd={addUnit("window")}
+                      onSet={setUnits("window")}
                       compact
                     />
                   ) : (
-                    <DoorListPanel
+                    <UnitListPanel
+                      kind="door"
                       key={sel.m.id}
+                      parts={doorParts}
                       lines={doorList.lines}
-                      details={doorDetails}
                       counts={doorCounts}
                       value={sel.m.materialItemId ?? null}
                       onPick={(id) => {
@@ -5843,8 +5706,8 @@ export function PlanViewer({
                         // The next door placed on this takeoff follows the last one picked.
                         setDoorPick((cur) => ({ ...cur, [sel.c!.id]: id }));
                       }}
-                      onAdd={addDoor}
-                      onSet={setDoors}
+                      onAdd={addUnit("door")}
+                      onSet={setUnits("door")}
                       compact
                     />
                   )}

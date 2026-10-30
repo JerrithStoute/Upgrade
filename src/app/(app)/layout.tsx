@@ -11,7 +11,7 @@ import { workScreenCss } from "@/lib/brand-style";
 /** Today (a function, so the layout itself stays free of the clock). */
 const nowDate = () => new Date();
 
-const MENU = ["/dashboard", "/leads", "/projects", "/spec", "/clients", "/schedule", "/todos", "/warranty", "/time", "/invoices", "/bills", "/inventory", "/reports", "/settings"];
+const MENU = ["/dashboard", "/leads", "/projects", "/spec", "/clients", "/schedule", "/todos", "/warranty", "/time", "/invoices", "/bills", "/inventory", "/reports", "/catalog", "/settings"];
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireStaff();

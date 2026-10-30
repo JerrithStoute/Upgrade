@@ -16,7 +16,6 @@ import {
   ListTree,
   Megaphone,
   Package,
-  PencilRuler,
   Percent,
   Receipt,
   Ruler,
@@ -57,21 +56,8 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { href: "/settings/cost-codes", label: "Cost codes", about: "Your cost code library and its groups", icon: ListTree },
       { href: "/settings/estimate-divisions", label: "Estimate divisions", about: "How cost codes file into divisions and categories", icon: Layers },
       { href: "/settings/estimate-parameters", label: "Estimate parameters", about: "Job numbers your quantities use, like square feet", icon: Variable },
-      { href: "/settings/estimate-templates", label: "Estimate templates", about: "Estimates to start new jobs from", icon: FileStack },
       { href: "/settings/markup", label: "Markup, margin & tax", about: "The table new estimates start with, and allowance profit", icon: Percent },
       { href: "/settings/proposals", label: "Proposal defaults", about: "What a new proposal shows, and how", icon: FileSignature },
-    ],
-  },
-  {
-    title: "Takeoff",
-    icon: PencilRuler,
-    pages: [
-      { href: "/settings/items", label: "Item List", about: "What you buy: prices, units, waste, cost codes", icon: Package },
-      { href: "/settings/member-sizes", label: "Member sizes", about: "Lumber sizes and the lengths you buy", icon: Ruler },
-      { href: "/settings/windows", label: "Windows", about: "What every window has: size, type, color, and your own details", icon: AppWindow },
-      { href: "/settings/doors", label: "Doors", about: "What every door has: size, int / ext, type, jamb, core, and your own details", icon: DoorOpen },
-      { href: "/settings/span-tables", label: "Span tables", about: "How far each size can span", icon: Table2 },
-      { href: "/settings/takeoff-templates", label: "Takeoff templates", about: "Your takeoff library", icon: Copy },
     ],
   },
   {
@@ -79,7 +65,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     icon: Briefcase,
     pages: [
       { href: "/settings/schedule", label: "Work week & delays", about: "The days you work, and your delay reasons", icon: CalendarDays },
-      { href: "/settings/schedule-templates", label: "Schedule templates", about: "Schedules to start new jobs from", icon: CalendarRange },
       { href: "/settings/change-orders", label: "Change order defaults", about: "Wording, profit and terms a new change order starts with", icon: FilePen },
       { href: "/settings/time-clock", label: "Time clock", about: "Overtime, rounding, lunch, long shifts, job sites, pay", icon: Clock },
     ],
@@ -99,8 +84,42 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
   },
 ];
 
-/** The Settings page an address is on (its own page or one inside it), if any. */
-export function settingsPageFor(pathname: string) {
-  for (const g of SETTINGS_GROUPS) for (const p of g.pages) if (pathname === p.href || pathname.startsWith(p.href + "/")) return p;
+/**
+ * The Catalog: what you build jobs from and work out of every week — what you buy, how doors and
+ * windows are described, lumber, and the templates new jobs start from. (Settings is the set-once part.)
+ * Who sees it: admins, and positions with "lists & templates" (src/lib/access.ts).
+ */
+export const CATALOG_GROUPS: SettingsGroup[] = [
+  {
+    title: "What you buy",
+    icon: Package,
+    pages: [
+      { href: "/catalog/items", label: "Item List", about: "What you buy: prices, units, waste, cost codes", icon: Package },
+      { href: "/catalog/doors", label: "Doors", about: "What a door is described by: the parts you track, and their choices", icon: DoorOpen },
+      { href: "/catalog/windows", label: "Windows", about: "What a window is described by: the parts you track, and their choices", icon: AppWindow },
+    ],
+  },
+  {
+    title: "Lumber",
+    icon: Ruler,
+    pages: [
+      { href: "/catalog/member-sizes", label: "Member sizes", about: "Lumber sizes and the lengths you buy", icon: Ruler },
+      { href: "/catalog/span-tables", label: "Span tables", about: "How far each size can span", icon: Table2 },
+    ],
+  },
+  {
+    title: "Templates",
+    icon: FileStack,
+    pages: [
+      { href: "/catalog/takeoff-templates", label: "Takeoff templates", about: "Your takeoff library", icon: Copy },
+      { href: "/catalog/estimate-templates", label: "Estimate templates", about: "Estimates to start new jobs from", icon: FileStack },
+      { href: "/catalog/schedule-templates", label: "Schedule templates", about: "Schedules to start new jobs from", icon: CalendarRange },
+    ],
+  },
+];
+
+/** The Settings or Catalog page an address is on (its own page or one inside it), if any. */
+export function settingsPageFor(pathname: string, groups: SettingsGroup[] = SETTINGS_GROUPS) {
+  for (const g of groups) for (const p of g.pages) if (pathname === p.href || pathname.startsWith(p.href + "/")) return p;
   return null;
 }

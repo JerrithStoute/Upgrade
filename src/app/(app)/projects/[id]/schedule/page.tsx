@@ -566,7 +566,7 @@ export default async function SchedulePage({
                 <SubmitButton variant="secondary">{tasks.length ? "Add its tasks" : "Build the schedule"}</SubmitButton>
               </>
             ) : (
-              <p className="text-xs text-slate-500">No schedule templates yet — save this job&apos;s schedule as one, or build one in Settings → Schedule templates.</p>
+              <p className="text-xs text-slate-500">No schedule templates yet — save this job&apos;s schedule as one, or build one in Catalog → Schedule templates.</p>
             )}
           </form>
           {tasks.length ? (

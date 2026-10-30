@@ -135,7 +135,7 @@ export function TakeoffMenu({
             data.templates.length === 0 ? (
               <p className="text-xs text-slate-600">
                 No takeoff templates yet.{" "}
-                {data.isAdmin ? "Save this job's takeoffs as one, or build one in Settings → Takeoff templates." : "An admin can create them in Settings."}
+                {data.isAdmin ? "Save this job's takeoffs as one, or build one in Catalog → Takeoff templates." : "An admin can create them in Settings."}
               </p>
             ) : (
               <form action={applyTakeoffTemplate} className="space-y-2">

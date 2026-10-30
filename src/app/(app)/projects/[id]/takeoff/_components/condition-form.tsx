@@ -112,7 +112,7 @@ export function ConditionForm({
   assemblyItems?: ItemOption[];
   /** New takeoffs (admins): your takeoff templates, to add it to one as well. */
   toolbox?: { id: string; name: string }[];
-  /** Settings → Span tables, for "Size by span table" on joists / rafters. */
+  /** Catalog → Span tables, for "Size by span table" on joists / rafters. */
   spanTables?: { id: string; name: string; use: string }[];
 }) {
   const [type, setType] = useState<ConditionType>((values?.type as ConditionType) ?? "AREA");
@@ -319,7 +319,7 @@ export function ConditionForm({
                 ? "Joists are broken at the walls and beams you've traced, and each piece gets the size its own span calls for — in that size's takeoff (made for you). Click an area to pick a size yourself."
                 : spanTables.length
                   ? "Or let a span table pick the size for each area."
-                  : "Make a span table in Settings → Span tables to have sizes picked for you."
+                  : "Make a span table in Catalog → Span tables to have sizes picked for you."
             }
           >
             <select id={p("spanTableId")} name="spanTableId" className="input" value={spanTableId} onChange={(e) => setSpanTableId(e.target.value)}>
@@ -343,7 +343,7 @@ export function ConditionForm({
                 ? "Leave blank: you draw with this takeoff, and each area goes to a takeoff of its size (made for you)"
                 : size
                   ? SOLD_AS_LABELS[size.soldAs as keyof typeof SOLD_AS_LABELS]
-                  : "Sizes are managed in Settings → Member sizes"
+                  : "Sizes are managed in Catalog → Member sizes"
             }
           >
             <select
@@ -443,9 +443,9 @@ export function ConditionForm({
             </Field>
             <p className="self-end pb-2 text-xs text-slate-500 md:col-span-3">
               {isAuto ? (
-                `Materials are added automatically from the ${isWall ? "walls" : isDoor ? "doors" : isWindow ? "windows" : "openings"} and priced from Settings → Item List.`
+                `Materials are added automatically from the ${isWall ? "walls" : isDoor ? "doors" : isWindow ? "windows" : "openings"} and priced from Catalog → Item List.`
               ) : (
-                <>Lumber is priced per piece from Settings → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.</>
+                <>Lumber is priced per piece from Catalog → Item List (e.g. &ldquo;2x6 × 20&apos;&rdquo;), added automatically from the layout.</>
               )}
             </p>
           </>

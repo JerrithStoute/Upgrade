@@ -162,6 +162,28 @@ test("logs a warranty request, sends someone, and closes it", async () => {
   await expect(page.getByRole("link", { name: "Door sticks" })).toBeVisible();
 });
 
+test("sets up doors in the Catalog: less detail, and a part for the odd door", async () => {
+  await page.goto("/dashboard");
+  await page.getByRole("link", { name: "Catalog", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/catalog$/);
+  await page.getByRole("link", { name: /^Doors/ }).click();
+  await expect(page.getByText("A usual door is named 2868 Int Prehung Hollow 2x4 Jamb")).toBeVisible();
+  // Don't track the core.
+  await page.locator("li").filter({ hasText: /^Core/ }).getByLabel("Ask for it").uncheck();
+  // A Material part: Wood as the usual, in the name only when it isn't.
+  await page.getByPlaceholder("Material").fill("Material");
+  await page.getByRole("button", { name: "Add part" }).click();
+  await page.getByLabel("Add a material choice").fill("Wood");
+  await page.getByLabel("Add a material choice").press("Enter");
+  await page.getByLabel("Add a material choice").fill("Metal");
+  await page.getByLabel("Add a material choice").press("Enter");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Saved", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("A usual door is named 2868 Int Prehung 2x4 Jamb")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Take Metal off Material" })).toBeVisible();
+});
+
 test("reports a problem", async () => {
   await page.getByRole("button", { name: /Report a problem/ }).click();
   await page.getByLabel("What happened").fill("Workflow test — please ignore.");

@@ -17,6 +17,7 @@ import {
   House,
   FileInput,
   Settings,
+  BookOpen,
   ChevronLeft,
   ChevronRight,
   Pin,
@@ -43,6 +44,7 @@ const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/bills", label: "Bills", icon: FileInput },
   { href: "/inventory", label: "Inventory", icon: Boxes },
   { href: "/reports", label: "Reports", icon: BarChart3 },
+  { href: "/catalog", label: "Catalog", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

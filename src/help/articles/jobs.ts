@@ -31,7 +31,7 @@ export const JOBS: HelpArticle[] = [
         heading: "Words used in this manual",
         items: [
           { name: "Takeoff", what: "Measuring the plans to find out how much of everything you need. Also the name of one thing you measure (\"2x6 Ext Walls\")." },
-          { name: "Item List", what: "Your price list of materials and labor (Settings → Item List)." },
+          { name: "Item List", what: "Your price list of materials and labor (Catalog → Item List)." },
           { name: "Recheck prices", what: "On each cost code, how often its prices go out of date (lumber every few weeks, windows every 6 months). You set them all; blank means never. Older prices get flagged **Recheck price** before you bid with them." },
           { name: "Cost code", what: "A code for a kind of work or material (like 3120 Framing Package). Costs are added up by cost code on the estimate and the Budget." },
           { name: "Division → Category → Item", what: "How an estimate is organized: big groups (divisions), then what the client sees and picks (categories), then your cost lines (items)." },

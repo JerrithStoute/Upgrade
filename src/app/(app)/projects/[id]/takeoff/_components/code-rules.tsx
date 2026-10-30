@@ -20,7 +20,7 @@ export function CodeRuleFields({ type, costCodes, rules, categories }: { type: s
       <div>
         <p className="text-sm font-semibold text-slate-900">Where new items go, and their cost codes</p>
         <p className="text-xs text-slate-600">
-          Remembered for every job (change them any time in Settings → Item List). Codes you&apos;ve already set on an item are never changed — only blanks are filled in.
+          Remembered for every job (change them any time in Catalog → Item List). Codes you&apos;ve already set on an item are never changed — only blanks are filled in.
         </p>
       </div>
       {groups.map((g) => (

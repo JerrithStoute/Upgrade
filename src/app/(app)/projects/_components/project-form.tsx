@@ -151,7 +151,7 @@ export function ProjectForm({
               <Field
                 label="Estimate template"
                 htmlFor="templateId"
-                hint={templates.length ? undefined : "No templates yet — an admin can create them in Settings → Estimate templates."}
+                hint={templates.length ? undefined : "No templates yet — an admin can create them in Catalog → Estimate templates."}
               >
                 <select id="templateId" name="templateId" className="input" defaultValue="" disabled={templates.length === 0}>
                   <option value="">None — I&apos;ll build the estimate later</option>

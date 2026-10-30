@@ -113,7 +113,7 @@ export function PriceWarnings({
         <Names names={stale} />
         <p className="mt-1.5 text-xs">
           Type the new price, or click <b>Still good</b> if it hasn&apos;t changed.{" "}
-          <Link href="/settings/items?recheck=1" className={link}>
+          <Link href="/catalog/items?recheck=1" className={link}>
             Item List
           </Link>
         </p>

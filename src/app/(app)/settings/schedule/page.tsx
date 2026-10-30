@@ -102,7 +102,7 @@ export default async function ScheduleSettingsPage() {
 
       <p className="text-sm text-slate-600">
         Schedule templates are under{" "}
-        <Link href="/settings/schedule-templates" className="font-medium text-blue-700 hover:underline">
+        <Link href="/catalog/schedule-templates" className="font-medium text-blue-700 hover:underline">
           Schedule templates
         </Link>
         .

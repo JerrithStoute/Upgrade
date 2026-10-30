@@ -54,7 +54,7 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
             done: codedKinds >= MATERIAL_KINDS.length,
             label: "Choose cost codes for your materials",
             hint: "Where framing lumber, sheathing, drywall and trim go on your estimates — from your own list.",
-            href: "/settings/items#program-items",
+            href: "/catalog/items#program-items",
           },
         ]
       : []),
@@ -62,7 +62,7 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
       done: items > 0 && unpriced === 0,
       label: "Price your items",
       hint: unpriced ? `${unpriced} item${unpriced === 1 ? "" : "s"} still at $0 — your yard's prices go here.` : "Your Item List prices every takeoff.",
-      href: "/settings/items?unpriced=1",
+      href: "/catalog/items?unpriced=1",
     },
     ...(costCodes > 0
       ? [

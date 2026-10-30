@@ -61,7 +61,7 @@ describe("help manual", () => {
     assert.equal(first("/projects/abc/estimate"), "estimate");
     assert.equal(first("/projects/new"), "projects");
     assert.equal(first("/projects/abc"), "project-page");
-    assert.equal(first("/settings/items?unpriced=1"), "item-list");
+    assert.equal(first("/catalog/items?unpriced=1"), "item-list");
     assert.equal(first("/time/sheets"), "timesheets");
     assert.equal(first("/dashboard"), "dashboard");
     assert.equal(first("/schedule/calendar"), "company-schedule");

@@ -355,8 +355,8 @@ export const saveEstimateAsTemplate = friendly(async function saveEstimateAsTemp
     type: "estimate_template.created",
     description: `Saved estimate v${est.version} as template "${name}"${formData.get("clear") === "1" ? " (this job's numbers cleared)" : ""}`,
   });
-  revalidatePath("/settings/estimate-templates");
-  redirect(`/settings/estimate-templates/${template.id}`);
+  revalidatePath("/catalog/estimate-templates");
+  redirect(`/catalog/estimate-templates/${template.id}`);
 });
 
 // --- Proposal options ---------------------------------------------------------------

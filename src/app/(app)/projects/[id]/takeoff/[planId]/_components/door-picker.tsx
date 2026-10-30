@@ -233,7 +233,7 @@ export function DoorPicker({
             Cancel
           </button>
         </div>
-        <p className="text-[11px] text-slate-500">Added to Settings → Item List (in your {kind === "window" ? "windows" : "doors"} category), where you can set its price.</p>
+        <p className="text-[11px] text-slate-500">Added to Catalog → Item List (in your {kind === "window" ? "windows" : "doors"} category), where you can set its price.</p>
       </div>
     );
   }

@@ -27,7 +27,7 @@ export type DrawerCondition = ConditionFormValues & {
 
 /**
  * Edit a condition (settings + assembly / add-on items) without leaving the plan.
- * Saving the condition closes the panel; item changes keep it open. The viewer
+ * Saving changes keeps the panel open ("Saved" shows); adding a new one closes it. The viewer
  * re-keys this panel when the items change, which closes any open item form.
  */
 export function ConditionDrawer({
@@ -92,7 +92,8 @@ export function ConditionDrawer({
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
         <ConditionForm
           action={condition ? updateCondition : createCondition}
-          hidden={{ projectId, returnTo: closeHref }}
+          // Saving changes keeps the panel open (Save to Library is right below); a new takeoff closes it, to measure.
+          hidden={condition ? { projectId, returnTo: stayHref, stay: "1" } : { projectId, returnTo: closeHref }}
           costCodes={costCodes}
           codeRules={codeRules}
           memberSizes={memberSizes}
@@ -133,7 +134,7 @@ export function ConditionDrawer({
                       <span className="block truncate text-slate-900">{item.description}</span>
                       <span className="block text-xs text-slate-500">
                         {isLumberMetric(item.metric)
-                          ? `From the layout · price in Settings → Item List${item.metric.startsWith("pieces:") ? " · extra boards from the takeoff's waste %" : item.wastePct > 0 ? ` · ${num(item.wastePct, 1)}% waste from the takeoff` : ""}`
+                          ? `From the layout · price in Catalog → Item List${item.metric.startsWith("pieces:") ? " · extra boards from the takeoff's waste %" : item.wastePct > 0 ? ` · ${num(item.wastePct, 1)}% waste from the takeoff` : ""}`
                           : `${num(item.qty, 4)} ${item.unit} per ${num(item.per, 4)} ${metricUnit(item.metric)} of ${metricLabel(item.metric)
                               .replace(/ \(.*\)$/, "")
                               .toLowerCase()}`}

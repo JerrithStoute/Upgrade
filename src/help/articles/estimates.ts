@@ -149,7 +149,7 @@ export const ESTIMATES: HelpArticle[] = [
     title: "Settings: divisions, parameters, templates and cost codes",
     group: "Estimates",
     area: "lists",
-    pages: ["/settings/estimate-divisions", "/settings/estimate-parameters", "/settings/estimate-templates", "/settings/estimate-templates/*", "/settings/cost-codes"],
+    pages: ["/settings/estimate-divisions", "/settings/estimate-parameters", "/catalog/estimate-templates", "/catalog/estimate-templates/*", "/settings/cost-codes"],
     what: "The Settings pages behind your estimates: **Estimate divisions** (your big groups and the categories in each), **Estimate parameters** (numbers like heated sq. ft. that formulas use), **Estimate templates** (ready-made estimates to start jobs from) and **Cost codes** (your codes for kinds of work).",
     how: ["Go to **Settings** and open the page.", "Make your changes and click **Save changes** (or **Save**)."],
     sections: [

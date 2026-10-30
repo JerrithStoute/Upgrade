@@ -1,67 +1,10 @@
 /**
- * Windows, the way they're bid: a size, a type and a color — plus any details a company adds of
- * its own (Settings → Windows: "Grids" yes / no, "Glass" typed in). Each window a job uses is an Item
- * List item (kind "windows") named from those, so the material list, estimate and bids carry on as
- * they are; the job keeps a short list of them to pick from (Project.windowList).
+ * Windows on a job: the short list to pick from while counting (Project.windowList — Item List ids, in
+ * order), and sizes the way builders write them. What a window is described by, and its name, is in
+ * unit-parts.ts (Catalog → Windows).
  */
 
-export type WindowDetail = { name: string; kind: "yesno" | "text" };
 export type JobWindows = { lines: string[] };
-
-/**
- * The colors a window comes in: Standard (white), White/Black (white inside, black outside — the
- * upcharge) and Black/Black. `name`: what the window's name ends with (nothing for Standard).
- */
-export const WINDOW_COLORS = [
-  { value: "Standard", label: "Standard (white)", name: "" },
-  { value: "White/Black", label: "White on black (white in, black out)", name: "White/Black" },
-  { value: "Black/Black", label: "Black on black", name: "Black/Black" },
-] as const;
-export type WindowColor = (typeof WINDOW_COLORS)[number]["value"];
-export const readColor = (s: string | null | undefined): WindowColor => WINDOW_COLORS.find((c) => c.value === s)?.value ?? "Standard";
-
-/** Every window type in the dropdown (anything else: Other…, typed in). */
-export const WINDOW_TYPES = [
-  "Single Hung",
-  "Double Hung",
-  "Picture",
-  "Casement",
-  "Slider",
-  "Transom",
-  "Arched",
-  "Mulled Unit",
-  "Fixed",
-  "Awning",
-  "Hopper",
-  "Bay",
-  "Bow",
-  "Garden",
-  "Glass Block",
-];
-
-/**
- * A new detail on the company's list — or why not: no name, one every window has already, a repeat, or
- * past 8. (Settings → Windows, and "+ Add a detail" while adding a window.)
- */
-export function withDetail(
-  list: WindowDetail[],
-  rawName: string,
-  kind: string,
-  /** Doors use it too: what they're called, what every one already has, and an example. */
-  of: { noun: string; settings: string; builtIn: string[]; example: string } = {
-    noun: "window",
-    settings: "Settings → Windows",
-    builtIn: ["size", "type", "black", "color"],
-    example: "Grids",
-  },
-): WindowDetail[] | string {
-  const name = rawName.trim().replace(/\s+/g, " ").slice(0, 40);
-  if (!name) return `Name the detail, like ${of.example}`;
-  if (of.builtIn.includes(name.toLowerCase())) return `Every ${of.noun} already has ${name.toLowerCase()}`;
-  if (list.some((d) => d.name.toLowerCase() === name.toLowerCase())) return `There's already a ${name}`;
-  if (list.length >= 8) return `That's 8 details — take one off in ${of.settings} first`;
-  return [...list, { name, kind: kind === "text" ? "text" : "yesno" }];
-}
 
 /** How many windows a job's list holds — plenty; keys 1–9 pick the first nine. */
 export const MAX_LINES = 40;
@@ -74,26 +17,11 @@ const json = (s: string | null | undefined): unknown => {
   }
 };
 
-export function readWindowDetails(s: string | null | undefined): WindowDetail[] {
-  const v = json(s);
-  if (!Array.isArray(v)) return [];
-  return v
-    .filter((d): d is { name: string; kind?: string } => !!d && typeof d.name === "string" && !!d.name.trim())
-    .map((d) => ({ name: d.name.trim().slice(0, 40), kind: d.kind === "text" ? ("text" as const) : ("yesno" as const) }))
-    .slice(0, 8);
-}
-
 export function readJobWindows(s: string | null | undefined): JobWindows {
   const v = json(s) as { lines?: unknown } | null;
   return {
     lines: Array.isArray(v?.lines) ? Array.from(new Set(v.lines.filter((x): x is string => typeof x === "string"))).slice(0, MAX_LINES) : [],
   };
-}
-
-export function readItemDetails(s: string | null | undefined): Record<string, string> {
-  const v = json(s);
-  if (!v || typeof v !== "object" || Array.isArray(v)) return {};
-  return Object.fromEntries(Object.entries(v as Record<string, unknown>).filter(([, x]) => typeof x === "string" && x.trim()) as [string, string][]);
 }
 
 /**
@@ -119,34 +47,4 @@ export function readSizeCode(raw: string): { widthIn: number; heightIn: number }
 export function sizeCode(widthIn: number, heightIn: number) {
   const part = (i: number) => `${Math.floor(i / 12)}${Math.round(i - Math.floor(i / 12) * 12)}`;
   return `${part(widthIn)}${part(heightIn)}`;
-}
-
-/** What a detail adds to a window's name: "Grids" when yes, "Glass Low-E" when typed. */
-function detailWords(details: WindowDetail[], values: Record<string, string>) {
-  return details
-    .map((d) => {
-      const v = values[d.name]?.trim();
-      if (!v) return null;
-      if (d.kind === "yesno") return v.toLowerCase() === "yes" ? d.name : null;
-      return `${d.name} ${v}`;
-    })
-    .filter(Boolean) as string[];
-}
-
-/** A window's Item List name: "3050 Single Hung", "3050 Single Hung White/Black", "5040 Picture Black/Black Grids". */
-export function windowName(o: {
-  widthIn: number;
-  heightIn: number;
-  type: string;
-  color: WindowColor;
-  details?: WindowDetail[];
-  values?: Record<string, string>;
-}) {
-  const color = WINDOW_COLORS.find((c) => c.value === o.color)?.name ?? "";
-  return [sizeCode(o.widthIn, o.heightIn), o.type.trim() || "Window", color || null, ...detailWords(o.details ?? [], o.values ?? {})].filter(Boolean).join(" ");
-}
-
-/** The bid list: one line per window on the job's list, with how many — in the list's order. */
-export function bidList<T extends { id: string }>(lines: T[], counts: Map<string, number>) {
-  return lines.map((l, i) => ({ key: i + 1, ...l, count: counts.get(l.id) ?? 0 }));
 }

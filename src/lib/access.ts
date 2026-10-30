@@ -7,7 +7,7 @@ import { z } from "zod";
  * - "Which jobs": every job, or only the jobs they manage or are on the team of.
  * - Three switches: may delay a job's schedule, may approve & pay bills, sees costs and profit.
  *   With costs and profit off, the screens that are mostly your costs are hidden (Takeoffs,
- *   Budget, Purchasing, Reports, the Settings lists), estimates and change orders open as the
+ *   Budget, Purchasing, Reports, the Catalog), estimates and change orders open as the
  *   client sees them (the proposal, the change order document), and Selections and Timesheets
  *   leave out cost and profit numbers.
  * - A person gets their position's access; an admin can change single areas for just them.
@@ -29,7 +29,7 @@ export const AREAS = [
   { key: "invoices", label: "Invoices", short: "Invoices", hint: "Client invoices and payments" },
   { key: "reports", label: "Reports", short: "Reports", hint: "Reports, money cards on the dashboard" },
   { key: "time", label: "Everyone's time", short: "Everyone's time", hint: "Their own time clock always works; this is everyone else's hours and timesheets" },
-  { key: "lists", label: "Settings: lists & templates", short: "Settings lists", hint: "Item List, cost codes, vendors, member sizes, span tables, templates" },
+  { key: "lists", label: "Catalog & lists", short: "Catalog", hint: "The Catalog (Item List, doors, windows, lumber, templates), and cost codes, vendors and lead sources in Settings" },
   { key: "quickbooks", label: "Settings: QuickBooks", short: "QuickBooks", hint: "QuickBooks connection and matching" },
 ] as const;
 
@@ -60,7 +60,7 @@ export const SWITCHES = [
 
 /** What "Sees costs and profit" off does — said the same way wherever the switch is. */
 export const COSTS_OFF_NOTE =
-  "Off: Takeoffs, Budget, Purchasing, Reports and the Settings lists are hidden; estimates and change orders open as the client sees them; Selections and Timesheets leave out cost and profit.";
+  "Off: Takeoffs, Budget, Purchasing, Reports and the Catalog are hidden; estimates and change orders open as the client sees them; Selections and Timesheets leave out cost and profit.";
 
 /** The areas that are mostly your costs — hidden when costs and profit are. */
 const COST_AREAS: AreaKey[] = ["takeoffs", "budget", "purchasing", "reports", "lists"];
@@ -221,6 +221,8 @@ export function areaForPath(pathname: string): AreaKey | null {
   const seg = job ? job[1] : pathname.split("/")[1];
   // Everyone has their own to-dos (a job's To-Dos tab is the field area's).
   if (!job && seg === "todos") return null;
+  // The Catalog: the lists and templates (the same permission as Settings' lists).
+  if (!job && seg === "catalog") return "lists";
   if (!job && seg === "settings") {
     const s = pathname.split("/")[2] ?? "";
     if (s === "quickbooks") return "quickbooks";
@@ -229,22 +231,8 @@ export function areaForPath(pathname: string): AreaKey | null {
   return PATH_AREA[seg] ?? null;
 }
 
-/** Settings pages under "Settings: lists & templates" (the rest of Settings is admin-only). */
-export const LIST_SETTINGS = new Set([
-  "items",
-  "cost-codes",
-  "vendors",
-  "member-sizes",
-  "windows",
-  "doors",
-  "span-tables",
-  "takeoff-templates",
-  "estimate-templates",
-  "estimate-parameters",
-  "estimate-divisions",
-  "schedule-templates",
-  "lead-sources",
-]);
+/** Settings pages under "lists & templates", with the whole Catalog (the rest of Settings is admin-only). */
+export const LIST_SETTINGS = new Set(["cost-codes", "vendors", "estimate-parameters", "estimate-divisions", "lead-sources"]);
 
 /** First part of an address (a job's tab, or a main page) → its area. */
 export const PATH_AREA: Record<string, AreaKey> = {

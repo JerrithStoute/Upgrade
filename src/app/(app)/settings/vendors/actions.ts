@@ -55,7 +55,7 @@ export const updateVendor = friendly(async function updateVendor(fd: FormData) {
   await db.vendor.update({ where: { id }, data });
   await renameVendorEverywhere(id, had.name, data.name);
   revalidatePath(PATH);
-  revalidatePath("/settings/items");
+  revalidatePath("/catalog/items");
   redirect(`${PATH}#vendor-${id}`);
 });
 

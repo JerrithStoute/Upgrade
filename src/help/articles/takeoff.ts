@@ -270,6 +270,10 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "In the drawer",
         items: [
+          {
+            name: "Save takeoff",
+            what: "Saves your changes and keeps the drawer open, so you can go right on to Save to Library. Close it with the ×. Adding a new takeoff closes the drawer, so you can start measuring.",
+          },
           { name: "Make a copy", what: "A new takeoff with the same settings and items but none of the shapes, for another pitch or height." },
           { name: "Save to Library", what: "Admins: saves this takeoff into a takeoff template so other jobs can use it." },
           { name: "Delete takeoff", what: "Deletes it and all its measurements. Lines already on an estimate stay there." },
@@ -389,30 +393,30 @@ export const TAKEOFF: HelpArticle[] = [
     what: "Doors and Windows takeoffs place each door or window on the plan with one click. The program orders the door or window, its header, studs and trim from what you place.",
     how: [
       "Pick a **Doors** or **Windows** takeoff on the left and click **Measure**.",
-      "Windows: the card at the top left is this job's window list. Add each window once (size like 3050, type, color), then click a line, or press its number 1–9, and click the plan where each one goes. The number shows on every window placed.",
-      "Doors: the same way — the card is this job's door list. Add each door once (size like 2868, Int or Ext, type, jamb, core, and any details of your own), then click a line, or press its number 1–9, and click the plan where each one goes. The number shows on every door placed.",
+      "Windows: the card at the top left is this job's window list. Add each window once (its size like 3050, and a pick for each part your company asks for, such as type and color), then click a line, or press its number 1–9, and click the plan where each one goes. The number shows on every window placed.",
+      "Doors: the same way. The card is this job's door list. Add each door once (size like 2868, Int or Ext, and a pick for each part your company asks for), then click a line, or press its number 1–9, and click the plan where each one goes. The number shows on every door placed.",
       "A marker shown as a dashed red square still needs a door or window picked: click it and choose one in **Which door is this?** (or **Which window is this?**)",
     ],
     sections: [
       {
-        heading: "The window list (Windows takeoff)",
-        items: [
-          { name: "The list", what: "This job's windows, numbered, with how many are on the job (every sheet). Click one, or press its number (1–9 for the first nine), to place it. It holds as many as the job needs, and every window placed on the job is on it." },
-          { name: "Add window", what: "Type the size the usual way (3050 is 3'0\" by 5'0\", or 36x60 in inches), pick the type from the dropdown (or **Other…** to type one in), pick the color — Standard (white), White on black (white inside, black outside) or Black on black (it starts as your last window was) — and any details of your own. **+ Add a detail** right there adds one more for every window (Grids, Glass…), and the **×** beside one takes it off — the same list as Settings → Windows. It's put on your Item List as \"3050 Single Hung White/Black\", filed with your windows and their cost code — the same item next time." },
-          { name: "✎", what: "Changes a window on the list — size, type, color, details. **Save changes** and every one placed on this job changes with it (the plan, Material list and bid list), so a wrong window is fixed in one place, not placed over again." },
-          { name: "×", what: "Takes a window off this job's list. If some are placed, it asks first and takes them off the plan too — Ctrl+Z brings them back (and their line). The window stays on the Item List." },
-          { name: "Window bid list", what: "How many of each window are on the job — size, type, color — ready for **Send to vendors**. **−** shrinks it to a small chip, to see the plan; click the chip to open it again." },
+        heading: "The door and window lists",
+        text: [
+          "Doors and windows work the same way. What you're asked for each one comes from **Catalog → Doors** and **Catalog → Windows**: your company decides which parts are asked (type, jamb, core, color, or parts of your own like Material) and what the choices are.",
         ],
-      },
-      {
-        heading: "The door list (Doors takeoff)",
         items: [
-          { name: "The list", what: "This job's doors, numbered, with how many are on the job (every sheet). Click one, or press its number (1–9 for the first nine), to place it. It holds as many as the job needs, and every door placed on the job is on it." },
-          { name: "Add door", what: "Type the size the usual way (2868 is 2'8\" by 6'8\", or 32x80 in inches), pick **Int** or **Ext**, the type from the dropdown (Prehung, Slab, Barn, Pocket, Bifold, Bypass, French, Sliding Glass, Entry, Dutch, Attic Access — or **Other…** to type one in), the **Jamb** (2x4, 2x6, 2x8) and the **Core** (Hollow or Solid). Int/Ext, jamb and core start as your last door was. It's put on your Item List as \"2868 Int Prehung Hollow 2x4 Jamb\", filed with your interior or exterior doors and their cost code — the same item next time." },
-          { name: "+ Add a detail", what: "One more thing every door has, such as **Door Swing** — typed in (LH, RH) or yes / no. It's asked on every door from then on and goes in its name and on the bid. The **×** beside one takes it off — the same list as **Settings → Doors**." },
-          { name: "✎", what: "Changes a door on the list — size, int/ext, type, jamb, core, details. **Save changes** and every one placed on this job changes with it (the plan, Material list and bid list): doors placed as Slab that should be Prehung are fixed in one save." },
-          { name: "×", what: "Takes a door off this job's list. If some are placed, it asks first and takes them off the plan too — Ctrl+Z brings them back (and their line). The door stays on the Item List." },
-          { name: "Door bid list", what: "How many of each door are on the job — size, int/ext, type, jamb, core and your details — ready for **Bids**. **−** shrinks it to a small chip; click the chip to open it again." },
+          { name: "The list", what: "This job's doors (or windows), numbered, with how many are on the job (every sheet). Click one, or press its number (1–9 for the first nine), to place it. It holds as many as the job needs, and every one placed on the job is on it. Int / Ext (doors) and the color (windows) show as a tag at the end of the line: dark when it isn't the usual." },
+          {
+            name: "Add door / Add window",
+            what: "Type the size the usual way (2868 is 2'8\" by 6'8\", 3050 is 3'0\" by 5'0\", or 32x80 in inches) and pick each part from its dropdown. Each part starts at its usual choice; change one and it stays that way for the next one you add. It's put on your Item List by the name the picks make, like \"2868 Int Prehung Hollow 2x4 Jamb\" or \"3050 Single Hung White/Black\", filed with your doors or windows and their cost code. The same picks are the same item every time, on every job.",
+          },
+          {
+            name: "+ Add a choice…",
+            what: "At the bottom of a part's dropdown: type a choice that isn't there yet (a metal door, a new window type). It's added to your company's list in the Catalog, so it's one pick away on every job after. One you already have isn't added twice: typing \"metal\" when there's \"Metal\" picks Metal.",
+          },
+          { name: "⚙", what: "Opens **Catalog → Doors** (or **Windows**) in a new tab, to change which parts are asked and their choices." },
+          { name: "✎", what: "Changes one on the list: size or any pick. **Save changes** and every one placed on this job changes with it (the plan, Material list and bid list): doors placed as Slab that should be Prehung are fixed in one save." },
+          { name: "×", what: "Takes one off this job's list. If some are placed, it asks first and takes them off the plan too. Ctrl+Z brings them back (and their line). It stays on the Item List." },
+          { name: "Door bid list / Window bid list", what: "How many of each are on the job, with a column for each part, ready for **Send to vendors**. **−** shrinks it to a small chip, to see the plan; click the chip to open it again." },
           { name: "Trim: Cased / Not cased", what: "Windows only: whether this window gets casing." },
           { name: "−", what: "Shrinks the card to a small chip to see more of the plan." },
         ],
@@ -420,8 +424,7 @@ export const TAKEOFF: HelpArticle[] = [
     ],
     tips: [
       "**Auto-count** can find every door or window tag on the sheets at once. See **Auto-count**.",
-      "Another detail matters to you on windows (grids, glass)? Add it in **Settings → Windows**: it's asked when you add a window and goes in its name and on the bid.",
-      "The same for doors (Door Swing, hardware…): **Settings → Doors**.",
+      "Want less detail (no jamb, no core) or more (Material, Grids)? Change it in **Catalog → Doors** or **Catalog → Windows**. It's for doors and windows added from then on.",
     ],
     related: ["takeoff-autocount", "takeoff-conditions", "item-list"],
   },
@@ -512,7 +515,7 @@ export const TAKEOFF: HelpArticle[] = [
     tips: [
       "Trace walls and beams first, then draw the joists: the program breaks them where they bear.",
       "Pieces under 4 ft past a support stay on the joist as a cantilever.",
-      "Span tables are in **Settings → Span tables**. Spot-check them against your code book; your local code or engineer has the last word.",
+      "Span tables are in **Catalog → Span tables**. Spot-check them against your code book; your local code or engineer has the last word.",
     ],
     related: ["upper-floor", "takeoff-settings", "takeoff-totals-print"],
   },
@@ -689,12 +692,12 @@ export const TAKEOFF: HelpArticle[] = [
   {
     slug: "item-list",
     title: "Item List",
-    group: "Takeoff",
+    group: "Catalog",
     area: "lists",
-    pages: ["/settings/items", "/settings/items/vendor"],
+    pages: ["/catalog/items", "/catalog/items/vendor", "/catalog/items/duplicates"],
     what: "The **Item List** is your price list: every material and labor item your takeoffs order, with its price, unit, waste, cost code, SKU and vendor. A price changed here goes to every job whose prices aren't locked.",
     how: [
-      "Go to **Settings → Item List**.",
+      "Go to **Catalog → Item List**.",
       "Click **Needs a price** to see items still at $0 (they're highlighted in amber), type each price, and click away. It saves by itself.",
       "Add an item with **+ Add item**, or let the takeoff add new ones as you type them into items.",
     ],
@@ -706,6 +709,11 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Needs a price · N", what: "Shows only items still at $0. Fill one in and it drops off the list. Click again (✕) for the whole list." },
           { name: "No cost code · N", what: "Shows only items with no cost code. Only shows when some are missing." },
           { name: "Price to recheck · N", what: "Shows only prices older than their cost code's **Recheck prices** time (set in **Settings → Cost codes**). Call your supplier, then type the new price or click **Still good**." },
+          {
+            name: "Possible duplicates · N",
+            what: "Doors or windows that could be the same thing under two names: the same size, and nothing either one says that the other says differently (a blank isn't a difference). Mostly ones from before doors and windows were picked from parts, like \"2868 Hollow Core\" next to \"2868 Int Prehung Hollow 2x4 Jamb\". Only shows when there are some.",
+            how: "Click it. For each pair, click **Keep this one** under the one to keep: it keeps its name and price, the other comes off the Item List, and everything that used it (doors and windows on plans, estimates, bids, the jobs' lists) uses the one you kept. Or click **Not the same** and the pair won't show again.",
+          },
           { name: "All / category chips", what: "Shows every item, or one category." },
           { name: "Rename / merge", what: "With a category picked: renames it, or merges it into another." },
           { name: "For a vendor…", what: "A printable price request of part of the list for a vendor. Your prices never print." },
@@ -739,22 +747,46 @@ export const TAKEOFF: HelpArticle[] = [
     related: ["takeoff-conditions", "material-list", "price-review"],
   },
   {
-    slug: "takeoff-settings",
-    title: "Settings: takeoff templates, span tables and member sizes",
-    group: "Takeoff",
+    slug: "doors-windows-setup",
+    title: "Catalog: Doors and Windows",
+    group: "Catalog",
     area: "lists",
-    pages: ["/settings/takeoff-templates", "/settings/takeoff-templates/*", "/settings/span-tables", "/settings/member-sizes", "/settings/windows", "/settings/doors"],
-    what: "Four Settings pages feed the takeoff: **Takeoff templates** (ready-made sets of takeoffs to add to jobs), **Span tables** (which joist or rafter size a span needs), **Member sizes** (the lumber and engineered members you can pick) and **Windows** (what every window has).",
-    how: ["Go to **Settings** and open the page you need.", "Make your changes and save. Jobs that already used a template or size keep what they have."],
+    pages: ["/catalog/doors", "/catalog/windows"],
+    what: "**Catalog → Doors** and **Catalog → Windows** decide what a door or window is described by when you add one to a job's list on the takeoff: which parts are asked, the choices for each, the usual one, and what goes in its name. Picks, never typing, so the same door gets the same name, and is the same Item List item, on every job.",
+    how: [
+      "Go to **Catalog → Doors** (or **Windows**).",
+      "Turn off what you don't track (don't care about hollow or solid? untick **Ask for it** on Core), add the choices you use, and pick the usual one.",
+      "Click **Save**. The line at the top shows what a usual one will be named.",
+    ],
     sections: [
       {
-        heading: "Windows",
+        heading: "Each part",
         items: [
-          { name: "Size, Type, Color", what: "Every window has these. They're asked when you add a window to a job's list." },
-          { name: "Your own details", what: "Anything else you want on every window — Grids, Glass. Yes / no ones go in the window's name when yes (\"5040 Picture Black/Black Grids\"); typed ones with their answer.", how: "Type the name, pick **Yes / no** or **Typed in**, click **Add detail**." },
-          { name: "Remove", what: "Takes a detail off. Windows already on the Item List keep it in their name." },
+          { name: "Size", what: "Always asked, typed the usual way (2868, 3050)." },
+          { name: "Ask for it", what: "Ticked: it's asked when one is added, and is in its name and on the bid list. Unticked: never asked, never in the name. Int / Ext is always asked on doors: it files the door as interior or exterior, for its cost code and the bid list." },
+          { name: "Choices", what: "What can be picked. Type one in **Add a choice** and press Enter or **+**; the **×** on one takes it off (doors already made keep their names). The usual one is shown in blue. Choices can also be added right from a job's list on the takeoff (**+ Add a choice…**)." },
+          { name: "Usual", what: "Picked to start with when one is added." },
+          { name: "In the name", what: "**Always**, or **Only when it isn't the usual**. With Color set to only when it isn't Standard, a white window is \"3050 Single Hung\" and a black one \"3050 Single Hung Black/Black\"." },
+          { name: "A part of your own", what: "Something only some doors or windows have. **Choices you pick from** (Material: Wood, Metal, Fiberglass) or **A tick box** (Grids: in the name when it's ticked). Click **Add part**, give it its choices, and click **Save**." },
+          { name: "Remove", what: "Takes a part of your own off. Doors or windows already on the Item List keep it in their name." },
         ],
       },
+    ],
+    tips: [
+      "The door that isn't normal: add a part like **Material** with Wood, Metal and Fiberglass, Wood as the usual, in the name only when it isn't the usual. Every wood door keeps its name; the metal one is \"3068 Ext Prehung Solid 2x6 Jamb Metal\".",
+      "Changes are for doors and windows added from then on. Ones already on jobs and the Item List keep their names. Two that are really the same? **Item List → Possible duplicates**.",
+    ],
+    related: ["takeoff-doors-windows", "item-list"],
+  },
+  {
+    slug: "takeoff-settings",
+    title: "Catalog: takeoff templates, span tables and member sizes",
+    group: "Catalog",
+    area: "lists",
+    pages: ["/catalog/takeoff-templates", "/catalog/takeoff-templates/*", "/catalog/span-tables", "/catalog/member-sizes"],
+    what: "Three Catalog pages feed the takeoff: **Takeoff templates** (ready-made sets of takeoffs to add to jobs), **Span tables** (which joist or rafter size a span needs) and **Member sizes** (the lumber and engineered members you can pick).",
+    how: ["Go to **Catalog** and open the page you need.", "Make your changes and save. Jobs that already used a template or size keep what they have."],
+    sections: [
       {
         heading: "Takeoff templates",
         items: [

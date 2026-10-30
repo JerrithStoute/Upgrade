@@ -225,8 +225,8 @@ export const saveAsScheduleTemplate = friendly(async function saveAsScheduleTemp
   if (!name) throw new Error("Give the template a name");
   const { template, count } = await saveScheduleAsTemplate(project.id, name);
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.template_saved", description: `Saved the schedule as template "${name}" (${count} tasks)` });
-  revalidatePath("/settings/schedule-templates");
-  redirect(`/settings/schedule-templates?edit=${template.id}`);
+  revalidatePath("/catalog/schedule-templates");
+  redirect(`/catalog/schedule-templates?edit=${template.id}`);
 });
 
 /**

@@ -71,7 +71,9 @@ describe("which area a page is in", () => {
   });
 
   it("Settings: lists and QuickBooks can be given out; company, team and billing stay admin-only", () => {
-    assert.equal(areaForPath("/settings/items"), "lists");
+    assert.equal(areaForPath("/catalog/items"), "lists");
+    assert.equal(areaForPath("/catalog"), "lists");
+    assert.equal(areaForPath("/catalog/takeoff-templates/abc"), "lists");
     assert.equal(areaForPath("/settings/cost-codes"), "lists");
     assert.equal(areaForPath("/settings/quickbooks"), "quickbooks");
     assert.equal(areaForPath("/settings/team"), null);
@@ -80,8 +82,8 @@ describe("which area a page is in", () => {
 
   it("the menu shows what the position shows", () => {
     const est = STARTER_POSITIONS.find((p) => p.key === "ESTIMATOR")!.access;
-    const pages = ["/dashboard", "/leads", "/invoices", "/reports", "/settings", "/time"];
-    assert.deepEqual(navPages("STAFF", est, pages), ["/dashboard", "/leads", "/settings", "/time"]);
+    const pages = ["/dashboard", "/leads", "/invoices", "/reports", "/catalog", "/settings", "/time"];
+    assert.deepEqual(navPages("STAFF", est, pages), ["/dashboard", "/leads", "/catalog", "/settings", "/time"]);
     assert.deepEqual(navPages("STAFF", STAFF_ACCESS, pages), ["/dashboard", "/leads", "/invoices", "/time"]);
     assert.deepEqual(navPages("ADMIN", ADMIN_ACCESS, pages), pages);
   });

@@ -14,6 +14,7 @@ test("a job's tabs are their own areas; the job itself is Jobs", () => {
 test("the program's pages, and the portals", () => {
   assert.equal(areaOf("/dashboard"), "Dashboard");
   assert.equal(areaOf("/settings/cost-codes"), "Settings");
+  assert.equal(areaOf("/catalog/items"), "Catalog");
   assert.equal(areaOf("/time/sheets"), "Time clock");
   assert.equal(areaOf("/portal/selections"), "Client portal");
   assert.equal(areaOf("/vendor"), "Sub portal");

@@ -106,7 +106,7 @@ export const FIELD: HelpArticle[] = [
     title: "Settings: work week, delay reasons and schedule templates",
     group: "Settings",
     area: "lists",
-    pages: ["/settings/schedule", "/settings/schedule-templates"],
+    pages: ["/settings/schedule", "/catalog/schedule-templates"],
     what: "**Work week & delays** (admins) sets the days your crews work and your list of delay reasons. **Schedule templates** are schedules to start new jobs from.",
     how: ["Go to **Settings** and open the page.", "Make your changes and save."],
     sections: [

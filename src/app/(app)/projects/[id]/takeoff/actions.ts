@@ -39,34 +39,10 @@ import { NO_ALIGN, alignAngle, alignScale, applyAlign, isNoAlign, parseAlign, ty
 import { upperFloorSchema } from "@/lib/upper-floor";
 import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { assignItemCodes, newItemPlacement, saveCodeRule } from "@/lib/item-codes";
-import {
-  MAX_LINES,
-  readColor,
-  readItemDetails,
-  readJobWindows,
-  readSizeCode,
-  readWindowDetails,
-  windowName,
-  withDetail,
-  type JobWindows,
-  type WindowColor,
-  type WindowDetail,
-} from "@/lib/window-list";
-import {
-  CORE_KEY,
-  JAMB_KEY,
-  MAX_DOOR_LINES,
-  doorName,
-  readCore,
-  readDoorDetails,
-  readJamb,
-  readJobDoors,
-  withDoorDetail,
-  type DoorCore,
-  type DoorDetail,
-  type DoorJamb,
-  type JobDoors,
-} from "@/lib/door-list";
+import { MAX_LINES, readJobWindows, readSizeCode } from "@/lib/window-list";
+import { MAX_DOOR_LINES, readJobDoors } from "@/lib/door-list";
+import { cleanValues, itemFields, itemValues, unitName, withChoice, type UnitKind, type UnitPart } from "@/lib/unit-parts";
+import { itemKindOf, loadUnitParts, saveUnitParts } from "@/lib/unit-parts-server";
 import { assemblyFields, conditionFields, type AssemblyFields } from "@/lib/takeoff-forms";
 import { addConditionsToTemplate, applyTemplate, pullLibraryTakeoff, saveTemplateFromProject } from "@/lib/takeoff-templates";
 import { addSubstitution, swapBack } from "@/lib/substitutions";
@@ -200,7 +176,7 @@ export const createCondition = friendly(async function createCondition(fd: FormD
   const project = await getProject(str(fd, "projectId"));
   const data = await conditionFields(fd);
   const pending = await pendingItemFields(fd, data.type, data.metric);
-  // A joist / rafter takeoff starts in its size's color (Settings → Member sizes), when it has one.
+  // A joist / rafter takeoff starts in its size's color (Catalog → Member sizes), when it has one.
   const sizeColor =
     data.type === "FRAMING" && data.memberSizeId
       ? (await db.memberSize.findUnique({ where: { id: data.memberSizeId }, select: { color: true } }))?.color
@@ -228,7 +204,7 @@ export const createCondition = friendly(async function createCondition(fd: FormD
           ? `Added takeoff "${c.name}" to template "${t.name}"`
           : `Takeoff "${c.name}" is already in template "${t.name}" — left as it is`,
       });
-      revalidatePath(`/settings/takeoff-templates/${t.id}`);
+      revalidatePath(`/catalog/takeoff-templates/${t.id}`);
     }
   }
   revalidate(project.id);
@@ -273,6 +249,11 @@ export const updateCondition = friendly(async function updateCondition(fd: FormD
   // Size, spacing, pitch, overhang or stock lengths can change the lumber.
   if (hasAutoLines(data.type) || hasAutoLines(existing.type)) await syncAutoItems(project.id, resize ? undefined : id);
   revalidate(project.id);
+  // From the plan's edit panel: it stays open, and says so.
+  if (str(fd, "stay")) {
+    const back = returnTo(fd, project.id);
+    redirect(`${back}${back.includes("?") ? "&" : "?"}note=${encodeURIComponent(`Saved "${data.name}"`)}&at=${Date.now()}`);
+  }
   redirect(returnTo(fd, project.id, `#condition-${id}`, "conditions"));
 });
 
@@ -391,7 +372,7 @@ async function withMaterialItem(data: AssemblyFields, userId: string, projectId:
   const { id, name, created } = await resolveMaterialItem(db, data);
   if (created) {
     await logActivity({ projectId, userId, type: "item_list.added", description: `Added "${data.description}" to the Item List` });
-    revalidatePath("/settings/items");
+    revalidatePath("/catalog/items");
   }
   // Use the Item List's spelling ("concrete" → "Concrete").
   return { ...data, description: name, materialItemId: id };
@@ -412,7 +393,7 @@ async function priceEverywhere(fd: FormData, data: AssemblyFields & { materialIt
       type: "item_list.price",
       description: `"${data.description}" is now ${money(data.unitCost)} in the Item List (was ${money(before.unitCost)})`,
     });
-    revalidatePath("/settings/items");
+    revalidatePath("/catalog/items");
   }
 }
 
@@ -439,7 +420,7 @@ export const updateAssemblyItem = friendly(async function updateAssemblyItem(fd:
   const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const item = await loadAssemblyItem(project.id, str(fd, "id"));
-  if (isLumberMetric(item.metric)) throw new Error("Lumber lines follow the joist / rafter layout — price them in Settings → Item List");
+  if (isLumberMetric(item.metric)) throw new Error("Lumber lines follow the joist / rafter layout — price them in Catalog → Item List");
   const data = await withMaterialItem(await assemblyFields(fd, item.condition.type), user.id, project.id);
   await db.takeoffAssemblyItem.update({ where: { id: item.id }, data });
   await priceEverywhere(fd, data, user.id, project.id);
@@ -522,8 +503,8 @@ export const saveConditionToLibrary = friendly(async function saveConditionToLib
     type: "takeoff_template.saved",
     description: `${r.updated.length ? "Updated" : "Saved"} takeoff "${c.name}" in template "${t!.name}"`,
   });
-  revalidatePath("/settings/takeoff-templates");
-  redirect(`${back}${join}library=${encodeURIComponent(`${r.updated.length ? "Updated" : "Saved"} "${c.name}" in your Library (${t!.name})`)}`);
+  revalidatePath("/catalog/takeoff-templates");
+  redirect(`${back}${join}library=${encodeURIComponent(`${r.updated.length ? "Updated" : "Saved"} "${c.name}" in your Library (${t!.name})`)}&at=${Date.now()}`);
 });
 
 /**
@@ -557,8 +538,8 @@ export const saveTakeoffAsTemplate = friendly(async function saveTakeoffAsTempla
       type: "takeoff_template.saved",
       description: `Added to takeoff template "${t!.name}": ${r.added.length} new${r.updated.length ? `, ${r.updated.length} updated` : ""}${r.kept.length ? `, ${r.kept.length} already there` : ""}`,
     });
-    revalidatePath("/settings/takeoff-templates");
-    redirect(`/settings/takeoff-templates/${t!.id}?added=${r.added.length}&updated=${r.updated.length}&kept=${r.kept.length}`);
+    revalidatePath("/catalog/takeoff-templates");
+    redirect(`/catalog/takeoff-templates/${t!.id}?added=${r.added.length}&updated=${r.updated.length}&kept=${r.kept.length}`);
   }
 
   const { id, count } = await saveTemplateFromProject(project.id, { name, replaceId: mode === "replace" ? targetId : null });
@@ -568,8 +549,8 @@ export const saveTakeoffAsTemplate = friendly(async function saveTakeoffAsTempla
     type: "takeoff_template.saved",
     description: `${mode === "replace" ? "Replaced" : "Saved"} takeoff template${name ? ` "${name}"` : ""} from this job (${count} takeoffs)`,
   });
-  revalidatePath("/settings/takeoff-templates");
-  redirect(`/settings/takeoff-templates/${id}`);
+  revalidatePath("/catalog/takeoff-templates");
+  redirect(`/catalog/takeoff-templates/${id}`);
 });
 
 // --- Prices ----------------------------------------------------------------------------
@@ -665,7 +646,7 @@ export async function setMaterialPrice(
     type: "takeoff.item_price",
     description: `"${item.name}" at ${money(price)}${where === "list" ? ` — Item List updated (was ${money(item.unitCost)})` : " on this job only"}`,
   });
-  if (where === "list") revalidatePath("/settings/items");
+  if (where === "list") revalidatePath("/catalog/items");
   revalidatePrices(project.id);
   return { ok: true, where };
 }
@@ -1485,7 +1466,7 @@ async function doorItemId(id: string | null | undefined) {
   if (!id) return null;
   const item = await db.materialItem.findUnique({ where: { id }, select: { id: true, widthIn: true, heightIn: true } });
   if (!item) throw new Error("Door not found on the Item List");
-  if (!item.widthIn || !item.heightIn) throw new Error("That item has no width and height — set them in Settings → Item List");
+  if (!item.widthIn || !item.heightIn) throw new Error("That item has no width and height — set them in Catalog → Item List");
   return item.id;
 }
 
@@ -1546,7 +1527,7 @@ export async function createDoorItem(input: {
       style: data.style || null,
     },
   });
-  revalidatePath("/settings/items");
+  revalidatePath("/catalog/items");
   return { id: item.id, name: item.name };
 }
 
@@ -1570,7 +1551,7 @@ export async function assignCostCodes(input: {
   const rules = data.rules.filter((r): r is { group: CodeGroup; costCodeId: string } => (CODE_GROUP_KEYS as string[]).includes(r.group));
   const count = await assignItemCodes(data.items, rules);
   revalidatePath(`/projects/${data.projectId}/takeoff`, "layout");
-  revalidatePath("/settings/items");
+  revalidatePath("/catalog/items");
   return { count };
 }
 
@@ -1605,7 +1586,7 @@ export async function substituteItem(raw: z.input<typeof substituteInput>): Prom
     return { ok: false, error: e instanceof Error ? e.message : "Could not substitute it" };
   }
   revalidatePrices(project.id);
-  revalidatePath("/settings/items");
+  revalidatePath("/catalog/items");
   return { ok: true };
 }
 
@@ -1625,155 +1606,128 @@ export async function substituteChoices() {
   return db.materialItem.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, unit: true, unitCost: true, category: true } });
 }
 
-// --- The job's windows (Windows takeoff: the short list to pick from) -----------------------------
+// --- The job's doors and windows (Doors / Windows takeoffs: the short list to pick from) -------------------
 
-export type JobWindowLine = {
+/** A line on a job's door or window list: the Item List item, its size, and its picks by part (unit-parts.ts). */
+export type JobUnitLine = {
   id: string;
   name: string;
   widthIn: number;
   heightIn: number;
-  style: string | null;
-  color: WindowColor;
-  details: Record<string, string>;
+  values: Record<string, string>;
 };
-type WindowsResult = { ok: true; lines: JobWindowLine[] } | { ok: false; error: string };
+type UnitsResult = { ok: true; lines: JobUnitLine[] } | { ok: false; error: string };
 
-async function jobWindowLines(ids: string[]): Promise<JobWindowLine[]> {
+const unitType = (kind: UnitKind) => (kind === "window" ? "WINDOW" : "DOOR");
+const maxLines = (kind: UnitKind) => (kind === "window" ? MAX_LINES : MAX_DOOR_LINES);
+const readJobList = (kind: UnitKind, project: { windowList: string | null; doorList: string | null }) =>
+  kind === "window" ? readJobWindows(project.windowList) : readJobDoors(project.doorList);
+
+async function jobUnitLines(ids: string[]): Promise<JobUnitLine[]> {
   const items = await db.materialItem.findMany({
     where: { id: { in: ids } },
-    select: { id: true, name: true, widthIn: true, heightIn: true, style: true, color: true, details: true },
+    select: { id: true, name: true, widthIn: true, heightIn: true, exterior: true, style: true, color: true, details: true },
   });
   const byId = new Map(items.map((i) => [i.id, i]));
   return ids
     .map((id) => byId.get(id))
     .filter((i): i is NonNullable<typeof i> => !!i && i.widthIn != null && i.heightIn != null)
-    .map((i) => ({
-      id: i.id,
-      name: i.name,
-      widthIn: i.widthIn!,
-      heightIn: i.heightIn!,
-      style: i.style,
-      color: readColor(i.color),
-      details: readItemDetails(i.details),
-    }));
+    .map((i) => ({ id: i.id, name: i.name, widthIn: i.widthIn!, heightIn: i.heightIn!, values: itemValues(i) }));
 }
 
-async function saveJobWindows(projectId: string, list: JobWindows): Promise<WindowsResult> {
-  await db.project.update({ where: { id: projectId }, data: { windowList: JSON.stringify(list) } });
+async function saveJobList(kind: UnitKind, projectId: string, list: { lines: string[] }): Promise<UnitsResult> {
+  await db.project.update({ where: { id: projectId }, data: kind === "window" ? { windowList: JSON.stringify(list) } : { doorList: JSON.stringify(list) } });
   revalidatePath(`/projects/${projectId}/takeoff`, "layout");
-  return { ok: true, lines: await jobWindowLines(list.lines) };
+  return { ok: true, lines: await jobUnitLines(list.lines) };
 }
 
 /**
- * A window on this job's list: its size ("3050"), type, color, and the company's own details.
- * It's the Item List window by that name — made the first time (filed with your windows, their cost
- * code), the same one after — so the material list, estimate and bids see it like any window.
+ * A door or window on this job's list: its size ("2868") and a pick for each part the company asks for
+ * (Catalog → Doors / Windows). It's the Item List item by the name those make — made the first time (filed
+ * with your doors / windows, their cost code), the same one after — so the material list, estimate, bids and
+ * wall openings see it like any other.
  */
-export async function addJobWindow(input: {
+export async function addJobUnit(input: {
   projectId: string;
+  kind: UnitKind;
   size: string;
-  type: string;
-  color: string;
-  values?: Record<string, string>;
-  /** Editing a line: the window it was — its windows placed on this job become this one, in its place on the list. */
+  values: Record<string, string>;
+  /** Editing a line: the one it was — its doors / windows placed on this job become this one, in its place on the list. */
   replace?: string | null;
-}): Promise<WindowsResult> {
+}): Promise<UnitsResult> {
   await requireEdit("takeoffs");
+  const kind: UnitKind = input.kind === "window" ? "window" : "door";
+  const noun = kind === "window" ? "window" : "door";
   const project = await getProject(String(input.projectId));
   const size = readSizeCode(String(input.size ?? ""));
-  if (!size) return { ok: false, error: "Type the size the usual way — 3050 for 3'0\" by 5'0\" (or 36x60 in inches)" };
-  const type = String(input.type ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, 40);
-  if (!type) return { ok: false, error: "Pick the window's type" };
-  const list = readJobWindows(project.windowList);
-  const company = await db.company.findFirst({ select: { windowDetails: true } });
-  const details = readWindowDetails(company?.windowDetails);
-  const values = Object.fromEntries(
-    details
-      .map(
-        (d) =>
-          [
-            d.name,
-            String(input.values?.[d.name] ?? "")
-              .trim()
-              .slice(0, 60),
-          ] as const,
-      )
-      .filter(([, v]) => v && !(v === "No")),
-  ) as Record<string, string>;
-  const color = readColor(input.color);
-  const name = windowName({ ...size, type, color, details, values });
+  if (!size)
+    return {
+      ok: false,
+      error: kind === "window" ? `Type the size the usual way — 3050 for 3'0" by 5'0" (or 36x60 in inches)` : `Type the size the usual way — 2868 for 2'8" by 6'8" (or 32x80 in inches)`,
+    };
+  const { parts, aliases } = await loadUnitParts(kind);
+  const values = cleanValues(parts, input.values ?? {});
+  if (typeof values === "string") return { ok: false, error: values };
+  const name = unitName(kind, parts, size, values);
   const nameKey = itemNameKey(name);
-  const had = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, kind: true } });
-  if (had && had.kind !== "windows") return { ok: false, error: `"${name}" is already on the Item List as something else` };
+  const itemKind = itemKindOf(kind);
+  // By its name — or the one it was merged into (Item List → Possible duplicates).
+  const had =
+    (await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, kind: true } })) ??
+    (aliases[nameKey] ? await db.materialItem.findFirst({ where: { id: aliases[nameKey], kind: itemKind }, select: { id: true, kind: true } }) : null);
+  if (had && had.kind !== itemKind) return { ok: false, error: `"${name}" is already on the Item List as something else` };
   let id = had?.id;
   if (!id) {
-    const place = await newItemPlacement("windows", null);
+    const fields = itemFields(kind, values);
+    const place = await newItemPlacement(itemKind, fields.exterior);
     const item = await db.materialItem.create({
-      data: {
-        name,
-        nameKey,
-        category: place.category,
-        kind: place.kind,
-        unit: "ea",
-        roundUp: true,
-        costCodeId: place.costCodeId,
-        widthIn: size.widthIn,
-        heightIn: size.heightIn,
-        style: type,
-        color,
-        details: Object.keys(values).length ? JSON.stringify(values) : null,
-      },
+      data: { name, nameKey, category: place.category, kind: place.kind, unit: "ea", roundUp: true, costCodeId: place.costCodeId, ...size, ...fields },
     });
     id = item.id;
-    revalidatePath("/settings/items");
+    revalidatePath("/catalog/items");
   }
+  const list = readJobList(kind, project);
   if (input.replace) {
-    list.lines = await replaceLine(project.id, "WINDOW", list.lines, String(input.replace), id);
-    return saveJobWindows(project.id, list);
+    list.lines = await replaceLine(project.id, unitType(kind), list.lines, String(input.replace), id);
+    return saveJobList(kind, project.id, list);
   }
   if (!list.lines.includes(id)) {
-    if (list.lines.length >= MAX_LINES) return { ok: false, error: `The list holds ${MAX_LINES} windows — take one off first` };
+    if (list.lines.length >= maxLines(kind)) return { ok: false, error: `The list holds ${maxLines(kind)} ${noun}s — take one off first` };
     list.lines.push(id);
   }
-  return saveJobWindows(project.id, list);
+  return saveJobList(kind, project.id, list);
 }
 
-/** The list's order, or a line taken off (the window stays on the Item List and the plan). */
-export async function setJobWindows(input: { projectId: string; lines?: string[] }): Promise<WindowsResult> {
+/** The list's order, or a line taken off (it stays on the Item List and the plan). */
+export async function setJobUnits(input: { projectId: string; kind: UnitKind; lines?: string[] }): Promise<UnitsResult> {
   await requireEdit("takeoffs");
+  const kind: UnitKind = input.kind === "window" ? "window" : "door";
   const project = await getProject(String(input.projectId));
-  const list = readJobWindows(project.windowList);
+  const list = readJobList(kind, project);
   if (Array.isArray(input.lines)) list.lines = input.lines.map(String).filter((id) => list.lines.includes(id));
-  return saveJobWindows(project.id, list);
+  return saveJobList(kind, project.id, list);
 }
 
-/** "+ Add a detail" while adding a window: one more thing every window has, for the whole company (Settings → Windows too). */
-export async function addWindowDetailHere(input: {
-  name: string;
-  kind: string;
-}): Promise<{ ok: true; details: WindowDetail[] } | { ok: false; error: string }> {
+/**
+ * "+ Add a choice…" on a part while adding a door or window: it goes on the company's list (Catalog → Doors /
+ * Windows), so it's the same pick on every job after. One there already by that name ("metal" when there's
+ * "Metal") is the one used.
+ */
+export async function addUnitChoice(input: {
+  kind: UnitKind;
+  key: string;
+  value: string;
+}): Promise<{ ok: true; parts: UnitPart[]; value: string } | { ok: false; error: string }> {
   await requireEdit("takeoffs");
-  const company = await db.company.findFirst({ select: { id: true, windowDetails: true } });
-  if (!company) return { ok: false, error: "Set up your company first (Settings)" };
-  const next = withDetail(readWindowDetails(company.windowDetails), String(input.name ?? ""), String(input.kind ?? ""));
-  if (typeof next === "string") return { ok: false, error: next };
-  await db.company.update({ where: { id: company.id }, data: { windowDetails: JSON.stringify(next) } });
-  revalidatePath("/settings/windows");
-  return { ok: true, details: next };
-}
-
-/** × on a detail while adding a window: off the company's list (windows already made keep it in their name). */
-export async function removeWindowDetailHere(input: { name: string }): Promise<{ ok: true; details: WindowDetail[] } | { ok: false; error: string }> {
-  await requireEdit("takeoffs");
-  const company = await db.company.findFirst({ select: { id: true, windowDetails: true } });
-  if (!company) return { ok: false, error: "Set up your company first (Settings)" };
-  const next = readWindowDetails(company.windowDetails).filter((d) => d.name !== String(input.name ?? ""));
-  await db.company.update({ where: { id: company.id }, data: { windowDetails: next.length ? JSON.stringify(next) : null } });
-  revalidatePath("/settings/windows");
-  return { ok: true, details: next };
+  const kind: UnitKind = input.kind === "window" ? "window" : "door";
+  const current = await loadUnitParts(kind);
+  const r = withChoice(current.parts, String(input.key ?? ""), String(input.value ?? ""));
+  if (typeof r === "string") return { ok: false, error: r };
+  if (r.parts !== current.parts) {
+    await saveUnitParts(kind, { ...current, parts: r.parts });
+    revalidatePath(`/catalog/${kind}s`);
+  }
+  return { ok: true, parts: r.parts, value: r.value };
 }
 
 // --- Changing or removing a line on the job's window / door list ---------------------------------------
@@ -1796,191 +1750,16 @@ async function replaceLine(projectId: string, type: "DOOR" | "WINDOW", lines: st
  * × on a line with doors / windows placed: they come off the plan (every sheet — `except`: the ones this
  * sheet is taking off itself, so Ctrl+Z can bring them back) and the line off the list. The item stays on the Item List.
  */
-export async function removeJobUnitLine(input: { projectId: string; kind: "door" | "window"; id: string; except?: string[] }) {
+export async function removeJobUnitLine(input: { projectId: string; kind: UnitKind; id: string; except?: string[] }) {
   await requireEdit("takeoffs");
+  const kind: UnitKind = input.kind === "window" ? "window" : "door";
   const project = await getProject(String(input.projectId));
-  const type = input.kind === "window" ? "WINDOW" : "DOOR";
   const id = String(input.id);
   const except = (input.except ?? []).map(String).slice(0, 5000);
-  const gone = await db.takeoffMeasurement.deleteMany({ where: { materialItemId: id, condition: { projectId: project.id, type }, id: { notIn: except } } });
-  if (type === "WINDOW") {
-    const list = readJobWindows(project.windowList);
-    list.lines = list.lines.filter((x) => x !== id);
-    return { ...(await saveJobWindows(project.id, list)), removed: gone.count };
-  }
-  const list = readJobDoors(project.doorList);
-  list.lines = list.lines.filter((x) => x !== id);
-  return { ...(await saveJobDoors(project.id, list)), removed: gone.count };
-}
-
-// --- The job's doors (Doors takeoff: the short list to pick from, like windows) -----------------------
-
-export type JobDoorLine = {
-  id: string;
-  name: string;
-  widthIn: number;
-  heightIn: number;
-  style: string | null;
-  exterior: boolean;
-  jamb: DoorJamb;
-  core: DoorCore;
-  /** The company's own details (Door Swing…). */
-  details: Record<string, string>;
-};
-type DoorsResult = { ok: true; lines: JobDoorLine[] } | { ok: false; error: string };
-
-/** A door item as a line on the list: its own choices out of its details, the company's left in. */
-function doorLine(i: {
-  id: string;
-  name: string;
-  widthIn: number | null;
-  heightIn: number | null;
-  style: string | null;
-  exterior: boolean | null;
-  details: string | null;
-}): JobDoorLine {
-  const all = readItemDetails(i.details);
-  const { [JAMB_KEY]: jamb, [CORE_KEY]: core, ...details } = all;
-  return {
-    id: i.id,
-    name: i.name,
-    widthIn: i.widthIn!,
-    heightIn: i.heightIn!,
-    style: i.style,
-    exterior: !!i.exterior,
-    jamb: readJamb(jamb),
-    core: readCore(core),
-    details,
-  };
-}
-
-async function jobDoorLines(ids: string[]): Promise<JobDoorLine[]> {
-  const items = await db.materialItem.findMany({
-    where: { id: { in: ids } },
-    select: { id: true, name: true, widthIn: true, heightIn: true, style: true, exterior: true, details: true },
+  const gone = await db.takeoffMeasurement.deleteMany({
+    where: { materialItemId: id, condition: { projectId: project.id, type: unitType(kind) }, id: { notIn: except } },
   });
-  const byId = new Map(items.map((i) => [i.id, i]));
-  return ids
-    .map((id) => byId.get(id))
-    .filter((i): i is NonNullable<typeof i> => !!i && i.widthIn != null && i.heightIn != null)
-    .map(doorLine);
-}
-
-async function saveJobDoors(projectId: string, list: JobDoors): Promise<DoorsResult> {
-  await db.project.update({ where: { id: projectId }, data: { doorList: JSON.stringify(list) } });
-  revalidatePath(`/projects/${projectId}/takeoff`, "layout");
-  return { ok: true, lines: await jobDoorLines(list.lines) };
-}
-
-/**
- * A door on this job's list: its size ("2868"), int / ext, type, jamb, core and the company's own details.
- * It's the Item List door by that name — made the first time (filed with your doors, their cost code), the
- * same one after — so the material list, estimate, bids and wall openings see it like any door.
- */
-export async function addJobDoor(input: {
-  projectId: string;
-  size: string;
-  exterior: boolean;
-  type: string;
-  jamb: string;
-  core: string;
-  values?: Record<string, string>;
-  /** Editing a line: the door it was — its doors placed on this job become this one, in its place on the list. */
-  replace?: string | null;
-}): Promise<DoorsResult> {
-  await requireEdit("takeoffs");
-  const project = await getProject(String(input.projectId));
-  const size = readSizeCode(String(input.size ?? ""));
-  if (!size) return { ok: false, error: "Type the size the usual way — 2868 for 2'8\" by 6'8\" (or 32x80 in inches)" };
-  const type = String(input.type ?? "")
-    .trim()
-    .replace(/\s+/g, " ")
-    .slice(0, 40);
-  if (!type) return { ok: false, error: "Pick the door's type" };
-  const exterior = input.exterior === true;
-  const jamb = readJamb(input.jamb);
-  const core = readCore(input.core);
-  const list = readJobDoors(project.doorList);
-  const company = await db.company.findFirst({ select: { doorDetails: true } });
-  const details = readDoorDetails(company?.doorDetails);
-  const values = Object.fromEntries(
-    details
-      .map(
-        (d) =>
-          [
-            d.name,
-            String(input.values?.[d.name] ?? "")
-              .trim()
-              .slice(0, 60),
-          ] as const,
-      )
-      .filter(([, v]) => v && !(v === "No")),
-  ) as Record<string, string>;
-  const name = doorName({ ...size, exterior, type, jamb, core, details, values });
-  const nameKey = itemNameKey(name);
-  const had = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, kind: true } });
-  if (had && had.kind !== "doors") return { ok: false, error: `"${name}" is already on the Item List as something else` };
-  let id = had?.id;
-  if (!id) {
-    const place = await newItemPlacement("doors", exterior);
-    const item = await db.materialItem.create({
-      data: {
-        name,
-        nameKey,
-        category: place.category,
-        kind: place.kind,
-        unit: "ea",
-        roundUp: true,
-        costCodeId: place.costCodeId,
-        widthIn: size.widthIn,
-        heightIn: size.heightIn,
-        exterior,
-        style: type,
-        details: JSON.stringify({ [JAMB_KEY]: jamb, [CORE_KEY]: core, ...values }),
-      },
-    });
-    id = item.id;
-    revalidatePath("/settings/items");
-  }
-  if (input.replace) {
-    list.lines = await replaceLine(project.id, "DOOR", list.lines, String(input.replace), id);
-    return saveJobDoors(project.id, list);
-  }
-  if (!list.lines.includes(id)) {
-    if (list.lines.length >= MAX_DOOR_LINES) return { ok: false, error: `The list holds ${MAX_DOOR_LINES} doors — take one off first` };
-    list.lines.push(id);
-  }
-  return saveJobDoors(project.id, list);
-}
-
-/** The list's order, or a line taken off (the door stays on the Item List and the plan). */
-export async function setJobDoors(input: { projectId: string; lines?: string[] }): Promise<DoorsResult> {
-  await requireEdit("takeoffs");
-  const project = await getProject(String(input.projectId));
-  const list = readJobDoors(project.doorList);
-  if (Array.isArray(input.lines)) list.lines = input.lines.map(String).filter((id) => list.lines.includes(id));
-  return saveJobDoors(project.id, list);
-}
-
-/** "+ Add a detail" while adding a door: one more thing every door has, for the whole company (Settings → Doors too). */
-export async function addDoorDetailHere(input: { name: string; kind: string }): Promise<{ ok: true; details: DoorDetail[] } | { ok: false; error: string }> {
-  await requireEdit("takeoffs");
-  const company = await db.company.findFirst({ select: { id: true, doorDetails: true } });
-  if (!company) return { ok: false, error: "Set up your company first (Settings)" };
-  const next = withDoorDetail(readDoorDetails(company.doorDetails), String(input.name ?? ""), String(input.kind ?? ""));
-  if (typeof next === "string") return { ok: false, error: next };
-  await db.company.update({ where: { id: company.id }, data: { doorDetails: JSON.stringify(next) } });
-  revalidatePath("/settings/doors");
-  return { ok: true, details: next };
-}
-
-/** × on a detail while adding a door: off the company's list (doors already made keep it in their name). */
-export async function removeDoorDetailHere(input: { name: string }): Promise<{ ok: true; details: DoorDetail[] } | { ok: false; error: string }> {
-  await requireEdit("takeoffs");
-  const company = await db.company.findFirst({ select: { id: true, doorDetails: true } });
-  if (!company) return { ok: false, error: "Set up your company first (Settings)" };
-  const next = readDoorDetails(company.doorDetails).filter((d) => d.name !== String(input.name ?? ""));
-  await db.company.update({ where: { id: company.id }, data: { doorDetails: next.length ? JSON.stringify(next) : null } });
-  revalidatePath("/settings/doors");
-  return { ok: true, details: next };
+  const list = readJobList(kind, project);
+  list.lines = list.lines.filter((x) => x !== id);
+  return { ...(await saveJobList(kind, project.id, list)), removed: gone.count };
 }

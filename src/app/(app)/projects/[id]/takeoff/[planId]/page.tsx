@@ -1,6 +1,8 @@
 import { notFound } from "next/navigation";
-import { MAX_LINES, readColor, readItemDetails, readJobWindows, readWindowDetails } from "@/lib/window-list";
-import { CORE_KEY, JAMB_KEY, MAX_DOOR_LINES, readCore, readDoorDetails, readJamb, readJobDoors } from "@/lib/door-list";
+import { MAX_LINES, readJobWindows } from "@/lib/window-list";
+import { MAX_DOOR_LINES, readJobDoors } from "@/lib/door-list";
+import { itemValues } from "@/lib/unit-parts";
+import { loadUnitParts } from "@/lib/unit-parts-server";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
@@ -19,11 +21,21 @@ export default async function PlanViewerPage({
   searchParams,
 }: {
   params: Promise<{ id: string; planId: string }>;
-  searchParams: Promise<{ page?: string; cond?: string; applied?: string; skipped?: string; templateError?: string; toolbox?: string; library?: string }>;
+  searchParams: Promise<{
+    page?: string;
+    cond?: string;
+    applied?: string;
+    skipped?: string;
+    templateError?: string;
+    toolbox?: string;
+    library?: string;
+    note?: string;
+    at?: string;
+  }>;
 }) {
   const user = await requireView("takeoffs");
   const { id, planId } = await params;
-  const { page, cond, applied, skipped, templateError, toolbox, library: libraryNote } = await searchParams;
+  const { page, cond, applied, skipped, templateError, toolbox, library: libraryNote, note, at } = await searchParams;
   const project = await getProject(id);
   const [plan, plans, conditions, doorItems, costCodes, codeRules, needsCodes, templates, library] = await Promise.all([
     db.takeoffPlan.findFirst({
@@ -65,79 +77,49 @@ export default async function PlanViewerPage({
   const windows = unitsIn("windows");
   // The job's windows: its short list to pick from, how many of each are on the job, and the company's
   // own window details. A job from before the list starts with the windows already on it, most-used first.
-  const [windowCounts, companyWindows, doorCounts] = await Promise.all([
+  const [windowCounts, doorCounts, windowParts, doorParts] = await Promise.all([
     db.takeoffMeasurement.groupBy({
       by: ["materialItemId"],
       where: { condition: { projectId: project.id, type: "WINDOW" }, materialItemId: { not: null } },
       _count: { _all: true },
     }),
-    db.company.findFirst({ select: { windowDetails: true, doorDetails: true } }),
     db.takeoffMeasurement.groupBy({
       by: ["materialItemId"],
       where: { condition: { projectId: project.id, type: "DOOR" }, materialItemId: { not: null } },
       _count: { _all: true },
     }),
+    // What the company's windows and doors are described by (Catalog → Windows / Doors).
+    loadUnitParts("window"),
+    loadUnitParts("door"),
   ]);
-  const counts = Object.fromEntries(windowCounts.map((c) => [c.materialItemId!, c._count._all]));
-  const saved = readJobWindows(project.windowList);
-  const windowIds = new Set(windows.map((w) => w.id));
-  // The saved list, then any window placed on the job that isn't on it (from before the list, or brought
-  // back with Ctrl+Z after its line was taken off) — most-used first. Every window placed has its line.
-  const listed = project.windowList ? saved.lines.filter((i) => windowIds.has(i)) : [];
-  const lineIds = [
-    ...listed,
-    ...Object.entries(counts)
-      .filter(([i]) => windowIds.has(i) && !listed.includes(i))
-      .sort((a, b) => b[1] - a[1])
-      .map(([i]) => i),
-  ].slice(0, MAX_LINES);
   const byItem = new Map(doorItems.map((d) => [d.id, d]));
-  const jobWindows = {
-    details: readWindowDetails(companyWindows?.windowDetails),
-    counts,
-    lines: lineIds.map((i) => {
-      const d = byItem.get(i)!;
-      return {
-        id: d.id,
-        name: d.name,
-        widthIn: d.widthIn!,
-        heightIn: d.heightIn!,
-        style: d.style,
-        color: readColor(d.color),
-        details: readItemDetails(d.details),
-      };
-    }),
+  const line = (i: string) => {
+    const d = byItem.get(i)!;
+    return { id: d.id, name: d.name, widthIn: d.widthIn!, heightIn: d.heightIn!, values: itemValues(d) };
   };
-  // The job's doors, the same way: its short list, how many of each, and the company's own door details.
-  // A job from before the list starts with the doors already on it, most-used first.
+  // A job's list: the saved list, then any placed that aren't on it (from before the list, or brought back
+  // with Ctrl+Z after its line was taken off) — most-used first. Every one placed has its line.
+  const jobList = (ids: Set<string>, saved: string[] | null, counts: Record<string, number>, max: number) => {
+    const listed = saved ? saved.filter((i) => ids.has(i)) : [];
+    return [
+      ...listed,
+      ...Object.entries(counts)
+        .filter(([i]) => ids.has(i) && !listed.includes(i))
+        .sort((a, b) => b[1] - a[1])
+        .map(([i]) => i),
+    ].slice(0, max);
+  };
+  const counts = Object.fromEntries(windowCounts.map((c) => [c.materialItemId!, c._count._all]));
+  const jobWindows = {
+    parts: windowParts.parts,
+    counts,
+    lines: jobList(new Set(windows.map((w) => w.id)), project.windowList ? readJobWindows(project.windowList).lines : null, counts, MAX_LINES).map(line),
+  };
   const dCounts = Object.fromEntries(doorCounts.map((c) => [c.materialItemId!, c._count._all]));
-  const doorIds = new Set(doors.map((d) => d.id));
-  const doorsListed = project.doorList ? readJobDoors(project.doorList).lines.filter((i) => doorIds.has(i)) : [];
-  const doorLineIds = [
-    ...doorsListed,
-    ...Object.entries(dCounts)
-      .filter(([i]) => doorIds.has(i) && !doorsListed.includes(i))
-      .sort((a, b) => b[1] - a[1])
-      .map(([i]) => i),
-  ].slice(0, MAX_DOOR_LINES);
   const jobDoors = {
-    details: readDoorDetails(companyWindows?.doorDetails),
+    parts: doorParts.parts,
     counts: dCounts,
-    lines: doorLineIds.map((i) => {
-      const d = byItem.get(i)!;
-      const { [JAMB_KEY]: jamb, [CORE_KEY]: core, ...details } = readItemDetails(d.details);
-      return {
-        id: d.id,
-        name: d.name,
-        widthIn: d.widthIn!,
-        heightIn: d.heightIn!,
-        style: d.style,
-        exterior: !!d.exterior,
-        jamb: readJamb(jamb),
-        core: readCore(core),
-        details,
-      };
-    }),
+    lines: jobList(new Set(doors.map((d) => d.id)), project.doorList ? readJobDoors(project.doorList).lines : null, dCounts, MAX_DOOR_LINES).map(line),
   };
   if (!plan) notFound();
 
@@ -297,12 +279,15 @@ export default async function PlanViewerPage({
           ? `Not saved: ${templateError}`
           : libraryNote
             ? libraryNote
-            : toolbox
+            : note
+              ? note.slice(0, 200)
+              : toolbox
               ? `Also added to your "${toolbox}" takeoff template`
               : applied != null
                 ? `Added ${applied} takeoff${applied === "1" ? "" : "s"} from the template${skipped && skipped !== "0" ? ` · ${skipped} already on this job` : ""}`
                 : null
       }
+      noticeAt={at}
       pageNumber={pageNumber}
       sheet={
         sheet

@@ -396,7 +396,7 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
     type: "bid.taken",
     description: `Took ${done.join("; ")} — ${items} prices ${scope === "JOB" ? "on this job only" : locked ? "into the Item List (job prices locked)" : "into the Item List for every job"}${subbed ? `, ${subbed} substitute${subbed === 1 ? "" : "s"} used` : ""}${keptOut ? `, ${keptOut} substitute${keptOut === 1 ? "" : "s"} turned down` : ""}`,
   });
-  if (scope === "COMPANY") revalidatePath("/settings/items");
+  if (scope === "COMPANY") revalidatePath("/catalog/items");
   revalidateBids(project.id);
   redirect(`${bidsPath(project.id)}?taken=${done.length}&items=${items}&skipped=${skipped}&subbed=${subbed}&kept=${keptOut}&scope=${scope}#compare`);
 });
