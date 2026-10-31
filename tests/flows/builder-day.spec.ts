@@ -223,6 +223,21 @@ test("adds a sub from a schedule task without leaving, and drops their W-9 on th
   await expect(page).toHaveURL(/\/vendors\/c[a-z0-9]+$/);
 });
 
+test("opens a teammate from Directory → Team and edits them right there", async () => {
+  await page.goto("/directory");
+  await page.getByRole("navigation", { name: "Directory" }).getByRole("link", { name: "Team" }).click();
+  await page.locator("main").getByRole("link", { name: "Flo Tester" }).click();
+  await expect(page).toHaveURL(/\/team\/c[a-z0-9]+$/);
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.locator("input[name=title]").fill("Owner");
+  await page.locator("input[name=payRate]").fill("45");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("$45.00 / hr")).toBeVisible();
+  await expect(page).toHaveURL(/\/team\/c[a-z0-9]+$/);
+  await page.getByRole("link", { name: "← Team" }).click();
+  await expect(page.getByText("Owner").first()).toBeVisible();
+});
+
 test("reports a problem", async () => {
   await page.getByRole("button", { name: /Report a problem/ }).click();
   await page.getByLabel("What happened").fill("Workflow test — please ignore.");

@@ -4,7 +4,7 @@ import { logActivity } from "./activity";
 import { runAsCompany } from "./tenant";
 
 /**
- * Sign-ins and changes to logins, for the company's admins (Settings → Team → Security log).
+ * Sign-ins and changes to logins, for the company's admins (Settings → Security).
  * Kept out of the everyday activity feed. Never throws.
  */
 

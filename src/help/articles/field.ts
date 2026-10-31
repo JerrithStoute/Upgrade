@@ -95,7 +95,7 @@ export const FIELD: HelpArticle[] = [
           { name: "Reminder", what: "A note for someone on that day, such as \"Call the brick supplier\". It shows in their To-Dos that day." },
           { name: "Time off", what: "Vacation, sick or personal days for a person. Admins add anyone's; others add their own." },
           { name: "Holiday", what: "Admins: a day nobody works. Schedules skip it. With the box ticked, work already on it moves out on active jobs (logged as a delay)." },
-          { name: "Time off — this year", what: "Each person's vacation used and left, sick and personal days. Set vacation days in Settings → Team." },
+          { name: "Time off — this year", what: "Each person's vacation used and left, sick and personal days. Set vacation days in Directory → Team." },
         ],
       },
     ],
@@ -238,7 +238,7 @@ export const FIELD: HelpArticle[] = [
       },
     ],
     tips: [
-      "Warranty is part of **Schedule, daily logs & to-dos** in Settings → Team. A position that can edit it can assign and close requests.",
+      "Warranty is part of **Schedule, daily logs & to-dos** in Directory → Team. A position that can edit it can assign and close requests.",
       "A request reported after the warranty has ended still comes in. Close it as **Not covered** with the reason, or fix it anyway as a courtesy.",
       "Phones: the client, the sub and the team can turn on notifications for warranty requests on their **Account** page.",
     ],

@@ -48,8 +48,9 @@ export default async function TimesheetsPage({ searchParams }: { searchParams: P
   // Days, weeks and times on the company's clock.
   const { key, monday, from, to, clock, rules, dayOf } = await weekOf(parseWeek(sp.week) ? sp.week! : now);
   const hrs = (h: number) => fmtHours(h, rules.hoursFormat);
-  // Labor dollars and pay only for someone whose position sees costs and profit.
-  const seesCosts = user.access.costs;
+  // Dollars here are people's pay (hours × their rate): admins only, whatever a position allows. A job's
+  // labor total on its Budget is the place for everyone else who sees costs.
+  const seesCosts = user.role === "ADMIN";
   const at = (punch: { lat: number | null; lng: number | null; accuracy: number | null }, job: { siteLat: number | null; siteLng: number | null }) =>
     siteCheck(punch, { lat: job.siteLat, lng: job.siteLng }, rules.siteFeet);
   const { wall } = clock;

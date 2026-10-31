@@ -56,7 +56,7 @@ export const clockOutAction = friendly(async function clockOutAction(fd: FormDat
 
 async function requireTimeManager() {
   const user = await requireStaff();
-  if (!canFixTime(user)) throw new Error("Your position can't change other people's time — an admin can allow it in Settings → Team");
+  if (!canFixTime(user)) throw new Error("Your position can't change other people's time — an admin can allow it in Directory → Team");
   return user;
 }
 

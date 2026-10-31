@@ -50,7 +50,7 @@ async function readFields(fd: FormData) {
  */
 function checkTodo(user: SessionUser, todo: { assigneeId: string | null; createdById?: string | null }) {
   if (allows(user.access, "field", 2) || todo.assigneeId === user.id || todo.createdById === user.id) return;
-  throw new Error("Your position can't change other people's to-dos — an admin can allow it in Settings → Team");
+  throw new Error("Your position can't change other people's to-dos — an admin can allow it in Directory → Team");
 }
 
 export const createTodo = friendly(async function createTodo(fd: FormData) {

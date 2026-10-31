@@ -288,7 +288,7 @@ export const updateBill = friendly(async function updateBill(fd: FormData) {
   redirect(`${base(project.id)}/bills/${bill.id}`);
 });
 
-/** Approve / reject / un-approve / paid — approve and pay by those allowed (Settings → Team). */
+/** Approve / reject / un-approve / paid — approve and pay by those allowed (Directory → Team). */
 export const decideBill = friendly(async function decideBill(fd: FormData) {
   const user = await requireEdit("purchasing");
   const project = await getProject(str(fd, "projectId"));
@@ -296,7 +296,7 @@ export const decideBill = friendly(async function decideBill(fd: FormData) {
   if (!bill) throw new Error("Bill not found");
   if (bill.qbTxnId) throw new Error("This bill comes from QuickBooks — change it there, and it follows here on the next update");
   const what = str(fd, "decision");
-  if (!canApproveBills(user)) throw new Error("You don't have permission to approve bills — an admin can allow it in Settings → Team");
+  if (!canApproveBills(user)) throw new Error("You don't have permission to approve bills — an admin can allow it in Directory → Team");
   if (what === "approve") await approveBill(bill.id, user.id);
   else if (what === "reject") {
     if (bill.status !== "PENDING") throw new Error("Only a bill waiting for approval can be rejected");

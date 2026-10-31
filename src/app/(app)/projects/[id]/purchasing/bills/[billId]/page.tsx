@@ -146,7 +146,7 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
           ) : !mayDecide ? (
             <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
               {bill.status === "PENDING"
-                ? "Waiting for someone who can approve bills (an admin can allow it in Settings → Team)."
+                ? "Waiting for someone who can approve bills (an admin can allow it in Directory → Team)."
                 : "Only people who can approve bills change its status."}
             </p>
           ) : (

@@ -483,7 +483,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       <GetTheAppBanner name="The Builder Station" />
       <PageHeader
         title="Dashboard"
-        description={first ? `Welcome to The Builder Station, ${user.name.split(" ")[0]}! Start with Projects → New project, or invite your team in Settings → Team.` : `Welcome back, ${user.name.split(" ")[0]}. Drag a card by its grip to move it.`}
+        description={first ? `Welcome to The Builder Station, ${user.name.split(" ")[0]}! Start with Projects → New project, or invite your team in Directory → Team.` : `Welcome back, ${user.name.split(" ")[0]}. Drag a card by its grip to move it.`}
         actions={<CustomizeDashboard cards={availableCards(reports)} picked={cards} />}
       />
       <GettingStarted isAdmin={user.role === "ADMIN"} />

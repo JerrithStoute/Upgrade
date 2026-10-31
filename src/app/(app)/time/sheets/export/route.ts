@@ -38,7 +38,7 @@ export async function GET(req: Request) {
   const day = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const time = (d: Date | null) => (d ? d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "still on the clock");
   const round = (n: number) => Math.round(n * 100) / 100;
-  const lines = [["Person", "Date", "Job", "Cost code", "Started", "Stopped", "Break (min)", "Hours", "Regular", "Overtime", "Double time", ...(user.access.costs ? ["Pay rate"] : []), "Note"].join(",")];
+  const lines = [["Person", "Date", "Job", "Cost code", "Started", "Stopped", "Break (min)", "Hours", "Regular", "Overtime", "Double time", ...(user.role === "ADMIN" ? ["Pay rate"] : []), "Note"].join(",")];
   for (const e of entries) {
     // Hours by the company's rules (rounding, automatic lunch); the punch times are the real ones.
     const hours = entryHours(e, new Date(), rules);
@@ -57,7 +57,7 @@ export async function GET(req: Request) {
         round(hours - ot - dt),
         round(ot),
         round(dt),
-        ...(user.access.costs ? [e.user.payRate ?? ""] : []),
+        ...(user.role === "ADMIN" ? [e.user.payRate ?? ""] : []),
         e.notes ?? "",
       ]
         .map(cell)

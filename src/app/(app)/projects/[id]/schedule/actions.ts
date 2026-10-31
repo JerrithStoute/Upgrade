@@ -169,11 +169,11 @@ export const completeTask = friendly(async function completeTask(fd: FormData) {
 
 /**
  * Delays the job: from that day, everything not finished moves out (1 workday by default),
- * logged with the reason. Admins, and team members allowed to (Settings → Team).
+ * logged with the reason. Admins, and team members allowed to (Directory → Team).
  */
 export const delayJob = friendly(async function delayJob(fd: FormData) {
   const user = await requireEdit("field");
-  if (!canDelay(user)) throw new Error("You don't have permission to delay jobs — an admin can allow it in Settings → Team");
+  if (!canDelay(user)) throw new Error("You don't have permission to delay jobs — an admin can allow it in Directory → Team");
   const project = await getProject(str(fd, "projectId"));
   const date = parseDateInput(fd.get("date")) ?? (await companyClock()).now;
   const days = Math.max(1, Math.min(60, intField(fd, "days", 1)));

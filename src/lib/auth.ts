@@ -176,9 +176,9 @@ export async function requireEdit(area: AreaKey, opts?: { costs?: boolean }): Pr
   const user = await requireStaff();
   if (!allows(user.access, area, 2)) {
     const label = AREAS.find((a) => a.key === area)?.label ?? area;
-    throw new Error(`Your position can't change ${label} — an admin can allow it in Settings → Team`);
+    throw new Error(`Your position can't change ${label} — an admin can allow it in Directory → Team`);
   }
-  if (opts?.costs && !user.access.costs) throw new Error("Your position doesn't see costs and profit, so it can't change this — an admin can allow it in Settings → Team");
+  if (opts?.costs && !user.access.costs) throw new Error("Your position doesn't see costs and profit, so it can't change this — an admin can allow it in Directory → Team");
   return user;
 }
 

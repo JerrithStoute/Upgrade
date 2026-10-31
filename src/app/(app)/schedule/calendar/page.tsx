@@ -297,7 +297,7 @@ export default async function CalendarPage({
       <Card>
         <CardHeader
           title={`Time off — ${today.getFullYear()}`}
-          description="Workdays off this year (holidays and days you don't work aren't counted). Set each person's vacation days in Settings → Team."
+          description="Workdays off this year (holidays and days you don't work aren't counted). Set each person's vacation days in Directory → Team."
         />
         <Table className="rounded-t-none border-0 shadow-none">
           <THead>

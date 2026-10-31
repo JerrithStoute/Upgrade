@@ -76,7 +76,7 @@ describe("which area a page is in", () => {
     assert.equal(areaForPath("/catalog/takeoff-templates/abc"), "lists");
     assert.equal(areaForPath("/settings/cost-codes"), "lists");
     assert.equal(areaForPath("/settings/quickbooks"), "quickbooks");
-    assert.equal(areaForPath("/settings/team"), null);
+    assert.equal(areaForPath("/settings/security"), null);
     assert.equal(areaForPath("/settings"), null);
   });
 

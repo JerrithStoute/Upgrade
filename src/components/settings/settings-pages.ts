@@ -41,7 +41,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     icon: Building2,
     pages: [
       { href: "/settings/company", label: "Company profile", about: "Name, address, logo and colors, time zone, backups", icon: Building2 },
-      { href: "/settings/team", label: "Team & positions", about: "Invite people, what each position sees, two-step sign-in", icon: Users },
+      { href: "/settings/security", label: "Security", about: "Two-step sign-in for everyone, client portal logins, the sign-in log", icon: Users },
       { href: "/settings/notifications", label: "Email notifications", about: "Which emails the program sends by itself, and who gets them", icon: Bell },
     ],
   },

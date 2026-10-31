@@ -37,7 +37,7 @@ const BACK: Record<string, { good?: boolean; text: string }> = {
   "other-builder": { text: "That QuickBooks company is already connected to another builder on The Builder Station." },
   switch: { text: "This is connected to a different QuickBooks company. Disconnect first, then connect the other one." },
   "not-set-up": { text: "QuickBooks Online isn't turned on for The Builder Station yet." },
-  "not-allowed": { text: "Your position can't change the QuickBooks connection — an admin can allow it in Settings → Team." },
+  "not-allowed": { text: "Your position can't change the QuickBooks connection — an admin can allow it in Directory → Team." },
 };
 
 export default async function QuickBooksPage({ searchParams }: { searchParams: Promise<{ qbo?: string }> }) {

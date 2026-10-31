@@ -13,7 +13,7 @@ import { agingBucket, daysLate, jobNumbers, periodOf, periods, type AgingKey, ty
 export const ACTIVE = ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"];
 export const SOLD = [...ACTIVE, "COMPLETED"];
 
-/** Who sees Reports: admins, and team members you've allowed (Settings → Team). */
+/** Who sees Reports: admins, and team members you've allowed (Directory → Team). */
 export function canSeeReports(user: { role: string; access?: { reports: number } | null }) {
   return user.role === "ADMIN" || (user.access?.reports ?? 0) > 0;
 }

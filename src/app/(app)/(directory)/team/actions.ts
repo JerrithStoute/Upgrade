@@ -7,19 +7,31 @@ import { requireAdmin, hashPassword, signOutEverywhere } from "@/lib/auth";
 import { randomBytes } from "crypto";
 import { sendResetEmail } from "@/lib/account";
 import { cancelInvite, invite, resendInvite } from "@/lib/invites";
-import { db, systemDb } from "@/lib/db";
+import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
-import { str, strOrNull, boolField } from "@/lib/utils";
+import { str, strOrNull } from "@/lib/utils";
 import { accessFromForm, diffAccess, positionAccess } from "@/lib/access";
 import { companyPositions, defaultPositionId } from "@/lib/positions";
 
 /**
- * The "Position" picker's choice: Admin, Subcontractor (no login), or one of the company's
- * positions ("pos:<id>"). Anything else (or a position that's gone) is the default position.
+ * Directory → Team: inviting people, each person's info, position, access and sign-in, and the positions
+ * themselves. Admins only. A person's page saves in place (you stay on it); the rest goes back where you were.
  */
-async function readPosition(value: string): Promise<{ role: "ADMIN" | "STAFF" | "SUB"; positionId: string | null; name: string }> {
+
+type Result = { ok: true } | { ok: false; error: string };
+const fail = (e: unknown): Result => ({ ok: false, error: e instanceof Error ? e.message : "That didn't save — try again" });
+
+function revalidateTeam(id?: string) {
+  revalidatePath("/team");
+  if (id) revalidatePath(`/team/${id}`);
+}
+
+/**
+ * The "Position" picker's choice: Admin, or one of the company's positions ("pos:<id>"). Anything else (or a
+ * position that's gone) is the default position. Someone without a sign-in keeps no position.
+ */
+async function readPosition(value: string): Promise<{ role: "ADMIN" | "STAFF"; positionId: string | null; name: string }> {
   if (value === "ADMIN") return { role: "ADMIN", positionId: null, name: "Admin" };
-  if (value === "SUB") return { role: "SUB", positionId: null, name: "Subcontractor" };
   const rows = await companyPositions();
   const fallback = await defaultPositionId();
   const pos = rows.find((r) => `pos:${r.id}` === value) ?? rows.find((r) => r.id === fallback);
@@ -30,7 +42,6 @@ async function readPosition(value: string): Promise<{ role: "ADMIN" | "STAFF" | 
 export const inviteTeamMember = friendly(async function inviteTeamMember(formData: FormData) {
   const admin = await requireAdmin();
   const pos = await readPosition(str(formData, "position"));
-  if (pos.role === "SUB") throw new Error("Pick a position — subcontractors are added without a login");
   const row = await invite(
     {
       kind: "TEAM",
@@ -42,11 +53,11 @@ export const inviteTeamMember = friendly(async function inviteTeamMember(formDat
     admin,
   );
   await logActivity({ userId: admin.id, type: "user.invited", description: `Invited ${row.email} to the team (${pos.name})` });
-  revalidatePath("/settings/team");
-  redirect(`/settings/team?invited=${encodeURIComponent(row.email)}`);
+  revalidateTeam();
+  redirect(`/team?invited=${encodeURIComponent(row.email)}`);
 });
 
-/** Someone on the schedule / time clock who never signs in (a crew member, a sub). */
+/** Someone on the schedule / time clock who never signs in (a crew member) — their page opens to fill in the rest. */
 export const addNoLoginMember = friendly(async function addNoLoginMember(formData: FormData) {
   const admin = await requireAdmin();
   const name = str(formData, "name");
@@ -63,20 +74,20 @@ export const addNoLoginMember = friendly(async function addNoLoginMember(formDat
     },
   });
   await logActivity({ userId: admin.id, type: "user.created", description: `Added ${user.name} (no login)` });
-  revalidatePath("/settings/team");
-  redirect("/settings/team");
+  revalidateTeam();
+  redirect(`/team/${user.id}`);
 });
 
 export const resendTeamInvite = friendly(async function resendTeamInvite(formData: FormData) {
   const admin = await requireAdmin();
   await resendInvite(str(formData, "id"), admin);
-  revalidatePath("/settings/team");
+  revalidateTeam();
 });
 
 export const cancelTeamInvite = friendly(async function cancelTeamInvite(formData: FormData) {
   await requireAdmin();
   await cancelInvite(str(formData, "id"));
-  revalidatePath("/settings/team");
+  revalidateTeam();
 });
 
 /** Emails a team member a link to choose a new password (admins never set them). */
@@ -86,86 +97,100 @@ export const sendPasswordReset = friendly(async function sendPasswordReset(formD
   if (!target || target.role === "SUB") throw new Error("That person can't sign in");
   await sendResetEmail(target);
   await logActivity({ userId: admin.id, type: "user.reset-sent", description: `Sent ${target.name} a password reset link` });
-  revalidatePath("/settings/team");
-  redirect(`/settings/team?reset=${encodeURIComponent(target.email)}`);
+  revalidateTeam(target.id);
+  redirect(`/team/${target.id}?reset=1`);
 });
 
-/** Require two-step sign-in for the whole team (admins and staff). */
-export const setRequireTwoStep = friendly(async function setRequireTwoStep(formData: FormData) {
-  const admin = await requireAdmin();
-  const on = boolField(formData, "on");
-  if (on) {
-    const me = await systemDb.user.findUniqueOrThrow({ where: { id: admin.id }, select: { totpEnabledAt: true } });
-    if (!me.totpEnabledAt) throw new Error("Turn on two-step sign-in for yourself first (Your account), then require it for the team");
+/**
+ * A person's info, changed right on their page: name, title, phone, position, vacation days — and their pay
+ * (admins are the only ones who ever see or change it).
+ */
+export async function saveMemberInfo(formData: FormData): Promise<Result> {
+  try {
+    const admin = await requireAdmin();
+    const id = str(formData, "id");
+    const target = await db.user.findUnique({ where: { id } });
+    if (!target || target.role === "CLIENT" || target.role === "VENDOR") throw new Error("Team member not found");
+    const name = str(formData, "name");
+    if (!name) throw new Error("Name is required");
+    // You can't change your own position (nobody locks themselves out of Settings); no sign-in, no position.
+    const pos = target.id === admin.id || target.role === "SUB" ? { role: target.role, positionId: target.positionId } : await readPosition(str(formData, "position"));
+    const moved = pos.role !== target.role || pos.positionId !== target.positionId;
+    const rawPay = str(formData, "payRate").replace(/[$,\s]/g, "");
+    const pay = rawPay ? Math.round(Math.max(0, Number(rawPay) || 0) * 100) / 100 || null : null;
+    const vacation = str(formData, "vacationDays");
+    await db.user.update({
+      where: { id },
+      data: {
+        name,
+        title: strOrNull(formData, "title"),
+        phone: strOrNull(formData, "phone"),
+        role: pos.role,
+        positionId: pos.positionId,
+        // A new position starts clean: changes made for just this person were changes from the old one.
+        ...(moved ? { access: null } : {}),
+        vacationDays: vacation ? Math.max(0, Math.min(365, Number(vacation) || 0)) : null,
+        payRate: pay,
+        salaried: formData.get("salaried") === "on",
+      },
+    });
+    await logActivity({ userId: admin.id, type: "user.updated", description: `Updated team member ${name}` });
+    revalidateTeam(id);
+    revalidatePath("/settings/time-clock");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
   }
-  const company = await db.company.findFirstOrThrow({ select: { id: true } });
-  await db.company.update({ where: { id: company.id }, data: { requireTwoStep: on } });
-  await logActivity({ userId: admin.id, type: "company.two-step", description: on ? "Required two-step sign-in for the team" : "Stopped requiring two-step sign-in" });
-  revalidatePath("/settings/team");
-});
+}
 
-export const updateTeamMember = friendly(async function updateTeamMember(formData: FormData) {
-  const admin = await requireAdmin();
-  const id = str(formData, "id");
-  const target = await db.user.findUnique({ where: { id } });
-  if (!target || target.role === "CLIENT" || target.role === "VENDOR") throw new Error("Team member not found");
-  const name = str(formData, "name");
-  if (!name) throw new Error("Name is required");
+/** Access for just this person: saved as what differs from their position ("Use the position's" clears it). */
+export async function saveMemberAccess(formData: FormData): Promise<Result> {
+  try {
+    const admin = await requireAdmin();
+    const id = str(formData, "id");
+    const target = await db.user.findFirst({ where: { id, role: "STAFF" }, include: { position: { select: { access: true, name: true } } } });
+    if (!target) throw new Error("Only team members in a position have access to change (admins have everything)");
+    const base = positionAccess(target.position?.access);
+    const changes = str(formData, "reset") === "on" ? {} : diffAccess(base, accessFromForm((k) => strOrNull(formData, k)));
+    const n = Object.keys(changes).length;
+    await db.user.update({ where: { id }, data: { access: n ? JSON.stringify(changes) : null } });
+    await logActivity({
+      userId: admin.id,
+      type: "user.updated",
+      description: n ? `Changed ${target.name}'s access (${n} different from ${target.position?.name ?? "their position"})` : `${target.name} has their position's access`,
+    });
+    revalidateTeam(id);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
 
-  const isSelf = target.id === admin.id;
-  const active = isSelf ? true : boolField(formData, "active");
-  // You can't change your own position (nobody locks themselves out of Settings).
-  const pos = isSelf ? { role: target.role, positionId: target.positionId } : await readPosition(str(formData, "position"));
-  const moved = pos.role !== target.role || pos.positionId !== target.positionId;
-  await db.user.update({
-    where: { id },
-    data: {
-      name,
-      title: strOrNull(formData, "title"),
-      phone: strOrNull(formData, "phone"),
-      role: pos.role,
-      positionId: pos.positionId,
-      // A new position starts clean: changes made for just this person were changes from the old one.
-      ...(moved ? { access: null } : {}),
-      active,
-      vacationDays: str(formData, "vacationDays") ? Math.max(0, Math.min(365, Number(str(formData, "vacationDays")) || 0)) : null,
-    },
-  });
-  if (!active && target.active) await signOutEverywhere(id);
-  await logActivity({ userId: admin.id, type: "user.updated", description: `Updated team member ${name}` });
-  revalidatePath("/settings/team");
-  redirect("/settings/team");
-});
-
+/** Turns someone's sign-in off (signed out everywhere, right now) or back on. */
 export const toggleTeamMemberActive = friendly(async function toggleTeamMemberActive(formData: FormData) {
   const admin = await requireAdmin();
   const id = str(formData, "id");
-  if (id === admin.id) throw new Error("You cannot deactivate your own account");
+  if (id === admin.id) throw new Error("You cannot turn off your own account");
   const target = await db.user.findUnique({ where: { id } });
   if (!target || target.role === "CLIENT" || target.role === "VENDOR") throw new Error("Team member not found");
   await db.user.update({ where: { id }, data: { active: !target.active } });
-  // Turned off: signed out everywhere, right now.
   if (target.active) await signOutEverywhere(id);
   await logActivity({
     userId: admin.id,
     type: target.active ? "user.deactivated" : "user.activated",
     description: `${target.active ? "Deactivated" : "Reactivated"} ${target.name}`,
   });
-  revalidatePath("/settings/team");
+  revalidateTeam(id);
 });
 
+/** Removes someone — or turns them off, when they've written daily logs or messages (those keep who wrote them). */
 export const deleteTeamMember = friendly(async function deleteTeamMember(formData: FormData) {
   const admin = await requireAdmin();
   const id = str(formData, "id");
   if (id === admin.id) throw new Error("You cannot delete your own account");
-  const target = await db.user.findUnique({
-    where: { id },
-    include: { _count: { select: { dailyLogs: true, messages: true } } },
-  });
+  const target = await db.user.findUnique({ where: { id }, include: { _count: { select: { dailyLogs: true, messages: true } } } });
   if (!target || target.role === "CLIENT" || target.role === "VENDOR") throw new Error("Team member not found");
-
   if (target._count.dailyLogs > 0 || target._count.messages > 0) {
-    // Has authored history — keep the record and deactivate instead.
     await db.user.update({ where: { id }, data: { active: false } });
     await signOutEverywhere(id);
     await logActivity({ userId: admin.id, type: "user.deactivated", description: `Deactivated ${target.name} (has logs/messages, not deleted)` });
@@ -173,16 +198,16 @@ export const deleteTeamMember = friendly(async function deleteTeamMember(formDat
     await db.user.delete({ where: { id } });
     await logActivity({ userId: admin.id, type: "user.deleted", description: `Removed team member ${target.name}` });
   }
-  revalidatePath("/settings/team");
-  redirect("/settings/team");
+  revalidateTeam();
+  redirect("/team");
 });
 
 // --- Positions --------------------------------------------------------------------------
 
 function back(params = "") {
-  revalidatePath("/settings/team");
+  revalidatePath("/team", "layout");
   revalidatePath("/", "layout");
-  redirect(`/settings/team${params}#positions`);
+  redirect(`/team/positions${params}`);
 }
 
 /** A new position, starting as a copy of another (or of Staff). */
@@ -211,7 +236,7 @@ export const savePosition = friendly(async function savePosition(formData: FormD
   if (rows.some((r) => r.id !== id && r.name.toLowerCase() === name.toLowerCase())) throw new Error(`There's already a position called "${name}"`);
   await db.position.update({ where: { id }, data: { name, access: JSON.stringify(accessFromForm((k) => strOrNull(formData, k))) } });
   await logActivity({ userId: admin.id, type: "user.position", description: `Changed the position "${name}"` });
-  back();
+  back("?saved=1");
 });
 
 /** Only an empty position can go — its people have to be somewhere first. */
@@ -223,23 +248,5 @@ export const deletePosition = friendly(async function deletePosition(formData: F
   if (row._count.users) throw new Error(`Move the ${row._count.users === 1 ? "person" : `${row._count.users} people`} in "${row.name}" to another position first`);
   await db.position.delete({ where: { id } });
   await logActivity({ userId: admin.id, type: "user.position", description: `Removed the position "${row.name}"` });
-  back();
-});
-
-/** Access for just this person: saved as what differs from their position ("Use the position's" clears it). */
-export const savePersonAccess = friendly(async function savePersonAccess(formData: FormData) {
-  const admin = await requireAdmin();
-  const id = str(formData, "id");
-  const target = await db.user.findFirst({ where: { id, role: "STAFF" }, include: { position: { select: { access: true, name: true } } } });
-  if (!target) throw new Error("Only team members in a position have access to change (admins have everything)");
-  const base = positionAccess(target.position?.access);
-  const changes = boolField(formData, "reset") ? {} : diffAccess(base, accessFromForm((k) => strOrNull(formData, k)));
-  const n = Object.keys(changes).length;
-  await db.user.update({ where: { id }, data: { access: n ? JSON.stringify(changes) : null } });
-  await logActivity({
-    userId: admin.id,
-    type: "user.updated",
-    description: n ? `Changed ${target.name}'s access (${n} different from ${target.position?.name ?? "their position"})` : `${target.name} has their position's access`,
-  });
   back();
 });

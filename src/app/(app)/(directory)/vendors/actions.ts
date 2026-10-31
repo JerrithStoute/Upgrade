@@ -353,7 +353,7 @@ export const deleteVendorLogin = friendly(async function deleteVendorLogin(fd: F
 export async function quickVendor(input: { name: string; contact?: string; phone?: string; email?: string }) {
   const user = await requireStaff();
   if (!(["lists", "field", "purchasing", "estimates"] as const).some((a) => allows(user.access, a, 2)))
-    return { ok: false as const, error: "Your position can't add vendors — an admin can allow it in Settings → Team" };
+    return { ok: false as const, error: "Your position can't add vendors — an admin can allow it in Directory → Team" };
   const r = await findOrAddVendor(input);
   if (!r.ok) return r;
   if (r.added) await logActivity({ userId: user.id, type: "vendor.created", description: `Added vendor ${r.vendor.name}` });

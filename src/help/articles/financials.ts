@@ -85,7 +85,7 @@ export const FINANCIALS: HelpArticle[] = [
       {
         heading: "Approving and paying a bill",
         text: [
-          "A bill is **Waiting for approval** until someone allowed to approve bills looks at it. Admins can, and anyone whose position has **Can approve & pay bills** turned on (Settings → Team). Everyone else sees a note saying it's waiting.",
+          "A bill is **Waiting for approval** until someone allowed to approve bills looks at it. Admins can, and anyone whose position has **Can approve & pay bills** turned on (Directory → Team). Everyone else sees a note saying it's waiting.",
         ],
         items: [
           { name: "Approve — add $X to the job's cost", what: "Approves the bill; its amount becomes the job's actual cost on the Budget. If it puts the PO over, it warns you first: approve only if the extra was agreed." },
@@ -316,7 +316,7 @@ export const FINANCIALS: HelpArticle[] = [
       },
     ],
     tips: [
-      "Changing other people's time needs **Can edit** for Everyone's time in Settings → Team. With **Can view**, you see the timesheets but can't change them.",
+      "Changing other people's time needs **Can edit** for Everyone's time in Directory → Team. With **Can view**, you see the timesheets but can't change them.",
       "Someone with no pay rate still gets their hours counted, but costs nothing on the Budget until a rate is set in Settings → Time clock.",
     ],
     related: ["time-clock", "time-clock-settings"],

@@ -17,11 +17,8 @@ export const DIRECTORY: HelpArticle[] = [
       {
         heading: "Team",
         items: [
-          { name: "Name, Position, Phone, Email", what: "Everyone on your team who's active. Click a phone number to call it, or an email to write to them." },
-          {
-            name: "Invite, positions & sign-ins",
-            what: "Admins only: opens **Settings → Team & positions**, where you invite people and set what each position can see and change. Those are set once, so they stay in Settings.",
-          },
+          { name: "A name", what: "Opens that person's page: their info, what they can see and change, their jobs, and their sign-in. Click a phone number to call it, or an email to write to them." },
+          { name: "Invite someone / Positions", what: "Admins: invite people at the bottom of the list, and set what each position sees with **Positions** at the top — without leaving the Directory." },
         ],
       },
     ],

@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
       { source: "/settings/vendors", destination: "/vendors", permanent: false },
       { source: "/settings/vendors/:rest*", destination: "/vendors/:rest*", permanent: false },
       { source: "/vendor/insurance", destination: "/vendor/paperwork", permanent: false },
+      // Your team moved to the Directory; what was left in Settings is Security.
+      { source: "/settings/team", destination: "/team", permanent: false },
     ]);
   },
   experimental: {
