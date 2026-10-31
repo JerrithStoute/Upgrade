@@ -6,6 +6,7 @@ import { leadName, syncLeadStages } from "@/lib/leads";
 import { OPEN_STAGES, daysBetween, stageLabel, winRate } from "@/lib/leads-math";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { Badge, ButtonLink, EmptyState, PageHeader, Stat } from "@/components/ui";
+import { ListFind } from "@/components/list-find";
 import { LeadBoard, type BoardCard } from "./_components/board";
 import { companyClock } from "@/lib/company-zone";
 
@@ -55,6 +56,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
       .join("")
       .slice(0, 2)
       .toUpperCase();
+  const findText = (l: (typeof leads)[number]) =>
+    [leadName(l), l.company, l.title, l.source, l.phone, l.email, l.city, l.owner?.name].filter(Boolean).join(" ").toLowerCase();
   const card = (l: (typeof leads)[number]): BoardCard => ({
     id: l.id,
     stage: l.stage,
@@ -66,6 +69,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     job: l.project?.number ?? null,
     owner: l.owner ? initials(l.owner.name) : null,
     followUp: l.todos[0]?.dueDate ? followLabel(l.todos[0].dueDate, today) : null,
+    find: findText(l),
   });
   // The board: open leads, and the last 90 days of wins.
   const recentWin = new Date(today.getTime() - 90 * 86400000);
@@ -143,6 +147,9 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           ))}
       </div>
 
+      {leads.length ? <ListFind listId="lead-list" placeholder="Type a name, phone, email, city or source" /> : null}
+
+      <div id="lead-list">
       {leads.length === 0 ? (
         <EmptyState
           icon={UserPlus}
@@ -192,7 +199,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 {listed.map((l) => {
                   const f = l.todos[0]?.dueDate ? followLabel(l.todos[0].dueDate, today) : null;
                   return (
-                    <tr key={l.id}>
+                    <tr key={l.id} data-find={findText(l)}>
                       <td className="px-4 py-2">
                         <Link href={`/leads/${l.id}`} className="font-medium text-slate-900 hover:text-blue-700">
                           {leadName(l)}
@@ -218,6 +225,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

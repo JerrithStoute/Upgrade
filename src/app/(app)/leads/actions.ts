@@ -80,6 +80,7 @@ export async function createLead(_prev: LeadFormState, fd: FormData): Promise<Le
   redirect(`/leads/${lead.id}`);
 }
 
+/** Info edited in place on the lead's page: saved, and you stay there. */
 export async function updateLead(_prev: LeadFormState, fd: FormData): Promise<LeadFormState> {
   await requireEdit("leads");
   const id = str(fd, "id");
@@ -93,7 +94,7 @@ export async function updateLead(_prev: LeadFormState, fd: FormData): Promise<Le
   // A job's client keeps its source in step.
   if (lead.clientId && data.source) await db.client.update({ where: { id: lead.clientId }, data: { source: data.source } });
   revalidate(id);
-  redirect(`/leads/${id}`);
+  return null;
 }
 
 /**

@@ -67,6 +67,25 @@ test("the sample job is there to explore", async () => {
   await expect(page.getByText("$331,036.13").first()).toBeVisible();
 });
 
+test("adds a lead, edits it right on its page, logs a call, and finds it by typing", async () => {
+  await page.goto("/leads/new");
+  await page.locator("[name=firstName]").fill("Lee");
+  await page.locator("[name=lastName]").fill("Prospect");
+  await page.getByRole("button", { name: "Add lead" }).click();
+  await expect(page).toHaveURL(/\/leads\/c[a-z0-9]+$/);
+  const main = page.locator("main");
+  await main.getByRole("button", { name: "Edit" }).click();
+  await main.locator("[name=phone]").fill("555-0177");
+  await main.getByRole("button", { name: "Save" }).click();
+  await expect(main.getByRole("link", { name: /555-0177/ })).toBeVisible();
+  await main.getByPlaceholder("What happened", { exact: true }).fill("Called about a garage");
+  await main.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(main.getByText("Called about a garage")).toBeVisible();
+  await page.goto("/leads?view=list");
+  await page.getByPlaceholder(/Type a name/).fill("555-0177");
+  await expect(page.locator("#lead-list tr[data-find]:visible")).toHaveCount(1);
+});
+
 test("adds a client", async () => {
   await page.goto("/clients/new");
   await page.locator("[name=firstName]").fill("Casey");

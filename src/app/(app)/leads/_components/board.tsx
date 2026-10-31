@@ -20,6 +20,8 @@ export type BoardCard = {
   job: number | null;
   owner: string | null;
   followUp: { label: string; overdue: boolean } | null;
+  /** What the search box finds it by (lowercase). */
+  find: string;
 };
 
 /**
@@ -110,6 +112,7 @@ export function LeadBoard({ cards, lostCount }: { cards: BoardCard[]; lostCount:
                 {here.map((c) => (
                   <article
                     key={c.id}
+                    data-find={c.find}
                     draggable
                     onDragStart={(e) => {
                       setDrag(c.id);
