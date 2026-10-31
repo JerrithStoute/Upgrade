@@ -117,6 +117,23 @@ test("starts a job for that client", async () => {
   await expect(page.getByRole("heading", { name: "Flowers Residence" })).toBeVisible();
 });
 
+test("edits the job's details right on its Overview", async () => {
+  await page.goto(job);
+  const main = page.locator("main");
+  await main.getByRole("button", { name: "Edit" }).first().click();
+  await main.locator("[name=description]").fill("Two-story with a walkout");
+  await main.getByRole("button", { name: "Save" }).click();
+  await expect(main.getByText("Two-story with a walkout")).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`${job}$`));
+});
+
+test("finds that job on the Projects list by typing the client's name", async () => {
+  await page.goto("/projects");
+  await page.getByPlaceholder(/Type a job/).fill("casey flowers");
+  await expect(page.getByText("1 match")).toBeVisible();
+  await expect(page.locator("#project-list tr[data-find]:visible").first()).toContainText("Flowers Residence");
+});
+
 test("builds an estimate: a line, saved, adds up", async () => {
   await page.goto(`${job}/estimate`);
   await page.getByRole("button", { name: "Create estimate" }).click();

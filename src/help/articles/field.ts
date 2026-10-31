@@ -204,7 +204,7 @@ export const FIELD: HelpArticle[] = [
     pages: ["/warranty", "/projects/*/warranty", "/projects/*/warranty/*"],
     what: "After move-in, your client reports anything that needs fixing from their portal's **Warranty** tab, with photos. You send a sub or someone on your team, set the day, and close it out when it's fixed. **Warranty** in the menu lists every job's requests; a finished job's **Warranty** tab lists that job's.",
     how: [
-      "When a job is finished, set its **Actual end date** (job → **Edit**). The warranty runs from that day, for the months in **Settings → Company**. The job gets a **Warranty** tab and the client's portal gets one too.",
+      "When a job is finished, set its completed date (job → **Details** → **Edit**: pick **Completed** as the status and the **Completed** date shows). The warranty runs from that day, for the months in **Settings → Company**. The job gets a **Warranty** tab and the client's portal gets one too.",
       "Your client reports something from their portal. The job's manager (or, with no manager, the admins) gets an email right away. A phone call? Add it yourself: **Add a warranty request** on the job's Warranty tab.",
       "Open the request. Under **Who's fixing it**, pick a sub, someone on your team, or both, and the day, then click **Save**. The sub gets an email and sees it on their portal's **Warranty** page. The client gets an email with the day.",
       "When it's fixed, under **Close it out** pick **Done** (or **Not covered**), say what was done, add after photos, and click **Close request**. A sub can also mark it done from their portal.",

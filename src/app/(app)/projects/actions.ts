@@ -87,7 +87,20 @@ export const createProject = friendly(async function createProject(formData: For
   redirect(templateId ? `/projects/${project.id}/estimate` : `/projects/${project.id}`);
 });
 
-export const updateProject = friendly(async function updateProject(formData: FormData) {
+type Result = { ok: true } | { ok: false; error: string };
+const fail = (e: unknown): Result => ({ ok: false, error: e instanceof Error ? e.message : "That didn't save — try again" });
+
+/** The job's Details, edited in place on its Overview: saved, and you stay there. */
+export async function saveJobDetails(formData: FormData): Promise<Result> {
+  try {
+    await updateJob(formData);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+async function updateJob(formData: FormData) {
   const user = await requireStaff();
   const id = str(formData, "id");
   const existing = await db.project.findUnique({ where: { id } });
@@ -116,10 +129,9 @@ export const updateProject = friendly(async function updateProject(formData: For
     });
   }
   revalidatePath("/projects");
-  revalidatePath(`/projects/${id}`);
+  revalidatePath(`/projects/${id}`, "layout");
   revalidatePath("/dashboard");
-  redirect(`/projects/${id}`);
-});
+}
 
 export const deleteProject = friendly(async function deleteProject(formData: FormData) {
   const user = await requireAdmin(); // wipes a whole job — administrators only
@@ -163,28 +175,30 @@ export async function setJobSite(
     await db.project.update({ where: { id: projectId }, data: { siteLat: spot.lat, siteLng: spot.lng, siteFrom: from, siteAddress: p ? siteAddressOf(p) : null } });
   }
   await logActivity({ projectId, userId: user.id, type: "project.updated", description: spot === "address" ? "Job site found from the address" : from === "MAP" ? "Job site moved on the map" : "Job site set from a phone at the site" });
-  revalidatePath(`/projects/${projectId}/edit`);
   revalidatePath(`/projects/${projectId}`);
   return { ok: true };
 }
 
-/** The subs and vendors who see this job's location in their portal (picked on the job's Edit page). */
-export const saveJobVendors = friendly(async function saveJobVendors(projectId: string, fd: FormData) {
-  const user = await requireStaff();
-  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true } });
-  if (!project) throw new Error("Project not found.");
-  const picked = fd.getAll("vendorIds").map(String);
-  const vendors = await db.vendor.findMany({ where: { id: { in: picked } }, select: { id: true, name: true } });
-  await db.project.update({ where: { id: projectId }, data: { siteVendors: { deleteMany: {}, create: vendors.map((v) => ({ vendorId: v.id })) } } });
-  await logActivity({
-    projectId,
-    userId: user.id,
-    type: "project.updated",
-    description: vendors.length ? `Job location shared with ${vendors.map((v) => v.name).join(", ")}` : "Job location shared with no subs or vendors",
-  });
-  revalidatePath(`/projects/${projectId}/edit`);
-  redirect(`/projects/${projectId}`);
-});
+/** The subs and vendors who see this job's location in their portal — saved from its Overview, and you stay there. */
+export async function saveJobVendors(projectId: string, picked: string[]): Promise<Result> {
+  try {
+    const user = await requireStaff();
+    const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true } });
+    if (!project) throw new Error("Project not found.");
+    const vendors = await db.vendor.findMany({ where: { id: { in: picked } }, select: { id: true, name: true } });
+    await db.project.update({ where: { id: projectId }, data: { siteVendors: { deleteMany: {}, create: vendors.map((v) => ({ vendorId: v.id })) } } });
+    await logActivity({
+      projectId,
+      userId: user.id,
+      type: "project.updated",
+      description: vendors.length ? `Job location shared with ${vendors.map((v) => v.name).join(", ")}` : "Job location shared with no subs or vendors",
+    });
+    revalidatePath(`/projects/${projectId}`);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
 
 /**
  * ⋯ Copy this job: a new job from this one — its plans and takeoff, its estimate and its schedule, as

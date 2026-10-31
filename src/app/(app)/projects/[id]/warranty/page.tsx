@@ -39,7 +39,7 @@ export default async function ProjectWarrantyPage({ params }: { params: Promise<
         <p className={cn("text-sm", period.covered === false ? "text-amber-800" : "text-slate-600")}>
           {period.text}{" "}
           {period.covered === null && canEdit ? (
-            <Link href={`/projects/${project.id}/edit`} className="font-medium text-blue-700 hover:underline">
+            <Link href={`/projects/${project.id}?edit=1`} className="font-medium text-blue-700 hover:underline">
               Set the end date
             </Link>
           ) : (

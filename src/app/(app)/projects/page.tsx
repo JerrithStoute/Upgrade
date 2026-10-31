@@ -1,13 +1,15 @@
 import Link from "@/components/link";
 import { cookies } from "next/headers";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { contractValues, staffUsers } from "@/lib/projects";
 import { scheduleProgressByProject } from "@/lib/project-progress";
 import { PROJECT_STATUSES } from "@/lib/constants";
 import { cn, fmtDate, money, titleCase } from "@/lib/utils";
-import { Badge, Button, ButtonLink, EmptyState, PageHeader, Progress, TBody, THead, Td, Th, Tr } from "@/components/ui";
+import { Badge, ButtonLink, EmptyState, Progress } from "@/components/ui";
+import { ListFind } from "@/components/list-find";
+import { ManagerPick } from "./_components/manager-pick";
 import { PROJECTS_COOKIE, projectsView } from "@/lib/projects-view";
 import { ProjectWidgets, type Widget } from "./_components/project-widgets";
 import { JobsMap } from "@/components/maps/jobs-map";
@@ -34,10 +36,9 @@ const KINDS = [
 ] as const;
 const kindOf = (p: { isSpec: boolean; type: string }) => (p.isSpec ? "spec" : p.type === "NEW_HOME" ? "custom" : "remodel");
 
-export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ q?: string; status?: string; managerId?: string; templates?: string }> }) {
+export default async function ProjectsPage({ searchParams }: { searchParams: Promise<{ status?: string; managerId?: string; templates?: string }> }) {
   await requireStaff();
   const sp = await searchParams;
-  const q = (sp.q ?? "").trim();
   const status = (PROJECT_STATUSES as readonly string[]).includes(sp.status ?? "") ? sp.status! : "";
   const managerId = (sp.managerId ?? "").trim();
   const view = projectsView((await cookies()).get(PROJECTS_COOKIE)?.value);
@@ -48,11 +49,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     isTemplate: templates,
     ...(status ? { status } : {}),
     ...(managerId ? { managerId } : {}),
-    ...(q
-      ? {
-          OR: [{ name: { contains: q, mode: "insensitive" as const } }, { address: { contains: q, mode: "insensitive" as const } }, { city: { contains: q, mode: "insensitive" as const } }, ...(Number.isInteger(Number(q)) && q !== "" ? [{ number: Number(q) }] : [])],
-        }
-      : {}),
   };
 
   const [projects, managers, statusCounts] = await Promise.all([
@@ -72,7 +68,6 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const total = statusCounts.reduce((s, c) => s + c._count._all, 0);
   const chipHref = (s: string) => {
     const params = new URLSearchParams();
-    if (q) params.set("q", q);
     if (managerId) params.set("managerId", managerId);
     if (s) params.set("status", s);
     if (templates) params.set("templates", "1");
@@ -84,42 +79,46 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
     const p = projects[i];
     return p.isSpec && p.spec?.listPrice ? p.spec.listPrice : values[i];
   };
-  const filtered = !!(q || status || managerId);
+  const filtered = !!(status || managerId);
   const all = projects.map((p, i) => ({ p, i }));
 
-  // The table, as it always was — every column.
-  const table = (rows: typeof all, empty: string) =>
+  // What the search box finds a job by: name, number, address, client, manager.
+  const findText = (p: (typeof projects)[number]) =>
+    [String(p.number), p.name, p.address, p.city, p.client ? `${p.client.firstName} ${p.client.lastName}` : null, p.manager?.name].filter(Boolean).join(" ").toLowerCase();
+
+  // A box's table: the type column only where the box mixes types (All projects).
+  const table = (rows: typeof all, empty: string, showType = false) =>
     rows.length === 0 ? (
       <p className="px-4 py-3 text-sm text-slate-500">{filtered ? "None match the filters." : empty}</p>
     ) : (
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto" data-find-group>
         <table className="w-full min-w-[720px] text-left text-sm">
-          <THead>
+          <thead className="text-xs text-slate-500">
             <tr>
-              <Th>#</Th>
-              <Th>Project</Th>
-              <Th>Client</Th>
-              <Th>Type</Th>
-              <Th>Status</Th>
-              <Th>Manager</Th>
-              <Th>Start</Th>
-              <Th right>Contract</Th>
-              <Th className="w-36">Progress</Th>
+              <th className="px-4 py-2 font-medium">#</th>
+              <th className="px-2 py-2 font-medium">Job</th>
+              <th className="px-2 py-2 font-medium">Client</th>
+              {showType ? <th className="px-2 py-2 font-medium">Type</th> : null}
+              <th className="px-2 py-2 font-medium">Status</th>
+              <th className="px-2 py-2 font-medium">Manager</th>
+              <th className="px-2 py-2 font-medium">Start</th>
+              <th className="px-2 py-2 text-right font-medium">Contract</th>
+              <th className="w-36 px-4 py-2 font-medium">Progress</th>
             </tr>
-          </THead>
-          <TBody>
+          </thead>
+          <tbody className="divide-y divide-slate-100 border-t border-slate-100">
             {rows.map(({ p, i }) => {
               const progress = progressMap.get(p.id) ?? 0;
               return (
-                <Tr key={p.id}>
-                  <Td className="text-slate-500 tabular-nums">{p.number}</Td>
-                  <Td>
+                <tr key={p.id} data-find={findText(p)} data-find-key={p.id} className="hover:bg-slate-50/60">
+                  <td className="px-4 py-2 text-xs text-slate-500 tabular-nums">{p.number}</td>
+                  <td className="px-2 py-2">
                     <Link href={`/projects/${p.id}`} className="font-medium text-slate-900 hover:text-blue-700">
                       {p.name}
                     </Link>
                     {p.city ? <span className="block text-xs text-slate-500">{[p.address, p.city].filter(Boolean).join(", ")}</span> : null}
-                  </Td>
-                  <Td>
+                  </td>
+                  <td className="px-2 py-2">
                     {p.client ? (
                       `${p.client.firstName} ${p.client.lastName}`
                     ) : p.isSpec ? (
@@ -127,25 +126,28 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
                     ) : (
                       <span className="text-slate-400">—</span>
                     )}
-                  </Td>
-                  <Td>{p.isSpec ? "Spec home" : titleCase(p.type)}</Td>
-                  <Td>
+                  </td>
+                  {showType ? <td className="px-2 py-2">{p.isSpec ? "Spec home" : titleCase(p.type)}</td> : null}
+                  <td className="px-2 py-2">
                     <Badge status={p.status} />
-                  </Td>
-                  <Td>{p.manager?.name ?? <span className="text-slate-400">—</span>}</Td>
-                  <Td className="whitespace-nowrap">{fmtDate(p.startDate)}</Td>
-                  <Td right>{money(valueOf(i), true)}</Td>
-                  <Td>
+                  </td>
+                  <td className="px-2 py-2">{p.manager?.name ?? <span className="text-slate-400">—</span>}</td>
+                  <td className="whitespace-nowrap px-2 py-2 text-slate-600">{fmtDate(p.startDate)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{money(valueOf(i), true)}</td>
+                  <td className="px-4 py-2">
                     <div className="flex items-center gap-2">
                       <Progress value={progress} className="flex-1" />
                       <span className="w-9 text-right text-xs text-slate-600 tabular-nums">{progress}%</span>
                     </div>
-                  </Td>
-                </Tr>
+                  </td>
+                </tr>
               );
             })}
-          </TBody>
+          </tbody>
         </table>
+        <p data-find-none hidden className="px-4 py-3 text-sm text-slate-500">
+          None match.
+        </p>
       </div>
     );
   const sum = (rows: typeof all) =>
@@ -158,7 +160,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       const rows = all.filter(({ p }) => kindOf(p) === k.key);
       return { key: k.key, title: k.title, count: rows.length, total: sum(rows), newHref: `/projects/new?kind=${k.key}`, newLabel: k.newLabel, body: table(rows, k.empty) };
     }),
-    { key: "all", title: "All projects", count: all.length, total: sum(all), body: table(all, "No projects yet.") },
+    { key: "all", title: "All projects", count: all.length, total: sum(all), body: table(all, "No projects yet.", true) },
     jobsMap(),
   ];
 
@@ -194,12 +196,12 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
               {missing.map((p, i) => (
                 <span key={p.id}>
                   {i ? ", " : ""}
-                  <Link href={`/projects/${p.id}/edit`} className="text-blue-700 hover:underline">
+                  <Link href={`/projects/${p.id}`} className="text-blue-700 hover:underline">
                     #{p.number} {p.name}
                   </Link>
                 </span>
               ))}{" "}
-              — set each one&apos;s spot on its Edit page.
+              — set each one&apos;s spot under Job site on its Overview.
             </p>
           ) : null}
         </div>
@@ -208,16 +210,18 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   }
 
   return (
-    <div className="space-y-6">
-      <PageHeader
-        title={templates ? "Plan templates" : "Projects"}
-        description={templates ? "Houses you build over and over — open one and use ⋯ Copy this job to start a new job from it." : `${total} total · ${sum(all)} shown`}
-        actions={
-          <ButtonLink href="/projects/new">
-            <Plus className="h-4 w-4" /> New project
-          </ButtonLink>
-        }
-      />
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-semibold text-slate-900">{templates ? "Plan templates" : "Projects"}</h1>
+          <p className="text-xs text-slate-500">
+            {templates ? "Houses you build over and over — open one and use ⋯ Copy this job to start a new job from it." : `${total} jobs · ${sum(all)} shown`}
+          </p>
+        </div>
+        <Link href="/projects/new" className="inline-flex h-7 items-center gap-1 rounded-md bg-blue-600 px-2.5 text-xs font-medium text-white hover:bg-blue-700">
+          <Plus className="h-3.5 w-3.5" /> New project
+        </Link>
+      </div>
 
       <div className="flex flex-wrap gap-1.5">
         <Link
@@ -255,46 +259,19 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
         ) : null}
       </div>
 
-      <form method="get" className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        {templates ? <input type="hidden" name="templates" value="1" /> : null}
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input name="q" defaultValue={q} placeholder="Search name, number or address" className="input !pl-9" />
-        </div>
-        <div className="w-44">
-          <select name="status" defaultValue={status} className="input">
-            <option value="">All statuses</option>
-            {PROJECT_STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {titleCase(s)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="w-44">
-          <select name="managerId" defaultValue={managerId} className="input">
-            <option value="">Any manager</option>
-            {managers.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <Button type="submit" variant="secondary">
-          Filter
-        </Button>
-        {q || status || managerId ? (
-          <ButtonLink href="/projects" variant="ghost">
-            Clear
-          </ButtonLink>
+      <div className="flex flex-wrap items-center gap-2">
+        {projects.length ? (
+          <div className="min-w-[15rem] flex-1">
+            <ListFind listId="project-list" placeholder="Type a job, number, address or client" />
+          </div>
         ) : null}
-      </form>
+        <ManagerPick managers={managers} value={managerId} />
+      </div>
 
       {projects.length === 0 ? (
         <EmptyState
           title="No projects match"
-          description={q || status || managerId ? "Try clearing the filters." : "Create your first project to get started."}
+          description={status || managerId ? "Try All, or Any manager." : "Create your first project to get started."}
           action={
             <ButtonLink href="/projects/new">
               <Plus className="h-4 w-4" /> New project
@@ -302,7 +279,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
           }
         />
       ) : (
-        <ProjectWidgets widgets={widgets} order={view.order} collapsed={view.collapsed} />
+        <div id="project-list">
+          <ProjectWidgets widgets={widgets} order={view.order} collapsed={view.collapsed} />
+        </div>
       )}
     </div>
   );

@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { LocateFixed, MapPin, Search } from "lucide-react";
-import { buttonClasses, Card, CardBody, CardHeader } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { JobsMap, type MovePin } from "@/components/maps/jobs-map";
 
@@ -19,6 +18,7 @@ export function JobSite({
   pin,
   move,
   near,
+  extra,
 }: {
   site: { lat: number; lng: number; from: string | null } | null;
   hasAddress: boolean;
@@ -27,6 +27,8 @@ export function JobSite({
   move: MovePin;
   /** Near the company's other jobs: where the map looks first for a job not on it yet. */
   near?: { lat: number; lng: number };
+  /** Beside the title (Directions). */
+  extra?: React.ReactNode;
 }) {
   const router = useRouter();
   const [busy, start] = useTransition();
@@ -49,38 +51,42 @@ export function JobSite({
     start(async () => done(await set("address"), "Found from the address."));
   };
 
+  const small = "inline-flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium disabled:opacity-50";
+
   return (
-    <Card>
-      <CardHeader title="Job site on the map" description="The time clock flags punches that aren't at the job (Settings → Time clock sets how far counts)." />
-      <CardBody className="space-y-3">
-        <p className="flex items-center gap-2 text-sm text-slate-700">
-          <MapPin className={cn("h-4 w-4 shrink-0", site ? "text-blue-600" : "text-slate-300")} />
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+        <h2 className="text-sm font-semibold text-slate-900">Job site</h2>
+        {extra}
+      </header>
+      <div className="space-y-2 px-4 py-2.5">
+        {site ? <JobsMap pins={[{ ...pin, lat: site.lat, lng: site.lng }]} className="h-56" move={move} /> : <JobsMap pins={[]} className="h-56" move={move} place={pin.id} center={near} />}
+        <p className="flex items-start gap-1.5 text-xs text-slate-600">
+          <MapPin className={cn("mt-px h-3.5 w-3.5 shrink-0", site ? "text-blue-600" : "text-slate-300")} />
           {site ? (
             <span>
-              {site.from === "PHONE" ? "Set from a phone at the site." : site.from === "MAP" ? "Moved on the map." : "Found from the address."}{" "}
-              <a href={`https://www.google.com/maps?q=${site.lat},${site.lng}`} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-700 hover:underline">
-                See it on a map
-              </a>
+              {pin.address ? `${pin.address} · ` : ""}
+              {site.from === "PHONE" ? "set from a phone at the site" : site.from === "MAP" ? "moved on the map" : "found from the address"}. Click the pin to move it.
             </span>
           ) : hasAddress ? (
             "The address wasn't found on the map — tap the map where the job is, or stand at the site and use where you are."
           ) : (
-            "No address yet — add one above, tap the map where the job is, or stand at the site and use where you are."
+            "No address yet — add one under Details, tap the map where the job is, or stand at the site and use where you are."
           )}
         </p>
-        {site ? <JobsMap pins={[{ ...pin, lat: site.lat, lng: site.lng }]} className="h-64" move={move} /> : <JobsMap pins={[]} className="h-64" move={move} place={pin.id} center={near} />}
-        <div className="flex flex-wrap items-center gap-2">
-          <button type="button" className={buttonClasses("secondary", "sm")} disabled={busy} onClick={here}>
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button type="button" className={cn(small, "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50")} disabled={busy} onClick={here}>
             <LocateFixed className="h-3.5 w-3.5" /> Use where I&apos;m standing
           </button>
           {hasAddress ? (
-            <button type="button" className={buttonClasses("ghost", "sm")} disabled={busy} onClick={lookUp}>
+            <button type="button" className={cn(small, "text-slate-600 hover:bg-slate-100")} disabled={busy} onClick={lookUp}>
               <Search className="h-3.5 w-3.5" /> Look up the address again
             </button>
           ) : null}
           {msg ? <span className={cn("text-xs", msg.ok ? "text-emerald-700" : "text-rose-700")}>{msg.text}</span> : null}
         </div>
-      </CardBody>
-    </Card>
+        <p className="text-xs text-slate-400">The time clock flags punches that aren&apos;t at the job (Settings → Time clock sets how far counts).</p>
+      </div>
+    </section>
   );
 }

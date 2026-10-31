@@ -80,7 +80,9 @@ export function ClientInfo({ client: c, canEdit, startEditing }: { client: Clien
               const r = await saveClientInfo(fd);
               if (!r.ok) return setError(r.error);
               setEditing(false);
-              router.refresh();
+              // Opened from an old Edit link (?edit=1): saved, so a reload shouldn't open the fields again.
+              if (window.location.search.includes("edit=1")) router.replace(window.location.pathname);
+              else router.refresh();
             });
           }}
         >
@@ -97,7 +99,7 @@ export function ClientInfo({ client: c, canEdit, startEditing }: { client: Clien
           {field("Street", input("address", { label: "Street" }))}
           {field(
             "City, state, ZIP",
-            <span className="grid grid-cols-[minmax(0,1fr)_3.5rem_5.5rem] gap-1.5">
+            <span className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-1.5 [&>*:first-child]:col-span-2 sm:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem] sm:[&>*:first-child]:col-span-1">
               {input("city", { label: "City", placeholder: "City" })}
               {input("state", { label: "State", placeholder: "ST", maxLength: 2 })}
               {input("zip", { label: "ZIP", placeholder: "ZIP" })}

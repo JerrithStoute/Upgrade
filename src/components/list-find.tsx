@@ -15,16 +15,28 @@ export function ListFind({ listId, placeholder }: { listId: string; placeholder:
     const list = document.getElementById(listId);
     if (!list) return;
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    let n = 0;
-    list.querySelectorAll<HTMLElement>("[data-find]").forEach((row) => {
-      const text = row.dataset.find ?? "";
-      const hit = words.every((w) => text.includes(w));
-      row.hidden = !hit;
-      if (hit) n++;
-    });
-    // Updating the count after narrowing the server-rendered rows — there's no React state to derive it from.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setShown(words.length ? n : null);
+    const narrow = () => {
+      // A row shown in two places (the same job in "Custom homes" and "All projects") counts once, by data-find-key.
+      const hits = new Set<string | HTMLElement>();
+      list.querySelectorAll<HTMLElement>("[data-find]").forEach((row) => {
+        const hit = words.every((w) => (row.dataset.find ?? "").includes(w));
+        if (row.hidden !== !hit) row.hidden = !hit;
+        if (hit) hits.add(row.dataset.findKey ?? row);
+      });
+      // A group (one box of rows) with nothing left shows its "None match" line.
+      list.querySelectorAll<HTMLElement>("[data-find-group]").forEach((group) => {
+        const none = group.querySelector<HTMLElement>("[data-find-none]");
+        if (!none) return;
+        const empty = !!words.length && !group.querySelector("[data-find]:not([hidden])");
+        if (none.hidden !== !empty) none.hidden = !empty;
+      });
+      setShown(words.length ? hits.size : null);
+    };
+    narrow();
+    // Rows that appear later (a box opened, the list refreshed) get narrowed too.
+    const watch = new MutationObserver(narrow);
+    watch.observe(list, { childList: true, subtree: true });
+    return () => watch.disconnect();
   }, [q, listId]);
 
   return (

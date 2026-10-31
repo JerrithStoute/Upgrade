@@ -4,6 +4,7 @@ import { useTransition } from "react";
 import { usePathname } from "next/navigation";
 import { Eye } from "lucide-react";
 import { buttonClasses } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import { openClientView } from "../client-view-actions";
 
 /** Which of the client's pages matches the job page you're on (null = their home). */
@@ -21,7 +22,7 @@ function clientPage(pathname: string, projectId: string): { page: string | null;
 }
 
 /** The job header's Client view: opens the client's version of the page you're on. */
-export function ClientViewButton({ projectId }: { projectId: string }) {
+export function ClientViewButton({ projectId, className }: { projectId: string; className?: string }) {
   const pathname = usePathname();
   const [busy, start] = useTransition();
   const { page, label } = clientPage(pathname, projectId);
@@ -29,7 +30,7 @@ export function ClientViewButton({ projectId }: { projectId: string }) {
     <button
       type="button"
       disabled={busy}
-      className={buttonClasses("secondary", "sm")}
+      className={cn(buttonClasses("secondary", "sm"), className)}
       title={`See ${label} exactly as your client does (look only)`}
       onClick={() => start(() => openClientView(projectId, page))}
     >

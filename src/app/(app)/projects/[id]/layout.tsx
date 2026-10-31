@@ -3,11 +3,10 @@ import { requireStaff } from "@/lib/auth";
 import { allows, areaForPath } from "@/lib/access";
 import { Badge } from "@/components/ui/badge";
 import { Tabs } from "@/components/ui/tabs";
-import { PageHeader } from "@/components/ui/page-header";
-import { ButtonLink } from "@/components/ui/button";
 import { ClientViewButton } from "./_components/client-view-button";
 import Link from "@/components/link";
 import { ChevronRight, Copy, Pencil } from "lucide-react";
+import { cn, titleCase } from "@/lib/utils";
 import { ProjectHeaderSwitch } from "@/components/layout/topbar-slot";
 import { StickyJobHead } from "@/components/layout/sticky-job-head";
 import { ConfirmForm } from "@/components/ui/confirm-form";
@@ -21,6 +20,9 @@ export default async function ProjectLayout({ children, params }: { children: Re
   const base = `/projects/${project.id}`;
   const address = [project.address, project.city, project.state].filter(Boolean).join(", ");
   const clientName = project.client ? `${project.client.firstName} ${project.client.lastName}` : "No client";
+  const kind = project.isSpec ? "Spec home" : project.type === "NEW_HOME" ? "Custom home" : titleCase(project.type);
+  const pill = "rounded-full px-2.5 py-0.5 text-xs font-medium";
+  const small = "inline-flex h-7 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50";
 
   return (
     <div>
@@ -43,44 +45,46 @@ export default async function ProjectLayout({ children, params }: { children: Re
                 <ClientViewButton projectId={project.id} />
               </span>
             ) : null}
-            <Link href={`${base}/edit`} className="hidden shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block" title="Edit project">
+            <Link href={`${base}?edit=1`} className="hidden shrink-0 rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:block" title="Edit the job's details">
               <Pencil className="h-3.5 w-3.5" />
             </Link>
           </div>
         }
       >
-        <PageHeader
-          breadcrumbs={[{ label: "Projects", href: "/projects" }, { label: `#${project.number}` }]}
-          title={project.name}
-          meta={
-            <>
-              <Badge status={project.status} />
-              {project.isSample ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-900">Sample</span> : null}
-              {project.isTemplate ? (
-                <Link href={`${base}/copy`} className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800" title="Kept to copy new jobs from — off the job lists">
-                  Plan template
-                </Link>
-              ) : null}
-              {/* Phones: just a pencil here, instead of the buttons row. */}
-              <Link href={`${base}/edit`} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 md:hidden" title="Edit project" aria-label="Edit project">
-                <Pencil className="h-4 w-4" />
-              </Link>
-            </>
-          }
-          description={<span className="line-clamp-1 md:line-clamp-none">{[clientName, address].filter(Boolean).join(" · ")}</span>}
-          actionsClassName="hidden md:flex"
-          actions={
-            <span className="flex flex-wrap items-center gap-2">
-              {project.clientId ? <ClientViewButton projectId={project.id} /> : null}
-              <ButtonLink href={`${base}/copy`} variant="secondary" size="sm" title="A new job from this one — its plans, takeoff, estimate and schedule — for another lot">
+        <div className="mb-3">
+          <Link href="/projects" className="text-xs text-slate-500 hover:text-slate-800">
+            ← Projects
+          </Link>
+          <div className="mt-1 flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <h1 className="text-2xl font-semibold text-slate-900">
+                <span className="text-slate-400">#{project.number}</span> {project.name}
+              </h1>
+              <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                <Badge status={project.status} />
+                {project.client ? (
+                  <Link href={`/clients/${project.client.id}`} className={cn(pill, "bg-blue-50 text-blue-800 hover:bg-blue-100")}>
+                    {clientName}
+                  </Link>
+                ) : null}
+                <span className={cn(pill, "bg-slate-100 text-slate-600")}>{kind}</span>
+                {address ? <span className={cn(pill, "max-w-full truncate bg-slate-100 text-slate-600")}>{address}</span> : null}
+                {project.isSample ? <span className={cn(pill, "bg-amber-100 text-amber-900")}>Sample</span> : null}
+                {project.isTemplate ? (
+                  <Link href={`${base}/copy`} className={cn(pill, "bg-violet-100 text-violet-800")} title="Kept to copy new jobs from — off the job lists">
+                    Plan template
+                  </Link>
+                ) : null}
+              </div>
+            </div>
+            <span className="flex flex-wrap items-center gap-1.5">
+              {project.clientId ? <ClientViewButton projectId={project.id} className="!h-7 !px-2.5 !text-xs" /> : null}
+              <Link href={`${base}/copy`} className={small} title="A new job from this one — its plans, takeoff, estimate and schedule — for another lot">
                 <Copy className="h-3.5 w-3.5" /> {project.isTemplate ? "Use this plan" : "Copy"}
-              </ButtonLink>
-              <ButtonLink href={`${base}/edit`} variant="secondary" size="sm">
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </ButtonLink>
+              </Link>
             </span>
-          }
-        />
+          </div>
+        </div>
       </ProjectHeaderSwitch>
       {project.isSample ? (
         // The made-up job to explore (sample-job.ts): what it is, and the way out.

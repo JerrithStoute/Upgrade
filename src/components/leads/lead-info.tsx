@@ -112,7 +112,7 @@ export function LeadInfo({
           {field("Job address", input("address", "Job address"))}
           {field(
             "City, state, ZIP",
-            <span className="grid grid-cols-[minmax(0,1fr)_3.5rem_5.5rem] gap-1.5">
+            <span className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-1.5 [&>*:first-child]:col-span-2 sm:grid-cols-[minmax(0,1fr)_3.5rem_5.5rem] sm:[&>*:first-child]:col-span-1">
               {input("city", "City", { placeholder: "City" })}
               {input("state", "State", { placeholder: "ST" })}
               {input("zip", "ZIP", { placeholder: "ZIP" })}
