@@ -4,9 +4,10 @@
  *
  *  - The builder decides what each vendor needs. A new vendor starts with the "usual" kinds; a one-time sub
  *    can have them all unticked — then nothing about him is ever flagged.
- *  - A kind that expires (Insurance) is good while it has a current paper on file; several can be on it
- *    (General liability and Workers' comp as two certificates) and it counts down to the first to run out.
- *    Expired ones stay on the line, greyed, once a current one is there.
+ *  - Insurance is one line per coverage (General liability, Workers' comp… — each builder's own list), each
+ *    with its carrier, policy # and expiry typed in; one certificate file can be on several. A kind that
+ *    expires is good while it has a current paper on file; expired ones stay on the line, greyed, once a
+ *    renewal is there.
  *  - Nothing here stops work: it's shown as a warning where you hand out work, and on the dashboard.
  *
  * Pure (no database) — paperwork-server.ts loads and saves.
@@ -16,7 +17,17 @@ export const SOON_DAYS = 30;
 const DAY = 86_400_000;
 
 export type PaperType = { id: string; name: string; kind: string | null; expires: boolean; usual: boolean; sortOrder: number };
-export type PaperDoc = { id: string; typeId: string; expiresAt: Date | null; confirmed: boolean; fileName: string | null; storagePath: string | null; createdAt: Date };
+export type PaperDoc = {
+  id: string;
+  typeId: string;
+  expiresAt: Date | null;
+  carrier?: string | null;
+  number?: string | null;
+  confirmed: boolean;
+  fileName: string | null;
+  storagePath: string | null;
+  createdAt: Date;
+};
 /** What a vendor needs: kind id → the day it was first needed ("YYYY-MM-DD"). */
 export type Needs = Record<string, string>;
 
@@ -160,6 +171,27 @@ export function lineView(l: PaperLine, today = new Date()) {
     expiresAt: l.expiresAt?.toISOString() ?? null,
     daysOpen: daysOpen(l.since, today),
     daysLeft: l.expiresAt && l.status === "soon" ? Math.max(0, Math.round((dayOf(l.expiresAt).getTime() - dayOf(today).getTime()) / DAY)) : null,
-    docs: l.docs.map((d) => ({ id: d.id, fileName: d.fileName, hasFile: !!d.storagePath, expiresAt: d.expiresAt?.toISOString() ?? null, expired: d.expired, confirmed: d.confirmed })),
+    kind: l.type.kind,
+    docs: l.docs.map((d) => ({
+      id: d.id,
+      fileName: d.fileName,
+      hasFile: !!d.storagePath,
+      expiresAt: d.expiresAt?.toISOString() ?? null,
+      carrier: d.carrier ?? null,
+      number: d.number ?? null,
+      expired: d.expired,
+      confirmed: d.confirmed,
+    })),
   };
 }
+
+/** Insurance coverages start as these for a new builder (each builder renames, adds or removes its own). */
+export const STARTER_COVERAGES = [
+  { name: "General liability", usual: true, code: "GL" },
+  { name: "Workers' comp", usual: true, code: "WC" },
+  { name: "Auto", usual: false, code: "AUTO" },
+  { name: "Umbrella", usual: false, code: "UMBRELLA" },
+] as const;
+
+/** "••-•••4471": a tax ID with all but its last 4 hidden. */
+export const maskTaxId = (id: string | null | undefined) => (id ? id.replace(/\d(?=(?:\D*\d){4})/g, "•") : "");

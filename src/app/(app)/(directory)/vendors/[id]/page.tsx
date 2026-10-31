@@ -1,208 +1,245 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
-import { Mail, Phone, User } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { db } from "@/lib/db";
 import { allows } from "@/lib/access";
 import { cn, fmtDate, money } from "@/lib/utils";
-import { PO_STATUS_LABEL, poTotal } from "@/lib/purchasing";
-import { lineView } from "@/lib/paperwork";
-import { paperTypes, vendorPaperwork } from "@/lib/paperwork-server";
-import { Badge, Button, Collapsible, ConfirmForm, SubmitButton } from "@/components/ui";
+import { PO_STATUS_LABEL, billTotal, poTotal } from "@/lib/purchasing";
+import { lineView, problems } from "@/lib/paperwork";
+import { vendorPaperwork } from "@/lib/paperwork-server";
+import { codeLabelOf } from "@/lib/takeoff-materials";
+import { vendorCodes } from "@/lib/vendors";
+import { Badge, Button, ConfirmForm, SubmitButton } from "@/components/ui";
 import { PaperworkList } from "@/components/vendors/paperwork-list";
-import { cancelVendorInvite, createVendorLogin, deleteVendorLogin, resendVendorInvite, updateVendorLogin } from "../actions";
+import { VendorInfo } from "@/components/vendors/vendor-info";
+import { cancelVendorInvite, createVendorLogin, deleteVendor, deleteVendorLogin, resendVendorInvite, updateVendorLogin } from "../actions";
 import { openInvites } from "@/lib/invites";
 import { companyClock } from "@/lib/company-zone";
 import { requireView } from "@/lib/auth";
 
+const small = "!h-7 !px-2.5 !text-xs";
+
 /**
- * One sub or vendor: who they are, their paperwork (the part you use most), and — folded away until you want
- * them — their POs and bills and their portal sign-ins.
+ * One sub or vendor, everything in one place: their company info (edited right here), their paperwork — each line
+ * with "Need it", since every sub is different — the jobs and POs you have with them, and their portal sign-ins.
  */
-export default async function VendorPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function VendorPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const user = await requireView("lists");
   const canEdit = user.role === "ADMIN" || allows(user.access, "lists", 2);
   const { id } = await params;
-  const [vendor, waiting, types] = await Promise.all([
+  const { edit } = await searchParams;
+  const [vendor, waiting, costCodes] = await Promise.all([
     db.vendor.findUnique({
       where: { id },
       include: {
-        logins: { orderBy: { name: "asc" }, select: { id: true, name: true, email: true, active: true } },
-        purchaseOrders: { orderBy: { number: "desc" }, include: { lines: true, project: { select: { id: true, name: true } } } },
-        _count: { select: { bills: true } },
+        logins: { orderBy: { name: "asc" }, select: { id: true, name: true, email: true, active: true, lastSignInAt: true } },
+        purchaseOrders: {
+          orderBy: { number: "desc" },
+          include: { lines: true, project: { select: { id: true, name: true } }, bills: { where: { status: { not: "REJECTED" } }, include: { lines: true } } },
+        },
       },
     }),
     openInvites({ vendorId: id }),
-    paperTypes(),
+    db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true } }),
   ]);
   if (!vendor) notFound();
   const today = (await companyClock()).now; // today, on the company's clock
   const paper = await vendorPaperwork(vendor.id, today);
-  const pos = vendor.purchaseOrders;
-  const people = vendor.logins.length + waiting.length;
+  const open = paper ? problems(paper.lines) : [];
+  const codes = [...costCodes.map((c) => ({ id: c.id, label: codeLabelOf(c) })), { id: "none", label: "No cost code" }];
+  const trades = vendorCodes(vendor)
+    .map((c) => costCodes.find((x) => x.id === c)?.name)
+    .filter(Boolean) as string[];
+  const pos = vendor.purchaseOrders.filter((p) => p.status !== "VOID");
 
   return (
-    <div className="max-w-4xl space-y-4">
+    <div className="max-w-5xl space-y-4">
       <div>
         <Link href={`/vendors#vendor-${vendor.id}`} className="text-xs text-slate-500 hover:text-slate-800">
           ← Subs & vendors
         </Link>
-        <div className="mt-1 flex flex-wrap items-baseline justify-between gap-2">
-          <h1 className="text-xl font-semibold text-slate-900">{vendor.name}</h1>
+        <div className="mt-1 flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold text-slate-900">{vendor.name}</h1>
+            <div className="mt-1 flex flex-wrap gap-1.5">
+              {trades.map((t) => (
+                <span key={t} className="rounded-full bg-blue-50 px-2.5 py-0.5 text-xs font-medium text-blue-800">
+                  {t}
+                </span>
+              ))}
+              {open.length ? (
+                <span className="rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-800">
+                  Paperwork: {open.length} to follow up
+                </span>
+              ) : paper?.lines.some((l) => l.needed) ? (
+                <span className="rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-800">Paperwork all in</span>
+              ) : null}
+            </div>
+          </div>
           {canEdit ? (
-            <Link href={`/vendors?edit=${vendor.id}#vendor-${vendor.id}`} className="text-xs font-medium text-blue-700 hover:underline">
-              Edit details
-            </Link>
+            <ConfirmForm action={deleteVendor} hidden={{ id: vendor.id }} message={`Delete "${vendor.name}"? Their paperwork files go too; their bids and POs stay on your jobs.`} variant="ghost">
+              <span className="inline-flex items-center gap-1 text-xs text-rose-600">
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </span>
+            </ConfirmForm>
           ) : null}
         </div>
-        <p className="mt-0.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-slate-600">
-          {vendor.contact ? (
-            <span className="inline-flex items-center gap-1">
-              <User className="h-3.5 w-3.5 text-slate-400" /> {vendor.contact}
-            </span>
-          ) : null}
-          {vendor.phone ? (
-            <a href={`tel:${vendor.phone}`} className="inline-flex items-center gap-1 hover:text-blue-700">
-              <Phone className="h-3.5 w-3.5 text-slate-400" /> {vendor.phone}
-            </a>
-          ) : null}
-          {vendor.email ? (
-            <a href={`mailto:${vendor.email}`} className="inline-flex items-center gap-1 hover:text-blue-700">
-              <Mail className="h-3.5 w-3.5 text-slate-400" /> {vendor.email}
-            </a>
-          ) : null}
-          {!vendor.contact && !vendor.phone && !vendor.email ? <span className="text-slate-400">No contact details</span> : null}
-        </p>
-        {vendor.notes ? <p className="mt-1 text-xs text-slate-500">{vendor.notes}</p> : null}
       </div>
 
-      <PaperworkList
-        vendorId={vendor.id}
-        lines={(paper?.lines ?? []).map((l) => lineView(l, today))}
-        allTypes={types.map((t) => ({ id: t.id, name: t.name }))}
-        canEdit={canEdit}
-      />
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <VendorInfo
+          vendor={{
+            id: vendor.id,
+            name: vendor.name,
+            contact: vendor.contact,
+            phone: vendor.phone,
+            email: vendor.email,
+            address: vendor.address,
+            licenseNumber: vendor.licenseNumber,
+            taxId: vendor.taxId,
+            notes: vendor.notes,
+            codes: vendorCodes(vendor),
+          }}
+          codes={codes}
+          canEdit={canEdit}
+          startEditing={edit === "1"}
+        />
+        <PaperworkList vendorId={vendor.id} lines={(paper?.lines ?? []).map((l) => lineView(l, today))} canEdit={canEdit} />
+      </div>
 
-      <Collapsible
-        summary={
-          <span>
-            POs <span className="text-slate-500">({pos.length})</span> · Bills <span className="text-slate-500">({vendor._count.bills})</span>
-          </span>
-        }
-      >
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="border-b border-slate-100 px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-slate-900">Jobs and POs</h2>
+        </header>
         {pos.length ? (
-          <ul className="-my-2 divide-y divide-slate-100 text-sm">
-            {pos.map((po) => (
-              <li key={po.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
-                <Link href={`/projects/${po.project.id}/purchasing/po/${po.id}`} className="font-mono text-xs text-blue-700 hover:underline">
-                  PO-{po.number}
-                </Link>
-                <span className="min-w-0 flex-1 truncate">
-                  {po.title} <span className="text-xs text-slate-500">· {po.project.name}</span>
-                </span>
-                <Badge status={po.status}>{PO_STATUS_LABEL[po.status]}</Badge>
-                <span className="w-24 text-right tabular-nums">{money(poTotal(po.lines))}</span>
-              </li>
-            ))}
-          </ul>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="text-left text-xs text-slate-500">
+                <tr>
+                  <th className="px-4 py-2 font-medium">Job</th>
+                  <th className="px-2 py-2 font-medium">PO</th>
+                  <th className="px-2 py-2 font-medium">What</th>
+                  <th className="px-2 py-2 font-medium">Status</th>
+                  <th className="px-2 py-2 text-right font-medium">Total</th>
+                  <th className="px-2 py-2 text-right font-medium">Billed</th>
+                  <th className="px-4 py-2 text-right font-medium">Left</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {pos.map((po) => {
+                  const total = poTotal(po.lines);
+                  const billed = po.bills.reduce((n, b) => n + billTotal(b.lines), 0);
+                  return (
+                    <tr key={po.id}>
+                      <td className="px-4 py-2">
+                        <Link href={`/projects/${po.project.id}/purchasing`} className="text-slate-900 hover:text-blue-700">
+                          {po.project.name}
+                        </Link>
+                      </td>
+                      <td className="px-2 py-2 font-mono text-xs">
+                        <Link href={`/projects/${po.project.id}/purchasing/po/${po.id}`} className="text-blue-700 hover:underline">
+                          PO-{po.number}
+                        </Link>
+                      </td>
+                      <td className="max-w-56 truncate px-2 py-2 text-slate-600">{po.title}</td>
+                      <td className="px-2 py-2">
+                        <Badge status={po.status}>{PO_STATUS_LABEL[po.status]}</Badge>
+                      </td>
+                      <td className="px-2 py-2 text-right tabular-nums">{money(total)}</td>
+                      <td className="px-2 py-2 text-right tabular-nums text-slate-600">{money(billed)}</td>
+                      <td className={cn("px-4 py-2 text-right tabular-nums", total - billed < -0.005 ? "font-medium text-rose-700" : "text-slate-900")}>{money(total - billed)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         ) : (
-          <p className="text-sm text-slate-500">None yet — make one from a job&apos;s Purchasing tab.</p>
+          <p className="px-4 py-3 text-sm text-slate-500">No POs yet — make one from a job&apos;s Purchasing tab.</p>
         )}
-      </Collapsible>
+      </section>
 
-      <Collapsible
-        summary={
-          <span>
-            Portal sign-ins <span className="text-slate-500">({people})</span>
-          </span>
-        }
-      >
-        <div className="space-y-3">
-          <p className="text-xs text-slate-500">
-            People at this vendor who can sign in: they see their POs (and accept them), their schedule items, and send bills and paperwork. They never see your client prices or
-            budgets.
-          </p>
-          {vendor.logins.length ? (
-            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-              {vendor.logins.map((u) => (
-                <li key={u.id} className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
-                  <span className={cn("min-w-0 flex-1", !u.active && "text-slate-400 line-through")}>
-                    <span className="font-medium">{u.name}</span> <span className="text-xs text-slate-500">{u.email}</span>
-                  </span>
-                  {canEdit ? (
-                    <>
-                      {u.active ? (
-                        <form action={updateVendorLogin}>
-                          <input type="hidden" name="id" value={u.id} />
-                          <input type="hidden" name="reset" value="1" />
-                          <SubmitButton size="sm" variant="ghost" pendingText="Sending…" title="Emails them a link to choose a new password">
-                            Send password reset
-                          </SubmitButton>
-                        </form>
-                      ) : null}
-                      <form action={updateVendorLogin}>
-                        <input type="hidden" name="id" value={u.id} />
-                        <input type="hidden" name="toggle" value="1" />
-                        <Button type="submit" size="sm" variant="ghost">
-                          {u.active ? "Turn off" : "Turn on"}
-                        </Button>
-                      </form>
-                      <ConfirmForm action={deleteVendorLogin} hidden={{ id: u.id }} message={`Remove ${u.name}'s login?`} variant="ghost">
-                        <span className="text-xs text-rose-600">Remove</span>
-                      </ConfirmForm>
-                    </>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="border-b border-slate-100 px-4 py-2.5">
+          <h2 className="text-sm font-semibold text-slate-900">Portal sign-ins</h2>
+          <p className="text-xs text-slate-500">They see their POs and schedule, and send bills and paperwork. Never your client prices or budgets.</p>
+        </header>
+        <div className="space-y-2 px-4 py-2.5">
+          {vendor.logins.map((u) => (
+            <div key={u.id} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className={cn("min-w-0 flex-1", !u.active && "text-slate-400 line-through")}>
+                {u.name} <span className="text-xs text-slate-500">{u.email}</span>
+                {u.lastSignInAt ? <span className="text-xs text-slate-400"> · signed in {fmtDate(u.lastSignInAt, "MMM d")}</span> : null}
+              </span>
+              {canEdit ? (
+                <>
+                  {u.active ? (
+                    <form action={updateVendorLogin}>
+                      <input type="hidden" name="id" value={u.id} />
+                      <input type="hidden" name="reset" value="1" />
+                      <SubmitButton size="sm" variant="ghost" className={small} pendingText="Sending…">
+                        Send password reset
+                      </SubmitButton>
+                    </form>
                   ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
-          {waiting.length ? (
-            <ul className="divide-y divide-slate-100 rounded-lg border border-amber-200 bg-amber-50/50">
-              {waiting.map((i) => (
-                <li key={i.id} className="flex flex-wrap items-center gap-2 px-3 py-1.5 text-sm">
-                  <span className="min-w-0 flex-1">
-                    <span className="font-medium">{i.name ?? i.email}</span>{" "}
-                    <span className="text-xs text-slate-500">
-                      {i.email} · invited, {i.expiresAt < new Date() ? "expired" : `waiting until ${fmtDate(i.expiresAt)}`}
-                    </span>
-                  </span>
-                  {canEdit ? (
-                    <>
-                      <form action={resendVendorInvite}>
-                        <input type="hidden" name="vendorId" value={vendor.id} />
-                        <input type="hidden" name="inviteId" value={i.id} />
-                        <SubmitButton size="sm" variant="ghost" pendingText="Sending…">
-                          Resend
-                        </SubmitButton>
-                      </form>
-                      <ConfirmForm action={cancelVendorInvite} hidden={{ vendorId: vendor.id, inviteId: i.id }} message={`Cancel the invitation to ${i.email}?`} variant="ghost">
-                        <span className="text-xs text-rose-600">Cancel</span>
-                      </ConfirmForm>
-                    </>
-                  ) : null}
-                </li>
-              ))}
-            </ul>
-          ) : null}
+                  <form action={updateVendorLogin}>
+                    <input type="hidden" name="id" value={u.id} />
+                    <input type="hidden" name="toggle" value="1" />
+                    <Button type="submit" size="sm" variant="ghost" className={small}>
+                      {u.active ? "Turn off" : "Turn on"}
+                    </Button>
+                  </form>
+                  <ConfirmForm action={deleteVendorLogin} hidden={{ id: u.id }} message={`Remove ${u.name}'s login?`} variant="ghost">
+                    <span className="text-xs text-rose-600">Remove</span>
+                  </ConfirmForm>
+                </>
+              ) : null}
+            </div>
+          ))}
+          {waiting.map((i) => (
+            <div key={i.id} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="min-w-0 flex-1">
+                {i.name ?? i.email}{" "}
+                <span className="text-xs text-amber-700">
+                  {i.email} · invited, {i.expiresAt < new Date() ? "expired" : `waiting until ${fmtDate(i.expiresAt)}`}
+                </span>
+              </span>
+              {canEdit ? (
+                <>
+                  <form action={resendVendorInvite}>
+                    <input type="hidden" name="vendorId" value={vendor.id} />
+                    <input type="hidden" name="inviteId" value={i.id} />
+                    <SubmitButton size="sm" variant="ghost" className={small} pendingText="Sending…">
+                      Resend
+                    </SubmitButton>
+                  </form>
+                  <ConfirmForm action={cancelVendorInvite} hidden={{ vendorId: vendor.id, inviteId: i.id }} message={`Cancel the invitation to ${i.email}?`} variant="ghost">
+                    <span className="text-xs text-rose-600">Cancel</span>
+                  </ConfirmForm>
+                </>
+              ) : null}
+            </div>
+          ))}
           {canEdit ? (
-            <form action={createVendorLogin} className="flex flex-wrap items-center gap-2">
+            <form action={createVendorLogin} className="flex flex-wrap items-center gap-1.5 pt-1">
               <input type="hidden" name="vendorId" value={vendor.id} />
-              <input name="name" className="input !h-8 !w-40 text-sm" placeholder="Name (optional)" aria-label="Name" />
+              <input name="name" className="input !h-7 !w-36 !py-0 text-xs" placeholder="Name (optional)" aria-label="Name" />
               <input
                 name="email"
                 type="email"
                 required
-                className="input !h-8 !w-56 text-sm"
-                placeholder="Email (they sign in with it)"
+                className="input !h-7 !w-56 !py-0 text-xs"
+                placeholder="Email they sign in with"
                 aria-label="Email"
                 defaultValue={vendor.logins.length ? "" : (vendor.email ?? "")}
               />
-              <SubmitButton size="sm" variant="secondary" pendingText="Sending…">
+              <SubmitButton size="sm" variant="secondary" className={small} pendingText="Sending…">
                 Invite
               </SubmitButton>
             </form>
           ) : null}
         </div>
-      </Collapsible>
+      </section>
     </div>
   );
 }

@@ -2,61 +2,21 @@ import Link from "@/components/link";
 import { CheckCircle2, ClipboardList, FileWarning, Pencil, Plus, Truck, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import { codeLabelOf } from "@/lib/takeoff-materials";
-import { Button, ButtonLink, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, PageHeader, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
-import { CodePicker } from "@/components/code-picker";
+import { Button, ButtonLink, Collapsible, ConfirmForm, EmptyState, PageHeader, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
 import { vendorCodes } from "@/lib/vendors";
 import { paperworkWarning, type PaperLine } from "@/lib/paperwork";
 import { vendorsPaperwork } from "@/lib/paperwork-server";
 import { companyClock } from "@/lib/company-zone";
 import { fmtDate } from "@/lib/utils";
-import { createVendor, deleteVendor, importVendors, setBidMessage, updateVendor } from "./actions";
+import { createVendor, deleteVendor, importVendors, setBidMessage } from "./actions";
 import { requireView } from "@/lib/auth";
 
 /** What the paste box shows before you paste. */
 const PASTE_EXAMPLE = ["Beaumont Lumber, Mike, mike@beaumontlumber.com, 409-555-0100", "BMC, bids@bmc.com"].join(String.fromCharCode(10));
 
-type VendorValues = { id: string; name: string; contact: string | null; email: string | null; phone: string | null; notes: string | null; costCodeIds: string | null };
-
-function VendorForm({ action, values, codes }: { action: (fd: FormData) => Promise<void>; values?: VendorValues; codes: { id: string; label: string }[] }) {
-  const p = (k: string) => `vendor-${values?.id ?? "new"}-${k}`;
-  return (
-    <form action={action} className="space-y-4">
-      {values ? <input type="hidden" name="id" value={values.id} /> : null}
-      <FormGrid className="md:grid-cols-4">
-        <Field label="Vendor" htmlFor={p("name")} className="md:col-span-2">
-          <input id={p("name")} name="name" required className="input" defaultValue={values?.name} placeholder="Beaumont Lumber" />
-        </Field>
-        <Field label="Contact" htmlFor={p("contact")}>
-          <input id={p("contact")} name="contact" className="input" defaultValue={values?.contact ?? ""} placeholder="Who you send bids to" />
-        </Field>
-        <Field label="Phone" htmlFor={p("phone")}>
-          <input id={p("phone")} name="phone" className="input" defaultValue={values?.phone ?? ""} />
-        </Field>
-        <Field label="Email" htmlFor={p("email")} className="md:col-span-2">
-          <input id={p("email")} name="email" type="email" className="input" defaultValue={values?.email ?? ""} placeholder="bids@vendor.com" />
-        </Field>
-        <Field label="Notes" htmlFor={p("notes")} className="md:col-span-2">
-          <input id={p("notes")} name="notes" className="input" defaultValue={values?.notes ?? ""} placeholder="Delivery days, account #…" />
-        </Field>
-      </FormGrid>
-      <Field label="Cost codes they bid" hint="Picked for them when you request bids on a job — you can always change it there.">
-        <CodePicker idPrefix={p("codes")} codes={codes} picked={values ? vendorCodes(values) : []} />
-      </Field>
-      <div className="flex items-center gap-2">
-        <SubmitButton>{values ? "Save vendor" : "Add vendor"}</SubmitButton>
-        {values ? (
-          <Link href="/vendors" className={buttonClasses("ghost")}>
-            Cancel
-          </Link>
-        ) : null}
-      </div>
-    </form>
-  );
-}
-
-export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ edit?: string; added?: string; updated?: string; same?: string; error?: string; bidMessage?: string }> }) {
+export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ added?: string; updated?: string; same?: string; error?: string; bidMessage?: string }> }) {
   await requireView("lists");
-  const { edit, added, updated, same, error, bidMessage } = await searchParams;
+  const { added, updated, same, error, bidMessage } = await searchParams;
   const today = (await companyClock()).now;
   const [vendors, costCodes, paper, company] = await Promise.all([
     db.vendor.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { bids: true, logins: true } } } }),
@@ -100,7 +60,13 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
             </span>
           }
         >
-          <VendorForm action={createVendor} codes={codes} />
+          <form action={createVendor} className="flex flex-wrap items-center gap-1.5">
+            <input name="name" required className="input !h-8 !w-64 !py-0 text-sm" placeholder="Smith Framing" aria-label="New vendor's name" />
+            <SubmitButton size="sm" pendingText="Adding…">
+              Add and open
+            </SubmitButton>
+            <span className="w-full text-xs text-slate-500">Their page opens to fill in the rest: contact, address, paperwork…</span>
+          </form>
         </Collapsible>
         <Collapsible
           defaultOpen={false}
@@ -162,14 +128,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
             </tr>
           </THead>
           <TBody>
-            {vendors.map((v) =>
-              edit === v.id ? (
-                <tr key={v.id} id={`vendor-${v.id}`}>
-                  <td colSpan={6} className="bg-slate-50/50 px-4 py-4">
-                    <VendorForm action={updateVendor} values={v} codes={codes} />
-                  </td>
-                </tr>
-              ) : (
+            {vendors.map((v) => (
                 <Tr key={v.id}>
                   <Td>
                     <Link id={`vendor-${v.id}`} href={`/vendors/${v.id}`} className="scroll-mt-24 font-medium text-slate-900 hover:text-blue-700">
@@ -198,7 +157,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
                   </Td>
                   <Td right>
                     <div className="flex justify-end gap-1">
-                      <Link href={`/vendors?edit=${v.id}#vendor-${v.id}`} className={buttonClasses("ghost", "sm")}>
+                      <Link href={`/vendors/${v.id}?edit=1`} className={buttonClasses("ghost", "sm")}>
                         <Pencil className="h-3.5 w-3.5" /> Edit
                       </Link>
                       <ConfirmForm action={deleteVendor} hidden={{ id: v.id }} message={`Delete "${v.name}"? Their bids stay on your jobs.`} variant="ghost">
@@ -207,8 +166,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
                     </div>
                   </Td>
                 </Tr>
-              ),
-            )}
+            ))}
           </TBody>
         </Table>
       )}

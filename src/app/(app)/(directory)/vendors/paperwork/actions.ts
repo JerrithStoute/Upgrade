@@ -22,7 +22,7 @@ function done(note: string) {
 
 const cleanName = (s: string) => s.replace(/\s+/g, " ").trim().slice(0, 60);
 
-/** A kind of paper of your own (Contractor agreement, Business license…). */
+/** A kind of paper of your own (Contractor agreement, Business license…), or an insurance coverage to track. */
 export const addPaperType = friendly(async function addPaperType(fd: FormData) {
   const user = await requireEdit("lists");
   const name = cleanName(str(fd, "name"));
@@ -31,8 +31,15 @@ export const addPaperType = friendly(async function addPaperType(fd: FormData) {
   const had = types.find((t) => t.name.toLowerCase() === name.toLowerCase());
   if (had) throw new Error(`You already have ${had.name}`);
   if (types.length >= MAX_TYPES) throw new Error(`That's ${MAX_TYPES} kinds already — take one off first`);
+  const coverage = str(fd, "coverage") === "1";
   await db.paperworkType.create({
-    data: { name, expires: str(fd, "expires") === "on", usual: str(fd, "usual") === "on", sortOrder: Math.max(0, ...types.map((t) => t.sortOrder)) + 1 },
+    data: {
+      name,
+      kind: coverage ? "INSURANCE" : null,
+      expires: coverage || str(fd, "expires") === "on",
+      usual: str(fd, "usual") === "on",
+      sortOrder: Math.max(0, ...types.filter((t) => (coverage ? t.kind === "INSURANCE" : t.kind !== "INSURANCE")).map((t) => t.sortOrder)) + 1,
+    },
   });
   await logActivity({ userId: user.id, type: "vendor.paperwork", description: `Paperwork kind added: ${name}` });
   done(`${name} added`);
@@ -60,9 +67,10 @@ export const deletePaperType = friendly(async function deletePaperType(fd: FormD
   const user = await requireEdit("lists");
   const type = await db.paperworkType.findUnique({ where: { id: str(fd, "id") }, include: { docs: { select: { storagePath: true } } } });
   if (!type) return done("Removed");
-  if (type.kind) throw new Error(`${type.name} is built in — untick "New vendors need it" instead, and untick it on any vendor you don't need it from`);
+  if (type.kind === "W9") throw new Error(`${type.name} is built in — untick "New vendors need it" instead, and untick it on any vendor you don't need it from`);
   await db.paperworkType.delete({ where: { id: type.id } });
-  for (const d of type.docs) if (d.storagePath) await deleteUpload(d.storagePath);
+  // (A certificate still on another line stays.)
+  for (const d of type.docs) if (d.storagePath && !(await db.vendorDoc.count({ where: { storagePath: d.storagePath } }))) await deleteUpload(d.storagePath);
   await logActivity({ userId: user.id, type: "vendor.paperwork", description: `Paperwork kind removed: ${type.name}` });
   done(`${type.name} removed`);
 });

@@ -195,14 +195,32 @@ test("adds a sub from a schedule task without leaving, and drops their W-9 on th
   // Picked, what was typed still there, and the paperwork they owe (your usual set) under it.
   await expect(page.locator("select[name=vendorId] option:checked")).toHaveText("Flow Framing");
   await expect(page.locator("[name=name]")).toHaveValue("Frame the house");
-  await expect(page.getByText("W-9 missing · Insurance missing")).toBeVisible();
+  await expect(page.getByText("W-9 missing · General liability missing · Workers' comp missing")).toBeVisible();
   // Their page: the W-9 goes on its line.
   await page.goto("/vendors");
   await page.getByRole("link", { name: "Flow Framing" }).first().click();
   const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF");
   await page.getByLabel("Add a file to W-9").setInputFiles({ name: "w9.pdf", mimeType: "application/pdf", buffer: pdf });
   await expect(page.locator("li").filter({ hasText: /^W-9/ }).getByText("On file")).toBeVisible();
-  await expect(page.locator("li").filter({ hasText: /^Insurance/ }).getByText("Missing")).toBeVisible();
+  // A policy typed in, on the same certificate: carrier, policy #, expiry.
+  const gl = page.locator("li").filter({ hasText: /^General liability/ });
+  await gl.getByRole("button", { name: "Add the policy" }).click();
+  await gl.getByLabel("Carrier").fill("Texas Mutual");
+  await gl.getByLabel("Policy number").fill("GL-1001");
+  await gl.getByLabel("General liability expires").fill("2030-06-30");
+  await gl.getByLabel("Or a file already on this vendor").selectOption({ label: "w9.pdf" });
+  await gl.getByRole("button", { name: "Save" }).click();
+  await expect(gl.getByText("Good till Jun 30, 2030")).toBeVisible();
+  // A sub you don't need it from: one click.
+  const wc = page.locator("li").filter({ hasText: /^Workers' comp/ });
+  await wc.getByLabel("Need it").uncheck();
+  await expect(wc.getByText("Not needed")).toBeVisible();
+  // Their info, edited right here.
+  await page.getByRole("button", { name: "Edit" }).click();
+  await page.locator("input[name=address]").fill("12 Mill Road");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("12 Mill Road")).toBeVisible();
+  await expect(page).toHaveURL(/\/vendors\/c[a-z0-9]+$/);
 });
 
 test("reports a problem", async () => {

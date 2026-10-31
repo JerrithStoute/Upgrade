@@ -19,6 +19,9 @@ import { findOrAddVendor, importVendorRows, renameVendorEverywhere } from "@/lib
 
 const PATH = "/vendors";
 
+type Result = { ok: true } | { ok: false; error: string };
+const fail = (e: unknown): Result => ({ ok: false, error: e instanceof Error ? e.message : "That didn't save — try again" });
+
 async function vendorFields(fd: FormData, id?: string) {
   const name = cleanVendorName(str(fd, "name"));
   if (!name) throw new Error("Vendor name is required");
@@ -36,6 +39,9 @@ async function vendorFields(fd: FormData, id?: string) {
     email: email?.slice(0, 200) ?? null,
     phone: strOrNull(fd, "phone")?.slice(0, 60) ?? null,
     notes: strOrNull(fd, "notes")?.slice(0, 2000) ?? null,
+    address: strOrNull(fd, "address")?.slice(0, 200) ?? null,
+    licenseNumber: strOrNull(fd, "licenseNumber")?.slice(0, 60) ?? null,
+    taxId: strOrNull(fd, "taxId")?.slice(0, 20) ?? null,
     costCodeIds: codes.length ? JSON.stringify(codes) : null,
   };
 }
@@ -44,22 +50,27 @@ export const createVendor = friendly(async function createVendor(fd: FormData) {
   await requireEdit("lists");
   const v = await db.vendor.create({ data: await vendorFields(fd) });
   revalidatePath(PATH);
-  redirect(`${PATH}#vendor-${v.id}`);
+  redirect(`${PATH}/${v.id}`);
 });
 
-/** A new name goes everywhere the vendor is written (Item List items, bids). */
-export const updateVendor = friendly(async function updateVendor(fd: FormData) {
-  await requireEdit("lists");
-  const id = str(fd, "id");
-  const had = await db.vendor.findUnique({ where: { id }, select: { name: true } });
-  if (!had) throw new Error("Vendor not found");
-  const data = await vendorFields(fd, id);
-  await db.vendor.update({ where: { id }, data });
-  await renameVendorEverywhere(id, had.name, data.name);
-  revalidatePath(PATH);
-  revalidatePath("/catalog/items");
-  redirect(`${PATH}#vendor-${id}`);
-});
+/** Their company info, changed right on their page (you stay there). A new name goes everywhere it's written. */
+export async function saveVendorInfo(fd: FormData): Promise<Result> {
+  try {
+    await requireEdit("lists");
+    const id = str(fd, "id");
+    const had = await db.vendor.findUnique({ where: { id }, select: { name: true } });
+    if (!had) throw new Error("Vendor not found");
+    const data = await vendorFields(fd, id);
+    await db.vendor.update({ where: { id }, data });
+    await renameVendorEverywhere(id, had.name, data.name);
+    revalidatePath(PATH);
+    revalidatePath(`${PATH}/${id}`);
+    revalidatePath("/catalog/items");
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
 
 /** Their bids stay on the jobs, under the name they had. */
 export const deleteVendor = friendly(async function deleteVendor(fd: FormData) {
@@ -144,10 +155,17 @@ export const setBidMessage = friendly(async function setBidMessage(fd: FormData)
 
 // --- Paperwork ------------------------------------------------------------------------------
 
-type Result = { ok: true } | { ok: false; error: string };
-const fail = (e: unknown): Result => ({ ok: false, error: e instanceof Error ? e.message : "That didn't save — try again" });
+/** The bits of a paper that are typed: its expiry (for a kind that expires), and a policy's carrier and number. */
+function paperFields(fd: FormData, expires: boolean) {
+  const expiresAt = expires ? parseDateInput(fd.get("expiresAt")) : null;
+  if (expires && str(fd, "expiresAt") && !expiresAt) throw new Error("That date doesn't look right");
+  return { expiresAt, carrier: strOrNull(fd, "carrier")?.slice(0, 120) ?? null, number: strOrNull(fd, "number")?.slice(0, 60) ?? null };
+}
 
-/** A file dropped on one of a vendor's paperwork lines (with its expiry, when that kind expires and it's known). */
+/**
+ * A paper on one of a vendor's lines: a file (dropped or picked), or one already on this vendor (one insurance
+ * certificate usually covers several policies), with what's typed for it. A policy can be typed in without a file.
+ */
 export async function addVendorDoc(fd: FormData): Promise<Result> {
   try {
     const user = await requireEdit("lists");
@@ -156,11 +174,15 @@ export async function addVendorDoc(fd: FormData): Promise<Result> {
       db.paperworkType.findUnique({ where: { id: str(fd, "typeId") } }),
     ]);
     if (!vendor || !type) throw new Error("That vendor or paper isn't there any more — reload the page");
+    const fields = paperFields(fd, type.expires);
     const file = fd.get("file");
-    if (!(file instanceof File) || file.size === 0) throw new Error("Pick a file");
-    const meta = await saveUpload(file, `vendors/${vendor.id}`);
-    const expiresAt = type.expires ? parseDateInput(fd.get("expiresAt")) : null;
-    await db.vendorDoc.create({ data: { vendorId: vendor.id, typeId: type.id, expiresAt, confirmed: true, fileName: meta.name, storagePath: meta.storagePath, mimeType: meta.mimeType } });
+    const same = str(fd, "sameAs")
+      ? await db.vendorDoc.findFirst({ where: { id: str(fd, "sameAs"), vendorId: vendor.id }, select: { fileName: true, storagePath: true, mimeType: true } })
+      : null;
+    const meta = file instanceof File && file.size > 0 ? await saveUpload(file, `vendors/${vendor.id}`) : null;
+    const stored = meta ? { fileName: meta.name, storagePath: meta.storagePath, mimeType: meta.mimeType } : same?.storagePath ? same : null;
+    if (!stored && !fields.number && !fields.expiresAt) throw new Error(type.expires ? "Type its expiry date, or add the file" : "Pick a file");
+    await db.vendorDoc.create({ data: { vendorId: vendor.id, typeId: type.id, confirmed: true, ...fields, ...(stored ?? {}) } });
     await logActivity({ userId: user.id, type: "vendor.paperwork", description: `${type.name} added for ${vendor.name}` });
     revalidateVendor(vendor.id);
     return { ok: true };
@@ -169,15 +191,13 @@ export async function addVendorDoc(fd: FormData): Promise<Result> {
   }
 }
 
-/** A paper's expiry date (typed after the file was dropped, or corrected). */
-export async function setVendorDocDate(input: { id: string; expiresAt: string }): Promise<Result> {
+/** What's typed on a paper: its carrier, number and expiry (corrected, or added after the file). */
+export async function updateVendorDoc(fd: FormData): Promise<Result> {
   try {
     await requireEdit("lists");
-    const doc = await db.vendorDoc.findUnique({ where: { id: input.id }, select: { id: true, vendorId: true } });
+    const doc = await db.vendorDoc.findUnique({ where: { id: str(fd, "id") }, select: { id: true, vendorId: true, type: { select: { expires: true } } } });
     if (!doc) throw new Error("That paper isn't there any more — reload the page");
-    const expiresAt = parseDateInput(input.expiresAt);
-    if (!expiresAt) throw new Error("Type the date it expires");
-    await db.vendorDoc.update({ where: { id: doc.id }, data: { expiresAt } });
+    await db.vendorDoc.update({ where: { id: doc.id }, data: paperFields(fd, doc.type.expires) });
     revalidateVendor(doc.vendorId);
     return { ok: true };
   } catch (e) {
@@ -185,14 +205,13 @@ export async function setVendorDocDate(input: { id: string; expiresAt: string })
   }
 }
 
-/** One they uploaded from their portal: you looked, so it counts (its date can be fixed as you do). */
-export async function confirmVendorDoc(input: { id: string; expiresAt?: string }): Promise<Result> {
+/** One they uploaded from their portal: you looked, so it counts. */
+export async function confirmVendorDoc(input: { id: string }): Promise<Result> {
   try {
     await requireEdit("lists");
     const doc = await db.vendorDoc.findUnique({ where: { id: input.id }, select: { id: true, vendorId: true } });
     if (!doc) throw new Error("That paper isn't there any more — reload the page");
-    const expiresAt = input.expiresAt ? parseDateInput(input.expiresAt) : undefined;
-    await db.vendorDoc.update({ where: { id: doc.id }, data: { confirmed: true, ...(expiresAt ? { expiresAt } : {}) } });
+    await db.vendorDoc.update({ where: { id: doc.id }, data: { confirmed: true } });
     revalidateVendor(doc.vendorId);
     return { ok: true };
   } catch (e) {
@@ -200,13 +219,14 @@ export async function confirmVendorDoc(input: { id: string; expiresAt?: string }
   }
 }
 
+/** Takes a paper off its line. Its file goes too — unless another line uses the same certificate. */
 export async function deleteVendorDoc(input: { id: string }): Promise<Result> {
   try {
     await requireEdit("lists");
     const doc = await db.vendorDoc.findUnique({ where: { id: input.id } });
     if (!doc) return { ok: true };
     await db.vendorDoc.delete({ where: { id: doc.id } });
-    if (doc.storagePath) await deleteUpload(doc.storagePath);
+    if (doc.storagePath && !(await db.vendorDoc.count({ where: { storagePath: doc.storagePath } }))) await deleteUpload(doc.storagePath);
     revalidateVendor(doc.vendorId);
     return { ok: true };
   } catch (e) {
@@ -214,17 +234,55 @@ export async function deleteVendorDoc(input: { id: string }): Promise<Result> {
   }
 }
 
-/** What this vendor needs — ticked kinds; ones already needed keep the day they were first needed. */
-export async function setVendorNeeds(input: { vendorId: string; typeIds: string[] }): Promise<Result> {
+/** "Need it" on one line: whether you need this paper from this vendor (first needed today, or kept as it was). */
+export async function setVendorNeed(input: { vendorId: string; typeId: string; on: boolean }): Promise<Result> {
   try {
     await requireEdit("lists");
     const types = await paperTypes();
     const vendor = await db.vendor.findUnique({ where: { id: input.vendorId }, select: { id: true, paperwork: true, createdAt: true } });
     if (!vendor) throw new Error("Vendor not found");
-    const known = new Set(types.map((t) => t.id));
-    const needs = setNeeds(readNeeds(vendor.paperwork, types, vendor.createdAt), input.typeIds.filter((id) => known.has(id)), new Date());
-    await db.vendor.update({ where: { id: vendor.id }, data: { paperwork: JSON.stringify(needs) } });
+    if (!types.some((t) => t.id === input.typeId)) throw new Error("That paper isn't on your list any more — reload the page");
+    const had = readNeeds(vendor.paperwork, types, vendor.createdAt);
+    const ids = input.on ? [...Object.keys(had), input.typeId] : Object.keys(had).filter((id) => id !== input.typeId);
+    await db.vendor.update({ where: { id: vendor.id }, data: { paperwork: JSON.stringify(setNeeds(had, ids, new Date())) } });
     revalidateVendor(vendor.id);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/**
+ * A kind of paper (or an insurance coverage) added from a vendor's page: onto your list, and needed from this
+ * vendor. "Ask every new sub" ticks it for vendors you add from now on too.
+ */
+export async function addPaperKindFor(input: { vendorId: string; name: string; expires: boolean; usual: boolean; coverage: boolean }): Promise<Result> {
+  try {
+    const user = await requireEdit("lists");
+    const name = input.name.replace(/\s+/g, " ").trim().slice(0, 60);
+    if (!name) throw new Error(input.coverage ? "Name the coverage — Builder's risk, Pollution…" : "Name it — Contractor agreement, Lien waiver…");
+    const types = await paperTypes();
+    const had = types.find((t) => t.name.toLowerCase() === name.toLowerCase());
+    const vendor = await db.vendor.findUnique({ where: { id: input.vendorId }, select: { id: true, paperwork: true, createdAt: true } });
+    if (!vendor) throw new Error("Vendor not found");
+    if (!had && types.length >= 30) throw new Error("That's 30 kinds already — take one off in Paperwork settings first");
+    const group = types.filter((t) => (input.coverage ? t.kind === "INSURANCE" : t.kind !== "INSURANCE"));
+    const type =
+      had ??
+      (await db.paperworkType.create({
+        data: {
+          name,
+          kind: input.coverage ? "INSURANCE" : null,
+          expires: input.coverage || input.expires,
+          usual: input.usual,
+          sortOrder: Math.max(0, ...group.map((t) => t.sortOrder)) + 1,
+        },
+      }));
+    const needs = readNeeds(vendor.paperwork, types, vendor.createdAt);
+    await db.vendor.update({ where: { id: vendor.id }, data: { paperwork: JSON.stringify(setNeeds(needs, [...Object.keys(needs), type.id], new Date())) } });
+    if (!had) await logActivity({ userId: user.id, type: "vendor.paperwork", description: `Paperwork kind added: ${name}` });
+    revalidateVendor(vendor.id);
+    revalidatePath(`${PATH}/paperwork`);
     return { ok: true };
   } catch (e) {
     return fail(e);

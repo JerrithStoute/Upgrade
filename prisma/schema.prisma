@@ -70,6 +70,8 @@ model Company {
   requiredCoverage    String          @default("GL,WC")
   // Vendor paperwork (paperwork.ts): set up the first time it's read (W-9 + Insurance, old certificates moved over).
   paperworkReady      Boolean         @default(false)
+  // 2 = insurance is one line per coverage (General liability, Workers' comp…), each a paperwork kind of its own.
+  paperworkVersion    Int             @default(0)
   // Who handles subs' paperwork (JSON { positions: [id], users: [id] }) — shown on the dashboard list.
   paperworkOwner      String?
   // The day the weekly paperwork email last went out ("YYYY-MM-DD"), so an hourly check sends it once.
@@ -1586,6 +1588,10 @@ model Vendor {
   email             String?
   phone             String?
   notes             String?
+  address           String?
+  licenseNumber     String?
+  // For 1099s; shown with all but the last 4 hidden.
+  taxId             String?
   costCodeIds       String? // JSON ["<costCodeId>", "none", …]
   // Insurance needed? null = automatic: yes once they're on a PO for work (not a supplier's bid) or have a certificate on file.
   insuranceRequired Boolean?
@@ -1956,7 +1962,7 @@ model PaperworkType {
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
   companyId String      @default(dbgenerated("current_setting('app.company_id'::text)"))
   name      String
-  kind      String? // W9 | INSURANCE (built in); null = the company's own
+  kind      String? // W9 (built in) | INSURANCE (a coverage: shown together under Insurance) | null = the company's own
   expires   Boolean     @default(false)
   usual     Boolean     @default(true)
   sortOrder Int         @default(0)
@@ -1977,6 +1983,9 @@ model VendorDoc {
   typeId      String
   type        PaperworkType @relation(fields: [typeId], references: [id], onDelete: Cascade)
   expiresAt   DateTime?
+  // A policy's carrier, and its number (policy # / license #) — typed in.
+  carrier     String?
+  number      String?
   confirmed   Boolean       @default(true)
   fileName    String?
   storagePath String?

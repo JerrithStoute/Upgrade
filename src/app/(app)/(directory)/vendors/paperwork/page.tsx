@@ -46,70 +46,22 @@ export default async function PaperworkSettingsPage({ searchParams }: { searchPa
         </p>
       ) : null}
 
-      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-        <header className="border-b border-slate-100 px-4 py-2.5">
-          <h2 className="text-sm font-semibold text-slate-900">What you ask for</h2>
-          <p className="text-xs text-slate-500">
-            &ldquo;New vendors need it&rdquo; ticks it for every vendor you add from now on — untick it on a vendor&apos;s page for a one-time job. Vendors you already have keep what
-            they&apos;re set to.
-          </p>
-        </header>
-        <ul className="divide-y divide-slate-100">
-          {types.map((t) => (
-            <li key={t.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2.5 text-sm">
-              <form action={savePaperType} className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-2">
-                <input type="hidden" name="id" value={t.id} />
-                <input name="name" defaultValue={t.name} aria-label="Name" maxLength={60} disabled={!canEdit} className="input !h-8 !w-56 text-sm font-medium" />
-                <label className={`flex items-center gap-1.5 ${t.kind ? "text-slate-400" : "text-slate-700"}`}>
-                  <input
-                    type="checkbox"
-                    name="expires"
-                    defaultChecked={t.expires}
-                    disabled={!canEdit || !!t.kind}
-                    className="h-4 w-4 rounded border-slate-300"
-                  />
-                  Has an expiry date
-                </label>
-                <label className="flex items-center gap-1.5 text-slate-700">
-                  <input type="checkbox" name="usual" defaultChecked={t.usual} disabled={!canEdit} className="h-4 w-4 rounded border-slate-300" />
-                  New vendors need it
-                </label>
-                {canEdit ? (
-                  <SubmitButton size="sm" variant="secondary">
-                    Save
-                  </SubmitButton>
-                ) : null}
-              </form>
-              {canEdit && !t.kind ? (
-                <ConfirmForm
-                  action={deletePaperType}
-                  hidden={{ id: t.id }}
-                  message={`Take ${t.name} off?${filesOn.get(t.id) ? ` The ${filesOn.get(t.id)} file(s) vendors have on it go too.` : ""}`}
-                  variant="ghost"
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-rose-600" aria-label={`Remove ${t.name}`} />
-                </ConfirmForm>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-        {canEdit ? (
-          <form action={addPaperType} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-dashed border-slate-200 px-4 py-3 text-sm">
-            <input name="name" required maxLength={60} placeholder="Contractor agreement" aria-label="New kind of paper" className="input !h-8 !w-56 text-sm" />
-            <label className="flex items-center gap-1.5 text-slate-700">
-              <input type="checkbox" name="expires" className="h-4 w-4 rounded border-slate-300" />
-              Has an expiry date
-            </label>
-            <label className="flex items-center gap-1.5 text-slate-700">
-              <input type="checkbox" name="usual" className="h-4 w-4 rounded border-slate-300" />
-              New vendors need it
-            </label>
-            <SubmitButton size="sm">
-              <Plus className="h-4 w-4" /> Add
-            </SubmitButton>
-          </form>
-        ) : null}
-      </section>
+      <KindList
+        title="Paperwork you ask for"
+        note="“New subs need it” ticks it for every vendor you add from now on. On each vendor's page, “Need it” on each line sets what you need from them."
+        types={types.filter((t) => t.kind !== "INSURANCE")}
+        coverage={false}
+        canEdit={canEdit}
+        filesOn={filesOn}
+      />
+      <KindList
+        title="Insurance coverages you track"
+        note="Each coverage is its own line on a sub's page, with its carrier, policy # and expiry. Tick only what most of your subs carry — then tick it on the subs who do."
+        types={types.filter((t) => t.kind === "INSURANCE")}
+        coverage
+        canEdit={canEdit}
+        filesOn={filesOn}
+      />
 
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <header className="border-b border-slate-100 px-4 py-2.5">
@@ -132,5 +84,93 @@ export default async function PaperworkSettingsPage({ searchParams }: { searchPa
         </form>
       </section>
     </div>
+  );
+}
+
+/** One list on this page — your paperwork kinds, or your coverages — each editable, with a way to add one. */
+function KindList({
+  title,
+  note,
+  types,
+  coverage,
+  canEdit,
+  filesOn,
+}: {
+  title: string;
+  note: string;
+  types: { id: string; name: string; kind: string | null; expires: boolean; usual: boolean }[];
+  coverage: boolean;
+  canEdit: boolean;
+  filesOn: Map<string, number>;
+}) {
+  const small = "!h-7 !px-2.5 !text-xs";
+  return (
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="border-b border-slate-100 px-4 py-2.5">
+        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+        <p className="text-xs text-slate-500">{note}</p>
+      </header>
+      <ul className="divide-y divide-slate-100">
+        {types.map((t) => (
+          <li key={t.id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-2 text-sm">
+            <form action={savePaperType} className="flex flex-1 flex-wrap items-center gap-x-4 gap-y-2">
+              <input type="hidden" name="id" value={t.id} />
+              <input name="name" defaultValue={t.name} aria-label="Name" maxLength={60} disabled={!canEdit} className="input !h-7 !w-56 !py-0 text-sm" />
+              {coverage ? null : (
+                <label className={`flex items-center gap-1.5 text-xs ${t.kind ? "text-slate-400" : "text-slate-700"}`}>
+                  <input type="checkbox" name="expires" defaultChecked={t.expires} disabled={!canEdit || !!t.kind} className="h-3.5 w-3.5 rounded border-slate-300" />
+                  Has an expiry date
+                </label>
+              )}
+              <label className="flex items-center gap-1.5 text-xs text-slate-700">
+                <input type="checkbox" name="usual" defaultChecked={t.usual} disabled={!canEdit} className="h-3.5 w-3.5 rounded border-slate-300" />
+                New subs need it
+              </label>
+              {canEdit ? (
+                <SubmitButton size="sm" variant="secondary" className={small}>
+                  Save
+                </SubmitButton>
+              ) : null}
+            </form>
+            {canEdit && t.kind !== "W9" ? (
+              <ConfirmForm
+                action={deletePaperType}
+                hidden={{ id: t.id }}
+                message={`Take ${t.name} off?${filesOn.get(t.id) ? ` The ${filesOn.get(t.id)} paper(s) vendors have on it go too.` : ""}`}
+                variant="ghost"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-rose-600" aria-label={`Remove ${t.name}`} />
+              </ConfirmForm>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      {canEdit ? (
+        <form action={addPaperType} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-dashed border-slate-200 px-4 py-2.5 text-sm">
+          {coverage ? <input type="hidden" name="coverage" value="1" /> : null}
+          <input
+            name="name"
+            required
+            maxLength={60}
+            placeholder={coverage ? "Builder's risk" : "Contractor agreement"}
+            aria-label={coverage ? "New coverage" : "New kind of paper"}
+            className="input !h-7 !w-56 !py-0 text-sm"
+          />
+          {coverage ? null : (
+            <label className="flex items-center gap-1.5 text-xs text-slate-700">
+              <input type="checkbox" name="expires" className="h-3.5 w-3.5 rounded border-slate-300" />
+              Has an expiry date
+            </label>
+          )}
+          <label className="flex items-center gap-1.5 text-xs text-slate-700">
+            <input type="checkbox" name="usual" className="h-3.5 w-3.5 rounded border-slate-300" />
+            New subs need it
+          </label>
+          <SubmitButton size="sm" className={small}>
+            <Plus className="h-3.5 w-3.5" /> Add
+          </SubmitButton>
+        </form>
+      ) : null}
+    </section>
   );
 }

@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { daysOpen, paperLines, paperworkWarning, problems, readNeeds, readWho, setNeeds, type PaperDoc, type PaperType } from "./paperwork";
+import { daysOpen, maskTaxId, paperLines, paperworkWarning, problems, readNeeds, readWho, setNeeds, type PaperDoc, type PaperType } from "./paperwork";
 
 const W9: PaperType = { id: "w9", name: "W-9", kind: "W9", expires: false, usual: true, sortOrder: 0 };
 const INS: PaperType = { id: "ins", name: "Insurance", kind: "INSURANCE", expires: true, usual: true, sortOrder: 1 };
@@ -88,4 +88,10 @@ test("who: positions, people and worked-out roles, nothing else", () => {
   assert.deepEqual(readWho('["pos:p1","user:u1","user:u1","role:manager","x:1",3,"user:a b"]'), ["pos:p1", "user:u1", "role:manager"]);
   assert.deepEqual(readWho(null), []);
   assert.deepEqual(readWho('{"a":1}'), []);
+});
+
+test("a tax ID shows only its last 4", () => {
+  assert.equal(maskTaxId("72-1904471"), "••-•••4471");
+  assert.equal(maskTaxId("123456789"), "•••••6789");
+  assert.equal(maskTaxId(null), "");
 });

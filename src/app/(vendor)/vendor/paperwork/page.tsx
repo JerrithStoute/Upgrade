@@ -59,6 +59,18 @@ export default async function VendorPaperworkPage({ searchParams }: { searchPara
                 <span className="label">{l.docs.length ? "Send a new one" : "Send it"}</span>
                 <input name="file" type="file" required accept=".pdf,image/*,.doc,.docx" className="block w-full text-sm" />
               </label>
+              {l.type.kind === "INSURANCE" ? (
+                <label className="space-y-1">
+                  <span className="label">Insurance company</span>
+                  <input name="carrier" className="input" />
+                </label>
+              ) : null}
+              {l.type.expires ? (
+                <label className="space-y-1">
+                  <span className="label">{l.type.kind === "INSURANCE" ? "Policy #" : "Number"}</span>
+                  <input name="number" className="input" />
+                </label>
+              ) : null}
               {l.type.expires ? (
                 <label className="space-y-1">
                   <span className="label">Expires</span>

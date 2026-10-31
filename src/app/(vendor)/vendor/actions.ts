@@ -98,7 +98,17 @@ export const uploadVendorPaper = friendly(async function uploadVendorPaper(fd: F
   if (!(file instanceof File) || file.size === 0) throw new Error("Attach the file");
   const meta = await saveUpload(file, `vendors/${user.vendorId}`);
   await db.vendorDoc.create({
-    data: { vendorId: user.vendorId, typeId: type.id, expiresAt, confirmed: false, fileName: meta.name, storagePath: meta.storagePath, mimeType: meta.mimeType },
+    data: {
+      vendorId: user.vendorId,
+      typeId: type.id,
+      expiresAt,
+      carrier: type.kind === "INSURANCE" ? (strOrNull(fd, "carrier")?.slice(0, 120) ?? null) : null,
+      number: strOrNull(fd, "number")?.slice(0, 60) ?? null,
+      confirmed: false,
+      fileName: meta.name,
+      storagePath: meta.storagePath,
+      mimeType: meta.mimeType,
+    },
   });
   await logActivity({ userId: user.id, type: "vendor.paperwork", description: `${user.name} sent their ${type.name} in their portal` });
   await emailPaperworkUploaded(user.vendorId, type.name, expiresAt);
