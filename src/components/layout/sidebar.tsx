@@ -30,12 +30,13 @@ import {
 import { cn } from "@/lib/utils";
 import { BrandMark } from "@/components/brand-mark";
 
-const NAV: { href: string; label: string; icon: LucideIcon }[] = [
+const NAV: { href: string; label: string; icon: LucideIcon; also?: string[] }[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/leads", label: "Leads", icon: Target },
   { href: "/projects", label: "Projects", icon: FolderKanban },
   { href: "/spec", label: "Spec homes", icon: House },
-  { href: "/clients", label: "Clients", icon: Users },
+  // Clients, subs & vendors, and the team, under one tab bar.
+  { href: "/directory", label: "Directory", icon: Users, also: ["/clients", "/vendors", "/team"] },
   { href: "/schedule", label: "Schedule", icon: CalendarDays },
   { href: "/todos", label: "To-Dos", icon: CheckSquare },
   { href: "/warranty", label: "Warranty", icon: ShieldCheck },
@@ -47,6 +48,9 @@ const NAV: { href: string; label: string; icon: LucideIcon }[] = [
   { href: "/catalog", label: "Catalog", icon: BookOpen },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
+
+/** A menu item is lit on its own pages (and, for Directory, its tabs' pages). */
+const isOnItem = (item: (typeof NAV)[number], pathname: string) => [item.href, ...(item.also ?? [])].some((h) => pathname === h || pathname.startsWith(h + "/"));
 
 /** The takeoff drawing screen (/projects/<id>/takeoff/<planId>), where the menu tucks away to give the plan room. */
 export function isPlanViewer(pathname: string) {
@@ -112,7 +116,7 @@ function SidebarContent({
       </div>
       <nav className="flex-1 space-y-0.5 p-3">
         {NAV.filter((n) => allowed.includes(n.href)).map((item) => {
-          const active = pathname === item.href || pathname.startsWith(item.href + "/");
+          const active = isOnItem(item, pathname);
           return (
             <Link
               key={item.href}
@@ -247,7 +251,7 @@ export function MobileNav({ allowed }: { allowed: string[] }) {
   const [moreOn, setMoreOn] = useState<string | null>(null); // open on this page only
   const more = moreOn === pathname;
   const items = NAV.filter((n) => allowed.includes(n.href));
-  const isOn = (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const isOn = (href: string) => isOnItem(NAV.find((n) => n.href === href) ?? { href, label: "", icon: Menu }, pathname);
   const bar = PHONE_BAR.map((h) => items.find((n) => n.href === h)).filter((n): n is (typeof NAV)[number] => !!n);
   const rest = items.filter((n) => !PHONE_BAR.includes(n.href));
   const moreActive = rest.some((n) => isOn(n.href));

@@ -4,6 +4,9 @@ import { requireView } from "@/lib/auth";
 import { allows } from "@/lib/access";
 import { db } from "@/lib/db";
 import { getProject, staffUsers } from "@/lib/projects";
+import { vendorChoices } from "@/lib/paperwork-server";
+import { notifyOn } from "@/lib/notify-recipients";
+import { VendorPick } from "@/components/vendors/vendor-pick";
 import { companyClock } from "@/lib/company-zone";
 import { fmtDate } from "@/lib/utils";
 import { isOpen, warrantyLabel, warrantyNo } from "@/lib/warranty";
@@ -28,7 +31,7 @@ export default async function WarrantyRequestPage({ params }: { params: Promise<
     },
   });
   if (!w) notFound();
-  const [vendors, staff, clock] = await Promise.all([db.vendor.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }), staffUsers(), companyClock()]);
+  const [vendors, staff, clock, emailsSub] = await Promise.all([vendorChoices(), staffUsers(), companyClock(), notifyOn("warrantyToSub")]);
   const canEdit = allows(user.access, "field", 2);
   const open = isOpen(w.status);
   const client = project.client;
@@ -110,15 +113,8 @@ export default async function WarrantyRequestPage({ params }: { params: Promise<
               // (Keyed by what's saved: a select keeps its first value through a save otherwise.)
               <form key={`${w.vendorId}|${w.assigneeId}|${w.scheduledFor?.getTime()}`} action={assignWarranty} className="space-y-3">
                 <input type="hidden" name="id" value={w.id} />
-                <Field label="Sub" htmlFor="a-vendor" hint={vendors.length ? "They're emailed, and see it in their portal's Warranty page." : "Add subs in Settings → Vendors."}>
-                  <select id="a-vendor" name="vendorId" className="input" defaultValue={w.vendorId ?? ""}>
-                    <option value="">— None —</option>
-                    {vendors.map((v) => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}
-                      </option>
-                    ))}
-                  </select>
+                <Field label="Sub" htmlFor="a-vendor" hint={`They see it in their portal's Warranty page${emailsSub ? ", and are emailed" : ""}.`}>
+                  <VendorPick id="a-vendor" vendors={vendors} defaultValue={w.vendorId} emptyLabel="— None —" />
                 </Field>
                 <Field label="Someone on your team" htmlFor="a-assignee">
                   <select id="a-assignee" name="assigneeId" className="input" defaultValue={w.assigneeId ?? ""}>

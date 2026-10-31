@@ -5,6 +5,7 @@ import { Card, CardBody, CardHeader, ConfirmForm } from "@/components/ui";
 import { ProjectForm } from "../../_components/project-form";
 import { deleteProject, moveJobPin, saveJobVendors, setJobSite, updateProject } from "../../actions";
 import { JobVendors } from "../../_components/job-vendors";
+import { vendorChoices } from "@/lib/paperwork-server";
 import { JobSite } from "../../_components/job-site";
 
 export default async function EditProjectPage({ params }: { params: Promise<{ id: string }> }) {
@@ -29,6 +30,8 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
         (await db.project.findFirst({ where: { siteLat: { not: null } }, orderBy: { updatedAt: "desc" }, select: { siteLat: true, siteLng: true } })))
       : null;
 
+  const warnOf = new Map((await vendorChoices()).map((v) => [v.id, v.warn]));
+
   return (
     <div className="space-y-6">
       <ProjectForm action={updateProject} project={project} clients={clients} managers={managers} teamIds={team.map((t) => t.userId)} />
@@ -44,7 +47,9 @@ export default async function EditProjectPage({ params }: { params: Promise<{ id
 
       <JobVendors
         action={saveJobVendors.bind(null, project.id)}
-        vendors={vendors.map((v) => ({ id: v.id, name: v.name, hasLogin: v._count.logins > 0 })).sort((a, b) => Number(b.hasLogin) - Number(a.hasLogin) || a.name.localeCompare(b.name))}
+        vendors={vendors
+          .map((v) => ({ id: v.id, name: v.name, hasLogin: v._count.logins > 0, warn: warnOf.get(v.id) || undefined }))
+          .sort((a, b) => Number(b.hasLogin) - Number(a.hasLogin) || a.name.localeCompare(b.name))}
         picked={picked.map((p) => p.vendorId)}
       />
 

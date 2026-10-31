@@ -8,7 +8,9 @@ import { db } from "@/lib/db";
 import { contractValues } from "@/lib/projects";
 import { scheduleProgressByProject } from "@/lib/project-progress";
 import { cn, fmtDate, money, timeAgo } from "@/lib/utils";
-import { billTotal, coverageWarning, vendorsCoverage } from "@/lib/purchasing";
+import { billTotal } from "@/lib/purchasing";
+import { daysOpen, problemText } from "@/lib/paperwork";
+import { paperworkOwnerText, vendorsPaperwork } from "@/lib/paperwork-server";
 import { ACTIVE, agingRows, canSeeReports, cashFlow, jobRows, sumRows } from "@/lib/reports";
 import { AGING_BUCKETS } from "@/lib/report-math";
 import { availableCards, dashboardLayout, DASHBOARD_CARDS, layoutKeys } from "@/lib/dashboard-cards";
@@ -79,7 +81,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const [cardStats, cardProjects, cardVendors, cardAttention, cardTodos, cardSchedule, cardActivity, cardProfit, cardCash, cardAging, cardSales] = await Promise.all([
     want("stats") ? statsData(user.id, now, jobs()) : null,
     want("projects") ? projectsData(jobs()) : null,
-    want("vendors") ? vendorsData() : null,
+    want("vendors") ? vendorsData(now) : null,
     want("attention") ? attentionData(now) : null,
     want("todos")
       ? db.todo.findMany({
@@ -189,7 +191,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     },
     vendors: () => {
       if (!cardVendors) return null; // purchasing hidden for this position
-      const { insuranceWarnings, billsWaiting } = cardVendors;
+      const { paperwork, owner, billsWaiting } = cardVendors;
       const items = [
         ...(billsWaiting.length
           ? [
@@ -205,25 +207,26 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
               </li>,
             ]
           : []),
-        ...insuranceWarnings.map((w) => (
+        ...paperwork.map((w) => (
           <li key={w.vendor.id} className={row}>
-            <Link href={`/settings/vendors/${w.vendor.id}`} className="flex items-start gap-2 text-sm hover:text-blue-700">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-              <span className="min-w-0">
+            <Link href={`/vendors/${w.vendor.id}`} className="flex items-start gap-2 text-sm hover:text-blue-700">
+              <ShieldAlert className={cn("mt-0.5 h-4 w-4 shrink-0", w.urgent ? "text-rose-600" : "text-amber-600")} />
+              <span className="min-w-0 flex-1">
                 <span className="font-medium text-slate-900">{w.vendor.name}</span>
                 <span className="block truncate text-xs text-slate-600">{w.text}</span>
               </span>
+              {owner ? <span className="shrink-0 text-xs text-slate-500">{owner}</span> : null}
             </Link>
           </li>
         )),
       ];
       return (
-        <Panel title="Subs & vendors">
+        <Panel title="Subs & vendors" note={paperwork.length ? `${paperwork.length} with paperwork to follow up${owner ? ` · ${owner} handles it` : ""}` : undefined} href="/vendors" link="Directory">
           {items.length ? (
             <MoreList items={items} />
           ) : (
             <Quiet good>
-              <ShieldCheck className="h-4 w-4" /> All clear — no bills waiting, insurance up to date.
+              <ShieldCheck className="h-4 w-4" /> All clear — no bills waiting, paperwork all in.
             </Quiet>
           )}
         </Panel>
@@ -532,17 +535,28 @@ async function projectsData(jobs: ReturnType<typeof activeJobs>) {
   return { activeProjects, contractValues, progressMap };
 }
 
-async function vendorsData() {
-  const [coverage, billsWaiting] = await Promise.all([vendorsCoverage(), db.vendorBill.findMany({ where: { status: "PENDING" }, include: { lines: true } })]);
-  const insuranceWarnings = coverage
-    .filter((c) => c.state && (!c.state.ok || c.state.unconfirmed))
-    .map((c) => ({
-      vendor: c.vendor,
-      text: [c.state && !c.state.ok ? coverageWarning(c.state, (d) => fmtDate(d, "MMM d")) : "", c.state?.unconfirmed ? "they uploaded a certificate to confirm" : ""]
-        .filter(Boolean)
-        .join(" · "),
-    }));
-  return { insuranceWarnings, billsWaiting };
+/** Bills to approve, and every sub with paperwork to follow up: what, and how long it's sat there (longest first). */
+async function vendorsData(now: Date) {
+  const [paper, owner, billsWaiting] = await Promise.all([vendorsPaperwork(undefined, now), paperworkOwnerText(), db.vendorBill.findMany({ where: { status: "PENDING" }, include: { lines: true } })]);
+  const paperwork = paper
+    .filter((p) => p.problems.length || p.toConfirm)
+    .map((p) => {
+      const longest = Math.max(0, ...p.problems.filter((l) => l.status !== "soon").map((l) => daysOpen(l.since, now)));
+      return {
+        vendor: p.vendor,
+        longest,
+        urgent: p.problems.some((l) => l.status === "missing" || l.status === "expired"),
+        text: [
+          ...p.problems.map((l) => {
+            const days = l.status !== "soon" ? daysOpen(l.since, now) : 0;
+            return `${problemText(l, (d) => fmtDate(d, "MMM d"))}${days ? ` (${days} day${days === 1 ? "" : "s"})` : ""}`;
+          }),
+          ...(p.toConfirm ? [`${p.toConfirm} they sent to look over`] : []),
+        ].join(" · "),
+      };
+    })
+    .sort((a, b) => b.longest - a.longest || a.vendor.name.localeCompare(b.vendor.name));
+  return { paperwork, owner, billsWaiting };
 }
 
 async function attentionData(now: Date) {

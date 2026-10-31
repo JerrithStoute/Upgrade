@@ -17,6 +17,7 @@ import { itemNameKey, substituteLength } from "@/lib/takeoff";
 import { addSubstitution } from "@/lib/substitutions";
 import { newItemPlacement } from "@/lib/item-codes";
 import { cleanVendorName, vendorCodes, vendorKey } from "@/lib/vendors";
+import { findOrAddVendor } from "@/lib/vendor-list";
 import { bidEmail, bidEmailText, bidFileName, emailedBids, standardFromBody, subBidEmailText } from "@/lib/bid-email";
 import { companyLines } from "@/lib/company";
 import { appUrl, sendMail } from "@/lib/mail";
@@ -106,32 +107,10 @@ export const requestBids = friendly(async function requestBids(fd: FormData) {
  */
 export async function quickAddVendor(input: { name: string; contact: string; email: string; phone: string; codes: string[] }) {
   await requireEdit("estimates", { costs: true });
-  const name = cleanVendorName(input.name ?? "");
-  if (!name) return { ok: false as const, error: "Type the vendor's name" };
-  const email = (input.email ?? "").trim();
-  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false as const, error: "That email doesn't look right" };
-  const codes = (input.codes ?? []).map(String).slice(0, 500);
-  const had = (await db.vendor.findMany()).find((v) => vendorKey(v.name) === vendorKey(name));
-  const v = had
-    ? await db.vendor.update({
-        where: { id: had.id },
-        data: {
-          email: had.email ?? (email || null),
-          phone: had.phone ?? (input.phone?.trim() || null),
-          contact: had.contact ?? (input.contact?.trim() || null),
-          costCodeIds: JSON.stringify(Array.from(new Set([...vendorCodes(had), ...codes]))),
-        },
-      })
-    : await db.vendor.create({
-        data: {
-          name,
-          email: email || null,
-          phone: input.phone?.trim().slice(0, 60) || null,
-          contact: input.contact?.trim().slice(0, 120) || null,
-          costCodeIds: codes.length ? JSON.stringify(codes) : null,
-        },
-      });
-  revalidatePath("/settings/vendors");
+  const r = await findOrAddVendor(input);
+  if (!r.ok) return r;
+  const v = r.vendor;
+  revalidatePath("/vendors");
   return { ok: true as const, vendor: { id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) } };
 }
 
@@ -688,7 +667,7 @@ export async function sendAllBidEmails(input: {
 
 /**
  * "Use as my standard message" in a bid's email window: your words from it (between the greeting and the
- * job) go in every bid email from now on — Settings → Vendors shows them, to change or clear.
+ * job) go in every bid email from now on — Directory → Subs & vendors shows them, to change or clear.
  */
 export async function saveBidMessage(input: { projectId: string; bidId: string; body: string }): Promise<{ ok: true; message: string } | { error: string }> {
   await requireEdit("estimates", { costs: true });
@@ -700,11 +679,11 @@ export async function saveBidMessage(input: { projectId: string; bidId: string; 
   if (!company) return { error: "Set up your company first (Settings)." };
   await db.company.update({ where: { id: company.id }, data: { bidMessage: message } });
   revalidatePath(bidsPath(project.id));
-  revalidatePath("/settings/vendors");
+  revalidatePath("/vendors");
   return { ok: true, message };
 }
 
-/** A vendor's name, contact, email and phone, changed right on Send to vendors (Settings → Vendors has the rest). */
+/** A vendor's name, contact, email and phone, changed right on Send to vendors (Directory → Subs & vendors has the rest). */
 export async function quickEditVendor(input: { id: string; name: string; contact: string; email: string; phone: string }) {
   await requireEdit("estimates", { costs: true });
   const name = cleanVendorName(input.name ?? "");
@@ -719,6 +698,6 @@ export async function quickEditVendor(input: { id: string; name: string; contact
     where: { id: me.id },
     data: { name, email: email || null, phone: input.phone?.trim().slice(0, 60) || null, contact: input.contact?.trim().slice(0, 120) || null },
   });
-  revalidatePath("/settings/vendors");
+  revalidatePath("/vendors");
   return { ok: true as const, vendor: { id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) } };
 }

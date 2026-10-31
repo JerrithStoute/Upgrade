@@ -12,7 +12,7 @@ const NAV: { href: string; label: string; icon: LucideIcon; exact?: boolean }[] 
   { href: "/vendor/jobs", label: "Jobs", icon: MapPin },
   { href: "/vendor/warranty", label: "Warranty", icon: Wrench },
   { href: "/vendor/bills", label: "Bills", icon: FileInput },
-  { href: "/vendor/insurance", label: "Insurance", icon: ShieldCheck },
+  { href: "/vendor/paperwork", label: "Paperwork", icon: ShieldCheck },
 ];
 
 /** The sub / vendor portal's tabs. */

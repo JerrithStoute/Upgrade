@@ -5,7 +5,9 @@ import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { costCodeLabel, fmtDate, lineCost, money } from "@/lib/utils";
-import { BILL_STATUS_LABEL, PO_STATUS_LABEL, billTotal, coverageWarning, poTotal, vendorsCoverage } from "@/lib/purchasing";
+import { BILL_STATUS_LABEL, PO_STATUS_LABEL, billTotal, poTotal } from "@/lib/purchasing";
+import { paperworkWarning } from "@/lib/paperwork";
+import { vendorsPaperwork } from "@/lib/paperwork-server";
 import { Badge, ButtonLink, Collapsible, EmptyState, Stat, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
 import { NewPoForm } from "./_components/new-po-form";
 
@@ -15,7 +17,7 @@ export default async function PurchasingPage({ params }: { params: Promise<{ id:
   const project = await getProject(id);
   const base = `/projects/${project.id}/purchasing`;
 
-  const [pos, bills, estimate, awards, vendors, codes, coverage] = await Promise.all([
+  const [pos, bills, estimate, awards, vendors, codes, paper] = await Promise.all([
     db.purchaseOrder.findMany({
       where: { projectId: project.id },
       orderBy: { number: "desc" },
@@ -34,9 +36,9 @@ export default async function PurchasingPage({ params }: { params: Promise<{ id:
     db.bidAward.findMany({ where: { projectId: project.id }, include: { bid: { include: { lines: true } } } }),
     db.vendor.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
     activeCostCodes(),
-    vendorsCoverage(),
+    vendorsPaperwork(),
   ]);
-  const coverageOf = new Map(coverage.map((c) => [c.vendor.id, c.state]));
+  const paperOf = new Map(paper.map((p) => [p.vendor.id, paperworkWarning(p.lines, (d) => fmtDate(d, "MMM d"))]));
   const codeName = (k: string) => {
     const c = codes.find((x) => x.id === k);
     return c ? costCodeLabel(c) : "No cost code";
@@ -68,8 +70,7 @@ export default async function PurchasingPage({ params }: { params: Promise<{ id:
   const rows = pos.map((po) => {
     const total = poTotal(po.lines);
     const billed = po.bills.reduce((n, b) => n + billTotal(b.lines), 0);
-    const cov = po.vendorId ? coverageOf.get(po.vendorId) : null;
-    return { po, total, billed, warn: cov && !cov.ok ? coverageWarning(cov, (d) => fmtDate(d, "MMM d")) : null };
+    return { po, total, billed, warn: (po.vendorId && paperOf.get(po.vendorId)) || null };
   });
   const live = rows.filter((r) => r.po.status !== "VOID" && r.po.status !== "DECLINED");
   const committed = live.reduce((n, r) => n + r.total, 0);
@@ -133,7 +134,7 @@ export default async function PurchasingPage({ params }: { params: Promise<{ id:
                   <Td>
                     {po.vendorName}
                     {warn ? (
-                      <span className="mt-0.5 flex items-center gap-1 text-xs text-amber-700" title="Insurance">
+                      <span className="mt-0.5 flex items-center gap-1 text-xs text-amber-700" title="Paperwork">
                         <ShieldAlert className="h-3 w-3 shrink-0" /> {warn}
                       </span>
                     ) : null}

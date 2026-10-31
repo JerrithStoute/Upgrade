@@ -20,7 +20,7 @@ import {
   Receipt,
   Ruler,
   Table2,
-  Truck,
+  Bell,
   Users,
   Variable,
   Wallet,
@@ -42,6 +42,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     pages: [
       { href: "/settings/company", label: "Company profile", about: "Name, address, logo and colors, time zone, backups", icon: Building2 },
       { href: "/settings/team", label: "Team & positions", about: "Invite people, what each position sees, two-step sign-in", icon: Users },
+      { href: "/settings/notifications", label: "Email notifications", about: "Which emails the program sends by itself, and who gets them", icon: Bell },
     ],
   },
   {
@@ -74,7 +75,6 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     icon: Wallet,
     pages: [
       { href: "/settings/invoices", label: "Invoices", about: "Invoice numbers, and what moves onto invoices by itself", icon: Receipt },
-      { href: "/settings/vendors", label: "Vendors", about: "Who you buy from, and their insurance", icon: Truck },
     ],
   },
   {

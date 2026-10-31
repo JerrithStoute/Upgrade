@@ -73,7 +73,8 @@ export async function signUp(_prev: FormState, fd: FormData): Promise<FormState>
   if (await systemDb.user.findUnique({ where: { email }, select: { id: true } }))
     return { error: "There's already an account with that email — sign in, or use “Forgot password?”" };
 
-  const company = await systemDb.company.create({ data: { name: companyName } });
+  // A new company starts with no automatic emails: each is its choice (notify-rules.ts).
+  const company = await systemDb.company.create({ data: { name: companyName, notifyRules: "{}" } });
   const user = await runAsCompany(company.id, async () => {
     const u = await db.user.create({ data: { email, name, passwordHash: await hashPassword(password), role: "ADMIN", passwordChangedAt: new Date() } });
     if (starter) await db.costCode.createMany({ data: STARTER_COST_CODES.map((c, i) => ({ code: c.code, name: c.name, division: c.division, sortOrder: i })) });

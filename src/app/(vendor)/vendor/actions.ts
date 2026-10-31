@@ -10,14 +10,14 @@ import { saveUpload } from "@/lib/uploads";
 import { fmtDate, money, parseDateInput, str, strOrNull } from "@/lib/utils";
 import { isOpen, warrantyNo } from "@/lib/warranty";
 import { emailWarrantyToClient, emailWarrantyToTeam, photosFrom, saveWarrantyPhotos } from "@/lib/warranty-server";
-import { COVERAGE_TYPES, coverageLabel } from "@/lib/purchasing";
-import { emailBillUploaded, emailInsuranceUploaded, emailPoAnswered } from "@/lib/notify";
+import { notifyOn } from "@/lib/notify-recipients";
+import { emailBillUploaded, emailPaperworkUploaded, emailPoAnswered } from "@/lib/notify";
 
 function revalidateAll(projectId?: string) {
   revalidatePath("/vendor", "layout");
   revalidatePath("/bills");
   revalidatePath("/dashboard");
-  revalidatePath("/settings/vendors", "layout");
+  revalidatePath("/vendors", "layout");
   if (projectId) revalidatePath(`/projects/${projectId}/purchasing`, "layout");
 }
 
@@ -87,33 +87,23 @@ export const uploadVendorBill = friendly(async function uploadVendorBill(fd: For
   redirect("/vendor/bills?sent=1");
 });
 
-/** They upload a certificate of insurance — it counts once you confirm it. */
-export const uploadVendorInsurance = friendly(async function uploadVendorInsurance(fd: FormData) {
+/** They send a paper you need (their W-9, an insurance certificate…) — it counts once someone on your team looks it over. */
+export const uploadVendorPaper = friendly(async function uploadVendorPaper(fd: FormData) {
   const user = await requireVendor();
-  const type = str(fd, "type");
-  if (!COVERAGE_TYPES.some((c) => c.value === type)) throw new Error("Pick the kind of coverage");
-  const expiresAt = parseDateInput(fd.get("expiresAt"));
-  if (!expiresAt) throw new Error("When does it expire?");
+  const type = await db.paperworkType.findUnique({ where: { id: str(fd, "typeId") } });
+  if (!type) throw new Error("Pick what you're sending");
+  const expiresAt = type.expires ? parseDateInput(fd.get("expiresAt")) : null;
+  if (type.expires && !expiresAt) throw new Error("When does it expire?");
   const file = fd.get("file");
-  if (!(file instanceof File) || file.size === 0) throw new Error("Attach the certificate");
+  if (!(file instanceof File) || file.size === 0) throw new Error("Attach the file");
   const meta = await saveUpload(file, `vendors/${user.vendorId}`);
-  await db.vendorInsurance.create({
-    data: {
-      vendorId: user.vendorId,
-      type,
-      carrier: strOrNull(fd, "carrier")?.slice(0, 120) ?? null,
-      policyNumber: strOrNull(fd, "policyNumber")?.slice(0, 80) ?? null,
-      expiresAt,
-      confirmed: false,
-      fileName: meta.name,
-      storagePath: meta.storagePath,
-      mimeType: meta.mimeType,
-    },
+  await db.vendorDoc.create({
+    data: { vendorId: user.vendorId, typeId: type.id, expiresAt, confirmed: false, fileName: meta.name, storagePath: meta.storagePath, mimeType: meta.mimeType },
   });
-  await logActivity({ userId: user.id, type: "vendor.insurance", description: `${user.name} uploaded a ${coverageLabel(type)} certificate in their portal` });
-  await emailInsuranceUploaded(user.vendorId, type, expiresAt);
+  await logActivity({ userId: user.id, type: "vendor.paperwork", description: `${user.name} sent their ${type.name} in their portal` });
+  await emailPaperworkUploaded(user.vendorId, type.name, expiresAt);
   revalidateAll();
-  redirect("/vendor/insurance?sent=1");
+  redirect("/vendor/paperwork?sent=1");
 });
 
 // --- Warranty work ------------------------------------------------------------------------
@@ -142,7 +132,7 @@ export const vendorWarrantyDay = friendly(async function vendorWarrantyDay(fd: F
   const vendor = await db.vendor.findUnique({ where: { id: user.vendorId }, select: { name: true } });
   await logActivity({ projectId: w.projectId, userId: user.id, type: "warranty.updated", description: `Warranty ${warrantyNo(w.number)} scheduled by ${user.name} (${vendor?.name ?? "sub"}) for ${fmtDate(day)}` });
   await emailWarrantyToTeam(w.id, { subject: `${vendor?.name ?? user.name} scheduled warranty ${warrantyNo(w.number)}`, lines: [`${user.name} at ${vendor?.name ?? "the sub"} will be there ${fmtDate(day, "EEEE, MMMM d")}.`] });
-  await emailWarrantyToClient(w.id, null, "SCHEDULED");
+  if (await notifyOn("warrantyFromSub")) await emailWarrantyToClient(w.id, null, "SCHEDULED");
   revalidateWarranty(w.projectId);
 });
 
@@ -172,6 +162,6 @@ export const vendorWarrantyDone = friendly(async function vendorWarrantyDone(fd:
   await db.warrantyRequest.update({ where: { id: w.id }, data: { status: "DONE", closeNote, closedAt: new Date() } });
   await logActivity({ projectId: w.projectId, userId: user.id, type: "warranty.closed", description: `Warranty ${warrantyNo(w.number)} marked done by ${user.name}: ${closeNote.slice(0, 200)}` });
   await emailWarrantyToTeam(w.id, { subject: `Warranty ${warrantyNo(w.number)} done`, lines: [`${user.name} marked it done:`, closeNote.slice(0, 600), "If it isn't, reopen it on the request."] });
-  await emailWarrantyToClient(w.id, null, "DONE");
+  if (await notifyOn("warrantyFromSub")) await emailWarrantyToClient(w.id, null, "DONE");
   revalidateWarranty(w.projectId);
 });

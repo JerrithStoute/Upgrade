@@ -1,9 +1,9 @@
-import Link from "@/components/link";
 import type { Project } from "@prisma/client";
 import { PROJECT_STATUSES } from "@/lib/constants";
 import { dateInput, titleCase } from "@/lib/utils";
 import { ButtonLink, Card, CardBody, CardHeader, Field, FormGrid, SubmitButton } from "@/components/ui";
 import { JobKindPicker } from "./job-kind-picker";
+import { ClientPick } from "@/components/client-pick";
 
 type ClientOption = { id: string; firstName: string; lastName: string; company: string | null };
 type ManagerOption = { id: string; name: string };
@@ -60,21 +60,12 @@ export function ProjectForm({
               </select>
             </Field>
             <Field label="Client" htmlFor="clientId">
-              <select id="clientId" name="clientId" className="input" defaultValue={project?.clientId ?? ""}>
-                <option value="">— No client —</option>
-                {clients.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.firstName} {c.lastName}
-                    {c.company ? ` (${c.company})` : ""}
-                  </option>
-                ))}
-              </select>
-              <p className="mt-1 text-xs text-slate-500">
-                A spec home needs no client.{" "}
-                <Link href="/clients/new" className="text-blue-700 hover:underline">
-                  Add a client
-                </Link>
-              </p>
+              <ClientPick
+                id="clientId"
+                clients={clients.map((c) => ({ id: c.id, label: `${c.firstName} ${c.lastName}${c.company ? ` (${c.company})` : ""}` }))}
+                defaultValue={project?.clientId}
+              />
+              <p className="mt-1 text-xs text-slate-500">A spec home needs no client. A new one: pick &ldquo;+ New client…&rdquo; at the bottom of the list.</p>
             </Field>
             <Field label="Project manager" htmlFor="managerId">
               <select id="managerId" name="managerId" className="input" defaultValue={project?.managerId ?? defaultManagerId ?? ""}>

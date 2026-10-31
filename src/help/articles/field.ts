@@ -216,7 +216,7 @@ export const FIELD: HelpArticle[] = [
           { name: "New / Scheduled / Done / Not covered", what: "Where it stands. It's **Scheduled** once it has a day. The client and the sub see the same words." },
           { name: "Urgent", what: "Water, no heat or power, something unsafe. Urgent ones go to the top of every list." },
           { name: "Change what it says", what: "Fix the title, where in the house, or the details. **Delete request** is for one added by mistake (its photos stay in the job's Files, folder Warranty)." },
-          { name: "Who's fixing it", what: "A sub (from Settings → Vendors), someone on your team, and the day. **Email the client the day** tells them when someone's coming." },
+          { name: "Who's fixing it", what: "A sub (from Directory → Subs & vendors), someone on your team, and the day. **Email the client the day** tells them when someone's coming." },
           { name: "Close it out", what: "**Done** or **Not covered**, with what was done or why not. The client reads it, so write it for them. **Reopen** puts it back on the list." },
           { name: "Notes", what: "Back and forth about the request, with photos. The client sees them unless you tick **Team only**. Notes from a sub are always team only, so you decide what the client hears." },
         ],
@@ -225,7 +225,7 @@ export const FIELD: HelpArticle[] = [
         heading: "What the client and the sub see",
         items: [
           { name: "The client's Warranty tab", what: "Shows up once their home is finished. They report something (what, where, details, photos, urgent), see its status and the day someone's coming, read your notes and add their own." },
-          { name: "The sub's Warranty page", what: "Each request they're sent to: the address with directions, the homeowner's name and phone, the photos and notes. They set the day they'll be there, send you a note, or mark it done with after photos. You and the client are emailed each time." },
+          { name: "The sub's Warranty page", what: "Each request they're sent to: the address with directions, the homeowner's name and phone, the photos and notes. They set the day they'll be there, send you a note, or mark it done with after photos. Who's emailed each time is up to you (Settings → Email notifications)." },
           { name: "A sub with no portal sign-in", what: "They get the email with everything in it and reply to you with the day." },
         ],
       },

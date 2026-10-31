@@ -26,7 +26,7 @@ async function main() {
     console.log(`Admin user reset: ${had.email}`);
     return;
   }
-  const company = await systemDb.company.create({ data: { name: companyName || "My Construction Company" } });
+  const company = await systemDb.company.create({ data: { name: companyName || "My Construction Company", notifyRules: "{}" } });
   await runAsCompany(company.id, () => db.user.create({ data: { email: email.toLowerCase(), name, passwordHash, role: "ADMIN", emailVerifiedAt: new Date() } }));
   console.log(`Company "${company.name}" and admin ${email.toLowerCase()} ready.`);
 }

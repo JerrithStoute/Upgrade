@@ -121,3 +121,22 @@ export const revokePortalAccess = friendly(async function revokePortalAccess(for
   revalidatePath(`/clients/${id}`);
   revalidatePath("/clients");
 });
+
+/**
+ * "+ New client…" on the job form: saved and picked without leaving the job you're making. A name and phone or
+ * email is enough; the rest can be filled in on their page later.
+ */
+export async function quickClient(input: { firstName: string; lastName: string; phone?: string; email?: string; address?: string }) {
+  const user = await requireEdit("leads");
+  const firstName = (input.firstName ?? "").trim().slice(0, 80);
+  const lastName = (input.lastName ?? "").trim().slice(0, 80);
+  if (!firstName || !lastName) return { ok: false as const, error: "First and last name, please" };
+  const email = (input.email ?? "").trim().toLowerCase();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false as const, error: "That email doesn't look right" };
+  const client = await db.client.create({
+    data: { firstName, lastName, email: email || null, phone: input.phone?.trim().slice(0, 60) || null, address: input.address?.trim().slice(0, 200) || null },
+  });
+  await logActivity({ userId: user.id, type: "client.created", description: `Added client ${client.firstName} ${client.lastName}` });
+  revalidatePath("/clients");
+  return { ok: true as const, option: { id: client.id, label: `${client.firstName} ${client.lastName}` } };
+}

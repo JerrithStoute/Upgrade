@@ -3,7 +3,9 @@ import { CalendarDays, ClipboardList, FileInput, ShieldAlert, ShieldCheck } from
 import { requireVendor } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fmtDate, money } from "@/lib/utils";
-import { billTotal, coverageWarning, poTotal, vendorCoverage } from "@/lib/purchasing";
+import { billTotal, poTotal } from "@/lib/purchasing";
+import { paperworkWarning } from "@/lib/paperwork";
+import { vendorPaperwork } from "@/lib/paperwork-server";
 import { Card, CardBody, CardHeader } from "@/components/ui";
 import { companyClock } from "@/lib/company-zone";
 
@@ -11,7 +13,7 @@ export default async function VendorHome() {
   const user = await requireVendor();
   const today = (await companyClock()).now; // today, on the company's clock
   const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const [waiting, tasks, bills, coverage] = await Promise.all([
+  const [waiting, tasks, bills, paper] = await Promise.all([
     db.purchaseOrder.findMany({ where: { vendorId: user.vendorId, status: "SENT" }, include: { lines: true, project: { select: { name: true } } }, orderBy: { sentAt: "asc" } }),
     db.scheduleTask.findMany({
       where: { vendorId: user.vendorId, endDate: { gte: day }, percentComplete: { lt: 100 } },
@@ -20,22 +22,24 @@ export default async function VendorHome() {
       take: 8,
     }),
     db.vendorBill.findMany({ where: { vendorId: user.vendorId, status: { in: ["PENDING", "APPROVED"] } }, include: { lines: true } }),
-    vendorCoverage(user.vendorId),
+    vendorPaperwork(user.vendorId, today),
   ]);
+  const needed = paper?.lines.filter((l) => l.needed) ?? [];
+  const warning = paper ? paperworkWarning(paper.lines, (d) => fmtDate(d)) : "";
   const unpaid = bills.reduce((n, b) => n + billTotal(b.lines), 0);
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Hi, {user.name.split(" ")[0]}</h1>
-      {coverage && !coverage.ok ? (
-        <Link href="/vendor/insurance" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100">
+      {warning ? (
+        <Link href="/vendor/paperwork" className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 hover:bg-amber-100">
           <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
           <span>
-            <strong>Insurance needed:</strong> {coverageWarning(coverage, (d) => fmtDate(d))}. Upload your certificate →
+            <strong>Paperwork we need:</strong> {warning}. Send it here →
           </span>
         </Link>
-      ) : coverage ? (
+      ) : needed.length ? (
         <p className="flex items-center gap-2 text-sm text-emerald-800">
-          <ShieldCheck className="h-4 w-4" /> Your insurance is up to date with us.
+          <ShieldCheck className="h-4 w-4" /> Your paperwork is up to date with us.
         </p>
       ) : null}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

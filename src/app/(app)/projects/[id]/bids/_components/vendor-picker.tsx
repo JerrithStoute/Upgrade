@@ -12,7 +12,7 @@ export type EditVendor = (v: NewVendor & { id: string }) => Promise<{ ok: true; 
 
 /**
  * Who a bid goes to — ticked boxes (sent as `vendor`), the ones who bid the picked cost codes marked, and a
- * vendor added or changed right here (saved to Settings → Vendors too). Send to vendors and Send to subs both use it.
+ * vendor added or changed right here (saved to Directory → Subs & vendors too). Send to vendors and Send to subs both use it.
  */
 export function VendorPicker({
   label,
@@ -146,8 +146,8 @@ export function VendorPicker({
             </Button>
             <span className="text-[11px] text-slate-500">
               {adding.id
-                ? "Changed in Settings → Vendors too. Bids already made keep the name they were sent with."
-                : `${pickedCodes.length ? "Saved with the cost codes you picked as what they bid. " : ""}It's added to Settings → Vendors too.`}
+                ? "Changed in Directory → Subs & vendors too. Bids already made keep the name they were sent with."
+                : `${pickedCodes.length ? "Saved with the cost codes you picked as what they bid. " : ""}It's added to Directory → Subs & vendors too.`}
             </span>
           </div>
         </div>

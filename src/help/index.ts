@@ -7,9 +7,10 @@ import { FINANCIALS } from "./articles/financials";
 import { FINANCIALS_2 } from "./articles/financials-2";
 import { FIELD } from "./articles/field";
 import { SETTINGS } from "./articles/settings";
+import { DIRECTORY } from "./articles/directory";
 
 /** Every article in the manual. Within a page, the first one listed is the one Help opens to. */
-export const ARTICLES: HelpArticle[] = [...JOBS, ...SALES, ...TAKEOFF, ...ESTIMATES, ...FINANCIALS, ...FINANCIALS_2, ...FIELD, ...SETTINGS];
+export const ARTICLES: HelpArticle[] = [...JOBS, ...SALES, ...TAKEOFF, ...ESTIMATES, ...FINANCIALS, ...FINANCIALS_2, ...FIELD, ...DIRECTORY, ...SETTINGS];
 
 /**
  * Pages that don't get an article. (None today: the people who run The Builder Station have their own

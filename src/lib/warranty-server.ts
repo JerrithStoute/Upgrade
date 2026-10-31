@@ -2,7 +2,8 @@ import "server-only";
 import { db } from "./db";
 import { appUrl } from "./mail";
 import { sendCompanyMail, vendorContacts } from "./notify";
-import { jobTeam, tellClient } from "./notify-client";
+import { jobRecipients, tellClient } from "./notify-client";
+import { notifyOn, teamRecipients } from "./notify-recipients";
 import { saveUpload } from "./uploads";
 import { fmtDate } from "./utils";
 import { warrantyNo } from "./warranty";
@@ -96,7 +97,7 @@ const place = (p: { address: string | null; city: string | null }) => [p.address
 export async function emailWarrantyToTeam(id: string, what: { subject: string; lines: string[] }) {
   const w = await load(id);
   if (!w) return [];
-  return sendCompanyMail(await jobTeam(w.projectId, [w.assigneeId, w.fromClient ? null : w.createdById]), {
+  return sendCompanyMail(await jobRecipients("warrantyNews", w.projectId, { assignee: [w.assigneeId], creator: [w.fromClient ? null : w.createdById] }), {
     subject: `${w.project.name}: ${what.subject}`,
     heading: `${warrantyNo(w.number)}: ${w.title}`,
     lines: what.lines,
@@ -122,7 +123,7 @@ export async function emailWarrantyReported(id: string, clientName: string) {
 export async function emailWarrantyAssignee(id: string, sender: Person) {
   const w = await load(id);
   if (!w?.assignee || w.assignee.id === sender.id) return [];
-  return sendCompanyMail([w.assignee.email], {
+  return sendCompanyMail(await teamRecipients("warrantyAssigned", { assignee: [w.assignee.id] }), {
     subject: `Warranty ${warrantyNo(w.number)} for ${w.project.name} is yours`,
     heading: `${warrantyNo(w.number)}: ${w.title}`,
     lines: [`${sender.name} put you on this warranty request at ${w.project.name}${w.location ? ` (${w.location})` : ""}.`, ...(w.description ? [w.description.slice(0, 600)] : [])],
@@ -137,7 +138,7 @@ export async function emailWarrantyAssignee(id: string, sender: Person) {
 /** A sub was sent to fix it: where, what, and who to call. */
 export async function emailWarrantyToVendor(id: string, sender: Person) {
   const w = await load(id);
-  if (!w?.vendorId) return [];
+  if (!w?.vendorId || !(await notifyOn("warrantyToSub"))) return [];
   const { emails, portal } = await vendorContacts(w.vendorId);
   if (!emails.length) return [];
   const client = w.project.client;

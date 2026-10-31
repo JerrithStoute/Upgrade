@@ -184,6 +184,27 @@ test("sets up doors in the Catalog: less detail, and a part for the odd door", a
   await expect(page.getByRole("button", { name: "Take Metal off Material" })).toBeVisible();
 });
 
+test("adds a sub from a schedule task without leaving, and drops their W-9 on their page", async () => {
+  await page.goto(`${job}/schedule?add=1`);
+  await page.locator("[name=name]").fill("Frame the house");
+  await page.locator("select[name=vendorId]").selectOption("__new__");
+  const dialog = page.getByRole("dialog", { name: "New sub or vendor" });
+  await dialog.getByPlaceholder("Smith Framing").fill("Flow Framing");
+  await dialog.getByRole("button", { name: "Save and pick" }).click();
+  await expect(dialog).toBeHidden();
+  // Picked, what was typed still there, and the paperwork they owe (your usual set) under it.
+  await expect(page.locator("select[name=vendorId] option:checked")).toHaveText("Flow Framing");
+  await expect(page.locator("[name=name]")).toHaveValue("Frame the house");
+  await expect(page.getByText("W-9 missing · Insurance missing")).toBeVisible();
+  // Their page: the W-9 goes on its line.
+  await page.goto("/vendors");
+  await page.getByRole("link", { name: "Flow Framing" }).first().click();
+  const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF");
+  await page.getByLabel("Add a file to W-9").setInputFiles({ name: "w9.pdf", mimeType: "application/pdf", buffer: pdf });
+  await expect(page.locator("li").filter({ hasText: /^W-9/ }).getByText("On file")).toBeVisible();
+  await expect(page.locator("li").filter({ hasText: /^Insurance/ }).getByText("Missing")).toBeVisible();
+});
+
 test("reports a problem", async () => {
   await page.getByRole("button", { name: /Report a problem/ }).click();
   await page.getByLabel("What happened").fill("Workflow test — please ignore.");

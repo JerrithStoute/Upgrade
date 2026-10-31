@@ -4,18 +4,20 @@ import { friendly } from "@/lib/friendly-action";
 import ExcelJS from "exceljs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { signOutEverywhere, requireEdit } from "@/lib/auth";
+import { signOutEverywhere, requireEdit, requireStaff } from "@/lib/auth";
+import { allows } from "@/lib/access";
 import { sendResetEmail } from "@/lib/account";
 import { cancelInvite, invite, resendInvite } from "@/lib/invites";
 import { db } from "@/lib/db";
-import { parseDateInput, str, strOrNull } from "@/lib/utils";
+import { fmtDate, parseDateInput, str, strOrNull } from "@/lib/utils";
 import { deleteUpload, saveUpload } from "@/lib/uploads";
-import { COVERAGE_TYPES } from "@/lib/purchasing";
+import { paperTypes, vendorPaperwork } from "@/lib/paperwork-server";
+import { paperworkWarning, readNeeds, setNeeds } from "@/lib/paperwork";
 import { logActivity } from "@/lib/activity";
 import { cleanVendorName, parseVendorRows, splitLine, vendorKey } from "@/lib/vendors";
-import { importVendorRows, renameVendorEverywhere } from "@/lib/vendor-list";
+import { findOrAddVendor, importVendorRows, renameVendorEverywhere } from "@/lib/vendor-list";
 
-const PATH = "/settings/vendors";
+const PATH = "/vendors";
 
 async function vendorFields(fd: FormData, id?: string) {
   const name = cleanVendorName(str(fd, "name"));
@@ -63,9 +65,13 @@ export const updateVendor = friendly(async function updateVendor(fd: FormData) {
 export const deleteVendor = friendly(async function deleteVendor(fd: FormData) {
   await requireEdit("lists");
   const id = str(fd, "id");
-  const certs = await db.vendorInsurance.findMany({ where: { vendorId: id }, select: { storagePath: true } });
+  const [certs, docs] = await Promise.all([
+    db.vendorInsurance.findMany({ where: { vendorId: id }, select: { storagePath: true } }),
+    db.vendorDoc.findMany({ where: { vendorId: id }, select: { storagePath: true } }),
+  ]);
   await db.vendor.deleteMany({ where: { id } });
-  for (const c of certs) if (c.storagePath) await deleteUpload(c.storagePath);
+  // (A certificate moved over to paperwork shares its file: each file once.)
+  for (const path of new Set([...certs, ...docs].map((c) => c.storagePath).filter((p): p is string => !!p))) await deleteUpload(path);
   revalidatePath(PATH);
   redirect(PATH);
 });
@@ -116,7 +122,7 @@ export const importVendors = friendly(async function importVendors(fd: FormData)
   redirect(`${PATH}?added=${r.added}&updated=${r.updated}&same=${r.skipped}`);
 });
 
-// --- Insurance (COI) and portal logins ------------------------------------------------------
+// --- Paperwork and portal logins ------------------------------------------------------
 
 const vendorPath = (id: string) => `${PATH}/${id}`;
 function revalidateVendor(id: string) {
@@ -125,20 +131,6 @@ function revalidateVendor(id: string) {
   revalidatePath("/dashboard");
   revalidatePath("/vendor", "layout");
 }
-
-/** Which coverage every sub needs (Company → requiredCoverage). */
-export const setRequiredCoverage = friendly(async function setRequiredCoverage(fd: FormData) {
-  await requireEdit("lists");
-  const types = fd
-    .getAll("type")
-    .map(String)
-    .filter((t) => COVERAGE_TYPES.some((c) => c.value === t));
-  const company = await db.company.findFirst({ select: { id: true } });
-  if (company) await db.company.update({ where: { id: company.id }, data: { requiredCoverage: types.join(",") } });
-  revalidatePath(PATH);
-  revalidatePath("/dashboard");
-  redirect(str(fd, "back").startsWith("/settings/vendors") ? str(fd, "back") : PATH);
-});
 
 /** Your standard words in every bid email (Company → bidMessage); blank goes back to the built-in message. */
 export const setBidMessage = friendly(async function setBidMessage(fd: FormData) {
@@ -150,71 +142,94 @@ export const setBidMessage = friendly(async function setBidMessage(fd: FormData)
   redirect(`${PATH}?bidMessage=saved`);
 });
 
-/** Need this vendor's insurance? auto (once they're on a PO for work) / yes / no. */
-export const setInsuranceRequired = friendly(async function setInsuranceRequired(fd: FormData) {
-  await requireEdit("lists");
-  const id = str(fd, "vendorId");
-  const v = str(fd, "value");
-  await db.vendor.update({ where: { id }, data: { insuranceRequired: v === "yes" ? true : v === "no" ? false : null } });
-  revalidateVendor(id);
-  redirect(vendorPath(id));
-});
+// --- Paperwork ------------------------------------------------------------------------------
 
-/** A certificate you got from them (confirmed — you entered it). */
-export const addInsurance = friendly(async function addInsurance(fd: FormData) {
-  const admin = await requireEdit("lists");
-  const vendorId = str(fd, "vendorId");
-  const vendor = await db.vendor.findUnique({ where: { id: vendorId }, select: { id: true, name: true } });
-  if (!vendor) throw new Error("Vendor not found");
-  const type = str(fd, "type");
-  if (!COVERAGE_TYPES.some((c) => c.value === type)) throw new Error("Pick the kind of coverage");
-  const expiresAt = parseDateInput(fd.get("expiresAt"));
-  if (!expiresAt) throw new Error("When does it expire?");
-  const file = fd.get("file");
-  const meta = file instanceof File && file.size > 0 ? await saveUpload(file, `vendors/${vendor.id}`) : null;
-  await db.vendorInsurance.create({
-    data: {
-      vendorId: vendor.id,
-      type,
-      carrier: strOrNull(fd, "carrier")?.slice(0, 120) ?? null,
-      policyNumber: strOrNull(fd, "policyNumber")?.slice(0, 80) ?? null,
-      expiresAt,
-      confirmed: true,
-      ...(meta ? { fileName: meta.name, storagePath: meta.storagePath, mimeType: meta.mimeType } : {}),
-    },
-  });
-  await logActivity({ userId: admin.id, type: "vendor.insurance", description: `Insurance certificate added for ${vendor.name}` });
-  revalidateVendor(vendor.id);
-  redirect(vendorPath(vendor.id));
-});
+type Result = { ok: true } | { ok: false; error: string };
+const fail = (e: unknown): Result => ({ ok: false, error: e instanceof Error ? e.message : "That didn't save — try again" });
 
-/** One they uploaded from their portal: you checked it, so it counts. Dates can be fixed as you confirm. */
-export const confirmInsurance = friendly(async function confirmInsurance(fd: FormData) {
-  await requireEdit("lists");
-  const cert = await db.vendorInsurance.findUnique({ where: { id: str(fd, "id") } });
-  if (!cert) throw new Error("Certificate not found");
-  const type = str(fd, "type");
-  await db.vendorInsurance.update({
-    where: { id: cert.id },
-    data: {
-      confirmed: true,
-      ...(COVERAGE_TYPES.some((c) => c.value === type) ? { type } : {}),
-      expiresAt: parseDateInput(fd.get("expiresAt")) ?? cert.expiresAt,
-    },
-  });
-  revalidateVendor(cert.vendorId);
-  redirect(vendorPath(cert.vendorId));
-});
+/** A file dropped on one of a vendor's paperwork lines (with its expiry, when that kind expires and it's known). */
+export async function addVendorDoc(fd: FormData): Promise<Result> {
+  try {
+    const user = await requireEdit("lists");
+    const [vendor, type] = await Promise.all([
+      db.vendor.findUnique({ where: { id: str(fd, "vendorId") }, select: { id: true, name: true } }),
+      db.paperworkType.findUnique({ where: { id: str(fd, "typeId") } }),
+    ]);
+    if (!vendor || !type) throw new Error("That vendor or paper isn't there any more — reload the page");
+    const file = fd.get("file");
+    if (!(file instanceof File) || file.size === 0) throw new Error("Pick a file");
+    const meta = await saveUpload(file, `vendors/${vendor.id}`);
+    const expiresAt = type.expires ? parseDateInput(fd.get("expiresAt")) : null;
+    await db.vendorDoc.create({ data: { vendorId: vendor.id, typeId: type.id, expiresAt, confirmed: true, fileName: meta.name, storagePath: meta.storagePath, mimeType: meta.mimeType } });
+    await logActivity({ userId: user.id, type: "vendor.paperwork", description: `${type.name} added for ${vendor.name}` });
+    revalidateVendor(vendor.id);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
 
-export const deleteInsurance = friendly(async function deleteInsurance(fd: FormData) {
-  await requireEdit("lists");
-  const cert = await db.vendorInsurance.findUnique({ where: { id: str(fd, "id") } });
-  if (!cert) throw new Error("Certificate not found");
-  await db.vendorInsurance.delete({ where: { id: cert.id } });
-  if (cert.storagePath) await deleteUpload(cert.storagePath);
-  revalidateVendor(cert.vendorId);
-  redirect(vendorPath(cert.vendorId));
-});
+/** A paper's expiry date (typed after the file was dropped, or corrected). */
+export async function setVendorDocDate(input: { id: string; expiresAt: string }): Promise<Result> {
+  try {
+    await requireEdit("lists");
+    const doc = await db.vendorDoc.findUnique({ where: { id: input.id }, select: { id: true, vendorId: true } });
+    if (!doc) throw new Error("That paper isn't there any more — reload the page");
+    const expiresAt = parseDateInput(input.expiresAt);
+    if (!expiresAt) throw new Error("Type the date it expires");
+    await db.vendorDoc.update({ where: { id: doc.id }, data: { expiresAt } });
+    revalidateVendor(doc.vendorId);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** One they uploaded from their portal: you looked, so it counts (its date can be fixed as you do). */
+export async function confirmVendorDoc(input: { id: string; expiresAt?: string }): Promise<Result> {
+  try {
+    await requireEdit("lists");
+    const doc = await db.vendorDoc.findUnique({ where: { id: input.id }, select: { id: true, vendorId: true } });
+    if (!doc) throw new Error("That paper isn't there any more — reload the page");
+    const expiresAt = input.expiresAt ? parseDateInput(input.expiresAt) : undefined;
+    await db.vendorDoc.update({ where: { id: doc.id }, data: { confirmed: true, ...(expiresAt ? { expiresAt } : {}) } });
+    revalidateVendor(doc.vendorId);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+export async function deleteVendorDoc(input: { id: string }): Promise<Result> {
+  try {
+    await requireEdit("lists");
+    const doc = await db.vendorDoc.findUnique({ where: { id: input.id } });
+    if (!doc) return { ok: true };
+    await db.vendorDoc.delete({ where: { id: doc.id } });
+    if (doc.storagePath) await deleteUpload(doc.storagePath);
+    revalidateVendor(doc.vendorId);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** What this vendor needs — ticked kinds; ones already needed keep the day they were first needed. */
+export async function setVendorNeeds(input: { vendorId: string; typeIds: string[] }): Promise<Result> {
+  try {
+    await requireEdit("lists");
+    const types = await paperTypes();
+    const vendor = await db.vendor.findUnique({ where: { id: input.vendorId }, select: { id: true, paperwork: true, createdAt: true } });
+    if (!vendor) throw new Error("Vendor not found");
+    const known = new Set(types.map((t) => t.id));
+    const needs = setNeeds(readNeeds(vendor.paperwork, types, vendor.createdAt), input.typeIds.filter((id) => known.has(id)), new Date());
+    await db.vendor.update({ where: { id: vendor.id }, data: { paperwork: JSON.stringify(needs) } });
+    revalidateVendor(vendor.id);
+    return { ok: true };
+  } catch (e) {
+    return fail(e);
+  }
+}
 
 /** Invites someone at the vendor to the vendor portal: they see their POs and schedule, upload bills and insurance. */
 export const createVendorLogin = friendly(async function createVendorLogin(fd: FormData) {
@@ -270,3 +285,22 @@ export const deleteVendorLogin = friendly(async function deleteVendorLogin(fd: F
   revalidateVendor(user.vendorId);
   redirect(vendorPath(user.vendorId));
 });
+
+// --- Added from wherever you are -----------------------------------------------------------
+
+/**
+ * "+ New vendor…" in any vendor list (a schedule task, a warranty request, the job's subs): saved to Subs & vendors
+ * and picked, without leaving the page. Anyone who can change the screen they're on can add one.
+ */
+export async function quickVendor(input: { name: string; contact?: string; phone?: string; email?: string }) {
+  const user = await requireStaff();
+  if (!(["lists", "field", "purchasing", "estimates"] as const).some((a) => allows(user.access, a, 2)))
+    return { ok: false as const, error: "Your position can't add vendors — an admin can allow it in Settings → Team" };
+  const r = await findOrAddVendor(input);
+  if (!r.ok) return r;
+  if (r.added) await logActivity({ userId: user.id, type: "vendor.created", description: `Added vendor ${r.vendor.name}` });
+  revalidatePath(PATH);
+  // Their paperwork note right away (a new sub owes your usual set).
+  const paper = await vendorPaperwork(r.vendor.id);
+  return { ok: true as const, option: { id: r.vendor.id, label: r.vendor.name, warn: paper ? paperworkWarning(paper.lines, (d) => fmtDate(d, "MMM d")) : "" } };
+}

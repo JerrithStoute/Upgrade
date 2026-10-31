@@ -68,6 +68,14 @@ model Company {
   // Spec houses: usual selling costs (JSON { listPct, buyerPct, closingPct, closingFlat, concessions }); null = built-in.
   specDefaults        String?
   requiredCoverage    String          @default("GL,WC")
+  // Vendor paperwork (paperwork.ts): set up the first time it's read (W-9 + Insurance, old certificates moved over).
+  paperworkReady      Boolean         @default(false)
+  // Who handles subs' paperwork (JSON { positions: [id], users: [id] }) — shown on the dashboard list.
+  paperworkOwner      String?
+  // The day the weekly paperwork email last went out ("YYYY-MM-DD"), so an hourly check sends it once.
+  paperworkEmailOn    String?
+  // Which automatic emails go out, and to whom (JSON, see notify-rules.ts). null = as they always did (before it was a choice).
+  notifyRules         String?
   // Team members must use two-step sign-in (an authenticator app code).
   requireTwoStep      Boolean         @default(false)
   // Time clock: percent added on top of pay for payroll taxes, workers' comp and insurance.
@@ -1581,6 +1589,8 @@ model Vendor {
   costCodeIds       String? // JSON ["<costCodeId>", "none", …]
   // Insurance needed? null = automatic: yes once they're on a PO for work (not a supplier's bid) or have a certificate on file.
   insuranceRequired Boolean?
+  // Paperwork this vendor needs (JSON { "<PaperworkType id>": "YYYY-MM-DD" needed since }); null = not set up yet.
+  paperwork         String?
   // QuickBooks Desktop: the vendor it is there (its ListID) — see src/lib/qb.
   qbListId          String?
   createdAt         DateTime @default(now())
@@ -1589,6 +1599,7 @@ model Vendor {
   purchaseOrders PurchaseOrder[]
   bills          VendorBill[]
   insurance      VendorInsurance[]
+  docs           VendorDoc[]
   logins         User[]
   tasks          ScheduleTask[]
   siteJobs       ProjectVendor[]
@@ -1936,6 +1947,44 @@ model VendorInsurance {
   createdAt    DateTime @default(now())
 
   @@index([companyId])
+}
+
+/// Kinds of vendor paperwork a company tracks: W-9 and Insurance built in (`kind`), plus its own
+/// (Contractor agreement…). `expires`: it has an expiry date. `usual`: ticked for a new vendor.
+model PaperworkType {
+  id        String      @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId String      @default(dbgenerated("current_setting('app.company_id'::text)"))
+  name      String
+  kind      String? // W9 | INSURANCE (built in); null = the company's own
+  expires   Boolean     @default(false)
+  usual     Boolean     @default(true)
+  sortOrder Int         @default(0)
+  createdAt DateTime    @default(now())
+  docs      VendorDoc[]
+
+  @@index([companyId])
+}
+
+/// One paper on file for a vendor: its file, and its expiry when the kind expires. `confirmed`: false
+/// when the vendor uploaded it from their portal and nobody has looked yet.
+model VendorDoc {
+  id          String        @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId   String        @default(dbgenerated("current_setting('app.company_id'::text)"))
+  vendorId    String
+  vendor      Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  typeId      String
+  type        PaperworkType @relation(fields: [typeId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime?
+  confirmed   Boolean       @default(true)
+  fileName    String?
+  storagePath String?
+  mimeType    String?
+  createdAt   DateTime      @default(now())
+
+  @@index([companyId])
+  @@index([vendorId])
 }
 
 // ---------------------------------------------------------------------------

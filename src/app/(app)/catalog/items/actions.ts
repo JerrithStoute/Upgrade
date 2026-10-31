@@ -138,7 +138,7 @@ export async function saveItemCells(ids: string[], field: ItemCell, value: strin
     const code = field === "costCodeId" ? await costCodeOrNull(value) : null;
     const data = field === "costCodeId" ? { costCodeId: code } : field === "vendor" ? { vendor: await ensureVendor(value) } : cellData(field, value);
     await db.materialItem.updateMany({ where: { id: { in: items.map((i) => i.id) } }, data });
-    if (field === "vendor") revalidatePath("/settings/vendors");
+    if (field === "vendor") revalidatePath("/vendors");
     if (code) await db.takeoffAssemblyItem.updateMany({ where: { materialItemId: { in: items.map((i) => i.id) }, costCodeId: null }, data: { costCodeId: code } });
     if (items.length > 1) await logActivity({ userId: admin.id, type: "item_list.bulk_edited", description: `Changed ${items.length} items on the Item List` });
     revalidatePath(PATH);

@@ -3,6 +3,8 @@ import { dateInput } from "@/lib/utils";
 import { Field, FormGrid } from "@/components/ui";
 import { ColorSwatches } from "@/components/ui/color-swatches";
 import { PredecessorsField, type LinkValue } from "./predecessors-field";
+import { VendorPick } from "@/components/vendors/vendor-pick";
+import type { PickOption } from "@/components/pick-with-new";
 
 type TaskValues = {
   id?: string;
@@ -30,7 +32,7 @@ export function TaskFields({
   values: TaskValues;
   staff: { id: string; name: string }[];
   /** Subs and vendors: the one doing this task sees it in their portal. */
-  vendors?: { id: string; name: string }[];
+  vendors?: PickOption[];
   otherTasks: { id: string; name: string; phase: string }[];
   /** What this task waits on now. */
   links?: LinkValue[];
@@ -76,14 +78,7 @@ export function TaskFields({
         </select>
       </Field>
       <Field label="Sub / vendor" htmlFor={`${idPrefix}-vendor`} hint="They see it in their portal">
-        <select id={`${idPrefix}-vendor`} name="vendorId" className="input" defaultValue={values.vendorId ?? ""}>
-          <option value="">None</option>
-          {vendors.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.name}
-            </option>
-          ))}
-        </select>
+        <VendorPick id={`${idPrefix}-vendor`} vendors={vendors} defaultValue={values.vendorId} />
       </Field>
       <Field
         label="Waits on"

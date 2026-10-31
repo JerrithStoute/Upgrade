@@ -1,11 +1,12 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
-import { FileText, ShieldAlert } from "lucide-react";
+import { FileText } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { costCodeLabel, dateInput, fmtDate, fmtDateTime, money } from "@/lib/utils";
-import { BILL_STATUS_LABEL, billTotal, canApproveBills, coverageWarning, poBilling, vendorCoverage } from "@/lib/purchasing";
+import { BILL_STATUS_LABEL, billTotal, canApproveBills, poBilling } from "@/lib/purchasing";
+import { PaperworkNote } from "@/components/vendors/paperwork-note";
 import { Badge, Button, Card, CardBody, CardHeader, Collapsible, ConfirmForm, Table, THead, TBody, Tr, Th, Td, TFoot } from "@/components/ui";
 import { BillForm } from "../../_components/bill-form";
 import { billChoices } from "../../_data";
@@ -27,9 +28,8 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
     },
   });
   if (!bill) notFound();
-  const [billing, coverage, file, { codes }] = await Promise.all([
+  const [billing, file, { codes }] = await Promise.all([
     bill.purchaseOrderId ? poBilling(bill.purchaseOrderId) : null,
-    vendorCoverage(bill.vendorId),
     bill.fileId ? db.fileAsset.findUnique({ where: { id: bill.fileId }, select: { id: true, name: true } }) : null,
     billChoices(project.id),
   ]);
@@ -45,7 +45,6 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
       <input type="hidden" name="decision" value={decision} />
     </>
   );
-  const covText = coverage && !coverage.ok ? coverageWarning(coverage, (d) => fmtDate(d)) : null;
 
   return (
     <div className="space-y-5">
@@ -133,14 +132,7 @@ export default async function BillPage({ params }: { params: Promise<{ id: strin
         </Card>
 
         <div className="space-y-3">
-          {covText ? (
-            <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <span>
-                <strong>Insurance:</strong> {covText}.
-              </span>
-            </p>
-          ) : null}
+          <PaperworkNote vendorId={bill.vendorId} name={bill.vendorName} />
           {bill.status === "REJECTED" ? (
             <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
               Rejected{bill.rejectedNote ? `: ${bill.rejectedNote}` : "."} Change it and approve, or delete it.

@@ -28,7 +28,7 @@ export type HelpSection = {
   items?: HelpItem[];
 };
 
-export type HelpGroup = "Getting started" | "Takeoff" | "Jobs" | "Estimates" | "Financials" | "Field" | "Catalog" | "Settings";
+export type HelpGroup = "Getting started" | "Takeoff" | "Jobs" | "Estimates" | "Financials" | "Field" | "Directory" | "Catalog" | "Settings";
 
 export type HelpArticle = {
   /** Its address in the manual: /help#slug. */

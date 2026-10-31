@@ -34,7 +34,7 @@ export const FINANCIALS: HelpArticle[] = [
           {
             name: "Purchase orders (table)",
             what: "Every PO on the job: number, who it's to, title, status, total, how much has been billed, and what's left. **Left** turns red when a PO has been billed more than its total.",
-            how: "Click the PO number or title to open it. An amber note under a vendor's name means their insurance is expired or missing.",
+            how: "Click the PO number or title to open it. An amber note under a vendor's name means paperwork you need from them is missing, expired or running out.",
           },
           { name: "Bills (table)", what: "Every bill on the job. \"(from their portal)\" means the vendor uploaded it themselves.", how: "Click the date or the vendor to open the bill." },
         ],
@@ -48,7 +48,7 @@ export const FINANCIALS: HelpArticle[] = [
           { name: "Print / PDF", what: "The PO as a page to print or save as a PDF, for vendors you don't email." },
           {
             name: "Mark sent",
-            what: "Marks a draft PO sent and emails it to the vendor. The note under the header says where it will go. If there's no email on file it won't be emailed, so print it or add their email in Settings → Vendors.",
+            what: "Marks a draft PO sent and emails it to the vendor. The note under the header says where it will go. If there's no email on file it won't be emailed, so print it or add their email in Directory → Subs & vendors.",
             how: "Click it once the lines are right. The vendor can accept or decline in their portal, or you can mark it yourself.",
           },
           { name: "Mark accepted / Mark declined", what: "Records the vendor's answer when they tell you some other way. **Mark declined** lets you note why." },
@@ -108,7 +108,7 @@ export const FINANCIALS: HelpArticle[] = [
     tips: [
       "Only approved bills count as the job's cost. A bill waiting for approval doesn't show on the Budget yet.",
       "The quickest PO is **From a bid you took**: take the vendor's or sub's bid first (the job's **Bids** tab), and the PO comes with their prices.",
-      "Keep vendor insurance up to date in Settings → Vendors. Expired or missing coverage shows in amber on their POs and bills.",
+      "Keep subs' paperwork (W-9, insurance…) up to date on their page in Directory → Subs & vendors. What's missing or running out shows in amber on their POs and bills, and over their bid where you take it.",
     ],
     related: ["bids", "invoices", "estimate", "item-list"],
   },
@@ -134,8 +134,8 @@ export const FINANCIALS: HelpArticle[] = [
         items: [
           { name: "What to send", what: "Your Material list by cost code. Quantities include waste.", how: "Tick the cost codes (**All** / **None** to speed it up). Click a cost code's name to open it and untick single items." },
           { name: "Vendors", what: "Who gets the list. Vendors who bid these cost codes before are ticked for you until you change the ticks. \"no email\" means you'll need to send it another way." },
-          { name: "New vendor", what: "Adds a vendor right here: name, email, phone, contact. They're added to Settings → Vendors too." },
-          { name: "Pencil on a vendor", what: "Changes that vendor's name, email, phone or contact right here — in Settings → Vendors too. Bids already made keep the name they were sent with." },
+          { name: "New vendor", what: "Adds a vendor right here: name, email, phone, contact. They're added to Directory → Subs & vendors too." },
+          { name: "Pencil on a vendor", what: "Changes that vendor's name, email, phone or contact right here — in Directory → Subs & vendors too. Bids already made keep the name they were sent with." },
           { name: "Also ask a price on every length", what: "For lumber that comes in several lengths: asks the vendor to price each length, not just the ones on your list. On by default." },
           { name: "Note to the vendor (optional)", what: "A line printed on the request, such as \"Please quote by Friday. Deliver to the job site.\"" },
           { name: "Send to N vendors", what: "Makes a bid for each vendor ticked. Emailing them is the next step, under **Sent**." },
@@ -160,7 +160,7 @@ export const FINANCIALS: HelpArticle[] = [
           { name: "Excel file / PDF", what: "The bid as an Excel file (prices typed into it come back in by themselves), or as a PDF to print and fill in by hand. Both go with the bid's email." },
           { name: "Typed online", what: "Every bid email has a **Type your prices online** button: the vendor opens a page with your list (no sign-in, works on a phone), writes a note to you at the top, types a price on each line (**Sub** on a line offers something else instead), can attach their own quote (a PDF, a photo or their Excel file), and sends. A quote with no prices typed comes in too: type its prices on **Prices**, with it beside you. The prices land on their bid, it shows as back, and whoever emailed it (and the job's manager) gets an email with their note. They can change and send again until you take their bid. Taking another vendor's bid for the same cost code doesn't close theirs (concrete from one supplier, the rest of the cost code from another). The link only opens that one bid and stops working after 30 days." },
           { name: "Email all", what: "Emails every bid that hasn't been emailed yet, each to its vendor's email on file, with the usual message and the online-prices button — the Excel file and PDF attached too if you ticked that in a bid's email window. Vendors with no email on file are listed: open their bid's **Email** and type one in." },
-          { name: "Email", what: "Shows the email before it goes: To, Subject and Message, all editable. The list of items goes in the email too, with a button to type prices online; the Excel file and PDF are on that page to download. It goes from bids@thebuilderstation.com with your company's name.", how: "Tick **Also attach the Excel file and PDF** only when a vendor needs them attached (an email with files from a new sender lands in fewer inboxes), and **Send me a copy** to get one yourself — both are remembered and used by Email all too. Click **Send**. **Text the link** shows the vendor's link in a box: **Text it** starts a text to them with the link in it (on a phone — their number when it's on file), **Share…** opens your phone's share menu, and **Copy the link** copies it to paste anywhere, such as your own email. It comes from your company's name, and when the vendor replies, it goes to your own email. **Open in my email** is still there if you'd rather send it yourself (the online link goes in the message; download the files and attach them). Want your words in every bid email? Tick **Use as my standard message** under the message (or set it in Settings → Vendors)." },
+          { name: "Email", what: "Shows the email before it goes: To, Subject and Message, all editable. The list of items goes in the email too, with a button to type prices online; the Excel file and PDF are on that page to download. It goes from bids@thebuilderstation.com with your company's name.", how: "Tick **Also attach the Excel file and PDF** only when a vendor needs them attached (an email with files from a new sender lands in fewer inboxes), and **Send me a copy** to get one yourself — both are remembered and used by Email all too. Click **Send**. **Text the link** shows the vendor's link in a box: **Text it** starts a text to them with the link in it (on a phone — their number when it's on file), **Share…** opens your phone's share menu, and **Copy the link** copies it to paste anywhere, such as your own email. It comes from your company's name, and when the vendor replies, it goes to your own email. **Open in my email** is still there if you'd rather send it yourself (the online link goes in the message; download the files and attach them). Want your words in every bid email? Tick **Use as my standard message** under the message (or set it in Directory → Subs & vendors)." },
           { name: "emailed / not emailed", what: "Under each bid's number: when it was emailed from here (point at it to see who to). **Email again** sends it once more." },
           { name: "Add what they sent… / Import returned file…", what: "Takes in what a vendor sent back. Their Excel file: the prices go on their bid by themselves (the top button finds the bid from the file). A PDF or a photo (on their row): kept on the bid and in the job's Files → Bids, and shown beside **Prices** so you can type the prices off it." },
           { name: "What they sent", what: "Their reply the way it came: their PDF or photo right on the page, their Excel file to open, or the prices they typed online with their note — and their prices laid out like a quote, with totals and anything they'd send instead. **Print** prints it." },

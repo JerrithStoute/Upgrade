@@ -33,6 +33,7 @@ import {
   Avatar,
 } from "@/components/ui";
 import { TaskFields } from "./_components/task-form";
+import { vendorChoices } from "@/lib/paperwork-server";
 import { ScheduleReorder } from "./_components/schedule-reorder";
 import { startTask, deleteSchedule, createTask, updateTask, deleteTask, shiftTask, completeTask, delayJob, startFromTemplate, saveAsScheduleTemplate } from "./actions";
 import { addReminder } from "../../../schedule/actions";
@@ -61,7 +62,7 @@ export default async function SchedulePage({
     db.delayReason.findMany({ orderBy: [{ sortOrder: "asc" }, { name: "asc" }] }),
     scheduleTemplateOptions(),
     loadWorkCal(),
-    db.vendor.findMany({ select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    vendorChoices(),
   ]);
   const today = (await companyClock()).now; // today, on the company's clock
   const base = `/projects/${project.id}/schedule`;

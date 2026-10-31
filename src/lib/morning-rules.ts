@@ -10,19 +10,5 @@ export function morningWindow(now: Date) {
   return now.getHours() >= MORNING_FROM && now.getHours() < MORNING_UNTIL;
 }
 
-/**
- * Which "about to expire" email a certificate is due today: 30 (a month out), 7 (a week out)
- * or 0 (it lapsed) — or null when it's already had that one, or isn't close.
- *
- * `daysLeft` is whole days until it expires (negative: lapsed that long ago); `reminded` is
- * the last one sent. A certificate that lapsed more than 3 days ago with no reminder on
- * record is left alone: it's old news (and it keeps the first morning after this was switched
- * on from emailing every sub about last year's certificates).
- */
-export function insuranceStage(daysLeft: number, reminded: number | null): 30 | 7 | 0 | null {
-  const stage = daysLeft < 0 ? 0 : daysLeft <= 7 ? 7 : daysLeft <= 30 ? 30 : null;
-  if (stage === null) return null;
-  if (reminded !== null && reminded <= stage) return null;
-  if (stage === 0 && reminded === null && daysLeft < -3) return null;
-  return stage;
-}
+/** The weekly paperwork email goes on Mondays (`now`: the company's wall date). */
+export const isPaperworkDay = (now: Date) => now.getDay() === 1;

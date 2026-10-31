@@ -1,13 +1,15 @@
 import Link from "@/components/link";
-import { Pencil, Plus, ShieldAlert, ShieldCheck, Truck, Upload } from "lucide-react";
+import { CheckCircle2, ClipboardList, FileWarning, Pencil, Plus, Truck, Upload } from "lucide-react";
 import { db } from "@/lib/db";
 import { codeLabelOf } from "@/lib/takeoff-materials";
-import { Button, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
+import { Button, ButtonLink, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, PageHeader, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
 import { CodePicker } from "@/components/code-picker";
 import { vendorCodes } from "@/lib/vendors";
-import { COVERAGE_TYPES, coverageWarning, parseRequired, vendorsCoverage } from "@/lib/purchasing";
+import { paperworkWarning, type PaperLine } from "@/lib/paperwork";
+import { vendorsPaperwork } from "@/lib/paperwork-server";
+import { companyClock } from "@/lib/company-zone";
 import { fmtDate } from "@/lib/utils";
-import { createVendor, deleteVendor, importVendors, setBidMessage, setRequiredCoverage, updateVendor } from "./actions";
+import { createVendor, deleteVendor, importVendors, setBidMessage, updateVendor } from "./actions";
 import { requireView } from "@/lib/auth";
 
 /** What the paste box shows before you paste. */
@@ -43,7 +45,7 @@ function VendorForm({ action, values, codes }: { action: (fd: FormData) => Promi
       <div className="flex items-center gap-2">
         <SubmitButton>{values ? "Save vendor" : "Add vendor"}</SubmitButton>
         {values ? (
-          <Link href="/settings/vendors" className={buttonClasses("ghost")}>
+          <Link href="/vendors" className={buttonClasses("ghost")}>
             Cancel
           </Link>
         ) : null}
@@ -55,22 +57,31 @@ function VendorForm({ action, values, codes }: { action: (fd: FormData) => Promi
 export default async function VendorsPage({ searchParams }: { searchParams: Promise<{ edit?: string; added?: string; updated?: string; same?: string; error?: string; bidMessage?: string }> }) {
   await requireView("lists");
   const { edit, added, updated, same, error, bidMessage } = await searchParams;
-  const [vendors, costCodes, coverage, company] = await Promise.all([
+  const today = (await companyClock()).now;
+  const [vendors, costCodes, paper, company] = await Promise.all([
     db.vendor.findMany({ orderBy: { name: "asc" }, include: { _count: { select: { bids: true, logins: true } } } }),
     db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }, { name: "asc" }], select: { id: true, code: true, name: true } }),
-    vendorsCoverage(),
-    db.company.findFirst({ select: { requiredCoverage: true, bidMessage: true } }),
+    vendorsPaperwork(undefined, today),
+    db.company.findFirst({ select: { bidMessage: true } }),
   ]);
-  const coverageOf = new Map(coverage.map((c) => [c.vendor.id, c.state]));
-  const required = parseRequired(company?.requiredCoverage);
+  const paperOf = new Map(paper.map((p) => [p.vendor.id, p]));
   const codes = [...costCodes.map((c) => ({ id: c.id, label: codeLabelOf(c) })), { id: "none", label: "No cost code" }];
   const labelOf = new Map(codes.map((c) => [c.id, c.label]));
 
   return (
     <div className="space-y-5">
+      <PageHeader
+        title="Subs & vendors"
+        description="Who you buy from and hire, and the paperwork you need from each."
+        actions={
+          <ButtonLink href="/vendors/paperwork" variant="secondary">
+            <ClipboardList className="h-4 w-4" /> Paperwork settings
+          </ButtonLink>
+        }
+      />
       <p className="text-sm text-slate-600">
-        The suppliers you ask for prices. You don&apos;t have to set them up first: a vendor is added here the first time you type one — when you <strong>send to vendors</strong>{" "}
-        from a job&apos;s Material list, or in an item&apos;s Vendor box on the Item List. Change a name here and it changes everywhere.
+        You don&apos;t have to set them up first: a vendor is added the first time you type one (sending to vendors, a PO, an item&apos;s Vendor box), or with{" "}
+        <strong>+ New vendor…</strong> at the bottom of any vendor list. Change a name here and it changes everywhere.
       </p>
       {error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-800">{error}</p> : null}
       {added != null ? (
@@ -114,20 +125,6 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
         </Collapsible>
       </div>
 
-      <form action={setRequiredCoverage} className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
-        <span className="font-medium text-slate-800">Insurance every sub needs:</span>
-        {COVERAGE_TYPES.filter((t) => t.value !== "OTHER").map((t) => (
-          <label key={t.value} className="flex items-center gap-1.5 text-slate-700">
-            <input type="checkbox" name="type" value={t.value} defaultChecked={required.includes(t.value)} className="h-4 w-4 rounded border-slate-300" />
-            {t.label}
-          </label>
-        ))}
-        <Button type="submit" size="sm" variant="secondary">
-          Save
-        </Button>
-        <span className="text-xs text-slate-500">Open a vendor to add their certificates and portal logins.</span>
-      </form>
-
       <form action={setBidMessage} className="space-y-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm">
         <p className="font-medium text-slate-800">Your bid email message</p>
         <p className="text-xs text-slate-500">
@@ -159,7 +156,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
               <Th>Vendor</Th>
               <Th>Contact</Th>
               <Th>Cost codes</Th>
-              <Th>Insurance</Th>
+              <Th>Paperwork</Th>
               <Th right>Bids</Th>
               <Th />
             </tr>
@@ -175,7 +172,7 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
               ) : (
                 <Tr key={v.id}>
                   <Td>
-                    <Link id={`vendor-${v.id}`} href={`/settings/vendors/${v.id}`} className="scroll-mt-24 font-medium text-slate-900 hover:text-blue-700">
+                    <Link id={`vendor-${v.id}`} href={`/vendors/${v.id}`} className="scroll-mt-24 font-medium text-slate-900 hover:text-blue-700">
                       {v.name}
                     </Link>
                     {v.notes ? <span className="block text-xs text-slate-500">{v.notes}</span> : null}
@@ -194,14 +191,14 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
                       .join(" · ") || <span className="text-slate-400">—</span>}
                   </Td>
                   <Td className="text-xs">
-                    <InsuranceChip href={`/settings/vendors/${v.id}`} state={coverageOf.get(v.id) ?? null} logins={v._count.logins} />
+                    <PaperworkChip href={`/vendors/${v.id}`} lines={paperOf.get(v.id)?.lines ?? []} toConfirm={paperOf.get(v.id)?.toConfirm ?? 0} logins={v._count.logins} />
                   </Td>
                   <Td right className="text-xs text-slate-500">
                     {v._count.bids}
                   </Td>
                   <Td right>
                     <div className="flex justify-end gap-1">
-                      <Link href={`/settings/vendors?edit=${v.id}#vendor-${v.id}`} className={buttonClasses("ghost", "sm")}>
+                      <Link href={`/vendors?edit=${v.id}#vendor-${v.id}`} className={buttonClasses("ghost", "sm")}>
                         <Pencil className="h-3.5 w-3.5" /> Edit
                       </Link>
                       <ConfirmForm action={deleteVendor} hidden={{ id: v.id }} message={`Delete "${v.name}"? Their bids stay on your jobs.`} variant="ghost">
@@ -219,21 +216,23 @@ export default async function VendorsPage({ searchParams }: { searchParams: Prom
   );
 }
 
-function InsuranceChip({ href, state, logins }: { href: string; state: Awaited<ReturnType<typeof vendorsCoverage>>[number]["state"]; logins: number }) {
+function PaperworkChip({ href, lines, toConfirm, logins }: { href: string; lines: PaperLine[]; toConfirm: number; logins: number }) {
+  const needed = lines.filter((l) => l.needed);
+  const warning = paperworkWarning(lines, (d) => fmtDate(d, "MMM d"));
   return (
     <Link href={href} className="block hover:underline">
-      {!state ? (
-        <span className="text-slate-400">Not tracked</span>
-      ) : state.ok ? (
-        <span className="flex items-center gap-1 text-emerald-700">
-          <ShieldCheck className="h-3.5 w-3.5" /> Covered
+      {!needed.length ? (
+        <span className="text-slate-400">Nothing needed</span>
+      ) : warning ? (
+        <span className="flex items-start gap-1 text-amber-700">
+          <FileWarning className="mt-px h-3.5 w-3.5 shrink-0" /> {warning}
         </span>
       ) : (
-        <span className="flex items-start gap-1 text-amber-700">
-          <ShieldAlert className="mt-px h-3.5 w-3.5 shrink-0" /> {coverageWarning(state, (d) => fmtDate(d, "MMM d"))}
+        <span className="flex items-center gap-1 text-emerald-700">
+          <CheckCircle2 className="h-3.5 w-3.5" /> All in
         </span>
       )}
-      {state?.unconfirmed ? <span className="block text-sky-700">{state.unconfirmed} to confirm</span> : null}
+      {toConfirm ? <span className="block text-sky-700">{toConfirm} sent to look over</span> : null}
       {logins ? (
         <span className="block text-slate-500">
           {logins} portal login{logins === 1 ? "" : "s"}

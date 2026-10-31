@@ -180,7 +180,7 @@ export function EmailPreview({
                         }
                       }}
                     />
-                    {standard === "saved" ? "Saved — every bid email starts with this message (Settings → Vendors to change it)" : "Use as my standard message"}
+                    {standard === "saved" ? "Saved — every bid email starts with this message (Directory → Subs & vendors to change it)" : "Use as my standard message"}
                   </label>
                 )}
               </div>

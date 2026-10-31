@@ -1,7 +1,8 @@
 import "server-only";
 import { db } from "./db";
 import { appUrl, sendMail, simpleEmail, type MailSection } from "./mail";
-import { coverageLabel, poTotal } from "./purchasing";
+import { poTotal } from "./purchasing";
+import { teamRecipients } from "./notify-recipients";
 import { fmtDate, money } from "./utils";
 import { pushToEmails, type PushKind } from "./push";
 import { ensureSignInSlug, withBuilder } from "./customer-brand";
@@ -9,7 +10,8 @@ import { currentCompanyId } from "./tenant";
 
 /**
  * Emails the program sends as things happen in purchasing: a PO to its vendor, and word
- * back to the team when the vendor answers, bills it or uploads insurance.
+ * back to the team when the vendor answers, bills it or sends paperwork — those only as the builder
+ * chose (Settings → Email notifications, notify-rules.ts).
  *
  * One rule for all of them: an email that can't be sent never stops the work — the PO is
  * still marked sent, the bill still uploaded. The failure goes in the server log.
@@ -69,9 +71,6 @@ export async function vendorContacts(vendorId: string | null) {
   return { emails, portal: users.length > 0 };
 }
 
-const staff = (ids: (string | null | undefined)[]) =>
-  db.user.findMany({ where: { id: { in: ids.filter((x): x is string => !!x) }, active: true, role: { in: ["ADMIN", "STAFF"] } }, select: { email: true } });
-
 /** "Mark sent": the PO goes to the vendor. Returns the addresses it reached (none: no email on file). */
 export async function emailPoToVendor(poId: string, sender: Person) {
   const po = await db.purchaseOrder.findUnique({ where: { id: poId }, include: { lines: true, project: { select: { name: true } } } });
@@ -100,12 +99,12 @@ export async function emailPoToVendor(poId: string, sender: Person) {
 
 /** The vendor accepted or declined in their portal: whoever sent the PO hears. */
 export async function emailPoAnswered(poId: string, by: string) {
-  const po = await db.purchaseOrder.findUnique({ where: { id: poId }, include: { project: { select: { id: true, name: true } } } });
+  const po = await db.purchaseOrder.findUnique({ where: { id: poId }, include: { project: { select: { id: true, name: true, managerId: true } } } });
   if (!po || (po.status !== "ACCEPTED" && po.status !== "DECLINED")) return [];
-  const to = await staff([po.sentById ?? po.createdById]);
+  const to = await teamRecipients("poAnswered", { sender: [po.sentById ?? po.createdById], manager: [po.project.managerId] });
   const word = po.status === "ACCEPTED" ? "accepted" : "declined";
   return sendCompanyMail(
-    to.map((u) => u.email),
+    to,
     {
       subject: `${po.vendorName} ${word} PO-${po.number}`,
       heading: `PO-${po.number} ${word}`,
@@ -120,9 +119,9 @@ export async function emailPoAnswered(poId: string, by: string) {
 export async function emailBillUploaded(poId: string, amount: number) {
   const po = await db.purchaseOrder.findUnique({ where: { id: poId }, include: { project: { select: { id: true, name: true, managerId: true } } } });
   if (!po) return [];
-  const to = await staff([po.sentById ?? po.createdById, po.project.managerId]);
+  const to = await teamRecipients("billUploaded", { sender: [po.sentById ?? po.createdById], manager: [po.project.managerId] });
   return sendCompanyMail(
-    to.map((u) => u.email),
+    to,
     {
       subject: `Bill from ${po.vendorName} for ${po.project.name}`,
       heading: `${po.vendorName} sent a bill`,
@@ -133,20 +132,17 @@ export async function emailBillUploaded(poId: string, amount: number) {
   );
 }
 
-/** The vendor uploaded an insurance certificate: the admins hear (it counts once confirmed). */
-export async function emailInsuranceUploaded(vendorId: string, type: string, expiresAt: Date) {
-  const [vendor, admins] = await Promise.all([
-    db.vendor.findUnique({ where: { id: vendorId }, select: { name: true } }),
-    db.user.findMany({ where: { role: "ADMIN", active: true }, select: { email: true } }),
-  ]);
+/** The vendor uploaded paperwork in their portal (it counts once someone looks it over). */
+export async function emailPaperworkUploaded(vendorId: string, what: string, expiresAt: Date | null) {
+  const [vendor, to] = await Promise.all([db.vendor.findUnique({ where: { id: vendorId }, select: { name: true } }), teamRecipients("paperworkUploaded")]);
   if (!vendor) return [];
   return sendCompanyMail(
-    admins.map((u) => u.email),
+    to,
     {
-      subject: `${vendor.name} uploaded an insurance certificate`,
-      heading: "Insurance certificate to confirm",
-      lines: [`${vendor.name} uploaded ${coverageLabel(type)}, good until ${fmtDate(expiresAt)}.`, "It counts once you've looked at it and confirmed it."],
-      button: { label: "Open their page", url: appUrl(`/settings/vendors/${vendorId}`) },
+      subject: `${vendor.name} sent their ${what}`,
+      heading: "Paperwork to look over",
+      lines: [`${vendor.name} uploaded their ${what}${expiresAt ? `, good until ${fmtDate(expiresAt)}` : ""}.`, "It counts once you've looked it over."],
+      button: { label: "Open their page", url: appUrl(`/vendors/${vendorId}`) },
       push: "VENDOR_ANSWERS",
     },
   );
@@ -164,10 +160,9 @@ export async function emailBidAnswered(bidId: string, o: { priced: number; items
     orderBy: { createdAt: "desc" },
     select: { userId: true },
   });
-  let to = await staff([sentBy?.userId, bid.project.managerId]);
-  if (!to.length) to = await db.user.findMany({ where: { role: "ADMIN", active: true }, select: { email: true } });
+  const to = await teamRecipients("bidAnswered", { sender: [sentBy?.userId], manager: [bid.project.managerId] });
   return sendCompanyMail(
-    to.map((u) => u.email),
+    to,
     {
       subject:
         bid.kind === "SUB" && o.priced

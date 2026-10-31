@@ -232,7 +232,7 @@ export function areaForPath(pathname: string): AreaKey | null {
 }
 
 /** Settings pages under "lists & templates", with the whole Catalog (the rest of Settings is admin-only). */
-export const LIST_SETTINGS = new Set(["cost-codes", "vendors", "estimate-parameters", "estimate-divisions", "lead-sources"]);
+export const LIST_SETTINGS = new Set(["cost-codes", "estimate-parameters", "estimate-divisions", "lead-sources"]);
 
 /** First part of an address (a job's tab, or a main page) → its area. */
 export const PATH_AREA: Record<string, AreaKey> = {
@@ -257,6 +257,8 @@ export const PATH_AREA: Record<string, AreaKey> = {
   // Main pages (the same words as a job's tabs where they match)
   leads: "leads",
   clients: "leads",
+  // Directory → Subs & vendors: the same permission as the lists.
+  vendors: "lists",
   bills: "purchasing",
   inventory: "purchasing",
   reports: "reports",

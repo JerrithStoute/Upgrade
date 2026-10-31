@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { cleanVendorName, vendorKey, type VendorRow } from "./vendors";
+import { cleanVendorName, vendorCodes, vendorKey, type VendorRow } from "./vendors";
 
 /**
  * The vendor list builds itself: a vendor typed anywhere (the Item List, sending bids)
@@ -15,6 +15,40 @@ export async function ensureVendor(name: string | null | undefined): Promise<str
   if (found) return found.name;
   await db.vendor.create({ data: { name: clean } });
   return clean;
+}
+
+/**
+ * A vendor added from wherever you are (a bid, a schedule task, the job's subs…): a name you already have is
+ * that vendor — its blank details filled in (and `codes` added to what they bid). Their paperwork starts as
+ * your usual set (paperwork.ts), so a sub added on the fly shows as missing it until it's in.
+ */
+export async function findOrAddVendor(input: { name: string; contact?: string; email?: string; phone?: string; codes?: string[] }) {
+  const name = cleanVendorName(input.name ?? "");
+  if (!name) return { ok: false as const, error: "Type the vendor's name" };
+  const email = (input.email ?? "").trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false as const, error: "That email doesn't look right" };
+  const codes = (input.codes ?? []).map(String).slice(0, 500);
+  const had = (await db.vendor.findMany()).find((v) => vendorKey(v.name) === vendorKey(name));
+  const vendor = had
+    ? await db.vendor.update({
+        where: { id: had.id },
+        data: {
+          email: had.email ?? (email || null),
+          phone: had.phone ?? (input.phone?.trim().slice(0, 60) || null),
+          contact: had.contact ?? (input.contact?.trim().slice(0, 120) || null),
+          ...(codes.length ? { costCodeIds: JSON.stringify(Array.from(new Set([...vendorCodes(had), ...codes]))) } : {}),
+        },
+      })
+    : await db.vendor.create({
+        data: {
+          name,
+          email: email || null,
+          phone: input.phone?.trim().slice(0, 60) || null,
+          contact: input.contact?.trim().slice(0, 120) || null,
+          costCodeIds: codes.length ? JSON.stringify(codes) : null,
+        },
+      });
+  return { ok: true as const, vendor, added: !had };
 }
 
 /** A renamed vendor, renamed everywhere it's written: Item List items and the bids sent to them. */

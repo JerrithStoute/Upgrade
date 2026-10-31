@@ -3,14 +3,12 @@ import { db } from "./db";
 import { asWholeCompany } from "./tenant";
 
 /**
- * Purchase orders, vendor bills and insurance (COI) for subs and vendors.
+ * Purchase orders and vendor bills for subs and vendors (their paperwork: paperwork.ts).
  *
  *  - A PO says what a sub or vendor will do or supply on a job, at what price.
  *  - A bill is what they charge, matched to a PO when there is one (billed so far / left).
  *  - An approved bill is the job's actual cost: one expense per cost code, so the budget
  *    shows it. Un-approving takes those back off. Paid marks them paid.
- *  - Insurance: certificates with expiration dates; anyone missing a required one, or with
- *    one expired or running out within 30 days, is flagged.
  */
 
 export const PO_STATUS_LABEL: Record<string, string> = {
@@ -22,15 +20,6 @@ export const PO_STATUS_LABEL: Record<string, string> = {
   VOID: "Void",
 };
 export const BILL_STATUS_LABEL: Record<string, string> = { PENDING: "Waiting for approval", APPROVED: "Approved — not paid", PAID: "Paid", REJECTED: "Rejected" };
-
-export const COVERAGE_TYPES = [
-  { value: "GL", label: "General liability" },
-  { value: "WC", label: "Workers' comp" },
-  { value: "AUTO", label: "Auto" },
-  { value: "UMBRELLA", label: "Umbrella" },
-  { value: "OTHER", label: "Other" },
-] as const;
-export const coverageLabel = (t: string) => COVERAGE_TYPES.find((c) => c.value === t)?.label ?? t;
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 
@@ -117,83 +106,6 @@ export async function markBillPaid(billId: string, paid: { date: Date; method: s
     db.vendorBill.update({ where: { id: billId }, data: { status: "PAID", paidAt: paid.date, paidMethod: paid.method, paidReference: paid.reference } }),
     db.expense.updateMany({ where: { billId }, data: { status: "PAID" } }),
   ]);
-}
-
-// --- Insurance (COI) ---------------------------------------------------------------------
-
-export const SOON_DAYS = 30;
-
-export type CoverageState = { missing: string[]; expired: { type: string; expiresAt: Date }[]; expiring: { type: string; expiresAt: Date }[]; unconfirmed: number; ok: boolean };
-
-/**
- * Where a vendor's insurance stands today: required types they have no confirmed certificate
- * for, ones expired, and ones running out within 30 days. Each type counts its latest certificate.
- */
-export function coverageState(certs: { type: string; expiresAt: Date; confirmed: boolean }[], required: string[], today = new Date()): CoverageState {
-  const day = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-  const soon = new Date(day.getTime() + SOON_DAYS * 86400000);
-  const latest = new Map<string, Date>();
-  for (const c of certs) if (c.confirmed && (!latest.has(c.type) || c.expiresAt > latest.get(c.type)!)) latest.set(c.type, c.expiresAt);
-  const missing = required.filter((t) => !latest.has(t));
-  const expired: CoverageState["expired"] = [];
-  const expiring: CoverageState["expiring"] = [];
-  for (const [type, expiresAt] of latest) {
-    if (expiresAt < day) expired.push({ type, expiresAt });
-    else if (expiresAt <= soon) expiring.push({ type, expiresAt });
-  }
-  const unconfirmed = certs.filter((c) => !c.confirmed).length;
-  return { missing, expired, expiring, unconfirmed, ok: !missing.length && !expired.length && !expiring.length };
-}
-
-export function parseRequired(text: string | null | undefined) {
-  return (text ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-/** One line for a warning: "Workers' comp expired Sep 30 · General liability missing". */
-export function coverageWarning(s: CoverageState, fmt: (d: Date) => string) {
-  return [
-    ...s.expired.map((e) => `${coverageLabel(e.type)} expired ${fmt(e.expiresAt)}`),
-    ...s.missing.map((t) => `${coverageLabel(t)} missing`),
-    ...s.expiring.map((e) => `${coverageLabel(e.type)} expires ${fmt(e.expiresAt)}`),
-  ].join(" · ");
-}
-
-/**
- * Whether you need a vendor's insurance: what you set on their page, else automatically —
- * yes once they're on a PO for work (not a supplier's bid you took) or have a certificate on file.
- */
-export function needsInsurance(v: { insuranceRequired: boolean | null }, workPos: number, certs: number) {
-  return v.insuranceRequired ?? (workPos > 0 || certs > 0);
-}
-
-const WORK_POS = { where: { bidId: null, status: { not: "VOID" } }, select: { id: true }, take: 1 } as const;
-
-/** Every vendor's insurance state (for lists and the dashboard); `state` is null when you don't need theirs. */
-export async function vendorsCoverage() {
-  const [company, vendors] = await Promise.all([
-    db.company.findFirst({ select: { requiredCoverage: true } }),
-    db.vendor.findMany({ include: { insurance: true, purchaseOrders: WORK_POS }, orderBy: { name: "asc" } }),
-  ]);
-  const required = parseRequired(company?.requiredCoverage);
-  return vendors.map((v) => ({
-    vendor: v,
-    needed: needsInsurance(v, v.purchaseOrders.length, v.insurance.length),
-    state: needsInsurance(v, v.purchaseOrders.length, v.insurance.length) ? coverageState(v.insurance, required) : null,
-  }));
-}
-
-/** One vendor's insurance state — null when there's no vendor or you don't need theirs. */
-export async function vendorCoverage(vendorId: string | null) {
-  if (!vendorId) return null;
-  const [company, v] = await Promise.all([
-    db.company.findFirst({ select: { requiredCoverage: true } }),
-    db.vendor.findUnique({ where: { id: vendorId }, include: { insurance: true, purchaseOrders: WORK_POS } }),
-  ]);
-  if (!v || !needsInsurance(v, v.purchaseOrders.length, v.insurance.length)) return null;
-  return coverageState(v.insurance, parseRequired(company?.requiredCoverage));
 }
 
 /** A vendor by name — the one you have, or a new one (onboarding builds as you go). */

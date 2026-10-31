@@ -11,7 +11,7 @@ export const DASHBOARD_CARDS: CardDef[] = [
   { key: "stats", title: "Key numbers", description: "Active jobs, contract value, receivables, your to-dos, client approvals" },
   { key: "projects", title: "Active projects", description: "Each job with its schedule progress" },
   { key: "sales", title: "Sales pipeline", description: "Open leads by stage, follow-ups due, win rate" },
-  { key: "vendors", title: "Subs & vendors", description: "Bills to approve and insurance running out" },
+  { key: "vendors", title: "Subs & vendors", description: "Bills to approve, and subs missing paperwork or with insurance running out" },
   { key: "attention", title: "Needs attention", description: "Overdue selections and to-dos, change orders waiting, late invoices" },
   { key: "todos", title: "My to-dos", description: "Your open to-dos, soonest first" },
   { key: "schedule", title: "Upcoming schedule", description: "Tasks starting in the next 7 days" },

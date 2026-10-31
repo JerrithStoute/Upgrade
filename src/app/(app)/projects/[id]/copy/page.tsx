@@ -1,4 +1,5 @@
 import { requireStaff } from "@/lib/auth";
+import { ClientPick } from "@/components/client-pick";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { Card, CardBody, CardHeader, Field, FormGrid, SubmitButton } from "@/components/ui";
@@ -50,15 +51,7 @@ export default async function CopyJobPage({ params }: { params: Promise<{ id: st
                 <input id="cj-name" name="name" required className="input" placeholder="Smith — Lot 14" defaultValue={project.isTemplate ? "" : `${project.name} (copy)`} />
               </Field>
               <Field label="Client (optional)" htmlFor="cj-client">
-                <select id="cj-client" name="clientId" className="input" defaultValue="">
-                  <option value="">No client yet</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {[c.firstName, c.lastName].filter(Boolean).join(" ")}
-                      {c.company ? ` (${c.company})` : ""}
-                    </option>
-                  ))}
-                </select>
+                <ClientPick id="cj-client" clients={clients.map((c) => ({ id: c.id, label: `${[c.firstName, c.lastName].filter(Boolean).join(" ")}${c.company ? ` (${c.company})` : ""}` }))} />
               </Field>
               <Field label="Address" htmlFor="cj-address">
                 <input id="cj-address" name="address" className="input" placeholder="123 Main St" />

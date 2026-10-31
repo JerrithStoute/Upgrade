@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, unlinkSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { systemDb } from "../../src/lib/db";
 
@@ -14,6 +14,8 @@ export async function removeFlowCompany() {
   const users = await systemDb.user.findMany({ where: { email: { endsWith: "@example.test" }, OR: [{ email: FLOW_EMAIL }, { email: { startsWith: "flows-" } }] }, select: { companyId: true } });
   const companies = await systemDb.company.findMany({ where: { OR: [{ name: FLOW_COMPANY }, { id: { in: users.map((u) => u.companyId) } }] }, select: { id: true } });
   for (const { id } of companies) {
+    // Its files (on this PC, in the uploads folder: each company's are under its id).
+    rmSync(path.join(path.resolve(process.env.UPLOAD_DIR || "./uploads"), id), { recursive: true, force: true });
     await systemDb.stationLog.deleteMany({ where: { builderId: id } });
     await systemDb.stationUsage.deleteMany({ where: { builderId: id } });
     await systemDb.stationProblem.deleteMany({ where: { builderId: id } });

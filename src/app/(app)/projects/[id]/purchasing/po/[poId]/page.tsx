@@ -1,11 +1,12 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
-import { Plus, Printer, ShieldAlert } from "lucide-react";
+import { Plus, Printer } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { costCodeLabel, dateInput, fmtDate, fmtDateTime, money } from "@/lib/utils";
-import { BILL_STATUS_LABEL, PO_STATUS_LABEL, billTotal, coverageWarning, poBilling, vendorCoverage } from "@/lib/purchasing";
+import { BILL_STATUS_LABEL, PO_STATUS_LABEL, billTotal, poBilling } from "@/lib/purchasing";
+import { PaperworkNote } from "@/components/vendors/paperwork-note";
 import { Badge, Button, ButtonLink, Card, CardBody, CardHeader, ConfirmForm, Table, THead, TBody, Tr, Th, Td, buttonClasses } from "@/components/ui";
 import { vendorContacts } from "@/lib/notify";
 import { PoEditor } from "../../_components/po-editor";
@@ -54,9 +55,8 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
     db.vendor.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
   ]);
   if (!po) notFound();
-  const [billing, coverage, sendTo, createdBy] = await Promise.all([
+  const [billing, sendTo, createdBy] = await Promise.all([
     poBilling(po.id),
-    vendorCoverage(po.vendorId),
     vendorContacts(po.vendorId),
     po.createdById ? db.user.findUnique({ where: { id: po.createdById }, select: { name: true } }) : null,
   ]);
@@ -126,19 +126,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
         </div>
       </div>
 
-      {coverage && !coverage.ok ? (
-        <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            <strong>{po.vendorName}&apos;s insurance:</strong> {coverageWarning(coverage, (d) => fmtDate(d))}.{" "}
-            {po.vendorId ? (
-              <Link href={`/settings/vendors/${po.vendorId}`} className="font-medium underline">
-                Update their certificates
-              </Link>
-            ) : null}
-          </span>
-        </p>
-      ) : null}
+      <PaperworkNote vendorId={po.vendorId} name={po.vendorName} />
       {po.status === "DRAFT" || po.status === "DECLINED" ? (
         <p className="text-xs text-slate-500">
           {sendTo.emails.length ? (
@@ -151,7 +139,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
               {po.vendorId ? (
                 <>
                   , or{" "}
-                  <Link href={`/settings/vendors/${po.vendorId}`} className="font-medium text-blue-700 hover:underline">
+                  <Link href={`/vendors/${po.vendorId}`} className="font-medium text-blue-700 hover:underline">
                     add their email
                   </Link>
                 </>

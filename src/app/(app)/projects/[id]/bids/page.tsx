@@ -20,6 +20,8 @@ import { SendToSubs } from "./_components/send-to-subs";
 import { makeBidLink } from "@/lib/bid-link";
 import { appUrl } from "@/lib/mail";
 import { EmailAllButton } from "./_components/email-all";
+import { paperworkWarning } from "@/lib/paperwork";
+import { vendorsPaperwork } from "@/lib/paperwork-server";
 import { deleteBid, importBid, quickAddVendor, quickEditVendor, requestBids, requestSubBids, takeBids, takeSubBids } from "./actions";
 
 export const metadata = { title: "Bids" };
@@ -78,6 +80,18 @@ export default async function BidsPage({
       .map((l) => ({ key: l.key, name: l.name, quantity: l.quantity, unit: l.unit, extended: l.extended })),
   }));
   const warnings = overWarnings(cmp);
+  // Paperwork a vendor still owes you, shown over their bid where you take it (a note, never a stop).
+  const paper = await vendorsPaperwork([...new Set(cmp.bids.map((b) => b.vendorId).filter((v): v is string => !!v))]);
+  const paperOf = new Map(paper.map((p) => [p.vendor.id, paperworkWarning(p.lines, (d) => fmtDate(d, "MMM d"))]));
+  const paperForBid = (bidId: string) => {
+    const v = cmp.bids.find((b) => b.id === bidId)?.vendorId;
+    const text = v ? paperOf.get(v) : "";
+    return text ? (
+      <Link href={`/vendors/${v}`} className="mt-0.5 block text-[11px] font-normal normal-case text-amber-700 hover:underline" title="Their paperwork — a reminder, not a stop">
+        {text}
+      </Link>
+    ) : null;
+  };
   const ladders = await priceLadders(project.id, cmp.lines);
   const locked = !!project.pricesLockedAt;
   const base = `/projects/${project.id}/bids`;
@@ -460,6 +474,7 @@ export default async function BidsPage({
                         <span className="block font-semibold text-slate-700">{c.vendorName}</span>#{c.number}
                         {c.afterLock ? " · re-bid" : ""}
                         {c.receivedAt ? ` · ${fmtDate(c.receivedAt)}` : ""}
+                        {paperForBid(c.id)}
                       </th>
                     ))}
                   </tr>
@@ -588,6 +603,7 @@ export default async function BidsPage({
                           <Link href={`${base}/${c.id}/reply`} className="ml-1 font-medium text-blue-700 hover:underline">
                             see it
                           </Link>
+                          {paperForBid(c.id)}
                         </th>
                       ))}
                     </tr>

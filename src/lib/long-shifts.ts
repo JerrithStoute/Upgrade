@@ -3,15 +3,15 @@ import { ifFirst } from "./job-lock";
 import { db, systemDb } from "./db";
 import { runAsCompany } from "./tenant";
 import { appUrl, sendMail, simpleEmail } from "./mail";
-import { resolveAccess } from "./access";
+import { teamRecipients } from "./notify-recipients";
 import { companyClock } from "./company-zone";
 import { parseTimeRules } from "./time-rules";
 import { fmtHours } from "./time-math";
 
 /**
  * "Still on the clock?" — once someone has been on the clock longer than Settings → Time clock
- * allows (12 hours to start), one email to them and to whoever can fix people's time, so a
- * forgotten clock-out gets caught the same day. Once per stretch.
+ * allows (12 hours to start), one email to whoever the builder picked (them, whoever can fix people's
+ * time…), so a forgotten clock-out gets caught the same day. Once per stretch.
  */
 export async function sendLongShiftEmails(now = new Date()) {
   const company = await db.company.findFirst({ select: { name: true, timeRules: true } });
@@ -23,22 +23,15 @@ export async function sendLongShiftEmails(now = new Date()) {
     include: { user: { select: { id: true, name: true, email: true, active: true } }, project: { select: { number: true, name: true } } },
   });
   if (!open.length) return 0;
-  // Whoever can fix other people's time: admins, and positions allowed "Everyone's time" to edit.
-  const team = await db.user.findMany({
-    where: { active: true, role: { in: ["ADMIN", "STAFF"] } },
-    select: { id: true, name: true, email: true, role: true, access: true, position: { select: { access: true } } },
-  });
-  const fixers = team.filter((u) => resolveAccess(u.role, u.position?.access, u.access).time >= 2);
   const { wall } = await companyClock(now);
   let sent = 0;
   for (const e of open) {
     const hours = fmtHours(Math.floor(((now.getTime() - e.clockIn.getTime()) / 3_600_000) * 4) / 4, rules.hoursFormat); // to the quarter hour
     const started = wall(e.clockIn).toLocaleString("en-US", { weekday: "short", hour: "numeric", minute: "2-digit" });
     const job = `#${e.project.number} ${e.project.name}`;
-    const to = new Map<string, { name: string; self: boolean }>();
-    if (e.user.active && !e.user.email.endsWith(".invalid")) to.set(e.user.email, { name: e.user.name, self: true });
-    for (const f of fixers) if (!f.email.endsWith(".invalid") && !to.has(f.email)) to.set(f.email, { name: f.name, self: false });
-    for (const [email, who] of to) {
+    // Whoever the builder picked (Settings → Email notifications): the person on the clock, whoever fixes time…
+    const to = (await teamRecipients("longShift", { worker: [e.user.id] })).map((email) => ({ email, self: email === e.user.email }));
+    for (const { email, ...who } of to) {
       await sendMail(
         simpleEmail({
           to: email,

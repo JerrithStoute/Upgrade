@@ -15,7 +15,8 @@ function staffPages() {
       const p = join(dir, name);
       if (statSync(p).isDirectory()) walk(p);
       else if (name === "page.tsx") {
-        const route = p.slice(root.length).split("\\").join("/").replace(/\/page\.tsx$/, "").replace(/\[[^\]]+\]/g, "*");
+        // (A route group like "(directory)" isn't part of the address.)
+        const route = p.slice(root.length).split("\\").join("/").replace(/\/\([^)]+\)/g, "").replace(/\/page\.tsx$/, "").replace(/\[[^\]]+\]/g, "*");
         out.push(route || "/");
       }
     }

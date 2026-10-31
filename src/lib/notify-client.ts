@@ -3,6 +3,7 @@ import { db, systemDb } from "./db";
 import { hashToken, LINK_LIFE, randomToken } from "./account";
 import { appUrl, type MailSection } from "./mail";
 import { sendCompanyMail } from "./notify";
+import { notifyOn, teamRecipients } from "./notify-recipients";
 import { changeOrderTotals } from "./change-orders";
 import { invoiceTotal } from "./finance";
 import { fmtDate, money } from "./utils";
@@ -67,14 +68,10 @@ export async function tellClient(
 }
 
 const company = async () => (await db.company.findFirst({ select: { name: true } }))?.name ?? "Your builder";
-const staff = (ids: (string | null | undefined)[]) =>
-  db.user.findMany({ where: { id: { in: ids.filter((x): x is string => !!x) }, active: true, role: { in: ["ADMIN", "STAFF"] } }, select: { email: true } });
-/** Who on the team hears about a job when nobody in particular sent the thing: its manager, else the admins. */
-export async function jobTeam(projectId: string, also: (string | null | undefined)[] = []) {
+/** Who on the team hears about a job: whoever the builder chose for `key` (Settings → Email notifications), the job's manager worked out. */
+export async function jobRecipients(key: string, projectId: string, given: Partial<Record<string, (string | null | undefined)[]>> = {}) {
   const project = await db.project.findUnique({ where: { id: projectId }, select: { managerId: true } });
-  const named = await staff([...also, project?.managerId]);
-  if (named.length) return named.map((u) => u.email);
-  return (await db.user.findMany({ where: { role: "ADMIN", active: true }, select: { email: true } })).map((u) => u.email);
+  return teamRecipients(key, { ...given, manager: [project?.managerId] });
 }
 
 // --- to the client -------------------------------------------------------------------
@@ -150,7 +147,7 @@ export async function emailProposalAnswered(estimateId: string) {
   const est = await db.estimate.findUnique({ where: { id: estimateId }, select: { id: true, name: true, status: true, sentById: true, signedBy: true, decisionNote: true, projectId: true, project: { select: { name: true } } } });
   if (!est || (est.status !== "APPROVED" && est.status !== "DECLINED")) return [];
   const word = est.status === "APPROVED" ? "approved" : "declined";
-  return sendCompanyMail(await jobTeam(est.projectId, [est.sentById]), {
+  return sendCompanyMail(await jobRecipients("proposalAnswered", est.projectId, { sender: [est.sentById] }), {
     subject: `${est.project.name}: proposal ${word}`,
     heading: `Proposal ${word}`,
     lines: [
@@ -168,7 +165,7 @@ export async function emailChangeOrderAnswered(coId: string) {
   if (!co) return [];
   const word = co.status === "DECLINED" ? "declined" : co.clientApprovedAt ? "approved" : null;
   if (!word) return [];
-  return sendCompanyMail(await jobTeam(co.projectId, [co.sentById]), {
+  return sendCompanyMail(await jobRecipients("coAnswered", co.projectId, { sender: [co.sentById] }), {
     subject: `${co.project.name}: change order #${co.number} ${word}`,
     heading: `Change order #${co.number} ${word}`,
     lines: [
@@ -190,7 +187,7 @@ export async function emailSelectionChosen(selectionId: string) {
   const who = sel.project.client ? `${sel.project.client.firstName} ${sel.project.client.lastName}`.trim() : "Your client";
   const choice = sel.options.find((o) => o.id === sel.chosenOptionId)?.name;
   const what = sel.status === "DECLINED" ? "doesn't want this selection" : choice ? `chose "${choice}"` : sel.status === "PENDING" ? "cleared their choice" : "made a choice";
-  return sendCompanyMail(await jobTeam(sel.projectId), {
+  return sendCompanyMail(await jobRecipients("selectionChosen", sel.projectId), {
     subject: `${sel.project.name}: ${sel.title} — ${choice ?? (sel.status === "DECLINED" ? "not wanted" : "choice changed")}`,
     heading: sel.title,
     lines: [`${who} ${what} for ${sel.title} on ${sel.project.name}.`],
@@ -204,7 +201,7 @@ export async function emailMessageFromClient(threadId: string, body: string, cli
   const thread = await db.messageThread.findUnique({ where: { id: threadId }, select: { id: true, subject: true, projectId: true, project: { select: { name: true } }, messages: { select: { authorId: true }, distinct: ["authorId"] } } });
   if (!thread) return [];
   // The job's manager, and anyone on the team already in the conversation.
-  return sendCompanyMail(await jobTeam(thread.projectId, thread.messages.map((m) => m.authorId)), {
+  return sendCompanyMail(await jobRecipients("clientMessage", thread.projectId, { inThread: thread.messages.map((m) => m.authorId) }), {
     subject: `${thread.project.name}: message from ${clientName}`,
     heading: thread.subject,
     lines: [`${clientName} wrote about ${thread.project.name}:`, body.length > 600 ? `${body.slice(0, 600)}…` : body],
@@ -230,6 +227,7 @@ export function selectionStage(daysLeft: number, reminded: number | null): 7 | 0
 
 /** One email per client listing the selections waiting on them that are a week out or due. `now`: the company's wall date. */
 export async function sendSelectionReminders(now: Date) {
+  if (!(await notifyOn("selectionReminders"))) return 0;
   const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const horizon = new Date(dayStart.getTime() + 8 * 86400000);
   const waiting = await db.selection.findMany({

@@ -14,6 +14,11 @@ const nextConfig: NextConfig = {
     return ["items", "doors", "windows", "member-sizes", "span-tables", "takeoff-templates", "estimate-templates", "schedule-templates"].flatMap((p) => [
       { source: `/settings/${p}`, destination: `/catalog/${p}`, permanent: false },
       { source: `/settings/${p}/:rest*`, destination: `/catalog/${p}/:rest*`, permanent: false },
+    ]).concat([
+      // Vendors moved to the Directory (Subs & vendors).
+      { source: "/settings/vendors", destination: "/vendors", permanent: false },
+      { source: "/settings/vendors/:rest*", destination: "/vendors/:rest*", permanent: false },
+      { source: "/vendor/insurance", destination: "/vendor/paperwork", permanent: false },
     ]);
   },
   experimental: {

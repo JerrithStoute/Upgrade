@@ -405,7 +405,7 @@ function LinkCards({
           title="Vendors"
           description={`${vendorCount} of your vendors are linked to QuickBooks (${qbVendors} active there).`}
           actions={
-            <Link href="/settings/vendors" className={buttonClasses("secondary", "sm")}>
+            <Link href="/vendors" className={buttonClasses("secondary", "sm")}>
               Vendor list
             </Link>
           }
