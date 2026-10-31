@@ -1,28 +1,15 @@
 import Link from "@/components/link";
-import { Plus, Search, Users } from "lucide-react";
+import { Plus, Users } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { fmtDate } from "@/lib/utils";
-import { Badge, Button, ButtonLink, EmptyState, PageHeader, TBody, THead, Table, Td, Th, Tr } from "@/components/ui";
+import { ListFind } from "@/components/list-find";
+import { Badge, ButtonLink, EmptyState, PageHeader, THead, Table, Td, Th } from "@/components/ui";
 
-export default async function ClientsPage({ searchParams }: { searchParams: Promise<{ q?: string }> }) {
+export default async function ClientsPage() {
   await requireView("leads");
-  const { q: rawQ } = await searchParams;
-  const q = (rawQ ?? "").trim();
 
   const clients = await db.client.findMany({
-    where: q
-      ? {
-          OR: [
-            { firstName: { contains: q, mode: "insensitive" } },
-            { lastName: { contains: q, mode: "insensitive" } },
-            { company: { contains: q, mode: "insensitive" } },
-            { email: { contains: q, mode: "insensitive" } },
-            { phone: { contains: q, mode: "insensitive" } },
-            { city: { contains: q, mode: "insensitive" } },
-          ],
-        }
-      : undefined,
     include: { _count: { select: { projects: true } } },
     orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
@@ -31,7 +18,7 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
     <div className="space-y-6">
       <PageHeader
         title="Clients"
-        description={`${clients.length} ${q ? "matching" : "total"}`}
+        description={`${clients.length} total`}
         actions={
           <ButtonLink href="/clients/new">
             <Plus className="h-4 w-4" /> New client
@@ -39,26 +26,13 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
         }
       />
 
-      <form method="get" className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input name="q" defaultValue={q} placeholder="Search name, company, email, phone or city" className="input pl-9" />
-        </div>
-        <Button type="submit" variant="secondary">
-          Search
-        </Button>
-        {q ? (
-          <ButtonLink href="/clients" variant="ghost">
-            Clear
-          </ButtonLink>
-        ) : null}
-      </form>
+      {clients.length ? <ListFind listId="client-list" placeholder="Type a name, company, email, phone or city" /> : null}
 
       {clients.length === 0 ? (
         <EmptyState
           icon={Users}
-          title={q ? "No clients match" : "No clients yet"}
-          description={q ? "Try a different search." : "Add your first client to start a project."}
+          title="No clients yet"
+          description="Add your first client to start a project."
           action={
             <ButtonLink href="/clients/new">
               <Plus className="h-4 w-4" /> New client
@@ -79,9 +53,9 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
               <Th>Created</Th>
             </tr>
           </THead>
-          <TBody>
+          <tbody id="client-list" className="divide-y divide-slate-100">
             {clients.map((c) => (
-              <Tr key={c.id}>
+              <tr key={c.id} className="hover:bg-slate-50/60" data-find={[c.firstName, c.lastName, c.company, c.email, c.phone, c.city, c.state].filter(Boolean).join(" ").toLowerCase()}>
                 <Td>
                   <Link href={`/clients/${c.id}`} className="font-medium text-slate-900 hover:text-blue-700">
                     {c.firstName} {c.lastName}
@@ -94,9 +68,9 @@ export default async function ClientsPage({ searchParams }: { searchParams: Prom
                 <Td right>{c._count.projects}</Td>
                 <Td>{c.userId ? <Badge status="CLIENT">Portal</Badge> : <span className="text-slate-400">—</span>}</Td>
                 <Td className="whitespace-nowrap">{fmtDate(c.createdAt)}</Td>
-              </Tr>
+              </tr>
             ))}
-          </TBody>
+          </tbody>
         </Table>
       )}
     </div>

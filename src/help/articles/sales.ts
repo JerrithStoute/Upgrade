@@ -98,7 +98,7 @@ export const SALES: HelpArticle[] = [
       {
         heading: "The list",
         items: [
-          { name: "Search", what: "Finds clients by name, company, email, phone or city." },
+          { name: "Search", what: "Narrows the list as you type: name, company, email, phone or city. **Esc** or the **×** clears it." },
           { name: "Portal", what: "A badge on clients who have a portal sign-in." },
         ],
       },
