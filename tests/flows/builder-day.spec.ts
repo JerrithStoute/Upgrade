@@ -292,6 +292,26 @@ test("reports a problem", async () => {
   await page.getByRole("dialog").getByRole("button", { name: "Close" }).last().click();
 });
 
+test("starts a spec home and sets its listing right on the Spec sale tab", async () => {
+  await page.goto("/projects/new?kind=spec");
+  await page.locator("[name=name]").fill("Lot 7 Spec");
+  await page.getByRole("button", { name: "Create project" }).click();
+  await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+/);
+  const spec = new URL(page.url()).pathname.replace(/\/estimate$/, "");
+  await page.goto(`${spec}/spec`);
+  const listing = page.locator("#listing");
+  await listing.getByRole("link", { name: "Edit" }).click();
+  await listing.locator("[name=listPrice]").fill("389900");
+  await listing.getByRole("button", { name: "Save" }).click();
+  await expect(listing.getByText("$389,900")).toBeVisible();
+  await expect(listing.locator("[name=listPrice]")).toHaveCount(0);
+  await page.locator("#carrying").getByRole("link", { name: "+ Add a carrying cost" }).click();
+  await page.locator("#new-carrying [name=name]").fill("Utilities");
+  await page.locator("#new-carrying [name=amount]").fill("140");
+  await page.locator("#new-carrying").getByRole("button", { name: "Add" }).click();
+  await expect(page.locator("#carrying").getByText("Utilities", { exact: true })).toBeVisible();
+});
+
 test("removes the sample job", async () => {
   await page.goto("/dashboard");
   await page.getByRole("link", { name: "Explore the sample job" }).click();

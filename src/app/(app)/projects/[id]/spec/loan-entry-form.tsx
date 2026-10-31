@@ -15,7 +15,7 @@ const KINDS = [
 export function LoanEntryForm({ action, projectId, carryingCostId, today }: { action: (fd: FormData) => Promise<void>; projectId: string; carryingCostId: string; today: string }) {
   const [kind, setKind] = useState<(typeof KINDS)[number][0]>("DRAW");
   return (
-    <form action={action} className="flex flex-wrap items-end gap-2">
+    <form action={action} className="flex flex-wrap items-end gap-2 [&_.input]:!h-8 [&_.input]:!py-0 [&_.input]:text-sm [&_.label]:!normal-case [&_.label]:!tracking-normal">
       <input type="hidden" name="projectId" value={projectId} />
       <input type="hidden" name="carryingCostId" value={carryingCostId} />
       <input type="hidden" name="kind" value={kind} />
@@ -49,7 +49,7 @@ export function LoanEntryForm({ action, projectId, carryingCostId, today }: { ac
         <span className="label">Note (optional)</span>
         <input name="note" className="input" placeholder={kind === "DRAW" ? "e.g. Draw 4 — framing" : ""} />
       </label>
-      <SubmitButton size="sm" pendingText="Adding…">
+      <SubmitButton size="sm" variant="secondary" className="!h-7 !px-2.5 !text-xs" pendingText="Adding…">
         Add
       </SubmitButton>
     </form>

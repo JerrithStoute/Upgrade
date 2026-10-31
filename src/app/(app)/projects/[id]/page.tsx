@@ -6,8 +6,9 @@ import { changeOrderTotals } from "@/lib/change-orders";
 import { db } from "@/lib/db";
 import { getProject, projectFinancials, staffUsers } from "@/lib/projects";
 import { avgTaskProgress } from "@/lib/project-progress";
-import { cn, fmtDate, money, num, timeAgo } from "@/lib/utils";
+import { fmtDate, money, num, timeAgo } from "@/lib/utils";
 import { Badge, ConfirmForm, Progress } from "@/components/ui";
+import { Tile } from "@/components/ui/tile";
 import { companyClock } from "@/lib/company-zone";
 import { siteAddressOf } from "@/lib/job-site";
 import { vendorChoices } from "@/lib/paperwork-server";
@@ -40,17 +41,6 @@ function Box({ title, note, href, link, children }: { title: string; note?: stri
 
 function Empty({ children }: { children: React.ReactNode }) {
   return <p className="px-4 py-2.5 text-sm text-slate-500">{children}</p>;
-}
-
-/** A number across the top: small, like the rest of the page. */
-function Tile({ label, value, hint, tone }: { label: string; value: React.ReactNode; hint?: React.ReactNode; tone?: "good" | "bad" | "warn" }) {
-  return (
-    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
-      <p className="text-xs text-slate-500">{label}</p>
-      <p className={cn("text-lg font-semibold tabular-nums", tone === "good" ? "text-emerald-700" : tone === "bad" ? "text-rose-700" : tone === "warn" ? "text-amber-700" : "text-slate-900")}>{value}</p>
-      {hint ? <p className="text-xs text-slate-500">{hint}</p> : null}
-    </div>
-  );
 }
 
 /**

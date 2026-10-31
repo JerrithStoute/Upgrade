@@ -59,9 +59,9 @@ export const FINANCIALS_2: HelpArticle[] = [
     how: [
       "Start the job as a **Spec home** (or mark a job as one on the **Spec homes** page).",
       "On the job's **Spec sale** tab, add the carrying costs, such as the construction loan's interest and insurance.",
-      "When it's listed, fill in **Listing & selling costs**: list price, commissions, closing costs, prorations.",
+      "When it's listed, click **Edit** on **Listing and selling costs**: list price, commissions, closing costs, prorations. **Save** keeps you on the tab.",
       "An offer comes in? Click **Work out an offer**, type the price and terms, and see your profit and a counter price.",
-      "When it closes, fill in **Sold it?** and click **Mark sold**. The selling costs go on the Budget, so the job's profit is real.",
+      "When it closes, click **Mark sold…**, check the numbers (filled in from the accepted offer), and click **Mark sold**. The selling costs go on the Budget, so the job's profit is real.",
     ],
     sections: [
       {
@@ -79,12 +79,12 @@ export const FINANCIALS_2: HelpArticle[] = [
           {
             name: "Carrying costs",
             what: "What the house costs to hold. Each month's charge goes on the Budget under its cost code.",
-            how: "**Add a carrying cost**: name it, choose **Loan interest** (balance and rate) or **An amount** (a month, a year, or once), the dates, and the cost code.",
+            how: "**+ Add a carrying cost** (under the table): name it, choose **Loan interest** (balance and rate) or **An amount** (a month, a year, or once), the dates, and the cost code. **Edit** on a line opens it right under that line.",
           },
           { name: "Draws, paydowns, rate changes", what: "On a loan: log each draw as the bank funds it, paydowns and rate changes; interest is worked out on each day's balance. Type the bank's interest for a month to match your statement." },
-          { name: "Listing & selling costs", what: "List price and date, listing and buyer's agent %, usual concessions, each closing cost (% or $), and property tax and HOA prorations. Tick the box to use them on your next spec houses." },
-          { name: "Offers", what: "Each offer as it was worked out, with its status: Open, Countered, Accepted, Rejected." },
-          { name: "Sold it? / Mark sold", what: "Sale price, closing date, buyer's agent, concessions, repairs and title. Carrying costs stop and the selling costs go on the Budget. **Back on the market** undoes it." },
+          { name: "Listing and selling costs", what: "Shows the list price and date, commissions, usual concessions, each closing cost (% or $) as a list with its total at the list price, and property tax and HOA prorations. **Edit** turns each line into its box, in the same order; tick the box at the bottom to use them on your next spec houses." },
+          { name: "Offers", what: "Each offer as it was worked out, with its status: Open, Countered, Accepted, Rejected.", how: "**Update** on an offer: pick its status, and for a counter, your counter price." },
+          { name: "Sold it? / Mark sold…", what: "Opens the sale price, closing date, buyer's agent, concessions, repairs and title, filled in from the accepted offer. Carrying costs stop and the selling costs go on the Budget. **Back on the market** undoes it." },
         ],
       },
       {

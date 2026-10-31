@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "@/components/link";
 import { SubmitButton } from "@/components/ui";
 import { UnitInput } from "@/components/ui/unit-input";
 
@@ -27,17 +28,20 @@ export function CarryingForm({
   codes,
   values,
   submitLabel,
+  cancelHref,
 }: {
   action: (fd: FormData) => Promise<void>;
   projectId: string;
   codes: CodeChoice[];
   values: Values;
   submitLabel: string;
+  /** Where Cancel goes (closes the form). */
+  cancelHref?: string;
 }) {
   const [kind, setKind] = useState(values.kind);
   const [name, setName] = useState(values.name);
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className="space-y-2.5 [&_.input]:!h-8 [&_.input]:!py-0 [&_.input]:text-sm [&_.label]:!normal-case [&_.label]:!tracking-normal">
       <input type="hidden" name="projectId" value={projectId} />
       {values.id ? <input type="hidden" name="id" value={values.id} /> : null}
       <input type="hidden" name="kind" value={kind} />
@@ -73,7 +77,7 @@ export function CarryingForm({
                 key={k}
                 type="button"
                 onClick={() => setKind(k)}
-                className={kind === k ? "rounded-md bg-slate-900 px-3 py-1.5 text-white" : "rounded-md px-3 py-1.5 text-slate-600 hover:bg-slate-100"}
+                className={kind === k ? "rounded-md bg-slate-900 px-2.5 py-1 text-xs text-white" : "rounded-md px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100"}
               >
                 {label}
               </button>
@@ -122,9 +126,18 @@ export function CarryingForm({
             ))}
           </select>
         </label>
-        <SubmitButton size="sm" pendingText="Saving…">
-          {submitLabel}
-        </SubmitButton>
+      </div>
+      <div className="flex gap-1.5 border-t border-slate-100 pt-2">
+        <span className="flex gap-1.5">
+          <SubmitButton size="sm" className="!h-7 !px-2.5 !text-xs" pendingText="Saving…">
+            {submitLabel}
+          </SubmitButton>
+          {cancelHref ? (
+            <Link href={cancelHref} scroll={false} className="inline-flex h-7 items-center rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+              Cancel
+            </Link>
+          ) : null}
+        </span>
       </div>
     </form>
   );
