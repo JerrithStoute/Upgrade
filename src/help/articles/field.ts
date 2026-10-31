@@ -205,9 +205,9 @@ export const FIELD: HelpArticle[] = [
     what: "After move-in, your client reports anything that needs fixing from their portal's **Warranty** tab, with photos. You send a sub or someone on your team, set the day, and close it out when it's fixed. **Warranty** in the menu lists every job's requests; a finished job's **Warranty** tab lists that job's.",
     how: [
       "When a job is finished, set its completed date (job → **Details** → **Edit**: pick **Completed** as the status and the **Completed** date shows). The warranty runs from that day, for the months in **Settings → Company**. The job gets a **Warranty** tab and the client's portal gets one too.",
-      "Your client reports something from their portal. The job's manager (or, with no manager, the admins) gets an email right away. A phone call? Add it yourself: **Add a warranty request** on the job's Warranty tab.",
-      "Open the request. Under **Who's fixing it**, pick a sub, someone on your team, or both, and the day, then click **Save**. The sub gets an email and sees it on their portal's **Warranty** page. The client gets an email with the day.",
-      "When it's fixed, under **Close it out** pick **Done** (or **Not covered**), say what was done, add after photos, and click **Close request**. A sub can also mark it done from their portal.",
+      "Your client reports something from their portal. The job's manager (or, with no manager, the admins) gets an email right away. A phone call? Add it yourself: **+ Add a request** on the job's Warranty tab (Cancel at the top closes it).",
+      "Open the request. Click **Edit** on **Who's fixing it**, pick a sub, someone on your team, or both, and the day, then click **Save**. The sub gets an email and sees it on their portal's **Warranty** page. The client gets an email with the day.",
+      "When it's fixed, click **Mark done…** at the top (or **Not covered…**), say what was done, add after photos, and click **Mark done**. A sub can also mark it done from their portal.",
     ],
     sections: [
       {
@@ -215,9 +215,9 @@ export const FIELD: HelpArticle[] = [
         items: [
           { name: "New / Scheduled / Done / Not covered", what: "Where it stands. It's **Scheduled** once it has a day. The client and the sub see the same words." },
           { name: "Urgent", what: "Water, no heat or power, something unsafe. Urgent ones go to the top of every list." },
-          { name: "Change what it says", what: "Fix the title, where in the house, or the details. **Delete request** is for one added by mistake (its photos stay in the job's Files, folder Warranty)." },
+          { name: "The request / Edit", what: "What, where, urgent, details, photos, who reported it and the homeowner's phone. **Edit** turns those rows into boxes; **Delete request** (inside Edit) is for one added by mistake (its photos stay in the job's Files, folder Warranty)." },
           { name: "Who's fixing it", what: "A sub (from Directory → Subs & vendors), someone on your team, and the day. **Email the client the day** tells them when someone's coming." },
-          { name: "Close it out", what: "**Done** or **Not covered**, with what was done or why not. The client reads it, so write it for them. **Reopen** puts it back on the list." },
+          { name: "Mark done… / Not covered…", what: "With what was done or why not. The client reads it, so write it for them. **Reopen** (top right once it's closed) puts it back on the list." },
           { name: "Notes", what: "Back and forth about the request, with photos. The client sees them unless you tick **Team only**. Notes from a sub are always team only, so you decide what the client hears." },
         ],
       },
@@ -232,7 +232,8 @@ export const FIELD: HelpArticle[] = [
       {
         heading: "The Warranty page (menu)",
         items: [
-          { name: "Open / Closed / All", what: "Which requests to show, across every job." },
+          { name: "Open / Closed / All", what: "Which requests to show, across every job. The job's Warranty tab has the same, with counts at the top." },
+          { name: "Find", what: "Type a job, what it is, or who's fixing it, and the list narrows as you type." },
           { name: "Who's fixing it", what: "The sub and team member on each, and its day." },
         ],
       },

@@ -82,8 +82,11 @@ export default async function TimeClockPage() {
         title="Time clock"
         actions={
           canManageTime(user) ? (
-            <Link href="/time/sheets" className="flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:underline">
-              <ClipboardList className="h-4 w-4" /> Timesheets
+            <Link
+              href="/time/sheets"
+              className="inline-flex h-7 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              <ClipboardList className="h-3.5 w-3.5" /> Timesheets
             </Link>
           ) : null
         }

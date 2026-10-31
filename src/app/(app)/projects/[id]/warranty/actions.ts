@@ -72,6 +72,8 @@ export const assignWarranty = friendly(async function assignWarranty(fd: FormDat
   if (scheduledFor && dayChanged && fd.get("tellClient") === "on") await emailWarrantyToClient(w.id, user, "SCHEDULED");
   await logActivity({ projectId: w.projectId, userId: user.id, type: "warranty.updated", description: `Warranty ${warrantyNo(w.number)}: ${warrantyLabel(status)}${scheduledFor ? ` for ${scheduledFor.toLocaleDateString()}` : ""}` });
   revalidate(w.projectId);
+  // Back to the request with the box closed.
+  redirect(`/projects/${w.projectId}/warranty/${w.id}`);
 });
 
 /** Done, or not covered — with what was done (or why not). The client is told unless you say not to. */
@@ -86,6 +88,8 @@ export const closeWarranty = friendly(async function closeWarranty(fd: FormData)
   if (fd.get("tellClient") === "on") await emailWarrantyToClient(w.id, user, status);
   await logActivity({ projectId: w.projectId, userId: user.id, type: "warranty.closed", description: `Warranty ${warrantyNo(w.number)} ${warrantyLabel(status).toLowerCase()}: ${w.title}` });
   revalidate(w.projectId);
+  // Back to the request with the box closed.
+  redirect(`/projects/${w.projectId}/warranty/${w.id}`);
 });
 
 /** Back to open: Scheduled if it still has a day, else New. */
@@ -122,6 +126,8 @@ export const editWarranty = friendly(async function editWarranty(fd: FormData) {
     data: { title, location: strOrNull(fd, "location")?.slice(0, 120) ?? null, description: strOrNull(fd, "description")?.slice(0, 4000) ?? null, urgent: fd.get("urgent") === "on" },
   });
   revalidate(w.projectId);
+  // Back to the request with the box closed.
+  redirect(`/projects/${w.projectId}/warranty/${w.id}`);
 });
 
 /** Gone for good (added by mistake). Its photos stay in the job's Files. */

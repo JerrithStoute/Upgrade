@@ -1,12 +1,12 @@
 import Link from "@/components/link";
-import { ShieldCheck } from "lucide-react";
 import type { Prisma } from "@prisma/client";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { cn, fmtDate } from "@/lib/utils";
-import { isOpen, OPEN_WARRANTY, sortWarranty, warrantyNo } from "@/lib/warranty";
-import { Card, CardBody, EmptyState, PageHeader, Table, TBody, Td, Th, THead, Tr } from "@/components/ui";
-import { WarrantyStatus } from "@/components/warranty/parts";
+import { cn } from "@/lib/utils";
+import { OPEN_WARRANTY, sortWarranty } from "@/lib/warranty";
+import { PageHeader } from "@/components/ui";
+import { ListFind } from "@/components/list-find";
+import { WarrantyTable } from "@/components/warranty/table";
 
 export const metadata = { title: "Warranty" };
 
@@ -34,65 +34,33 @@ export default async function WarrantyPage({ searchParams }: { searchParams: Pro
   return (
     <div className="space-y-4">
       <PageHeader title="Warranty" description="Requests from every finished job — the client's, from their portal, and the ones you add on a job's Warranty tab." />
-      <nav className="flex gap-1" aria-label="Show">
-        {SHOWS.map((s) => (
-          <Link
-            key={s.key}
-            href={s.key === "open" ? "/warranty" : `/warranty?show=${s.key}`}
-            className={cn("rounded-md px-3 py-1.5 text-sm font-medium", show === s.key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}
-          >
-            {s.label}
-          </Link>
-        ))}
-      </nav>
-      {rows.length === 0 ? (
-        <EmptyState
-          icon={ShieldCheck}
-          title={show === "open" ? "Nothing to fix right now" : "No warranty requests"}
-          description="When a client reports something from their portal, it shows here and on the job's Warranty tab."
-        />
-      ) : (
-        <Card>
-          <CardBody className="p-0">
-            <Table>
-              <THead>
-                <tr>
-                  <Th>#</Th>
-                  <Th>Job</Th>
-                  <Th>What</Th>
-                  <Th>Status</Th>
-                  <Th>Who&apos;s fixing it</Th>
-                  <Th>Reported</Th>
-                </tr>
-              </THead>
-              <TBody>
-                {rows.map((r) => (
-                  <Tr key={r.id} className={cn(!isOpen(r.status) && "text-slate-500")}>
-                    <Td className="whitespace-nowrap text-xs text-slate-500">{warrantyNo(r.number)}</Td>
-                    <Td className="text-sm">
-                      <Link href={`/projects/${r.project.id}/warranty`} className="hover:underline">
-                        #{r.project.number} {r.project.name}
-                      </Link>
-                    </Td>
-                    <Td>
-                      <Link href={`/projects/${r.project.id}/warranty/${r.id}`} className="font-medium text-blue-700 hover:underline">
-                        {r.title}
-                      </Link>
-                      {r.location ? <span className="block text-xs text-slate-500">{r.location}</span> : null}
-                    </Td>
-                    <Td>
-                      <WarrantyStatus status={r.status} urgent={r.urgent} />
-                      {r.status === "SCHEDULED" && r.scheduledFor ? <span className="block text-xs text-slate-500">{fmtDate(r.scheduledFor, "EEE, MMM d")}</span> : null}
-                    </Td>
-                    <Td className="text-sm">{[r.vendor?.name, r.assignee?.name].filter(Boolean).join(" · ") || <span className="text-slate-400">Nobody yet</span>}</Td>
-                    <Td className="whitespace-nowrap text-xs">{fmtDate(r.createdAt)}</Td>
-                  </Tr>
-                ))}
-              </TBody>
-            </Table>
-          </CardBody>
-        </Card>
-      )}
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+          <ListFind listId="warranty-list" placeholder="Find by job, what, or who's fixing it…" />
+          <nav className="flex gap-1" aria-label="Show">
+            {SHOWS.map((s) => (
+              <Link
+                key={s.key}
+                href={s.key === "open" ? "/warranty" : `/warranty?show=${s.key}`}
+                className={cn("rounded-md px-2.5 py-1 text-xs font-medium", show === s.key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}
+              >
+                {s.label}
+              </Link>
+            ))}
+          </nav>
+        </header>
+        <div id="warranty-list">
+          <WarrantyTable
+            rows={rows}
+            showJob
+            empty={
+              show === "open"
+                ? "Nothing to fix right now. When a client reports something from their portal, it shows here and on the job's Warranty tab."
+                : "No warranty requests."
+            }
+          />
+        </div>
+      </section>
     </div>
   );
 }

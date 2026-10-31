@@ -15,7 +15,7 @@ export function WarrantyStatus({ status, urgent }: { status: string; urgent?: bo
 }
 
 /** Its photos (and any PDF): small pictures that open full size. */
-export function WarrantyPhotos({ files }: { files: { id: string; name: string; mimeType: string }[] }) {
+export function WarrantyPhotos({ files, small }: { files: { id: string; name: string; mimeType: string }[]; small?: boolean }) {
   if (!files.length) return null;
   return (
     <ul className="flex flex-wrap gap-2">
@@ -24,9 +24,9 @@ export function WarrantyPhotos({ files }: { files: { id: string; name: string; m
           <a href={`/api/files/${f.id}?open=1`} target="_blank" rel="noreferrer" title={f.name} className="block">
             {f.mimeType.startsWith("image/") && f.mimeType !== "image/heic" ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={`/api/files/${f.id}`} alt={f.name} className="h-20 w-20 rounded-md object-cover ring-1 ring-slate-200" />
+              <img src={`/api/files/${f.id}`} alt={f.name} className={cn("rounded-md object-cover ring-1 ring-slate-200", small ? "h-12 w-12" : "h-20 w-20")} />
             ) : (
-              <span className="flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-md bg-slate-50 px-1 text-center text-[10px] text-slate-600 ring-1 ring-slate-200">
+              <span className={cn("flex flex-col items-center justify-center gap-1 rounded-md bg-slate-50 px-1 text-center text-[10px] text-slate-600 ring-1 ring-slate-200", small ? "h-12 w-12" : "h-20 w-20")}>
                 <FileText className="h-5 w-5 text-slate-400" />
                 <span className="line-clamp-2 break-all">{f.name}</span>
               </span>
@@ -61,8 +61,23 @@ export function WarrantyNotes({ notes, showTeamOnly, dateTime }: { notes: Note[]
   );
 }
 
-/** The photo picker every warranty form uses. */
-export function PhotoInput({ id = "photos", label = "Photos" }: { id?: string; label?: string }) {
+/** The photo picker every warranty form uses. `compact`: no label of its own (it sits in a labelled row). */
+export function PhotoInput({ id = "photos", label = "Photos", compact }: { id?: string; label?: string; compact?: boolean }) {
+  if (compact)
+    return (
+      <div>
+        <input
+          id={id}
+          name="photos"
+          type="file"
+          multiple
+          accept="image/*,.heic,.pdf"
+          aria-label={label}
+          className="block w-full text-xs text-slate-600 file:mr-2 file:h-7 file:rounded-md file:border file:border-solid file:border-slate-300 file:bg-white file:px-2.5 file:text-xs file:font-medium file:text-slate-700 hover:file:bg-slate-50"
+        />
+        <p className="mt-0.5 text-xs text-slate-500">Up to 10. A picture saves a lot of explaining.</p>
+      </div>
+    );
   return (
     <div>
       <label className="label" htmlFor={id}>

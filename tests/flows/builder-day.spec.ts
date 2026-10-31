@@ -193,16 +193,21 @@ test("enters a bill against the job", async () => {
 
 test("logs a warranty request, sends someone, and closes it", async () => {
   await page.goto(`${job}/warranty`);
+  await page.getByRole("link", { name: "Add a request" }).click();
   await page.getByLabel("What needs fixing?").fill("Door sticks");
   await page.getByLabel("Where in the house?").fill("Back door");
   await page.getByRole("button", { name: "Add request" }).click();
   await expect(page).toHaveURL(/\/warranty\/c[a-z0-9]+$/);
+  // Who's fixing it: Edit opens the rows as boxes, Save closes them again.
+  await page.locator("section").filter({ hasText: "Who's fixing it" }).getByRole("link", { name: "Edit" }).click();
   await page.getByLabel("Someone on your team").selectOption({ label: "Flo Tester" });
   await page.getByLabel("Day", { exact: true }).fill("2026-11-02");
-  await page.getByRole("button", { name: "Save", exact: true }).last().click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Scheduled", { exact: true }).first()).toBeVisible();
-  await page.getByLabel("What was done (or why it isn't covered)").fill("Planed the door and adjusted the hinges.");
-  await page.getByRole("button", { name: "Close request" }).click();
+  await expect(page.getByText("Mon, Nov 2")).toBeVisible();
+  await page.getByRole("link", { name: "Mark done…" }).click();
+  await page.getByLabel("What was done").fill("Planed the door and adjusted the hinges.");
+  await page.getByRole("button", { name: "Mark done", exact: true }).click();
   await expect(page.getByText("Planed the door and adjusted the hinges.")).toBeVisible();
   await page.goto("/warranty?show=done");
   await expect(page.getByRole("link", { name: "Door sticks" })).toBeVisible();

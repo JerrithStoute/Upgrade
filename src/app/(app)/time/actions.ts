@@ -93,10 +93,12 @@ export const saveTimeEntry = friendly(async function saveTimeEntry(fd: FormData)
   const breakMinutes = Math.max(0, intField(fd, "breakMinutes", 0));
   if (outAt && breakMinutes >= (outAt.getTime() - inAt.getTime()) / 60_000) throw new Error("The break is as long as the whole stretch");
   const notes = strOrNull(fd, "notes");
+  let who = userId;
 
   if (id) {
     const had = await db.timeEntry.findUnique({ where: { id } });
     if (!had) throw new Error("That time isn't there any more");
+    who = had.userId;
     if (!outAt && had.clockOut) throw new Error("Put in the time they stopped");
     await db.timeEntry.update({ where: { id }, data: { projectId, costCodeId, clockIn: inAt, clockOut: outAt, breakMinutes, notes, editedById: manager.id } });
     await postLabor([had.clockIn, inAt]);
@@ -111,7 +113,8 @@ export const saveTimeEntry = friendly(async function saveTimeEntry(fd: FormData)
     await postLabor([inAt]);
   }
   refresh();
-  redirect(`/time/sheets?week=${(await weekOf(inAt)).key}`);
+  // Back to the week with this person's punches open.
+  redirect(`/time/sheets?week=${(await weekOf(inAt)).key}&person=${who}`);
 });
 
 export const deleteTimeEntry = friendly(async function deleteTimeEntry(fd: FormData) {
@@ -121,7 +124,7 @@ export const deleteTimeEntry = friendly(async function deleteTimeEntry(fd: FormD
   await db.timeEntry.delete({ where: { id: had.id } });
   await postLabor([had.clockIn]);
   refresh();
-  redirect(`/time/sheets?week=${(await weekOf(had.clockIn)).key}`);
+  redirect(`/time/sheets?week=${(await weekOf(had.clockIn)).key}&person=${had.userId}`);
 });
 
 /** Clock someone out who forgot (at the time given, on the day they clocked in). */

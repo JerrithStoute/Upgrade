@@ -1,22 +1,40 @@
 import Link from "@/components/link";
-import { ShieldCheck } from "lucide-react";
+import { Plus } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { allows } from "@/lib/access";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { companyClock } from "@/lib/company-zone";
 import { cn, fmtDate } from "@/lib/utils";
-import { isOpen, sortWarranty, warrantyNo, warrantyWords } from "@/lib/warranty";
-import { Card, CardBody, Collapsible, EmptyState, Field, SubmitButton, Table, TBody, Td, Th, THead, Tr } from "@/components/ui";
-import { PhotoInput, WarrantyStatus } from "@/components/warranty/parts";
+import { isOpen, sortWarranty, warrantyEnds } from "@/lib/warranty";
+import { SubmitButton } from "@/components/ui";
+import { Tile } from "@/components/ui/tile";
+import { ListFind } from "@/components/list-find";
+import { PhotoInput } from "@/components/warranty/parts";
+import { WarrantyTable } from "@/components/warranty/table";
 import { addWarranty } from "./actions";
 
 export const metadata = { title: "Warranty" };
 
+const small = "!h-7 !px-2.5 !text-xs";
+const card = "rounded-xl border border-slate-200 bg-white shadow-sm";
+const head = "flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5";
+const editLink = "inline-flex shrink-0 items-center gap-1 text-xs font-medium text-blue-700 hover:underline";
+const plainBtn = "inline-flex h-7 items-center gap-1 rounded-md border border-slate-300 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50";
+const compact = "[&_.input]:!h-8 [&_.input]:!py-0 [&_.input]:text-sm [&_.label]:!normal-case [&_.label]:!tracking-normal";
+const row = "grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-2 border-t border-slate-100 py-1 text-sm first:border-t-0";
+
+const SHOWS = [
+  { key: "open", label: "Open" },
+  { key: "done", label: "Closed" },
+  { key: "all", label: "All" },
+] as const;
+
 /** A finished job's warranty requests: the client's (from their portal) and the ones you add. */
-export default async function ProjectWarrantyPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ProjectWarrantyPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ add?: string; show?: string }> }) {
   const user = await requireView("field");
   const { id } = await params;
+  const sp = await searchParams;
   const project = await getProject(id);
   const [rows, company, clock] = await Promise.all([
     db.warrantyRequest.findMany({
@@ -27,100 +45,137 @@ export default async function ProjectWarrantyPage({ params }: { params: Promise<
     companyClock(),
   ]);
   const months = company?.warrantyMonths ?? 12;
-  const period = warrantyWords(project.actualEndDate, months, clock.now, (d) => fmtDate(d));
-  const list = sortWarranty(rows);
-  const open = list.filter((r) => isOpen(r.status)).length;
+  const ends = warrantyEnds(project.actualEndDate, months);
+  const list = sortWarranty(rows).map((r) => ({ ...r, project: { id: project.id, number: project.number, name: project.name } }));
+  const open = list.filter((r) => isOpen(r.status));
   const canEdit = allows(user.access, "field", 2);
+  const adding = canEdit && sp.add === "1";
+  const show = sp.show === "done" || sp.show === "all" ? sp.show : "open";
+  const here = `/projects/${project.id}/warranty`;
+  const showHref = (k: string) => (k === "open" ? here : `${here}?show=${k}`);
+  const shown = show === "open" ? open : show === "done" ? list.filter((r) => !isOpen(r.status)) : list;
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-base font-semibold text-slate-900">Warranty</h2>
-        <p className={cn("text-sm", period.covered === false ? "text-amber-800" : "text-slate-600")}>
-          {period.text}{" "}
-          {period.covered === null && canEdit ? (
-            <Link href={`/projects/${project.id}?edit=1`} className="font-medium text-blue-700 hover:underline">
-              Set the end date
-            </Link>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="flex flex-wrap items-center gap-2 text-base font-semibold text-slate-900">
+          Warranty
+          {ends ? (
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset",
+                ends >= clock.now ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-amber-50 text-amber-900 ring-amber-200",
+              )}
+            >
+              {ends >= clock.now ? `Covered until ${fmtDate(ends)}` : `Ended ${fmtDate(ends)}`}
+            </span>
           ) : (
-            <span className="text-slate-400">({months} months — Settings → Company)</span>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600 ring-1 ring-inset ring-slate-200">Starts when the job is finished</span>
           )}
-        </p>
+          <span className="text-xs font-normal text-slate-400">
+            {months} months —{" "}
+            {ends === null && canEdit ? (
+              <Link href={`/projects/${project.id}?edit=1`} className="text-blue-700 hover:underline">
+                set the completed date
+              </Link>
+            ) : (
+              "Settings → Company"
+            )}
+          </span>
+        </h2>
+        {canEdit && !adding ? (
+          <Link href={`${here}?add=1`} scroll={false} className={plainBtn}>
+            <Plus className="h-3.5 w-3.5" /> Add a request
+          </Link>
+        ) : null}
       </div>
 
-      {canEdit ? (
-        <Collapsible summary="Add a warranty request" defaultOpen={rows.length === 0}>
-          <form action={addWarranty} className="space-y-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <Tile label="Open" value={open.length} />
+        <Tile label="Urgent" value={open.filter((r) => r.urgent).length} tone={open.some((r) => r.urgent) ? "bad" : undefined} />
+        <Tile label="Scheduled" value={open.filter((r) => r.status === "SCHEDULED").length} />
+        <Tile label="Closed" value={list.length - open.length} />
+      </div>
+
+      {adding ? (
+        <section className={card}>
+          <header className={head}>
+            <h3 className="text-sm font-semibold text-slate-900">New request</h3>
+            <Link href={here} scroll={false} className={editLink}>
+              Cancel
+            </Link>
+          </header>
+          <form action={addWarranty} className={cn("px-4 py-2", compact)}>
             <input type="hidden" name="projectId" value={project.id} />
-            <p className="text-sm text-slate-500">
+            <p className="pb-1.5 text-xs text-slate-500">
               From a phone call or a walk-through. {project.clientId ? "Your client can also report them from their portal's Warranty tab." : null}
             </p>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="What needs fixing?" htmlFor="w-title">
-                <input id="w-title" name="title" className="input" required maxLength={200} placeholder="Drywall crack over the stairs" />
-              </Field>
-              <Field label="Where in the house?" htmlFor="w-location">
-                <input id="w-location" name="location" className="input" maxLength={120} placeholder="Stairway" />
-              </Field>
-            </div>
-            <Field label="Details" htmlFor="w-description">
-              <textarea id="w-description" name="description" className="input" rows={3} />
-            </Field>
-            <PhotoInput />
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="urgent" className="h-4 w-4 rounded border-slate-300" /> Urgent — water, no heat, safety
+            <label className={row}>
+              <span className="text-slate-500">What</span>
+              <input name="title" className="input" required maxLength={200} placeholder="Drywall crack over the stairs" aria-label="What needs fixing?" />
             </label>
-            <SubmitButton pendingText="Adding…">Add request</SubmitButton>
+            <label className={row}>
+              <span className="text-slate-500">Where</span>
+              <input name="location" className="input" maxLength={120} placeholder="Stairway" aria-label="Where in the house?" />
+            </label>
+            <label className={cn(row, "items-start")}>
+              <span className="pt-1.5 text-slate-500">Details</span>
+              <textarea name="description" className="input !h-auto !py-1.5" rows={2} aria-label="Details" />
+            </label>
+            <div className={cn(row, "items-start")}>
+              <span className="pt-1 text-slate-500">Photos</span>
+              <PhotoInput compact />
+            </div>
+            <div className={row}>
+              <span />
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="urgent" className="h-4 w-4 rounded border-slate-300" /> Urgent — water, no heat, safety
+              </label>
+            </div>
+            <div className="flex gap-1.5 border-t border-slate-100 pt-2 pb-1">
+              <SubmitButton size="sm" className={small} pendingText="Adding…">
+                Add request
+              </SubmitButton>
+              <Link href={here} scroll={false} className={plainBtn}>
+                Cancel
+              </Link>
+            </div>
           </form>
-        </Collapsible>
+        </section>
       ) : null}
 
-      {list.length === 0 ? (
-        <EmptyState icon={ShieldCheck} title="No warranty requests" description="When your client reports something to fix, or you add one, it shows here until it's done." />
-      ) : (
-        <Card>
-          <CardBody className="p-0">
-            <p className="border-b border-slate-100 px-5 py-2.5 text-sm text-slate-600">
-              {open ? `${open} open` : "Nothing open"} · {list.length} in all
-            </p>
-            <Table>
-              <THead>
-                <tr>
-                  <Th>#</Th>
-                  <Th>What</Th>
-                  <Th>Status</Th>
-                  <Th>Who&apos;s fixing it</Th>
-                  <Th>Reported</Th>
-                </tr>
-              </THead>
-              <TBody>
-                {list.map((r) => (
-                  <Tr key={r.id} className={cn(!isOpen(r.status) && "text-slate-500")}>
-                    <Td className="whitespace-nowrap text-xs text-slate-500">{warrantyNo(r.number)}</Td>
-                    <Td>
-                      <Link href={`/projects/${project.id}/warranty/${r.id}`} className="font-medium text-blue-700 hover:underline">
-                        {r.title}
-                      </Link>
-                      <span className="block text-xs text-slate-500">
-                        {[r.location, r._count.files ? `${r._count.files} photo${r._count.files === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ")}
-                      </span>
-                    </Td>
-                    <Td>
-                      <WarrantyStatus status={r.status} urgent={r.urgent} />
-                      {r.status === "SCHEDULED" && r.scheduledFor ? <span className="block text-xs text-slate-500">{fmtDate(r.scheduledFor, "EEE, MMM d")}</span> : null}
-                    </Td>
-                    <Td className="text-sm">{[r.vendor?.name, r.assignee?.name].filter(Boolean).join(" · ") || <span className="text-slate-400">Nobody yet</span>}</Td>
-                    <Td className="whitespace-nowrap text-xs">
-                      {fmtDate(r.createdAt)}
-                      <span className="block text-slate-400">{r.fromClient ? "by the client" : "by the team"}</span>
-                    </Td>
-                  </Tr>
-                ))}
-              </TBody>
-            </Table>
-          </CardBody>
-        </Card>
-      )}
+      <section className={card}>
+        <header className={head}>
+          <h3 className="text-sm font-semibold text-slate-900">Requests</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            {list.length ? <ListFind listId="job-warranty" placeholder="Find a request…" /> : null}
+            <nav className="flex gap-1" aria-label="Show">
+              {SHOWS.map((s) => (
+                <Link
+                  key={s.key}
+                  href={showHref(s.key)}
+                  scroll={false}
+                  className={cn("rounded-md px-2.5 py-1 text-xs font-medium", show === s.key ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}
+                >
+                  {s.label}
+                </Link>
+              ))}
+            </nav>
+          </div>
+        </header>
+        <div id="job-warranty">
+          <WarrantyTable
+            rows={shown}
+            empty={
+              list.length === 0
+                ? "No warranty requests. When your client reports something to fix, or you add one, it shows here until it's done."
+                : show === "open"
+                  ? "Nothing open."
+                  : "None here."
+            }
+          />
+        </div>
+      </section>
     </div>
   );
 }
