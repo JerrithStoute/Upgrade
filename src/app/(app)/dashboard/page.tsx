@@ -5,7 +5,7 @@ import { AlertTriangle, FileInput, LayoutGrid, ShieldAlert, ShieldCheck } from "
 import { requireStaff } from "@/lib/auth";
 import { allows } from "@/lib/access";
 import { db } from "@/lib/db";
-import { contractValue } from "@/lib/projects";
+import { contractValues } from "@/lib/projects";
 import { scheduleProgressByProject } from "@/lib/project-progress";
 import { cn, fmtDate, money, timeAgo } from "@/lib/utils";
 import { billTotal, coverageWarning, vendorsCoverage } from "@/lib/purchasing";
@@ -73,10 +73,12 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const want = (k: string) => cards.includes(k) && (k !== "vendors" || allows(user.access, "purchasing", 1));
   const now = (await companyClock()).now; // now, on the company's clock (for due / overdue)
 
-  // Only what the picked cards need is loaded.
+  // Only what the picked cards need is loaded. Key numbers and Active projects share one look at the active jobs.
+  let active: ReturnType<typeof activeJobs> | null = null;
+  const jobs = () => (active ??= activeJobs());
   const [cardStats, cardProjects, cardVendors, cardAttention, cardTodos, cardSchedule, cardActivity, cardProfit, cardCash, cardAging, cardSales] = await Promise.all([
-    want("stats") ? statsData(user.id, now) : null,
-    want("projects") ? projectsData() : null,
+    want("stats") ? statsData(user.id, now, jobs()) : null,
+    want("projects") ? projectsData(jobs()) : null,
     want("vendors") ? vendorsData() : null,
     want("attention") ? attentionData(now) : null,
     want("todos")
@@ -494,30 +496,39 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
 
 // --- What each card loads ---------------------------------------------------------------------
 
-async function statsData(userId: string, now: Date) {
-  const [active, invoices, myOpen, myOverdue, pendingSelections, pendingCOs] = await Promise.all([
-    db.project.findMany({ where: { status: { in: ACTIVE }, isTemplate: false }, select: { id: true, contractAmount: true } }),
-    db.invoice.findMany({ where: { status: { not: "VOID" } }, include: { items: true, payments: true } }),
-    db.todo.count({ where: { assigneeId: userId, status: "OPEN" } }),
-    db.todo.count({ where: { assigneeId: userId, status: "OPEN", dueDate: { lt: now } } }),
-    db.selection.count({ where: { status: { in: ["PENDING", "CHOSEN"] } } }),
-    db.changeOrder.count({ where: { status: "PENDING_APPROVAL" } }),
-  ]);
-  const values = await Promise.all(active.map((p) => contractValue(p.id, p.contractAmount)));
-  const receivables = invoices.reduce((s, inv) => s + inv.items.reduce((t, i) => t + i.quantity * i.unitPrice, 0) - inv.payments.reduce((t, p) => t + p.amount, 0), 0);
-  return { activeCount: active.length, activeContractTotal: values.reduce((s, v) => s + v, 0), receivables, myOpen, myOverdue, pendingSelections, pendingCOs };
-}
-
-async function projectsData() {
+/** The active jobs and what each is contracted for (asked once, for both cards that show them). */
+async function activeJobs() {
   const activeProjects = await db.project.findMany({
     where: { status: { in: ACTIVE }, isTemplate: false },
     include: { client: { select: { firstName: true, lastName: true } } },
     orderBy: [{ status: "asc" }, { startDate: "asc" }],
   });
-  const [contractValues, progressMap] = await Promise.all([
-    Promise.all(activeProjects.map((p) => contractValue(p.id, p.contractAmount))),
-    scheduleProgressByProject(activeProjects.map((p) => p.id)),
+  return { activeProjects, contractValues: await contractValues(activeProjects) };
+}
+
+async function statsData(userId: string, now: Date, jobs: ReturnType<typeof activeJobs>) {
+  const [{ contractValues }, invoices, myTodos, pendingSelections, pendingCOs] = await Promise.all([
+    jobs,
+    db.invoice.findMany({ where: { status: { not: "VOID" } }, include: { items: true, payments: true } }),
+    db.todo.findMany({ where: { assigneeId: userId, status: "OPEN" }, select: { dueDate: true } }),
+    db.selection.count({ where: { status: { in: ["PENDING", "CHOSEN"] } } }),
+    db.changeOrder.count({ where: { status: "PENDING_APPROVAL" } }),
   ]);
+  const receivables = invoices.reduce((s, inv) => s + inv.items.reduce((t, i) => t + i.quantity * i.unitPrice, 0) - inv.payments.reduce((t, p) => t + p.amount, 0), 0);
+  return {
+    activeCount: contractValues.length,
+    activeContractTotal: contractValues.reduce((s, v) => s + v, 0),
+    receivables,
+    myOpen: myTodos.length,
+    myOverdue: myTodos.filter((t) => t.dueDate && t.dueDate < now).length,
+    pendingSelections,
+    pendingCOs,
+  };
+}
+
+async function projectsData(jobs: ReturnType<typeof activeJobs>) {
+  const { activeProjects, contractValues } = await jobs;
+  const progressMap = await scheduleProgressByProject(activeProjects.map((p) => p.id));
   return { activeProjects, contractValues, progressMap };
 }
 

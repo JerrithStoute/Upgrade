@@ -1,5 +1,6 @@
 import "server-only";
 import { notFound } from "next/navigation";
+import type { Estimate, EstimateItem } from "@prisma/client";
 import { db } from "./db";
 import { asWholeCompany } from "./tenant";
 import { linePrice } from "./utils";
@@ -26,7 +27,11 @@ export async function approvedEstimateTotal(projectId: string) {
     orderBy: { version: "desc" },
     include: { items: true },
   });
-  if (!est) return 0;
+  return est ? estimatePrice(est) : 0;
+}
+
+/** What an estimate is priced at: its base price, or its lines (optional ones out) plus the table's overhead. */
+function estimatePrice(est: Estimate & { items: EstimateItem[] }) {
   const extras = tableExtras(parseMarkupTable(est.markupTable, est.defaultMarkup), est.items);
   const lines = est.items.filter((i) => !i.isOptional).reduce((s, i) => s + linePrice(i), 0);
   return est.basePrice ?? lines + extras.overheadTotal;
@@ -43,9 +48,32 @@ export async function approvedChangeOrderTotal(projectId: string) {
 
 /** Contract value = approved estimate + approved change orders (falls back to project.contractAmount). */
 export async function contractValue(projectId: string, fallback = 0) {
-  const est = await approvedEstimateTotal(projectId);
-  const cos = await approvedChangeOrderTotal(projectId);
+  const [est, cos] = await Promise.all([approvedEstimateTotal(projectId), approvedChangeOrderTotal(projectId)]);
   return est > 0 ? est + cos : fallback + cos;
+}
+
+/**
+ * contractValue for many jobs at once, in the same order — two database questions in all,
+ * not two per job (the dashboard, Projects and a client's page list many jobs).
+ */
+export async function contractValues(projects: { id: string; contractAmount: number }[]) {
+  if (projects.length === 0) return [];
+  const ids = projects.map((p) => p.id);
+  const [estimates, cos] = await Promise.all([
+    db.estimate.findMany({ where: { projectId: { in: ids }, status: "APPROVED" }, orderBy: { version: "desc" }, include: { items: true } }),
+    db.changeOrder.findMany({ where: { projectId: { in: ids }, status: "APPROVED" }, include: { items: true } }),
+  ]);
+  const est = new Map<string, number>();
+  for (const e of estimates) {
+    if (!est.has(e.projectId)) est.set(e.projectId, estimatePrice(e)); // the newest approved version only
+  }
+  const co = new Map<string, number>();
+  for (const c of cos) co.set(c.projectId, (co.get(c.projectId) ?? 0) + changeOrderTotals(c, c.items).total);
+  return projects.map((p) => {
+    const e = est.get(p.id) ?? 0;
+    const c = co.get(p.id) ?? 0;
+    return e > 0 ? e + c : p.contractAmount + c;
+  });
 }
 
 /** Financial summary used on the project overview and dashboard. */

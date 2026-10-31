@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { KeyRound, Pencil } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { contractValue } from "@/lib/projects";
+import { contractValues } from "@/lib/projects";
 import { fmtDate, money } from "@/lib/utils";
 import {
   Badge,
@@ -33,7 +33,7 @@ export default async function ClientDetailPage({ params, searchParams }: { param
     },
   });
   if (!client) notFound();
-  const values = await Promise.all(client.projects.map((p) => contractValue(p.id, p.contractAmount)));
+  const values = await contractValues(client.projects);
   const address = [client.address, [client.city, client.state].filter(Boolean).join(", "), client.zip].filter(Boolean).join(" · ");
 
   return (

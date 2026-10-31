@@ -3,7 +3,7 @@ import { cookies } from "next/headers";
 import { Plus, Search } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { contractValue, staffUsers } from "@/lib/projects";
+import { contractValues, staffUsers } from "@/lib/projects";
 import { scheduleProgressByProject } from "@/lib/project-progress";
 import { PROJECT_STATUSES } from "@/lib/constants";
 import { cn, fmtDate, money, titleCase } from "@/lib/utils";
@@ -66,7 +66,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   ]);
   const templateCount = await db.project.count({ where: { isTemplate: true } });
 
-  const [values, progressMap] = await Promise.all([Promise.all(projects.map((p) => contractValue(p.id, p.contractAmount))), scheduleProgressByProject(projects.map((p) => p.id))]);
+  const [values, progressMap] = await Promise.all([contractValues(projects), scheduleProgressByProject(projects.map((p) => p.id))]);
 
   const countFor = (s: string) => statusCounts.find((c) => c.status === s)?._count._all ?? 0;
   const total = statusCounts.reduce((s, c) => s + c._count._all, 0);

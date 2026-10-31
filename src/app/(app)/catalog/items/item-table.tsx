@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "@/components/link";
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { Check, Pencil, Trash2, X } from "lucide-react";
 import { UNITS } from "@/lib/constants";
 import { cn, costCodeLabel } from "@/lib/utils";
@@ -57,6 +57,7 @@ export function ItemTable({
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [undo, setUndo] = useState<{ field: ItemCell; prev: { id: string; value: string }[]; text: string } | null>(null);
   const [, startTransition] = useTransition();
+  const codeOptions = useMemo(() => [{ value: "", label: "—" }, ...costCodes.map((c) => ({ value: c.id, label: costCodeLabel(c) }))], [costCodes]);
 
   const groups: [string, ItemRow[]][] = [];
   for (const r of rows) {
@@ -188,20 +189,13 @@ export function ItemTable({
                       </td>
                       <td className="px-2 py-1.5 align-middle">
                         <div className="flex items-center gap-1">
-                          <select
-                            key={i.costCodeId ?? ""}
-                            aria-label={`Cost code for ${i.name}`}
-                            className={cn("input !w-40", cell)}
-                            defaultValue={i.costCodeId ?? ""}
-                            onChange={(e) => save(i.id, "costCodeId", e.target.value)}
-                          >
-                            <option value="">—</option>
-                            {costCodes.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {costCodeLabel(c)}
-                              </option>
-                            ))}
-                          </select>
+                          <RowSelect
+                            label={`Cost code for ${i.name}`}
+                            width="!w-40"
+                            value={i.costCodeId ?? ""}
+                            options={codeOptions}
+                            onSave={(v) => save(i.id, "costCodeId", v)}
+                          />
                           {mark(i.id, "costCodeId")}
                         </div>
                       </td>
@@ -218,19 +212,7 @@ export function ItemTable({
                             onSave={(v) => save(i.id, "unitCost", v)}
                           />
                           <span className="text-slate-400">/</span>
-                          <select
-                            key={i.unit}
-                            aria-label={`Unit for ${i.name}`}
-                            className={cn("input !w-16", cell)}
-                            defaultValue={i.unit}
-                            onChange={(e) => save(i.id, "unit", e.target.value)}
-                          >
-                            {UNITS.map((u) => (
-                              <option key={u} value={u}>
-                                {u}
-                              </option>
-                            ))}
-                          </select>
+                          <RowSelect label={`Unit for ${i.name}`} width="!w-16" value={i.unit} options={UNIT_OPTIONS} onSave={(v) => save(i.id, "unit", v)} />
                           {mark(i.id, "unit")}
                         </div>
                         {i.stale ? (
@@ -327,6 +309,35 @@ function CellStatus({ status }: { status?: Status }) {
     <span title={status.error} className="text-rose-600">
       <X className="h-3.5 w-3.5" aria-label={status.error} />
     </span>
+  );
+}
+
+const UNIT_OPTIONS = UNITS.map((u) => ({ value: u, label: u }));
+
+/**
+ * A row's dropdown. Until it's clicked or tabbed to it holds only its own choice — so a list of
+ * hundreds of items doesn't carry hundreds of copies of the whole cost-code list (it made the
+ * page several megabytes). The full list is there the moment you open it.
+ */
+function RowSelect({ label, width, value, options, onSave }: { label: string; width: string; value: string; options: { value: string; label: string }[]; onSave: (v: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const shown = open ? options : options.filter((o) => o.value === value);
+  return (
+    <select
+      key={value}
+      aria-label={label}
+      className={cn("input", width, cell)}
+      defaultValue={value}
+      onPointerDown={() => setOpen(true)}
+      onFocus={() => setOpen(true)}
+      onChange={(e) => onSave(e.target.value)}
+    >
+      {shown.map((o) => (
+        <option key={o.value} value={o.value}>
+          {o.label}
+        </option>
+      ))}
+    </select>
   );
 }
 
