@@ -42,24 +42,29 @@ export const createClient = friendly(async function createClient(formData: FormD
   redirect(`/clients/${client.id}`);
 });
 
-export const updateClient = friendly(async function updateClient(formData: FormData) {
-  await requireEdit("leads");
-  const id = str(formData, "id");
-  const existing = await db.client.findUnique({ where: { id } });
-  if (!existing) throw new Error("Client not found.");
-  const data = readClientFields(formData);
-  await db.client.update({ where: { id }, data });
-  revalidatePath("/clients");
-  revalidatePath(`/clients/${id}`);
-  redirect(`/clients/${id}`);
-});
+type Result = { ok: true } | { ok: false; error: string };
+
+/** Info edited in place on the client's page: saved, and you stay there. */
+export async function saveClientInfo(fd: FormData): Promise<Result> {
+  try {
+    await requireEdit("leads");
+    const id = str(fd, "id");
+    if (!(await db.client.findUnique({ where: { id }, select: { id: true } }))) throw new Error("Client not found");
+    await db.client.update({ where: { id }, data: readClientFields(fd) });
+    revalidatePath("/clients");
+    revalidatePath(`/clients/${id}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "That didn't save — try again" };
+  }
+}
 
 export const deleteClient = friendly(async function deleteClient(formData: FormData) {
   const user = await requireEdit("leads");
   const id = str(formData, "id");
   const existing = await db.client.findUnique({ where: { id }, include: { _count: { select: { projects: true } } } });
   if (!existing) throw new Error("Client not found.");
-  if (existing._count.projects > 0) throw new Error("This client has projects and cannot be deleted.");
+  if (existing._count.projects > 0) throw new Error("This client has jobs, so they can't be deleted.");
   await db.client.delete({ where: { id } });
   if (existing.userId) await db.user.delete({ where: { id: existing.userId } }).catch(() => undefined);
   await logActivity({

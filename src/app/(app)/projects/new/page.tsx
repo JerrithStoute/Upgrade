@@ -8,9 +8,9 @@ import { PageHeader } from "@/components/ui";
 import { ProjectForm } from "../_components/project-form";
 import { createProject } from "../actions";
 
-export default async function NewProjectPage({ searchParams }: { searchParams: Promise<{ kind?: string }> }) {
+export default async function NewProjectPage({ searchParams }: { searchParams: Promise<{ kind?: string; client?: string }> }) {
   const user = await requireStaff();
-  const { kind } = await searchParams;
+  const { kind, client } = await searchParams;
   const [clients, managers, templates, plans] = await Promise.all([
     db.client.findMany({
       orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
@@ -39,7 +39,7 @@ export default async function NewProjectPage({ searchParams }: { searchParams: P
           </div>
         </div>
       ) : null}
-      <ProjectForm action={createProject} clients={clients} managers={managers} defaultManagerId={user.id} templates={templates} kind={kind} />
+      <ProjectForm action={createProject} clients={clients} managers={managers} defaultManagerId={user.id} templates={templates} kind={kind} defaultClientId={client} />
     </div>
   );
 }

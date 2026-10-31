@@ -18,6 +18,7 @@ export function ProjectForm({
   teamIds,
   templates,
   kind,
+  defaultClientId,
 }: {
   action: (formData: FormData) => Promise<void>;
   project?: Project;
@@ -30,6 +31,8 @@ export function ProjectForm({
   templates?: TemplateOption[];
   /** A new job's kind, already picked: "spec" | "custom" | "remodel". */
   kind?: string;
+  /** A new job started from a client's page: that client, already picked. */
+  defaultClientId?: string;
 }) {
   const editing = Boolean(project);
   return (
@@ -63,7 +66,7 @@ export function ProjectForm({
               <ClientPick
                 id="clientId"
                 clients={clients.map((c) => ({ id: c.id, label: `${c.firstName} ${c.lastName}${c.company ? ` (${c.company})` : ""}` }))}
-                defaultValue={project?.clientId}
+                defaultValue={project?.clientId ?? defaultClientId}
               />
               <p className="mt-1 text-xs text-slate-500">A spec home needs no client. A new one: pick &ldquo;+ New client…&rdquo; at the bottom of the list.</p>
             </Field>

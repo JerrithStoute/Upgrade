@@ -77,11 +77,21 @@ test("adds a client", async () => {
   await expect(page.getByText("Casey Flowers").first()).toBeVisible();
 });
 
+test("edits the client right on their page, then starts a job from it", async () => {
+  const main = page.locator("main");
+  await main.getByRole("button", { name: "Edit" }).click();
+  await main.locator("[name=phone]").fill("555-0142");
+  await main.getByRole("button", { name: "Save" }).click();
+  await expect(main.getByRole("link", { name: /555-0142/ })).toBeVisible();
+  await expect(page).toHaveURL(/\/clients\/c[a-z0-9]+$/);
+  await main.getByRole("link", { name: "+ Start a job for Casey" }).click();
+  await expect(page).toHaveURL(/\/projects\/new\?client=/);
+});
+
 test("starts a job for that client", async () => {
-  await page.goto("/projects/new");
   await page.getByRole("radio", { name: /^Custom home/ }).click();
   await page.locator("[name=name]").fill("Flowers Residence");
-  await page.locator("[name=clientId]").selectOption({ label: "Casey Flowers" });
+  await expect(page.locator("[name=clientId] option:checked")).toHaveText("Casey Flowers");
   await page.getByRole("button", { name: "Create project" }).click();
   await expect(page).toHaveURL(/\/projects\/c[a-z0-9]+$/);
   job = new URL(page.url()).pathname;

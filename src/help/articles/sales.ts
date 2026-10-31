@@ -92,7 +92,7 @@ export const SALES: HelpArticle[] = [
     how: [
       "Click **Directory** (the Clients tab), then **+ New client**. Making a job? Pick **+ New client…** at the bottom of its client list instead — you stay on the job. (A lead that becomes a job makes its client by itself.)",
       "Fill in their name, contact details and address, and click **Create client**.",
-      "On the client's page, type their email under **Client portal access** and click **Invite to the client portal**. They get an email to choose their own password.",
+      "On the client's page, their email is already in the **Client portal** box: click **Invite**. They get an email to choose their own password.",
     ],
     sections: [
       {
@@ -105,12 +105,12 @@ export const SALES: HelpArticle[] = [
       {
         heading: "A client's page",
         items: [
-          { name: "Projects", what: "Their jobs, with status and contract value." },
-          { name: "Edit", what: "Name, company, source, email, phone, address and notes (gate codes, preferences)." },
-          { name: "Invite to the client portal", what: "Emails them a link to choose their own password. A waiting invite can be resent or cancelled." },
-          { name: "Email a password reset link", what: "For a client who forgot their password." },
-          { name: "Revoke access", what: "Deletes their portal sign-in." },
-          { name: "Delete client", what: "On Edit. Only a client with no projects can be deleted." },
+          { name: "Tags under the name", what: "Their portal (signed in, invited, or none yet), how many jobs, and where they came from." },
+          { name: "Info / Edit", what: "Name, company, email, phone, address, source and notes (gate codes, preferences). **Edit** turns the box into fields; **Save** keeps you on their page." },
+          { name: "Client portal: Invite", what: "Emails them a link to choose their own password. A waiting invite shows with **Resend** and **Cancel**." },
+          { name: "Send password reset", what: "For a client who forgot their password. **Remove sign-in** deletes their portal sign-in; you can invite them again later." },
+          { name: "Jobs", what: "Their jobs, with status, start and contract value. **+ Start a job for them** opens a new job with this client already picked." },
+          { name: "Delete", what: "Top right. Only a client with no jobs can be deleted." },
         ],
       },
     ],
