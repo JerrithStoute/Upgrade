@@ -144,7 +144,7 @@ export const FINANCIALS_2: HelpArticle[] = [
     area: "reports",
     pages: ["/reports", "/reports/*"],
     what: "**Reports** show how the company is doing, worked out from your estimates, change orders, costs, bills, invoices and payments: profit by job, work in progress, cash flow, what clients owe, and your sales.",
-    how: ["Click **Reports** in the menu.", "Pick a report from the tabs.", "**Print / PDF** prints any of them."],
+    how: ["Click **Reports** in the menu.", "Pick a report from the tabs.", "On Job profit, WIP and What clients owe, type in the find box to narrow the list to a job or client as you type.", "**Print / PDF** prints any of them."],
     sections: [
       {
         heading: "The reports",
@@ -152,8 +152,8 @@ export const FINANCIALS_2: HelpArticle[] = [
           { name: "Job profit", what: "Each job's contract, budget cost, bid profit, cost so far, what it's heading for, and the **fade** (profit lost against the bid). Pink rows are fading. Show all sold jobs, active or finished." },
           { name: "WIP (over / under billing)", what: "For active jobs: % done (by cost), what's been earned, and whether you've billed ahead of the work (over-billed) or behind it (under-billed). **Bill it** starts an invoice. Pick an **As of** date." },
           { name: "Cash flow", what: "Money in and out by month or week: actual for the past, expected from now on (open invoices and unpaid bills by due date). Type your bank balance to see the lowest point ahead." },
-          { name: "What clients owe (AR aging)", what: "Every sent, unpaid invoice by client and how late it is: not due, 1–30, 31–60, 61–90 and over 90 days." },
-          { name: "Sales & win rate", what: "Win rate, wins, days from first call to won, the pipeline now, why you lose, and results by lead source and by month." },
+          { name: "What clients owe", what: "Accounts receivable aging: every sent, unpaid invoice by client and how late it is: not due, 1–30, 31–60, 61–90 and over 90 days." },
+          { name: "Sales and win rate", what: "Win rate, wins, days from first call to won, the pipeline now, why you lose, and results by lead source and by month." },
         ],
       },
     ],

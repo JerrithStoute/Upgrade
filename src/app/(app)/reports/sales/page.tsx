@@ -3,7 +3,7 @@ import { db } from "@/lib/db";
 import { syncLeadStages } from "@/lib/leads";
 import { LEAD_STAGES, OPEN_STAGES, daysBetween, winRate } from "@/lib/leads-math";
 import { money } from "@/lib/utils";
-import { Stat } from "@/components/ui";
+import { Tile } from "@/components/ui/tile";
 import { PrintButton } from "../../projects/[id]/_components/print-button";
 import { Chips, Explain, pctText } from "../_parts";
 import { requireView } from "@/lib/auth";
@@ -60,11 +60,11 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
   const reasons = new Map<string, number>();
   for (const l of decided.filter((x) => x.stage === "LOST")) reasons.set(l.lostReason || "No reason given", (reasons.get(l.lostReason || "No reason given") ?? 0) + 1);
   const lostTotal = [...reasons.values()].reduce((n, c) => n + c, 0);
-  const th = "px-3 py-2.5 font-medium";
+  const th = "px-3 py-2 font-normal";
   const td = "px-3 py-2 text-right tabular-nums";
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Chips
           base="/reports/sales"
@@ -76,7 +76,7 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
             { value: "all", label: "All time" },
           ]}
         />
-        <PrintButton label="Print / PDF" />
+        <PrintButton label="Print / PDF" small />
       </div>
       <Explain>
         <strong>Win rate</strong> = won ÷ (won + lost), counting leads decided in the period. Leads still open don&apos;t count either way. Values are each lead&apos;s rough
@@ -87,9 +87,9 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
         .
       </Explain>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Win rate" value={pctText(rate.rate, 0)} hint={`${rate.won} won · ${rate.lost} lost`} tone="good" />
-        <Stat
+      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+        <Tile label="Win rate" value={pctText(rate.rate, 0)} hint={`${rate.won} won · ${rate.lost} lost`} tone="good" />
+        <Tile
           label="Won"
           value={money(
             won.reduce((n, l) => n + (l.value ?? 0), 0),
@@ -97,8 +97,8 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
           )}
           hint={`${won.length} job${won.length === 1 ? "" : "s"}`}
         />
-        <Stat label="Days to win" value={avgDays ?? "—"} hint="Average, first call to won" />
-        <Stat
+        <Tile label="Days to win" value={avgDays ?? "—"} hint="Average, first call to won" />
+        <Tile
           label="Open pipeline"
           value={money(
             open.reduce((n, l) => n + (l.value ?? 0), 0),
@@ -108,11 +108,11 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
         />
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <h2 className="px-4 pt-3 text-sm font-semibold text-slate-900">Pipeline now</h2>
+          <h2 className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900">Pipeline now</h2>
           <table className="w-full text-left text-sm">
-            <thead className="text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-100 text-xs text-slate-500">
               <tr>
                 <th className={th}>Stage</th>
                 <th className={`${th} text-right`}>Leads</th>
@@ -140,7 +140,7 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
         </section>
 
         <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-          <h2 className="px-4 pt-3 text-sm font-semibold text-slate-900">Why you lose</h2>
+          <h2 className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900">Why you lose</h2>
           {lostTotal === 0 ? (
             <p className="px-4 py-4 text-sm text-slate-500">No lost leads in this period.</p>
           ) : (
@@ -166,9 +166,9 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
       </div>
 
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <h2 className="px-4 pt-3 text-sm font-semibold text-slate-900">By lead source</h2>
+        <h2 className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900">By lead source</h2>
         <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b border-slate-100 text-xs text-slate-500">
             <tr>
               <th className={th}>Source</th>
               <th className={`${th} text-right`}>Leads</th>
@@ -203,9 +203,9 @@ export default async function SalesReport({ searchParams }: { searchParams: Prom
       </section>
 
       <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-        <h2 className="px-4 pt-3 text-sm font-semibold text-slate-900">By month</h2>
+        <h2 className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900">By month</h2>
         <table className="w-full min-w-[640px] text-left text-sm">
-          <thead className="text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b border-slate-100 text-xs text-slate-500">
             <tr>
               <th className={th}>Month</th>
               <th className={`${th} text-right`}>New leads</th>

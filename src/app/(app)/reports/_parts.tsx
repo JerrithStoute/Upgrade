@@ -33,14 +33,14 @@ export function Chips({
     return s ? `${base}?${s}` : base;
   };
   return (
-    <span className="no-print inline-flex flex-wrap gap-1.5">
+    <span className="no-print inline-flex flex-wrap gap-1">
       {options.map((o) => (
         <Link
           key={o.value}
           href={href(o.value)}
           className={cn(
-            "rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
-            o.value === value ? "bg-slate-900 text-white ring-slate-900" : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50",
+            "inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium",
+            o.value === value ? "border-blue-700 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
           )}
         >
           {o.label}
@@ -54,3 +54,8 @@ export function Chips({
 export function Explain({ children }: { children: React.ReactNode }) {
   return <p className="max-w-4xl text-xs leading-relaxed text-slate-500">{children}</p>;
 }
+
+/** A report's card: its controls across the top, its explanation under them, then the table. */
+export const reportCard = "rounded-xl border border-slate-200 bg-white shadow-sm print:border-0 print:shadow-none";
+export const reportHead = "no-print flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5";
+export const reportNote = "border-b border-slate-100 px-4 py-2";

@@ -81,7 +81,7 @@ export const FIELD: HelpArticle[] = [
       {
         heading: "Look-ahead",
         items: [
-          { name: "This week", what: "Every task under way this week, with job, dates, assignee and progress. Red dates are overdue." },
+          { name: "This week", what: "Every task under way this week, with job, dates, who's on it and progress. Red dates are overdue. Click the job to open its Schedule tab, or the task to open it there." },
           { name: "Each job", what: "A small Gantt of its next four weeks. **Full schedule →** opens the job's Schedule tab." },
         ],
       },

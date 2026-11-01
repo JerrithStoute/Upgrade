@@ -260,6 +260,38 @@ test("enters a sub's bill, approves it, pays it, and deletes it", async () => {
   await expect(page).toHaveURL(/\/purchasing$/);
 });
 
+test("opens the Catalog and Settings homes, and a page in each", async () => {
+  await page.goto("/catalog");
+  await expect(page.getByRole("heading", { name: "Catalog", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: /Item List.*\d+ items?/ })).toBeVisible();
+  await page.getByRole("link", { name: /Item List/ }).click();
+  await expect(page.getByRole("heading", { name: "Item List", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "← Catalog" }).click();
+  await expect(page).toHaveURL(/\/catalog$/);
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: /Lead sources/ }).click();
+  await expect(page.getByRole("link", { name: "← Settings" })).toBeVisible();
+});
+
+test("opens every report", async () => {
+  for (const [path, tab] of [
+    ["/reports", "Job profit"],
+    ["/reports/wip", "WIP (over / under billing)"],
+    ["/reports/cash-flow", "Cash flow"],
+    ["/reports/aging", "What clients owe"],
+    ["/reports/sales", "Sales and win rate"],
+  ]) {
+    await page.goto(path);
+    await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+    await expect(page.getByRole("link", { name: tab })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Print / PDF" })).toBeVisible();
+  }
+  await page.goto("/reports");
+  await page.getByLabel("Search").fill("zz nothing like this");
+  await expect(page.getByText("None match.")).toBeVisible();
+});
+
 test("opens the Bills list", async () => {
   await page.goto("/bills");
   await expect(page.getByRole("heading", { name: "Bills" })).toBeVisible();

@@ -158,16 +158,16 @@ export const SETTINGS: HelpArticle[] = [
     area: null,
     pages: ["/settings"],
     what: "**Settings** is where you set the program up the way your company works, mostly once. It's grouped: Your company, Sales, Estimates & proposals, Jobs, Financials and Connections. You see only the pages your position allows; admins see them all. Your lists and templates (Item List, doors, windows, lumber, templates) are in the **Catalog**.",
-    how: ["Click **Settings** in the menu.", "Pick the page you want to change. Each one has its own article in this manual."],
+    how: ["Click **Settings** in the menu.", "Pick the page you want to change. Each one has its own article in this manual.", "**← Settings** at the top of any Settings page takes you back here."],
     sections: [
       {
         heading: "The pages",
         items: [
-          { name: "Your company", what: "**Company profile** (name, address, logo and colors, time zone, backups) and **Team & positions**." },
+          { name: "Your company", what: "**Company profile** (name, address, logo and colors, time zone, backups), **Security** (two-step sign-in, client portal logins, the sign-in log) and **Email notifications**. Your team and positions are in **Directory → Team**." },
           { name: "Sales", what: "**Lead sources**." },
           { name: "Estimates & proposals", what: "Cost codes, Estimate divisions, Estimate parameters, Markup, margin & tax, Proposal defaults." },
           { name: "Jobs", what: "Work week & delays, Change order defaults, Time clock." },
-          { name: "Financials", what: "Invoices, Vendors." },
+          { name: "Financials", what: "Invoices. Subs and vendors are in the **Directory**." },
           { name: "Connections", what: "QuickBooks." },
         ],
       },
@@ -182,7 +182,11 @@ export const SETTINGS: HelpArticle[] = [
     area: "lists",
     pages: ["/catalog"],
     what: "The **Catalog** is what you build jobs from and work out of every week: your **Item List** and prices, how **Doors** and **Windows** are described, your lumber (**Member sizes**, **Span tables**), and the **templates** new jobs start from (takeoff, estimate and schedule). Settings is the set-once part; the Catalog is the part that grows as you work.",
-    how: ["Click **Catalog** in the menu.", "Pick the page you want. Each one has its own article in this manual."],
+    how: [
+      "Click **Catalog** in the menu.",
+      "Pick the page you want. Each row shows how many it holds (items, parts, sizes, templates), so you can see what's set up. Each page has its own article in this manual.",
+      "**← Catalog** at the top of any Catalog page takes you back here.",
+    ],
     sections: [
       {
         heading: "The pages",

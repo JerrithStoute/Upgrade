@@ -6,7 +6,7 @@ import { db } from "@/lib/db";
 import { fmtDate, cn } from "@/lib/utils";
 import { isTaskOverdue, overlapsRange } from "@/lib/schedule";
 import { Gantt } from "@/components/schedule/gantt";
-import { Card, CardHeader, CardBody, Badge, Table, THead, TBody, Tr, Th, Td, EmptyState, Progress, Avatar } from "@/components/ui";
+import { Card, CardHeader, CardBody, Badge, EmptyState, Progress } from "@/components/ui";
 import { companyClock } from "@/lib/company-zone";
 
 export default async function GlobalSchedulePage() {
@@ -76,57 +76,50 @@ export default async function GlobalSchedulePage() {
                   );
                 })}
               </ul>
-              <div className="hidden md:block">
-                <Table className="rounded-t-none border-0 shadow-none">
-                  <THead>
-                    <tr>
-                      <Th>Project</Th>
-                      <Th>Task</Th>
-                      <Th>Dates</Th>
-                      <Th>Assignee</Th>
-                      <Th>Progress</Th>
+              <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-left text-xs text-slate-500">
+                      <th className="px-4 py-2 font-normal">Job</th>
+                      <th className="px-3 py-2 font-normal">Task</th>
+                      <th className="px-3 py-2 font-normal">Dates</th>
+                      <th className="px-3 py-2 font-normal">Who</th>
+                      <th className="px-4 py-2 font-normal">Progress</th>
                     </tr>
-                  </THead>
-                  <TBody>
+                  </thead>
+                  <tbody>
                     {thisWeek.map((t) => {
                       const od = isTaskOverdue(t, today);
                       return (
-                        <Tr key={t.id}>
-                          <Td>
-                            <Link href={`/projects/${t.project.id}`} className="font-medium text-slate-900 hover:underline">
+                        <tr key={t.id} className="border-b border-slate-100 align-top last:border-b-0">
+                          <td className="px-4 py-2">
+                            <Link href={`/projects/${t.project.id}/schedule`} className="hover:underline">
                               #{t.project.number} {t.project.name}
                             </Link>
-                          </Td>
-                          <Td>
-                            <Link href={`/projects/${t.project.id}/schedule?task=${t.id}`} className="hover:underline">
+                          </td>
+                          <td className="px-3 py-2">
+                            <Link href={`/projects/${t.project.id}/schedule?task=${t.id}`} className="font-medium text-blue-700 hover:underline">
                               {t.isMilestone ? <span className="mr-1 text-violet-600">◆</span> : null}
                               {t.name}
                             </Link>
-                            <span className="ml-2 text-xs text-slate-400">{t.phase}</span>
-                          </Td>
-                          <Td className={cn("whitespace-nowrap", od && "font-medium text-rose-600")}>
+                            {t.phase ? <span className="block text-xs text-slate-500">{t.phase}</span> : null}
+                          </td>
+                          <td className={cn("whitespace-nowrap px-3 py-2", od && "font-medium text-rose-600")}>
                             {t.isMilestone ? fmtDate(t.startDate, "MMM d") : `${fmtDate(t.startDate, "MMM d")} – ${fmtDate(t.endDate, "MMM d")}`}
-                          </Td>
-                          <Td>
-                            {t.assignee ? (
-                              <span className="flex items-center gap-1.5">
-                                <Avatar name={t.assignee.name} className="h-6 w-6 text-[10px]" /> {t.assignee.name}
-                              </span>
-                            ) : (
-                              <span className="text-slate-400">—</span>
-                            )}
-                          </Td>
-                          <Td>
+                            {od ? <span className="block text-xs">overdue</span> : null}
+                          </td>
+                          <td className="px-3 py-2">{t.assignee ? t.assignee.name : <span className="text-slate-400">—</span>}</td>
+                          <td className="px-4 py-2">
                             <div className="flex items-center gap-2">
                               <Progress value={t.percentComplete} color={t.color} className="w-20" />
                               <span className="text-xs tabular-nums text-slate-600">{t.percentComplete}%</span>
                             </div>
-                          </Td>
-                        </Tr>
+                          </td>
+                        </tr>
                       );
                     })}
-                  </TBody>
-                </Table>
+                  </tbody>
+                </table>
               </div>
             </>
           )}
