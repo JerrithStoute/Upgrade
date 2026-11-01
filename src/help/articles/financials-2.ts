@@ -108,7 +108,7 @@ export const FINANCIALS_2: HelpArticle[] = [
     pages: ["/inventory", "/projects/*/materials/inventory"],
     what: "**Inventory** tracks materials you keep on the shelf and what they're worth. Pulling stock to a job charges the job and lowers what its Material list orders; leftovers can go back on the shelf, crediting the job.",
     how: [
-      "Click **Inventory** in the menu. Add what's on your shelves with **Add to inventory** (pick an Item List item so jobs find it).",
+      "Click **Inventory** in the menu. Add what's on your shelves with **+ Add to inventory** (pick an Item List item so jobs find it).",
       "On a job's **Material list**, click **Pull from inventory**, type how many of each to pull, and click **Pull these to the job**.",
       "When a job has leftovers, use **Return leftovers to inventory** on the same screen.",
     ],
@@ -117,10 +117,11 @@ export const FINANCIALS_2: HelpArticle[] = [
         heading: "The Inventory page",
         items: [
           { name: "Worth / Items in stock / Moves", what: "What's on hand is worth (count × average cost), how many items, and every move." },
-          { name: "Add to inventory", what: "Item, how many, unit if it's new, and cost each (blank uses the Item List price)." },
-          { name: "History", what: "An item's last moves: added, pulled to a job, returned, recounted." },
-          { name: "Recount / Set", what: "Records a physical count." },
-          { name: "Remove", what: "Takes an item out of inventory. Jobs it was pulled to keep their cost." },
+          { name: "Find box", what: "Type part of an item's name and the list narrows as you type." },
+          { name: "+ Add to inventory", what: "Opens a small box at the top of the list: item, how many, unit if it's new, cost each (blank uses the Item List price) and a note. **Cancel** closes it." },
+          { name: "Click an item's name", what: "Opens its last moves right under it: added, pulled to a job, returned, counted, with the job, who and the note. Click the name again to close it." },
+          { name: "Count", what: "Opens a line under the item: type how many are on the shelf now and click **Set count**." },
+          { name: "Remove from inventory…", what: "On the Count line. Takes an item out of inventory after asking. Jobs it was pulled to keep their cost." },
         ],
       },
       {

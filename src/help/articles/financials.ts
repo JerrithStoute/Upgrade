@@ -99,7 +99,8 @@ export const FINANCIALS: HelpArticle[] = [
         heading: "Bills on every job",
         text: ["**Bills** in the main menu lists the bills on all your jobs, so whoever pays the bills has one place to work from."],
         items: [
-          { name: "To approve / Approved — to pay / Paid / Rejected", what: "Filters the list by where each bill stands. It opens on **To approve**." },
+          { name: "Find box", what: "Type a job, who sent it, their bill # or a PO number and the list narrows as you type." },
+          { name: "To approve / To pay / Paid / Rejected", what: "The pills above the list show where each bill stands, with how many. It opens on **To approve**. The bottom line totals what's showing." },
           { name: "Approve", what: "Approves a bill right from the list (if you're allowed to approve bills)." },
           { name: "Check # and Paid today", what: "On an approved bill: type the check number and click **Paid today** to mark it paid with today's date." },
         ],
@@ -243,7 +244,7 @@ export const FINANCIALS: HelpArticle[] = [
       },
       {
         heading: "Invoices on every job",
-        text: ["**Invoices** in the main menu lists all invoices with **Outstanding**, **Overdue** and **Paid, last 30 days** totals. Filter by status with the chips. New invoices are always started from a job."],
+        text: ["**Invoices** in the main menu lists all invoices with **Outstanding**, **Overdue** and **Paid, last 30 days** totals. Type in the find box to narrow the list by job, client or title, or click a status pill (All, Draft, Sent and so on). The client shows under each job, a late due date turns red with \"overdue\", and the bottom line totals what's showing. Click a title to open the invoice. New invoices are always started from a job."],
       },
     ],
     tips: [

@@ -178,6 +178,41 @@ test("invoices the client", async () => {
   await page.getByRole("button", { name: "Create invoice" }).click();
   await expect(page).toHaveURL(/\/invoices\/c[a-z0-9]+/);
   await expect(page.getByText("$5,000.00").first()).toBeVisible();
+
+  // It's on the Invoices list in the menu, and the find box narrows to it.
+  await page.goto("/invoices");
+  await page.getByLabel("Search").fill("deposit");
+  await expect(page.getByRole("link", { name: "Deposit" }).first()).toBeVisible();
+  await page.getByLabel("Search").fill("zz nothing like this");
+  await expect(page.getByText("None match.")).toBeVisible();
+});
+
+test("adds to inventory, counts it, and removes it", async () => {
+  await page.goto("/inventory");
+  await page.getByRole("link", { name: "+ Add to inventory" }).click();
+  await page.getByLabel("Item").fill("Flow test studs");
+  await page.getByLabel("How many").fill("10");
+  await page.getByLabel("Unit").fill("ea");
+  await page.getByLabel("Cost each").fill("5");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  const row = page.locator("tbody", { hasText: "Flow test studs" });
+  await expect(row).toContainText("$50.00");
+  await row.getByRole("link", { name: "Count" }).click();
+  await page.getByLabel("Count of Flow test studs").fill("8");
+  await page.getByRole("button", { name: "Set count" }).click();
+  await expect(page.locator("tbody", { hasText: "Flow test studs" })).toContainText("$40.00");
+  await page.locator("tbody", { hasText: "Flow test studs" }).getByRole("link", { name: "Flow test studs" }).click();
+  await expect(page.getByText("Counted −2")).toBeVisible();
+  await page.locator("tbody", { hasText: "Flow test studs" }).getByRole("link", { name: "Count" }).click();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Remove from inventory…" }).click();
+  await expect(page.getByText("Flow test studs")).toHaveCount(0);
+});
+
+test("opens the Bills list", async () => {
+  await page.goto("/bills");
+  await expect(page.getByRole("heading", { name: "Bills" })).toBeVisible();
+  await expect(page.getByRole("link", { name: /To pay/ })).toBeVisible();
 });
 
 test("enters a bill against the job", async () => {

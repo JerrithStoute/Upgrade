@@ -11,7 +11,7 @@ import { averageIn, averageOut } from "./inventory-math";
  */
 
 export const INVENTORY_VENDOR = "Inventory";
-export const MOVE_LABEL: Record<string, string> = { ADD: "Added to stock", PULL: "Pulled to a job", RETURN: "Returned from a job", COUNT: "Recount" };
+export const MOVE_LABEL: Record<string, string> = { ADD: "Added", PULL: "Pulled", RETURN: "Returned", COUNT: "Counted" };
 
 const cents = (n: number) => Math.round(n * 100) / 100;
 

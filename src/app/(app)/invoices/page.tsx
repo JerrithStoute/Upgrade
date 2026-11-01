@@ -1,12 +1,14 @@
 import Link from "@/components/link";
 import { subDays } from "date-fns";
-import { Receipt } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { INVOICE_STATUSES } from "@/lib/constants";
 import { cn, fmtDate, money, titleCase } from "@/lib/utils";
 import { invoiceTotal, isOverdue, paymentsTotal } from "@/lib/finance";
-import { Badge, EmptyState, PageHeader, Stat, Table, THead, TBody, Tr, Th, Td, TFoot } from "@/components/ui";
+import { Badge } from "@/components/ui";
+import { Tile } from "@/components/ui/tile";
+import { ListFind } from "@/components/list-find";
+import { FilterChip } from "@/components/ui/filter-chip";
 import { companyClock } from "@/lib/company-zone";
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
@@ -35,105 +37,100 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   const visible = statusFilter ? rows.filter((r) => r.status === statusFilter) : rows;
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Invoices" description="Billing across all projects." />
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Stat label="Outstanding" value={money(outstanding)} hint={`${open.length} open invoice${open.length === 1 ? "" : "s"}`} tone={outstanding > 0 ? "warn" : "default"} />
-        <Stat label="Overdue" value={money(overdue)} hint={`${overdueRows.length} past due`} tone={overdue > 0 ? "bad" : "default"} />
-        <Stat label="Paid, last 30 days" value={money(paidLast30)} tone="good" />
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <h1 className="text-xl font-semibold text-slate-900">Invoices</h1>
+        <p className="text-xs text-slate-500">Billing across all jobs. Make one from a job&apos;s Invoices tab.</p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Status</span>
-        <FilterChip href="/invoices" active={!statusFilter} label="All" count={rows.length} />
-        {INVOICE_STATUSES.map((s) => (
-          <FilterChip key={s} href={`/invoices?status=${s}`} active={statusFilter === s} label={titleCase(s)} count={rows.filter((r) => r.status === s).length} />
-        ))}
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <Tile label="Outstanding" value={money(outstanding)} hint={`${open.length} open`} tone={outstanding > 0 ? "warn" : undefined} />
+        <Tile label="Overdue" value={money(overdue)} hint={`${overdueRows.length} past due`} tone={overdue > 0 ? "bad" : undefined} />
+        <Tile label="Paid, last 30 days" value={money(paidLast30)} tone="good" />
       </div>
 
-      {visible.length === 0 ? (
-        <EmptyState icon={Receipt} title="No invoices" description={statusFilter ? `No ${titleCase(statusFilter).toLowerCase()} invoices.` : "Create invoices from a project's Invoices tab."} />
-      ) : (
-        <Table>
-          <THead>
-            <tr>
-              <Th>#</Th>
-              <Th>Project</Th>
-              <Th>Client</Th>
-              <Th>Title</Th>
-              <Th>Status</Th>
-              <Th>Issued</Th>
-              <Th>Due</Th>
-              <Th right>Total</Th>
-              <Th right>Balance</Th>
-              <Th />
-            </tr>
-          </THead>
-          <TBody>
-            {visible.map((inv) => (
-              <Tr key={inv.id}>
-                <Td className="font-mono text-xs">#{inv.number}</Td>
-                <Td>
-                  <Link href={`/projects/${inv.project.id}`} className="text-slate-900 hover:text-blue-700">
-                    <span className="font-mono text-xs text-slate-500">#{inv.project.number}</span> {inv.project.name}
-                  </Link>
-                </Td>
-                <Td className="whitespace-nowrap">{inv.project.client ? `${inv.project.client.firstName} ${inv.project.client.lastName}` : "—"}</Td>
-                <Td>
-                  <Link href={`/projects/${inv.project.id}/invoices/${inv.id}`} className="font-medium text-slate-900 hover:text-blue-700">
-                    {inv.title}
-                  </Link>
-                </Td>
-                <Td>
-                  <Badge status={inv.status} />
-                </Td>
-                <Td className="whitespace-nowrap">{fmtDate(inv.issueDate)}</Td>
-                <Td className={cn("whitespace-nowrap", inv.overdue && "font-medium text-rose-700")}>
-                  {fmtDate(inv.dueDate)}
-                  {inv.overdue ? <span className="ml-1 text-xs">(overdue)</span> : null}
-                </Td>
-                <Td right>{money(inv.total)}</Td>
-                <Td right className={cn("font-medium", inv.balance > 0 ? "text-slate-900" : "text-slate-500")}>
-                  {money(inv.balance)}
-                </Td>
-                <Td>
-                  <Link href={`/projects/${inv.project.id}/invoices/${inv.id}`} className="text-xs font-medium text-blue-700 hover:underline">
-                    Open
-                  </Link>
-                </Td>
-              </Tr>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+          <ListFind listId="invoice-list" placeholder="Find by job, client, or title…" />
+          <nav className="flex flex-wrap gap-1" aria-label="Status">
+            <FilterChip href="/invoices" active={!statusFilter} label="All" count={rows.length} />
+            {INVOICE_STATUSES.map((s) => (
+              <FilterChip key={s} href={`/invoices?status=${s}`} active={statusFilter === s} label={titleCase(s)} count={rows.filter((r) => r.status === s).length} />
             ))}
-          </TBody>
-          <TFoot>
-            <tr>
-              <td className="px-4 py-2.5" colSpan={7}>
-                {visible.length} invoice{visible.length === 1 ? "" : "s"}
-              </td>
-              <Td right>{money(visible.filter((r) => r.status !== "VOID").reduce((s, r) => s + r.total, 0))}</Td>
-              <Td right className="font-semibold text-slate-900">
-                {money(visible.reduce((s, r) => s + r.balance, 0))}
-              </Td>
-              <td />
-            </tr>
-          </TFoot>
-        </Table>
-      )}
+          </nav>
+        </header>
+        {visible.length === 0 ? (
+          <p className="px-4 py-6 text-center text-sm text-slate-500">
+            {statusFilter ? `No ${titleCase(statusFilter).toLowerCase()} invoices.` : "No invoices yet. Make one from a job's Invoices tab."}
+          </p>
+        ) : (
+          <div id="invoice-list">
+          <div className="overflow-x-auto" data-find-group>
+            <table className="w-full min-w-[40rem] text-sm">
+              <thead>
+                <tr className="border-b border-slate-100 text-left text-xs text-slate-500">
+                  <th className="px-4 py-2 font-normal">#</th>
+                  <th className="px-3 py-2 font-normal">Job</th>
+                  <th className="px-3 py-2 font-normal">Title</th>
+                  <th className="px-3 py-2 font-normal">Status</th>
+                  <th className="px-3 py-2 font-normal">Due</th>
+                  <th className="px-3 py-2 text-right font-normal">Total</th>
+                  <th className="px-4 py-2 text-right font-normal">Balance</th>
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((inv) => {
+                  const client = inv.project.client ? `${inv.project.client.firstName} ${inv.project.client.lastName}` : null;
+                  return (
+                    <tr
+                      key={inv.id}
+                      data-find={[`#${inv.number}`, `#${inv.project.number}`, inv.project.name, client, inv.title].filter(Boolean).join(" ").toLowerCase()}
+                      className={cn("border-b border-slate-100 align-top last:border-b-0", inv.status === "VOID" && "text-slate-400")}
+                    >
+                      <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-400">#{inv.number}</td>
+                      <td className="px-3 py-2">
+                        <Link href={`/projects/${inv.project.id}`} className="hover:underline">
+                          #{inv.project.number} {inv.project.name}
+                        </Link>
+                        {client ? <span className="block text-xs text-slate-500">{client}</span> : null}
+                      </td>
+                      <td className="px-3 py-2">
+                        <Link href={`/projects/${inv.project.id}/invoices/${inv.id}`} className="font-medium text-blue-700 hover:underline">
+                          {inv.title}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-2">
+                        <Badge status={inv.status} />
+                      </td>
+                      <td className={cn("whitespace-nowrap px-3 py-2", inv.overdue && "font-medium text-rose-700")}>
+                        {fmtDate(inv.dueDate)}
+                        {inv.overdue ? <span className="block text-xs">overdue</span> : null}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(inv.total)}</td>
+                      <td className={cn("whitespace-nowrap px-4 py-2 text-right tabular-nums", inv.balance > 0 ? "font-medium text-slate-900" : "text-slate-400")}>
+                        {money(inv.balance)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-slate-200 text-sm font-medium text-slate-900">
+                  <td className="px-4 py-2" colSpan={5}>
+                    {visible.length} invoice{visible.length === 1 ? "" : "s"}
+                  </td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(visible.filter((r) => r.status !== "VOID").reduce((s, r) => s + r.total, 0))}</td>
+                  <td className="whitespace-nowrap px-4 py-2 text-right tabular-nums">{money(visible.reduce((s, r) => s + r.balance, 0))}</td>
+                </tr>
+              </tfoot>
+            </table>
+            <p data-find-none hidden className="px-4 py-3 text-sm text-slate-500">
+              None match.
+            </p>
+          </div>
+          </div>
+        )}
+      </section>
     </div>
-  );
-}
-
-function FilterChip({ href, active, label, count }: { href: string; active: boolean; label: string; count: number }) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
-        active ? "border-blue-700 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
-      )}
-    >
-      {label}
-      <span className={cn("rounded-full px-1.5 text-[10px]", active ? "bg-blue-100" : "bg-slate-100")}>{count}</span>
-    </Link>
   );
 }
