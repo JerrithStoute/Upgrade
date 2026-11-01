@@ -1,8 +1,5 @@
-import Link from "@/components/link";
-import { ArrowLeft } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { buttonClasses } from "@/components/ui";
 import { VendorList, type VendorGroup } from "@/components/vendor-list";
 import { companyLines } from "@/lib/company";
 import { getBrand } from "@/lib/company-brand";
@@ -27,11 +24,8 @@ export default async function VendorItemListPage() {
   return (
     <div className="space-y-4">
       <div className="no-print flex flex-wrap items-center gap-2">
-        <Link href="/catalog/items" className={buttonClasses("ghost", "sm")}>
-          <ArrowLeft className="h-3.5 w-3.5" /> Item List
-        </Link>
-        <span className="text-sm font-semibold text-slate-900">For a vendor</span>
-        <span className="text-xs text-slate-500">— pick items to get prices on; your prices never print.</span>
+        <h1 className="text-xl font-semibold text-slate-900">For a vendor</h1>
+        <span className="text-xs text-slate-500">Pick items to get prices on; your prices never print.</span>
       </div>
       <VendorList storageKey="vendorlist:items" title="Price request" from={companyLines(company)} groups={groups} emptyText="The Item List is empty." logoUrl={brand.logoUrl} />
     </div>

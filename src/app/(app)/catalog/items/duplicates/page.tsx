@@ -1,4 +1,3 @@
-import Link from "@/components/link";
 import { CheckCircle2 } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { allows } from "@/lib/access";
@@ -69,11 +68,7 @@ export default async function DuplicatesPage({ searchParams }: { searchParams: P
 
   return (
     <div className="max-w-4xl space-y-4">
-      <p className="text-sm">
-        <Link href="/catalog/items" className="text-blue-700 hover:underline">
-          ← Item List
-        </Link>
-      </p>
+      <h1 className="text-xl font-semibold text-slate-900">Possible duplicates</h1>
       <p className="text-sm text-slate-600">
         Doors and windows that could be the same thing under two names: the same size, and nothing either one says that the other says differently. Keep one — the other comes
         off the Item List and everything that used it uses the one you keep — or mark them <strong>Not the same</strong> and they won&apos;t show here again.

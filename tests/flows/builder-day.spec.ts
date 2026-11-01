@@ -289,6 +289,51 @@ test("opens the Catalog and Settings homes, and a page in each", async () => {
   await expect(page.getByRole("link", { name: "← Settings" })).toBeVisible();
 });
 
+test("makes a takeoff template with a takeoff and an item, then deletes it", async () => {
+  await page.goto("/catalog/takeoff-templates");
+  await page.getByRole("link", { name: "New template" }).click();
+  await page.getByLabel("Name").fill("Flow test template");
+  await page.getByRole("button", { name: "Create" }).click();
+  await expect(page.getByRole("heading", { name: "Flow test template" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "← Takeoff templates" })).toBeVisible();
+  // Empty: the Add takeoff box is open to start.
+  await expect(page.getByText("Add a takeoff")).toBeVisible();
+  await page.getByLabel("Name", { exact: true }).fill("Flow slab");
+  await page.getByRole("button", { name: "Add takeoff" }).click();
+  await expect(page.getByText("Flow slab", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "+ Add an item" }).click();
+  await expect(page.getByText("Add an item", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page.getByText("Add an item", { exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
+  await page.getByLabel("Description").fill("Made by the flow test");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Made by the flow test")).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete template…" }).click();
+  await expect(page).toHaveURL(/\/catalog\/takeoff-templates$/);
+  await expect(page.getByText("Flow test template")).toHaveCount(0);
+});
+
+test("adds a span table, switches it to code spans, and deletes it", async () => {
+  await page.goto("/catalog/span-tables");
+  await page.getByRole("link", { name: "Add span table" }).click();
+  await expect(page.getByText("Add a span table")).toBeVisible();
+  await page.getByLabel("Name").fill("Flow test joists");
+  await page.getByRole("button", { name: "Add table" }).click();
+  await expect(page.getByText("Add a span table")).toHaveCount(0);
+  await expect(page.getByRole("row", { name: /Flow test joists/ })).toContainText("2x8");
+  await page.getByRole("link", { name: "Edit Flow test joists" }).click();
+  await page.getByRole("button", { name: "Code spans" }).click();
+  await expect(page.getByRole("columnheader", { name: "Longest span" })).toBeVisible();
+  await page.getByRole("button", { name: "Save table" }).click();
+  await expect(page.getByRole("row", { name: /Flow test joists/ })).toContainText("Code spans");
+  await page.getByRole("link", { name: "Edit Flow test joists" }).click();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete table…" }).click();
+  await expect(page.getByText("Flow test joists")).toHaveCount(0);
+});
+
 test("adds, finds, edits and deletes a member size", async () => {
   await page.goto("/catalog/member-sizes");
   await page.getByRole("link", { name: "Add size" }).click();

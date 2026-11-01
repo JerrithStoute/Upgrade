@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "@/components/link";
-import { Plus, Trash2 } from "lucide-react";
-import { Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
+import { X } from "lucide-react";
+import { SubmitButton } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import { SPAN_LOADS, SPAN_USES, SPECIES, codeSizes, codeSpanFt, type SpanUse } from "@/lib/span-tables";
 
 export type SpanTableValues = {
@@ -23,8 +23,13 @@ const ftIn = (ft: number | null) => {
   const inches = Math.round(ft * 12);
   return `${Math.floor(inches / 12)}'-${inches % 12}"`;
 };
+const box = "input !h-7 !py-0 text-xs";
+const lbl = "mb-0.5 block text-[11px] text-slate-500";
 
-/** New or edit: your own rows ("up to 12 ft → 2x6"), or the code's spans for a species and loads. */
+/**
+ * New or edit, in small boxes: name and what it's for, then your own rows ("up to 12 ft → 2x6") or the code's
+ * spans for a species and loads (with a preview), and the member for anything longer. Cancel is the page's.
+ */
 export function SpanTableForm({ action, values, sizes }: { action: (fd: FormData) => Promise<void>; values?: SpanTableValues; sizes: string[] }) {
   const p = (k: string) => `span-${values?.id ?? "new"}-${k}`;
   const [use, setUse] = useState<SpanUse>((values?.use as SpanUse) ?? "FLOOR");
@@ -42,9 +47,22 @@ export function SpanTableForm({ action, values, sizes }: { action: (fd: FormData
   );
   const clean = rows.map((r) => ({ upToFt: Number(r.upToFt), size: r.size.trim() })).filter((r) => r.upToFt > 0 && r.size);
   const listId = p("sizes");
+  const overSize = (
+    <label className="block">
+      <span className={lbl}>Longer than that</span>
+      <input
+        name="overSize"
+        list={listId}
+        className={box}
+        defaultValue={values?.overSize ?? ""}
+        placeholder="TJI 210"
+        title="A specialty member (TJI, LVL…) for spans past the table — leave blank to be told instead"
+      />
+    </label>
+  );
 
   return (
-    <form action={action} className="space-y-4">
+    <form action={action} className="space-y-2">
       {values ? <input type="hidden" name="id" value={values.id} /> : null}
       <input type="hidden" name="rows" value={JSON.stringify(clean)} />
       <input type="hidden" name="source" value={source} />
@@ -53,15 +71,16 @@ export function SpanTableForm({ action, values, sizes }: { action: (fd: FormData
           <option key={s} value={s} />
         ))}
       </datalist>
-      <FormGrid className="md:grid-cols-3">
-        <Field label="Name" htmlFor={p("name")} className="md:col-span-2">
-          <input id={p("name")} name="name" required className="input" defaultValue={values?.name} placeholder="Floor joists" />
-        </Field>
-        <Field label="For" htmlFor={p("use")}>
+      <div className="grid items-end gap-2 sm:grid-cols-3 md:grid-cols-[2fr_1fr_auto]">
+        <label>
+          <span className={lbl}>Name</span>
+          <input name="name" required autoFocus={!values} className={box} defaultValue={values?.name} placeholder="Floor joists" />
+        </label>
+        <label>
+          <span className={lbl}>For</span>
           <select
-            id={p("use")}
             name="use"
-            className="input"
+            className={box}
             value={use}
             onChange={(e) => {
               const u = e.target.value as SpanUse;
@@ -75,95 +94,99 @@ export function SpanTableForm({ action, values, sizes }: { action: (fd: FormData
               </option>
             ))}
           </select>
-        </Field>
-      </FormGrid>
-
-      <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["CUSTOM", "My own table", "Up to so many feet → this size"],
-            ["CODE", "Code span table", "IRC spans for the lumber you buy"],
-          ] as const
-        ).map(([key, label, hint]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setSource(key)}
-            className={`rounded-lg border px-3 py-2 text-left text-sm ${source === key ? "border-blue-600 bg-blue-50 text-blue-900" : "border-slate-200 text-slate-700 hover:bg-slate-50"}`}
-          >
-            <span className="block font-medium">{label}</span>
-            <span className="block text-xs text-slate-500">{hint}</span>
-          </button>
-        ))}
+        </label>
+        <span className="inline-flex h-7 overflow-hidden rounded-md border border-slate-300 text-xs" role="group" aria-label="Kind of table">
+          {(
+            [
+              ["CUSTOM", "My own table", "Up to so many feet → this size"],
+              ["CODE", "Code spans", "IRC spans for the lumber you buy"],
+            ] as const
+          ).map(([key, label, hint], i) => (
+            <button
+              key={key}
+              type="button"
+              title={hint}
+              aria-pressed={source === key}
+              onClick={() => setSource(key)}
+              className={cn("px-2.5 font-medium", i && "border-l border-slate-300", source === key ? "bg-blue-50 text-blue-800" : "bg-white text-slate-600 hover:bg-slate-50")}
+            >
+              {label}
+            </button>
+          ))}
+        </span>
       </div>
 
       {source === "CUSTOM" ? (
-        <div className="space-y-2">
+        <div className="space-y-1.5">
           {rows.map((r, i) => (
-            <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="w-24 text-slate-600">{i === 0 ? "Spans up to" : "then up to"}</span>
+            <div key={i} className="flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
+              <span className="w-16">{i === 0 ? "Spans up to" : "then up to"}</span>
               <input
                 aria-label="Up to (ft)"
                 type="number"
                 min="1"
                 step="0.5"
-                className="input !w-24"
+                className={cn(box, "!w-20")}
                 value={r.upToFt}
                 onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, upToFt: e.target.value } : x)))}
               />
-              <span className="text-slate-600">ft →</span>
+              <span>ft →</span>
               <input
                 aria-label="Size"
                 list={listId}
-                className="input !w-48"
+                className={cn(box, "!w-40")}
                 value={r.size}
                 placeholder="2x8"
                 onChange={(e) => setRows(rows.map((x, k) => (k === i ? { ...x, size: e.target.value } : x)))}
               />
               {rows.length > 1 ? (
-                <button type="button" className={buttonClasses("ghost", "sm")} onClick={() => setRows(rows.filter((_, k) => k !== i))} aria-label="Remove row">
-                  <Trash2 className="h-3.5 w-3.5" />
+                <button type="button" className="rounded p-1 text-slate-400 hover:text-rose-600" onClick={() => setRows(rows.filter((_, k) => k !== i))} aria-label="Remove row">
+                  <X className="h-3.5 w-3.5" />
                 </button>
               ) : null}
             </div>
           ))}
           <button
             type="button"
-            className={buttonClasses("ghost", "sm")}
+            className="text-xs font-medium text-blue-700 hover:underline"
             onClick={() => setRows([...rows, { upToFt: String((Math.max(0, ...clean.map((x) => x.upToFt)) || 0) + 4), size: "" }])}
           >
-            <Plus className="h-3.5 w-3.5" /> Add a row
+            + Add a row
           </button>
+          <div className="max-w-xs">{overSize}</div>
         </div>
       ) : (
-        <div className="space-y-3">
-          <FormGrid className="md:grid-cols-2">
-            <Field label="Lumber" htmlFor={p("species")}>
-              <select id={p("species")} name="species" className="input" value={species} onChange={(e) => setSpecies(e.target.value)}>
+        <div className="space-y-2">
+          <div className="grid gap-2 sm:grid-cols-3">
+            <label>
+              <span className={lbl}>Lumber</span>
+              <select name="species" className={box} value={species} onChange={(e) => setSpecies(e.target.value)}>
                 {SPECIES.map((s) => (
                   <option key={s.key} value={s.key}>
                     {s.label}
                   </option>
                 ))}
               </select>
-            </Field>
-            <Field label="Loads" htmlFor={p("load")}>
-              <select id={p("load")} name="load" className="input" value={load} onChange={(e) => setLoad(e.target.value)}>
+            </label>
+            <label>
+              <span className={lbl}>Loads</span>
+              <select name="load" className={box} value={load} onChange={(e) => setLoad(e.target.value)}>
                 {loadsFor(use).map((l) => (
                   <option key={l.key} value={l.key}>
                     {l.label}
                   </option>
                 ))}
               </select>
-            </Field>
-          </FormGrid>
-          <div className="overflow-x-auto rounded-lg border border-slate-200">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-xs text-slate-500">
+            </label>
+            {overSize}
+          </div>
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+            <table className="w-full text-xs">
+              <thead className="text-slate-500">
                 <tr>
-                  <th className="px-3 py-1.5 text-left font-medium">Longest span</th>
+                  <th className="px-3 py-1.5 text-left font-normal">Longest span</th>
                   {SPACINGS.map((s) => (
-                    <th key={s} className="px-3 py-1.5 text-right font-medium">
+                    <th key={s} className="px-3 py-1.5 text-right font-normal">
                       {s}&quot; o.c.
                     </th>
                   ))}
@@ -172,9 +195,9 @@ export function SpanTableForm({ action, values, sizes }: { action: (fd: FormData
               <tbody>
                 {codeSizes(use).map((size) => (
                   <tr key={size} className="border-t border-slate-100">
-                    <td className="px-3 py-1.5 font-medium text-slate-800">{size}</td>
+                    <td className="px-3 py-1 font-medium text-slate-800">{size}</td>
                     {SPACINGS.map((s) => (
-                      <td key={s} className="px-3 py-1.5 text-right tabular-nums text-slate-700">
+                      <td key={s} className="px-3 py-1 text-right tabular-nums text-slate-600">
                         {ftIn(codeSpanFt(size, species, load, s))}
                       </td>
                     ))}
@@ -184,24 +207,15 @@ export function SpanTableForm({ action, values, sizes }: { action: (fd: FormData
             </table>
           </div>
           <p className="text-xs text-slate-500">
-            Figured the way the IRC span tables are (No. 2 lumber, the loads above, the takeoff&apos;s spacing) — the smallest size that spans it is used. Spot-check a few against
+            Figured the way the IRC span tables are (No. 2 lumber, the loads above, the takeoff&apos;s spacing); the smallest size that spans it is used. Spot-check a few against
             your code book; your local code or engineer has the last word. Rafter spans are measured level (plan view).
           </p>
         </div>
       )}
 
-      <Field label="Longer than that" htmlFor={p("overSize")} hint="A specialty member (TJI, LVL…) for spans past the table — leave blank to be told instead">
-        <input id={p("overSize")} name="overSize" list={listId} className="input md:!w-80" defaultValue={values?.overSize ?? ""} placeholder="TJI 210" />
-      </Field>
-
-      <div className="flex items-center gap-2">
-        <SubmitButton>{values ? "Save table" : "Add table"}</SubmitButton>
-        {values ? (
-          <Link href="/catalog/span-tables" className={buttonClasses("ghost")}>
-            Cancel
-          </Link>
-        ) : null}
-      </div>
+      <SubmitButton size="sm" className="!h-7 !px-2.5 !text-xs">
+        {values ? "Save table" : "Add table"}
+      </SubmitButton>
     </form>
   );
 }

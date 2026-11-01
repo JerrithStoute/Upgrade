@@ -2,87 +2,105 @@ import Link from "@/components/link";
 import { LayoutTemplate, Plus } from "lucide-react";
 import { db } from "@/lib/db";
 import { fmtDate } from "@/lib/utils";
-import { Collapsible, EmptyState, Field, FormGrid, SubmitButton, TBody, THead, Table, Td, Th, Tr, buttonClasses } from "@/components/ui";
+import { EmptyState, SubmitButton } from "@/components/ui";
+import { ListFind } from "@/components/list-find";
 import { createTakeoffTemplate } from "./actions";
 import { requireView } from "@/lib/auth";
 
-export default async function TakeoffTemplatesPage() {
+const PATH = "/catalog/takeoff-templates";
+// A template's takeoffs shown in its row before "+N more".
+const FIRST = 4;
+
+export default async function TakeoffTemplatesPage({ searchParams }: { searchParams: Promise<{ add?: string }> }) {
   await requireView("lists");
+  const { add } = await searchParams;
   const templates = await db.takeoffTemplate.findMany({
     orderBy: { name: "asc" },
     include: { conditions: { orderBy: { sortOrder: "asc" }, select: { name: true, color: true } } },
   });
+  // Nothing made yet: the New box is open to start.
+  const adding = add === "1" || templates.length === 0;
 
   return (
-    <div className="space-y-5">
-      <p className="text-sm text-slate-600">
-        Sets of takeoff conditions — with their assembly items — that you add to a job from its Takeoff tab instead of building them each time. Build one here, or open a job&apos;s
-        Takeoff tab and use <strong>Save as template</strong>. Items from the Item List take that day&apos;s Item List price when a template is added to a job.
-      </p>
-      <Collapsible
-        defaultOpen={templates.length === 0}
-        summary={
-          <span className="flex items-center gap-2">
-            <Plus className="h-4 w-4" /> New template
-          </span>
-        }
-      >
-        <form action={createTakeoffTemplate} className="space-y-4">
-          <FormGrid>
-            <Field label="Name" htmlFor="tt-name">
-              <input id="tt-name" name="name" required className="input" placeholder="Slab Foundation" />
-            </Field>
-            <Field label="Description" htmlFor="tt-desc">
-              <input id="tt-desc" name="description" className="input" placeholder="Monolithic slab with beams, rebar and mesh" />
-            </Field>
-          </FormGrid>
-          <SubmitButton>Create template</SubmitButton>
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+        <ListFind listId="template-list" placeholder="Find a template…" />
+        <Link
+          href={`${PATH}?add=1`}
+          scroll={false}
+          className="inline-flex h-7 items-center gap-1 rounded-md bg-blue-700 px-2.5 text-xs font-medium text-white hover:bg-blue-800"
+        >
+          <Plus className="h-3.5 w-3.5" /> New template
+        </Link>
+      </header>
+      {adding ? (
+        // One line; Create opens the new template to add its takeoffs.
+        <form action={createTakeoffTemplate} className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-blue-50/40 px-4 py-2.5">
+          <span className="text-sm font-semibold text-slate-900">New template</span>
+          <input name="name" required autoFocus aria-label="Name" className="input !h-7 !w-56 !py-0 text-xs" placeholder="Slab foundation" />
+          <input name="description" aria-label="Description" className="input !h-7 !w-auto min-w-0 flex-1 !py-0 text-xs" placeholder="Monolithic slab with beams, rebar and mesh" />
+          <SubmitButton size="sm" className="!h-7 !px-2.5 !text-xs">
+            Create
+          </SubmitButton>
+          <Link href={PATH} scroll={false} className="text-xs font-medium text-blue-700 hover:underline">
+            Cancel
+          </Link>
         </form>
-      </Collapsible>
+      ) : null}
+      <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
+        Sets of takeoffs, with their items, you add to a job from its Takeoff tab. Build one here, or use <strong className="font-medium text-slate-700">Save as template</strong> on a
+        job&apos;s Takeoff tab. Item List items take that day&apos;s price when a template is added to a job.
+      </p>
 
       {templates.length === 0 ? (
         <EmptyState icon={LayoutTemplate} title="No takeoff templates yet" description="Create one above, or save a job's takeoffs as a template from its Takeoff tab." />
       ) : (
-        <Table>
-          <THead>
-            <tr>
-              <Th>Template</Th>
-              <Th>Takeoffs</Th>
-              <Th>Updated</Th>
-              <Th />
-            </tr>
-          </THead>
-          <TBody>
-            {templates.map((t) => (
-              <Tr key={t.id}>
-                <Td>
-                  <Link href={`/catalog/takeoff-templates/${t.id}`} className="font-medium text-slate-900 hover:text-blue-700">
-                    {t.name}
-                  </Link>
-                  {t.description ? <span className="block text-xs text-slate-500">{t.description}</span> : null}
-                </Td>
-                <Td className="text-xs text-slate-600">
-                  <span className="flex flex-wrap gap-x-3 gap-y-1">
-                    {t.conditions.map((c, i) => (
-                      <span key={i} className="inline-flex items-center gap-1">
-                        <span className="h-2.5 w-2.5 rounded-sm" style={{ background: c.color }} />
-                        {c.name}
+        <div id="template-list">
+          <div className="overflow-x-auto" data-find-group>
+            <table className="w-full min-w-[640px] text-left text-sm">
+              <thead className="border-b border-slate-100 text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 pl-4 font-normal">Template</th>
+                  <th className="px-3 py-2 font-normal">Takeoffs</th>
+                  <th className="px-3 py-2 pr-4 font-normal">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {templates.map((t) => (
+                  <tr
+                    key={t.id}
+                    data-find={[t.name, t.description, ...t.conditions.map((c) => c.name)].filter(Boolean).join(" ").toLowerCase()}
+                    className="border-t border-slate-100 align-top first:border-t-0 hover:bg-slate-50"
+                  >
+                    <td className="px-3 py-2 pl-4">
+                      <Link href={`${PATH}/${t.id}`} className="font-medium text-blue-700 hover:underline">
+                        {t.name}
+                      </Link>
+                      {t.description ? <span className="block text-xs text-slate-500">{t.description}</span> : null}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-slate-600">
+                      <span className="flex flex-wrap gap-x-3 gap-y-1">
+                        {t.conditions.slice(0, FIRST).map((c, i) => (
+                          <span key={i} className="inline-flex items-center gap-1">
+                            <span className="h-2.5 w-2.5 rounded-sm" style={{ background: c.color }} />
+                            {c.name}
+                          </span>
+                        ))}
+                        {t.conditions.length > FIRST ? <span className="text-slate-400">+{t.conditions.length - FIRST} more</span> : null}
+                        {t.conditions.length === 0 ? "—" : null}
                       </span>
-                    ))}
-                    {t.conditions.length === 0 ? "—" : null}
-                  </span>
-                </Td>
-                <Td className="text-xs text-slate-500">{fmtDate(t.updatedAt)}</Td>
-                <Td right>
-                  <Link href={`/catalog/takeoff-templates/${t.id}`} className={buttonClasses("ghost", "sm")}>
-                    Edit
-                  </Link>
-                </Td>
-              </Tr>
-            ))}
-          </TBody>
-        </Table>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 pr-4 text-xs text-slate-500">{fmtDate(t.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p data-find-none hidden className="px-4 py-3 text-sm text-slate-500">
+              None match.
+            </p>
+          </div>
+        </div>
       )}
-    </div>
+    </section>
   );
 }

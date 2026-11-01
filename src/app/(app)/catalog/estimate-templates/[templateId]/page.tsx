@@ -1,6 +1,4 @@
-import Link from "@/components/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes } from "@/lib/projects";
@@ -9,7 +7,7 @@ import { divisionCategories, loadEstimateCategories } from "@/lib/estimate-categ
 import { codeDivisions } from "@/lib/cost-code-divisions";
 import { loadParameters, templateValues } from "@/lib/estimate-parameters";
 import { pct } from "@/lib/utils";
-import { Card, CardHeader, Collapsible, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
+import { Card, CardHeader, Collapsible, Field, FormGrid, SubmitButton } from "@/components/ui";
 import { EstimateSheet } from "@/components/estimate/estimate-sheet";
 import { saveTemplate, saveTemplateValues, updateTemplateDetails } from "../actions";
 import { saveMarkupDefault } from "@/app/(app)/projects/[id]/estimate/actions";
@@ -31,10 +29,6 @@ export default async function EstimateTemplatePage({ params }: { params: Promise
 
   return (
     <div className="space-y-6">
-      <Link href="/catalog/estimate-templates" className={buttonClasses("secondary", "sm")}>
-        <ArrowLeft className="h-3.5 w-3.5" /> All templates
-      </Link>
-
       <Card>
         <CardHeader
           title={
