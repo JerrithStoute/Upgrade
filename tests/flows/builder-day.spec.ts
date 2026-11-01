@@ -289,6 +289,30 @@ test("opens the Catalog and Settings homes, and a page in each", async () => {
   await expect(page.getByRole("link", { name: "← Settings" })).toBeVisible();
 });
 
+test("adds, finds, edits and deletes a member size", async () => {
+  await page.goto("/catalog/member-sizes");
+  await page.getByRole("link", { name: "Add size" }).click();
+  await expect(page.getByText("Add a member size")).toBeVisible();
+  await page.getByLabel("Name").fill("Flow test 2x14");
+  await page.getByLabel("Kind").selectOption({ label: "Dimensional lumber" });
+  await page.getByRole("button", { name: "Add size" }).click();
+  await expect(page.getByText("Add a member size")).toHaveCount(0);
+  const find = page.getByPlaceholder("Find a size…");
+  await find.fill("flow test 2x14");
+  await expect(page.getByText("1 match")).toBeVisible();
+  await find.fill("nothing like this zzq");
+  await expect(page.getByText("None match.")).toBeVisible();
+  await find.fill("");
+  await page.getByRole("link", { name: "Edit Flow test 2x14" }).click();
+  await expect(page.getByRole("button", { name: "Save size" })).toBeVisible();
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Save size" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Edit Flow test 2x14" }).click();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete size…" }).click();
+  await expect(page.getByText("Flow test 2x14")).toHaveCount(0);
+});
+
 test("adds, finds, edits and removes an item on the Item List", async () => {
   await page.goto("/catalog/items");
   // Items the program adds: one line until Set up…

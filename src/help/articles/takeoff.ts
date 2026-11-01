@@ -809,9 +809,11 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "Member sizes",
         items: [
-          { name: "+ Add member size", what: "A member you can pick on a takeoff: name, kind (lumber, I-joist, truss, LVL), how it's sold, actual size, and default stock lengths." },
+          { name: "+ Add size", what: "Opens a small box at the top of the list for a member you can pick on a takeoff: name, kind (lumber, I-joist, truss, LVL) and how it's sold on the first line; actual width and depth, default stock lengths, board feet and its color on the second. **Cancel** closes it." },
+          { name: "Find a size", what: "Narrows the list as you type." },
+          { name: "Edit", what: "Opens the same box right in the size's row. **Delete size…** is there too: takeoffs using it keep the name but lose its settings." },
           { name: "Sold as", what: "**Stock lengths**: pieces rounded up, priced each. **Made to order**: each member rounded up to the next even foot (10'-3\" → 12', 17' → 18') and priced per lf — glulams, LVLs, I-joists. **Lineal feet**: one lf total, priced per lf." },
-          { name: "Report board feet / Its own color", what: "Shows board feet on the list, and gives the size its own color on the plan." },
+          { name: "Board feet / Color", what: "Shows board feet on the list, and gives the size its own color on the plan." },
         ],
       },
     ],
