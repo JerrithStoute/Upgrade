@@ -179,12 +179,37 @@ test("invoices the client", async () => {
   await expect(page).toHaveURL(/\/invoices\/c[a-z0-9]+/);
   await expect(page.getByText("$5,000.00").first()).toBeVisible();
 
+  // Add a line and change it, right on the invoice.
+  await page.getByRole("link", { name: "+ Add a line" }).click();
+  await page.getByLabel("Description").fill("Extra trim");
+  await page.getByLabel("Unit price").fill("200");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByRole("cell", { name: "$5,200.00" })).toBeVisible();
+  await page.getByRole("row", { name: /Extra trim/ }).getByRole("link", { name: "Edit" }).click();
+  await page.getByLabel("Unit price").fill("300");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("cell", { name: "$5,300.00" })).toBeVisible();
+
+  // Details edit in place.
+  await page.getByRole("link", { name: "Edit" }).last().click();
+  await expect(page.getByLabel("Title")).toHaveValue("Deposit");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Change the details")).toHaveCount(0);
+
   // It's on the Invoices list in the menu, and the find box narrows to it.
   await page.goto("/invoices");
   await page.getByLabel("Search").fill("deposit");
   await expect(page.getByRole("link", { name: "Deposit" }).first()).toBeVisible();
   await page.getByLabel("Search").fill("zz nothing like this");
   await expect(page.getByText("None match.")).toBeVisible();
+
+  // Opening one from the list (even by its job) lands on the invoice, and its back link returns to the list.
+  await page.goto("/invoices?status=DRAFT");
+  await page.locator("tr", { hasText: "Deposit" }).getByRole("link").first().click();
+  await expect(page).toHaveURL(/\/invoices\/c[a-z0-9]+$/);
+  await expect(page.getByRole("link", { name: /invoices$/ }).filter({ hasText: "#" })).toBeVisible();
+  await page.getByRole("link", { name: "← All invoices" }).click();
+  await expect(page).toHaveURL(/\/invoices\?status=DRAFT$/);
 });
 
 test("adds to inventory, counts it, and removes it", async () => {
@@ -207,6 +232,32 @@ test("adds to inventory, counts it, and removes it", async () => {
   page.once("dialog", (d) => d.accept());
   await page.getByRole("button", { name: "Remove from inventory…" }).click();
   await expect(page.getByText("Flow test studs")).toHaveCount(0);
+});
+
+test("enters a sub's bill, approves it, pays it, and deletes it", async () => {
+  await page.goto(`${job}/purchasing/bills/new`);
+  await page.locator("[name=vendor]").fill("Flow Framing");
+  await page.getByLabel("For", { exact: true }).fill("Wall framing");
+  await page.getByLabel("Amount").fill("1200");
+  await page.getByRole("button", { name: "Save bill" }).click();
+  await expect(page).toHaveURL(/\/bills\/c[a-z0-9]+$/);
+  await expect(page.getByRole("heading", { name: /Bill from Flow Framing/ })).toBeVisible();
+  // Edit opens the form in place; Cancel closes it.
+  await page.getByRole("link", { name: "Edit" }).first().click();
+  await expect(page.getByText("Change this bill")).toBeVisible();
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page.getByText("Change this bill")).toHaveCount(0);
+  await page.getByRole("button", { name: "Approve" }).click();
+  await page.getByRole("link", { name: "Mark paid…" }).click();
+  await page.getByLabel("Check # / reference").fill("5150");
+  await page.getByRole("button", { name: "Mark paid", exact: true }).click();
+  await expect(page.getByText("Check · 5150")).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Un-approve…" }).click();
+  await expect(page.getByRole("button", { name: "Approve" })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete bill…" }).click();
+  await expect(page).toHaveURL(/\/purchasing$/);
 });
 
 test("opens the Bills list", async () => {

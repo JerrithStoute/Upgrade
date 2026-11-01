@@ -91,7 +91,7 @@ export default async function InvoiceSettingsPage({ searchParams }: { searchPara
               </span>
             </span>
           </label>
-          <p className="text-xs text-slate-500">Either way, a draft invoice&apos;s number can be changed under &ldquo;Edit invoice details&rdquo;.</p>
+          <p className="text-xs text-slate-500">Either way, a draft invoice&apos;s number can be changed with Edit on its Details.</p>
         </CardBody>
       </Card>
 

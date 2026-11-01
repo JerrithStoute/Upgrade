@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import Link from "@/components/link";
+import { RememberList } from "@/components/list-return";
 import { subDays } from "date-fns";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -38,6 +40,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
 
   return (
     <div className="space-y-4">
+      <Suspense>
+        <RememberList kind="invoices" />
+      </Suspense>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-xl font-semibold text-slate-900">Invoices</h1>
         <p className="text-xs text-slate-500">Billing across all jobs. Make one from a job&apos;s Invoices tab.</p>
@@ -89,7 +94,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                     >
                       <td className="whitespace-nowrap px-4 py-2 text-xs text-slate-400">#{inv.number}</td>
                       <td className="px-3 py-2">
-                        <Link href={`/projects/${inv.project.id}`} className="hover:underline">
+                        <Link href={`/projects/${inv.project.id}/invoices/${inv.id}`} className="hover:underline">
                           #{inv.project.number} {inv.project.name}
                         </Link>
                         {client ? <span className="block text-xs text-slate-500">{client}</span> : null}

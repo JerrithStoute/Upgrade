@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import Link from "@/components/link";
+import { RememberList } from "@/components/list-return";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { cn, dateInput, fmtDate, money } from "@/lib/utils";
@@ -40,6 +42,9 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
 
   return (
     <div className="space-y-4">
+      <Suspense>
+        <RememberList kind="bills" />
+      </Suspense>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-xl font-semibold text-slate-900">Bills</h1>
         <p className="text-xs text-slate-500">What subs and vendors billed you on every job. Approved bills are each job&apos;s actual cost.</p>
@@ -95,7 +100,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
                       className="border-b border-slate-100 align-top last:border-b-0"
                     >
                       <td className="px-4 py-2">
-                        <Link href={`/projects/${b.project.id}/purchasing`} className="hover:underline">
+                        <Link href={href} className="hover:underline">
                           #{b.project.number} {b.project.name}
                         </Link>
                       </td>
