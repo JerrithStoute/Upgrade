@@ -41,7 +41,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   return (
     <div className="space-y-4">
       <Suspense>
-        <RememberList kind="invoices" />
+        <RememberList kind="invoices" listId="invoice-list" />
       </Suspense>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-xl font-semibold text-slate-900">Invoices</h1>
@@ -89,6 +89,7 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                   return (
                     <tr
                       key={inv.id}
+                      data-href={`/projects/${inv.project.id}/invoices/${inv.id}`}
                       data-find={[`#${inv.number}`, `#${inv.project.number}`, inv.project.name, client, inv.title].filter(Boolean).join(" ").toLowerCase()}
                       className={cn("border-b border-slate-100 align-top last:border-b-0", inv.status === "VOID" && "text-slate-400")}
                     >

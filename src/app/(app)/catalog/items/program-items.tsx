@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "@/components/link";
 import { Bot } from "lucide-react";
 import { CODE_GROUPS, CODE_GROUP_KEYS, groupCategory, type CodeGroup, type CodeRules } from "@/lib/code-groups";
 import { cn, costCodeLabel } from "@/lib/utils";
@@ -13,25 +14,55 @@ type CostCode = { id: string; code: string | null; name: string };
  * framing lumber, sheathing, drywall, trim), which of your categories new ones go
  * in and their cost code. Changing a category offers to move the ones already in
  * the old place. The program finds them by kind, so any category name works.
+ * Closed, it's one line (how many kinds have a cost code) with "Set up…".
  */
 export function ProgramItems({
   rules,
   categories,
   costCodes,
   counts,
+  open,
+  openHref,
+  closeHref,
 }: {
+  open: boolean;
+  openHref: string;
+  closeHref: string;
   rules: CodeRules;
   categories: string[];
   costCodes: CostCode[];
   /** Per group: how many of its items are in each category. */
   counts: Partial<Record<CodeGroup, Record<string, number>>>;
 }) {
+  // "Different codes — ask for each" counts as decided.
+  const coded = CODE_GROUP_KEYS.filter((g) => {
+    const r = rules[g];
+    return r && (!r.sameForAll || r.costCodeId);
+  }).length;
+  if (!open)
+    return (
+      <div id="program-items" className="flex scroll-mt-20 flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm shadow-sm">
+        <Bot className="h-4 w-4 text-slate-400" />
+        <span className="font-medium text-slate-900">Items the program adds</span>
+        <span className={cn("text-xs", coded < CODE_GROUP_KEYS.length ? "text-amber-700" : "text-slate-500")}>
+          {coded} of {CODE_GROUP_KEYS.length} kinds have a cost code
+        </span>
+        <Link href={openHref} scroll={false} className="ml-auto text-xs font-medium text-blue-700 hover:underline">
+          Set up…
+        </Link>
+      </div>
+    );
   return (
     <div id="program-items" className="scroll-mt-20 rounded-xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-start gap-2 border-b border-slate-100 px-4 py-3">
+      <div className="flex items-start gap-2 border-b border-slate-100 px-4 py-2.5">
         <Bot className="mt-0.5 h-4 w-4 text-slate-400" />
-        <div>
-          <p className="text-sm font-semibold text-slate-900">Items the program adds</p>
+        <div className="flex-1">
+          <p className="flex items-center justify-between gap-2 text-sm font-semibold text-slate-900">
+            Items the program adds
+            <Link href={closeHref} scroll={false} className="text-xs font-medium text-blue-700 hover:underline">
+              Done
+            </Link>
+          </p>
           <p className="text-xs text-slate-500">
             When a takeoff adds windows, doors, lumber, sheathing, drywall or trim to this list, they go in the category you pick here with this cost code. Use your own categories
             — the program still finds them.
@@ -89,7 +120,7 @@ function Row({ group, rules, categories, costCodes, counts }: { group: CodeGroup
           <input
             list="program-item-categories"
             aria-label={`Category for ${CODE_GROUPS[group].label}`}
-            className={cn("input !h-8 !w-56 !py-1 text-xs", current === builtIn && !categories.includes(builtIn) && "border-amber-400")}
+            className={cn("input !h-7 !w-56 !py-0 text-xs", current === builtIn && !categories.includes(builtIn) && "border-amber-400")}
             value={draft}
             disabled={pending}
             onChange={(e) => setDraft(e.target.value)}
@@ -105,7 +136,7 @@ function Row({ group, rules, categories, costCodes, counts }: { group: CodeGroup
           <select
             key={codeValue}
             aria-label={`Cost code for ${CODE_GROUPS[group].label}`}
-            className={cn("input !h-8 !w-56 !py-0 text-xs", !codeValue && "border-amber-400")}
+            className={cn("input !h-7 !w-56 !py-0 text-xs", !codeValue && "border-amber-400")}
             defaultValue={codeValue}
             disabled={pending}
             onChange={(e) => {

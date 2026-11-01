@@ -6,7 +6,7 @@ import { Check, Pencil, Trash2, X } from "lucide-react";
 import { UNITS } from "@/lib/constants";
 import { cn, costCodeLabel } from "@/lib/utils";
 import { ConfirmForm, buttonClasses } from "@/components/ui";
-import { confirmItemPrices, deleteMaterialItem, restoreItemCells, saveItemCells, type ItemCell } from "./actions";
+import { confirmItemPrices, deleteMaterialItem, renameItemCategory, restoreItemCells, saveItemCells, type ItemCell } from "./actions";
 import { moveByArrow } from "@/components/grid-keys";
 
 export type ItemRow = {
@@ -33,6 +33,10 @@ const cell = "!h-8 !px-2 !py-1";
 // The checkbox and item name stay in view when the table scrolls sideways.
 const pinBox = "sticky left-0 z-10 w-10 min-w-10 px-3";
 const pinItem = "sticky left-10 z-10 px-2 shadow-[1px_0_0_0_theme(colors.slate.200)]";
+const editLink = "text-xs font-medium text-blue-700 hover:underline";
+
+/** Of these rows, the ones the find box hasn't hidden. */
+const shown = (ids: string[]) => ids.filter((id) => !document.querySelector<HTMLElement>(`[data-item-row="${id}"]`)?.hidden);
 
 /**
  * The Item List as an editable table: change a price, waste, cost code, unit,
@@ -46,12 +50,17 @@ export function ItemTable({
   returnTo,
   editId,
   editForm,
+  renameCat,
+  categories,
 }: {
   rows: ItemRow[];
   costCodes: CostCode[];
   returnTo: string;
   editId?: string;
   editForm?: React.ReactNode;
+  /** The category whose "Rename or merge…" box is open. */
+  renameCat?: string;
+  categories: string[];
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [status, setStatus] = useState<Record<string, Status>>({});
@@ -69,6 +78,8 @@ export function ItemTable({
   const picked = [...selected].filter((id) => visible.has(id));
 
   const toggle = (ids: string[], on: boolean) => {
+    // Ticking a whole group skips what the find box hid.
+    if (on && ids.length > 1) ids = shown(ids);
     setSelected((cur) => {
       const next = new Set(cur);
       for (const id of ids) {
@@ -82,7 +93,8 @@ export function ItemTable({
   /** A change on a ticked row goes to every ticked row (spreadsheet-style); otherwise just this one. */
   const save = (id: string, field: ItemCell, value: string) => {
     const k = `${id}:${field}`;
-    const ids = selected.has(id) && picked.length > 1 ? picked : [id];
+    const many = shown(picked);
+    const ids = selected.has(id) && many.length > 1 ? many : [id];
     setStatus((s) => ({ ...s, [k]: "saving" }));
     startTransition(async () => {
       const r = await saveItemCells(ids, field, value);
@@ -104,7 +116,8 @@ export function ItemTable({
   /** "Still good": marks the price checked today (on every ticked row, when this one is ticked). */
   const stillGood = (id: string) => {
     const k = `${id}:unitCost`;
-    const ids = selected.has(id) && picked.length > 1 ? picked : [id];
+    const many = shown(picked);
+    const ids = selected.has(id) && many.length > 1 ? many : [id];
     setStatus((s) => ({ ...s, [k]: "saving" }));
     startTransition(async () => {
       const r = await confirmItemPrices(ids);
@@ -113,14 +126,15 @@ export function ItemTable({
   };
   const mark = (id: string, field: ItemCell) => <CellStatus status={status[`${id}:${field}`]} />;
   const allOn = rows.length > 0 && picked.length === rows.length;
+  const withParam = (k: string, v: string) => `${returnTo}${returnTo.includes("?") ? "&" : "?"}${k}=${encodeURIComponent(v)}`;
 
   return (
     <>
-      <div className="relative overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+      <div className="relative overflow-x-auto" data-find-group>
         <table className="w-full min-w-[980px] text-left text-sm" onKeyDown={moveByArrow}>
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <thead className="border-b border-slate-100 text-xs text-slate-500">
             <tr>
-              <th className={cn(pinBox, "bg-slate-50 py-2.5")}>
+              <th className={cn(pinBox, "bg-white py-2")}>
                 <input
                   type="checkbox"
                   aria-label="Select all items shown"
@@ -129,16 +143,18 @@ export function ItemTable({
                   onChange={(e) => toggle([...visible], e.target.checked)}
                 />
               </th>
-              <th className={cn(pinItem, "bg-slate-50 py-2.5 font-medium")}>Item</th>
-              <th className="px-2 py-2.5 font-medium">Cost code</th>
-              <th className="px-2 py-2.5 text-right font-medium">Unit cost</th>
-              <th className="px-2 py-2.5 text-right font-medium">Waste %</th>
-              <th className="px-2 py-2.5 text-center font-medium" title="Round quantities up (sold whole)">
+              <th className={cn(pinItem, "bg-white py-2 font-normal")}>Item</th>
+              <th className="px-2 py-2 font-normal">Cost code</th>
+              <th className="px-2 py-2 text-right font-normal">Unit cost</th>
+              <th className="px-2 py-2 text-right font-normal">Waste %</th>
+              <th className="px-2 py-2 text-center font-normal" title="Round quantities up (sold whole)">
                 Round up
               </th>
-              <th className="px-2 py-2.5 font-medium">SKU</th>
-              <th className="px-2 py-2.5 font-medium">Vendor</th>
-              <th className="px-2 py-2.5 text-right font-medium">Used</th>
+              <th className="px-2 py-2 font-normal">SKU</th>
+              <th className="px-2 py-2 font-normal">Vendor</th>
+              <th className="px-2 py-2 text-right font-normal" title="How many assembly lines use it">
+                Used
+              </th>
               <th />
             </tr>
           </thead>
@@ -146,7 +162,8 @@ export function ItemTable({
             const ids = list.map((r) => r.id);
             const on = ids.every((id) => selected.has(id));
             return (
-              <tbody key={cat} className="divide-y divide-slate-100">
+              // A category with nothing left after the find box hides, heading and all.
+              <tbody key={cat} className="divide-y divide-slate-100 border-b border-slate-100 last:border-b-0 [&:not(:has([data-find]:not([hidden])))]:hidden">
                 <tr className="bg-slate-50/70">
                   <td className={cn(pinBox, "bg-slate-50 py-1.5")}>
                     <input
@@ -158,20 +175,56 @@ export function ItemTable({
                     />
                   </td>
                   <td colSpan={9} className="bg-slate-50 px-2 py-1.5">
-                    <span className="sticky left-12 inline-flex flex-wrap items-center gap-x-4 gap-y-1">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{cat}</span>
-                    </span>
+                    {renameCat === cat ? (
+                      // Tidy up categories: rename this one, or type / pick another to merge it in.
+                      <form action={renameItemCategory} className="sticky left-12 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                        <input type="hidden" name="from" value={cat} />
+                        <span>
+                          Rename <strong className="text-slate-800">{cat}</strong> or merge it into
+                        </span>
+                        <input
+                          name="to"
+                          list="item-categories"
+                          required
+                          autoFocus
+                          className="input !h-7 !w-56 !py-0 text-xs"
+                          placeholder="New name, or pick one to merge into"
+                          aria-label="Rename or merge into"
+                        />
+                        <datalist id="item-categories">
+                          {categories
+                            .filter((c) => c !== cat)
+                            .map((c) => (
+                              <option key={c} value={c} />
+                            ))}
+                        </datalist>
+                        <button type="submit" className="inline-flex h-7 items-center rounded-md bg-blue-700 px-2.5 text-xs font-medium text-white hover:bg-blue-800">
+                          Save
+                        </button>
+                        <Link href={returnTo} scroll={false} className={editLink}>
+                          Cancel
+                        </Link>
+                      </form>
+                    ) : (
+                      <span className="sticky left-12 inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-xs font-semibold text-slate-700">{cat}</span>
+                        <span className="text-xs text-slate-400">{list.length}</span>
+                        <Link href={withParam("rename", cat)} scroll={false} className={editLink}>
+                          Rename or merge…
+                        </Link>
+                      </span>
+                    )}
                   </td>
                 </tr>
                 {list.map((i) =>
                   editId === i.id ? (
-                    <tr key={i.id} id={`item-${i.id}`}>
-                      <td colSpan={10} className="bg-slate-50/50 px-4 py-4">
+                    <tr key={i.id} id={`item-${i.id}`} data-item-row={i.id} data-find={findText(i)}>
+                      <td colSpan={10} className="bg-blue-50/40 px-4 py-3">
                         {editForm}
                       </td>
                     </tr>
                   ) : (
-                    <tr key={i.id} className={cn("group", selected.has(i.id) ? "bg-blue-50" : "bg-white hover:bg-slate-50")}>
+                    <tr key={i.id} data-item-row={i.id} data-find={findText(i)} className={cn("group", selected.has(i.id) ? "bg-blue-50" : "bg-white hover:bg-slate-50")}>
                       <td className={cn(pinBox, "bg-inherit py-1.5 align-middle")}>
                         <input
                           type="checkbox"
@@ -286,8 +339,11 @@ export function ItemTable({
             );
           })}
         </table>
+        <p data-find-none hidden className="px-4 py-3 text-sm text-slate-500">
+          None match.
+        </p>
       </div>
-      <p className="text-xs text-slate-500">
+      <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">
         {picked.length > 1 ? (
           <span className="font-medium text-blue-800">
             {picked.length} rows ticked — change a box on any of them and it goes into all {picked.length}.{" "}
@@ -299,6 +355,9 @@ export function ItemTable({
     </>
   );
 }
+
+/** What the find box looks for: name, notes, SKU, vendor, category. */
+const findText = (i: ItemRow) => [i.name, i.notes, i.sku, i.vendor, i.category].filter(Boolean).join(" ").toLowerCase();
 
 /** ✓ when a cell saved, a spinner dot while saving, and the error when it didn't. */
 function CellStatus({ status }: { status?: Status }) {

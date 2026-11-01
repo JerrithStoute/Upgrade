@@ -89,6 +89,7 @@ export const FINANCIALS: HelpArticle[] = [
         ],
         items: [
           { name: "← All bills / ← the job's purchasing", what: "Two ways back at the top. **All bills** returns to Bills in the menu on the same filter, so you can approve or pay bills on many jobs one after another. The other goes to this job's Purchasing tab." },
+          { name: "Next →", what: "When you opened the bill from Bills in the menu: a Next → link under \"All bills\" (with where it is in that list), so you can approve or pay them one after another. It follows the list as it showed when you clicked." },
           { name: "Approve", what: "At the top of a waiting bill. Approves it; its amount becomes the job's actual cost on the Budget. If it puts the PO over, a red note says so: approve only if the extra was agreed." },
           { name: "Reject…", what: "Opens a small box for an optional reason, then **Reject** sends the bill back. A rejected bill can be changed and approved, or deleted." },
           { name: "Mark paid…", what: "At the top of an approved bill. Opens a small box: the date, how (Check, ACH, Card, Cash, Other) and the check number or reference." },
@@ -235,6 +236,7 @@ export const FINANCIALS: HelpArticle[] = [
         items: [
           { name: "Mark sent", what: "Sends a draft: emails it to the client and shows it in their portal. If the client has no portal sign-in yet, the email includes a link to set one up. The note under the header says who it will go to." },
           { name: "← All invoices / ← the job's invoices", what: "Two ways back at the top. **All invoices** returns to Invoices in the menu, on the same filter you opened it from, so you can work through invoices on many jobs one after another. The other goes to this job's Invoices tab." },
+          { name: "Next →", what: "When you opened the invoice from Invoices in the menu: a Next → link under \"All invoices\" (with where it is in that list, \"3 of 12\"), so you can work straight through. It follows the list as it showed when you clicked, with its filter and anything typed in the find box." },
           { name: "Print / PDF", what: "The invoice as a page to print or save as a PDF." },
           { name: "Void… / Delete…", what: "Void cancels the invoice; it stops counting toward what's been invoiced. Delete removes a draft for good. Both ask first." },
           { name: "Total / Paid / Balance due", what: "The tiles under the header. Balance due turns red when it's overdue." },

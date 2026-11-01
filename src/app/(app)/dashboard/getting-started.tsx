@@ -54,7 +54,7 @@ export async function GettingStarted({ isAdmin }: { isAdmin: boolean }) {
             done: codedKinds >= MATERIAL_KINDS.length,
             label: "Choose cost codes for your materials",
             hint: "Where framing lumber, sheathing, drywall and trim go on your estimates — from your own list.",
-            href: "/catalog/items#program-items",
+            href: "/catalog/items?setup=1#program-items",
           },
         ]
       : []),

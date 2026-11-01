@@ -210,6 +210,21 @@ test("invoices the client", async () => {
   await expect(page.getByRole("link", { name: /invoices$/ }).filter({ hasText: "#" })).toBeVisible();
   await page.getByRole("link", { name: "← All invoices" }).click();
   await expect(page).toHaveURL(/\/invoices\?status=DRAFT$/);
+
+  // A second draft, so Next has somewhere to go: the list's first invoice says "1 of 2", Next opens the second.
+  await page.goto(`${job}/invoices/new`);
+  await page.locator("[name=title]").fill("Second draw");
+  await page.locator("[name=itemDescription]").first().fill("Framing");
+  await page.locator("[name=itemQuantity]").first().fill("1");
+  await page.locator("[name=itemUnitPrice]").first().fill("1000");
+  await page.getByRole("button", { name: "Create invoice" }).click();
+  await expect(page).toHaveURL(/\/invoices\/c[a-z0-9]+$/);
+  await page.goto("/invoices?status=DRAFT");
+  const rows = await page.locator("#invoice-list [data-href]").count();
+  await page.locator("#invoice-list [data-href]").first().getByRole("link").last().click();
+  await expect(page.getByText(`1 of ${rows}`)).toBeVisible();
+  await page.getByRole("link", { name: "Next →" }).click();
+  await expect(page.getByText(`2 of ${rows}`)).toBeVisible();
 });
 
 test("adds to inventory, counts it, and removes it", async () => {
@@ -272,6 +287,45 @@ test("opens the Catalog and Settings homes, and a page in each", async () => {
   await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
   await page.getByRole("link", { name: /Lead sources/ }).click();
   await expect(page.getByRole("link", { name: "← Settings" })).toBeVisible();
+});
+
+test("adds, finds, edits and removes an item on the Item List", async () => {
+  await page.goto("/catalog/items");
+  // Items the program adds: one line until Set up…
+  await page.getByRole("link", { name: "Set up…" }).click();
+  await expect(page.getByLabel("Category for Windows")).toBeVisible();
+  await page.getByRole("link", { name: "Done" }).click();
+  await expect(page.getByLabel("Category for Windows")).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Add item" }).click();
+  await expect(page.getByText("Add an item")).toBeVisible();
+  const box = page.locator("form", { hasText: "Add an item" });
+  await box.getByLabel("Name").fill("Flow test board");
+  await box.getByLabel("Category", { exact: true }).fill("Flow test stuff");
+  await box.getByLabel("Unit cost").fill("12.5");
+  await box.getByRole("button", { name: "Add item" }).click();
+  await expect(page.getByText("Add an item")).toHaveCount(0);
+
+  const find = page.getByPlaceholder("Find an item, SKU or vendor…");
+  await find.fill("flow test board");
+  await expect(page.getByText("1 match")).toBeVisible();
+  await find.fill("nothing like this zzq");
+  await expect(page.getByText("None match.")).toBeVisible();
+  await find.fill("");
+
+  await page.getByRole("link", { name: "Edit Flow test board" }).click();
+  await expect(page.getByRole("button", { name: "Save item" })).toBeVisible();
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Save item" })).toHaveCount(0);
+
+  await page.getByRole("link", { name: "Rename or merge…" }).last().click();
+  await expect(page.getByLabel("Rename or merge into")).toBeVisible();
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page.getByLabel("Rename or merge into")).toHaveCount(0);
+
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete Flow test board" }).click();
+  await expect(page.getByText("Flow test board")).toHaveCount(0);
 });
 
 test("opens every report", async () => {

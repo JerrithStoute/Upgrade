@@ -43,7 +43,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
   return (
     <div className="space-y-4">
       <Suspense>
-        <RememberList kind="bills" />
+        <RememberList kind="bills" listId="bill-list" />
       </Suspense>
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-xl font-semibold text-slate-900">Bills</h1>
@@ -96,6 +96,7 @@ export default async function BillsPage({ searchParams }: { searchParams: Promis
                   return (
                     <tr
                       key={b.id}
+                      data-href={href}
                       data-find={[`#${b.project.number}`, b.project.name, b.vendorName, b.billNumber, po].filter(Boolean).join(" ").toLowerCase()}
                       className="border-b border-slate-100 align-top last:border-b-0"
                     >
