@@ -755,19 +755,19 @@ export const TAKEOFF: HelpArticle[] = [
     what: "**Catalog → Doors** and **Catalog → Windows** decide what a door or window is described by when you add one to a job's list on the takeoff: which parts are asked, the choices for each, the usual one, and what goes in its name. Picks, never typing, so the same door gets the same name, and is the same Item List item, on every job.",
     how: [
       "Go to **Catalog → Doors** (or **Windows**).",
-      "Turn off what you don't track (don't care about hollow or solid? untick **Ask for it** on Core), add the choices you use, and pick the usual one.",
-      "Click **Save**. The line at the top shows what a usual one will be named.",
+      "Turn off what you don't track (don't care about hollow or solid? untick **Ask** on the Core row), add the choices you use, and pick the usual one.",
+      "Click **Save** at the top, next to the name a usual one will get.",
     ],
     sections: [
       {
         heading: "Each part",
         items: [
           { name: "Size", what: "Always asked, typed the usual way (2868, 3050)." },
-          { name: "Ask for it", what: "Ticked: it's asked when one is added, and is in its name and on the bid list. Unticked: never asked, never in the name. Int / Ext is always asked on doors: it files the door as interior or exterior, for its cost code and the bid list." },
-          { name: "Choices", what: "What can be picked. Type one in **Add a choice** and press Enter or **+**; the **×** on one takes it off (doors already made keep their names). The usual one is shown in blue. Choices can also be added right from a job's list on the takeoff (**+ Add a choice…**)." },
+          { name: "Ask", what: "Ticked: it's asked when one is added, and is in its name and on the bid list. Unticked: never asked, never in the name. Int / Ext is always asked on doors: it files the door as interior or exterior, for its cost code and the bid list." },
+          { name: "Choices", what: "What can be picked. Click **+ Add** on the row, type one and press Enter or **Add** (add as many as you like, then **Done**); the **×** on one takes it off (doors already made keep their names). The usual one is shown in blue. A long list shows its first few and **+N more**. Choices can also be added right from a job's list on the takeoff (**+ Add a choice…**)." },
           { name: "Usual", what: "Picked to start with when one is added." },
           { name: "In the name", what: "**Always**, or **Only when it isn't the usual**. With Color set to only when it isn't Standard, a white window is \"3050 Single Hung\" and a black one \"3050 Single Hung Black/Black\"." },
-          { name: "A part of your own", what: "Something only some doors or windows have. **Choices you pick from** (Material: Wood, Metal, Fiberglass) or **A tick box** (Grids: in the name when it's ticked). Click **Add part**, give it its choices, and click **Save**." },
+          { name: "A part of your own", what: "Something only some doors or windows have. **Choices you pick from** (Material: Wood, Metal, Fiberglass) or **A tick box** (Grids: in the name when it's ticked). Click **+ Add a part of your own…**, name it, pick how it's answered, click **Add part**, give it its choices, and click **Save**. A part of your own has **Remove…** on its row." },
           { name: "Remove", what: "Takes a part of your own off. Doors or windows already on the Item List keep it in their name." },
         ],
       },

@@ -392,8 +392,13 @@ test("sets up doors in the Catalog: less detail, and a part for the odd door", a
   await page.getByRole("link", { name: /^Doors/ }).click();
   await expect(page.getByText("A usual door is named 2868 Int Prehung Hollow 2x4 Jamb")).toBeVisible();
   // Don't track the core.
-  await page.locator("li").filter({ hasText: /^Core/ }).getByLabel("Ask for it").uncheck();
+  // A long list of choices shows its first few until "+N more".
+  await expect(page.getByRole("button", { name: "Take Attic Access off Type" })).toHaveCount(0);
+  await page.getByRole("button", { name: /^\+\d+ more$/ }).click();
+  await expect(page.getByRole("button", { name: "Take Attic Access off Type" })).toBeVisible();
+  await page.getByLabel("Ask for Core").uncheck();
   // A Material part: Wood as the usual, in the name only when it isn't.
+  await page.getByRole("button", { name: "+ Add a part of your own…" }).click();
   await page.getByPlaceholder("Material").fill("Material");
   await page.getByRole("button", { name: "Add part" }).click();
   await page.getByLabel("Add a material choice").fill("Wood");
