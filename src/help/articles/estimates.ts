@@ -168,8 +168,12 @@ export const ESTIMATES: HelpArticle[] = [
       {
         heading: "Estimate templates",
         items: [
-          { name: "New template", what: "A blank estimate with your usual line items, allowances, notes and terms, to start new jobs from." },
-          { name: "Edit / Duplicate / Delete", what: "Opens a template (same sheet as the estimate), copies it, or deletes it. Estimates already made from it aren't affected." },
+          { name: "Find a template", what: "Narrows the list as you type." },
+          { name: "+ New template", what: "A one-line box: name and description. **Create** opens it: a blank estimate to fill with your usual line items, allowances, notes and terms, to start new jobs from." },
+          { name: "A template's name / Duplicate", what: "The name opens it (same sheet as the estimate). **Duplicate** copies it and opens the copy." },
+          { name: "Edit (beside the name)", what: "Changes its name and description." },
+          { name: "Copied into each new estimate", what: "Its starting markup, proposal notes and terms. **Edit** changes them in place." },
+          { name: "Delete template…", what: "Top right of a template. Estimates already made from it aren't affected." },
         ],
       },
       {

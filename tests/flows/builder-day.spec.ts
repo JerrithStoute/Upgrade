@@ -289,6 +289,29 @@ test("opens the Catalog and Settings homes, and a page in each", async () => {
   await expect(page.getByRole("link", { name: "← Settings" })).toBeVisible();
 });
 
+test("makes an estimate template, sets its notes, duplicates it and deletes both", async () => {
+  await page.goto("/catalog/estimate-templates");
+  await page.getByRole("link", { name: "New template" }).click();
+  await page.getByLabel("Template name").fill("Flow test estimate");
+  await page.getByRole("button", { name: "Create" }).click();
+  await expect(page.getByRole("heading", { name: "Flow test estimate" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "← Estimate templates" })).toBeVisible();
+  await page.locator("section", { hasText: "Copied into each new estimate" }).getByRole("link", { name: "Edit" }).click();
+  await page.getByLabel("Proposal notes").fill("Flow test note");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Flow test note")).toBeVisible();
+  await page.getByRole("button", { name: "Duplicate" }).click();
+  await expect(page.getByRole("heading", { name: "Flow test estimate (copy)" })).toBeVisible();
+  for (const name of ["Flow test estimate (copy)", "Flow test estimate"]) {
+    await page.goto("/catalog/estimate-templates");
+    await page.getByRole("link", { name, exact: true }).click();
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: "Delete template…" }).click();
+    await expect(page).toHaveURL(/\/catalog\/estimate-templates$/);
+  }
+  await expect(page.getByText("Flow test estimate")).toHaveCount(0);
+});
+
 test("makes a takeoff template with a takeoff and an item, then deletes it", async () => {
   await page.goto("/catalog/takeoff-templates");
   await page.getByRole("link", { name: "New template" }).click();
