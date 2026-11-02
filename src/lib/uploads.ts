@@ -2,7 +2,7 @@ import "server-only";
 import path from "path";
 import { promises as fs, createReadStream } from "fs";
 import { Readable } from "stream";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { normalizeKey } from "./storage-key";
 import { currentCompanyId } from "./tenant";
 import { checkUpload, type UploadKind } from "./file-types";
@@ -146,9 +146,9 @@ function disposition(kind: "inline" | "attachment", name: string) {
  * storage: the server never holds it. Otherwise the file itself, streamed. `inline`: opened in the
  * browser (only types that are safe to) rather than saved.
  */
-export async function fileResponse(storagePath: string, o: { name: string; mimeType: string; inline: boolean }): Promise<Response> {
+export async function fileResponse(storagePath: string, o: { name: string; mimeType: string; inline: boolean; ifNoneMatch?: string | null; /** Through the server even when files go direct (a page reading it, e.g. to mark up a photo). */ through?: boolean }): Promise<Response> {
   const inline = o.inline && INLINE_TYPES.has(o.mimeType);
-  if (filesDirect()) {
+  if (filesDirect() && !o.through) {
     const url = await cloud.signedUrl(normalizeKey(storagePath), {
       method: "GET",
       filename: o.name,
@@ -157,6 +157,9 @@ export async function fileResponse(storagePath: string, o: { name: string; mimeT
     });
     return new Response(null, { status: 302, headers: { Location: url, "Cache-Control": "no-store" } });
   }
+  // The browser asks again each time and gets "not changed" unless the file did (a photo marked up).
+  const etag = `"${createHash("sha1").update(storagePath).digest("hex").slice(0, 16)}"`;
+  if (o.ifNoneMatch === etag) return new Response(null, { status: 304, headers: { ETag: etag, "Cache-Control": "private, no-cache" } });
   const { body, size } = await readUploadStream(storagePath);
   return new Response(body, {
     headers: {
@@ -166,7 +169,8 @@ export async function fileResponse(storagePath: string, o: { name: string; mimeT
       "X-Content-Type-Options": "nosniff",
       // Belt and braces for anything that is rendered. Skipped for PDFs: Chrome's viewer refuses sandboxed ones.
       ...(o.mimeType === "application/pdf" && inline ? {} : { "Content-Security-Policy": "sandbox" }),
-      "Cache-Control": "private, max-age=3600",
+      "Cache-Control": "private, no-cache",
+      ETag: etag,
     },
   });
 }

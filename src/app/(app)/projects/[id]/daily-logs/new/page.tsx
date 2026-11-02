@@ -2,8 +2,8 @@ import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { entryHours, fmtHours } from "@/lib/time-math";
 import { getProject } from "@/lib/projects";
-import { Card, CardHeader, CardBody, SubmitButton, ButtonLink } from "@/components/ui";
-import { LogFields } from "../_components/log-form";
+import Link from "@/components/link";
+import { LogForm } from "../_components/log-form";
 import { createLog } from "../actions";
 import { companyClock } from "@/lib/company-zone";
 import { timeRules } from "@/lib/time-clock";
@@ -22,26 +22,27 @@ export default async function NewDailyLogPage({ params }: { params: Promise<{ id
   });
   const crew = new Set(clocked.map((e) => e.userId)).size;
   const hours = clocked.reduce((n, e) => n + entryHours(e, now, rules), 0);
+  const base = `/projects/${project.id}/daily-logs`;
   return (
-    <Card>
-      <CardHeader title="New daily log" description="Capture today's conditions, crew and progress. Photos are attached to the log and filed under Photos." />
-      <CardBody>
-        <form action={createLog} className="space-y-4">
-          <input type="hidden" name="projectId" value={project.id} />
-          <LogFields values={{ date: clock.now, clientVisible: true, crewCount: crew, hoursWorked: Math.round(hours * 2) / 2 }} />
-          {crew ? (
-            <p className="text-xs text-slate-500">
-              Crew and hours are from today&apos;s time clock on this job ({crew} {crew === 1 ? "person" : "people"}, {fmtHours(hours, rules.hoursFormat)} hrs so far).
-            </p>
-          ) : null}
-          <div className="flex items-center gap-2">
-            <SubmitButton pendingText="Saving log…">Save log</SubmitButton>
-            <ButtonLink href={`/projects/${project.id}/daily-logs`} variant="secondary">
-              Cancel
-            </ButtonLink>
-          </div>
-        </form>
-      </CardBody>
-    </Card>
+    <div className="space-y-2">
+      <Link href={base} className="text-xs font-medium text-blue-700 hover:underline">
+        ← Daily logs
+      </Link>
+      <LogForm
+        title="New daily log"
+        action={createLog}
+        hidden={{ projectId: project.id }}
+        values={{ date: clock.now, clientVisible: true, crewCount: crew, hoursWorked: Math.round(hours * 2) / 2 }}
+        cancelHref={base}
+        note={
+          <>
+            {crew
+              ? `Crew and hours are from today's time clock on this job (${crew} ${crew === 1 ? "person" : "people"}, ${fmtHours(hours, rules.hoursFormat)} hrs so far). `
+              : null}
+            Leave weather, high or low blank and it&apos;s filled in for the job&apos;s ZIP code when you save. Photos are filed under Photos too.
+          </>
+        }
+      />
+    </div>
   );
 }

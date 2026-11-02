@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { fileSrc } from "@/lib/file-src";
 import { notFound } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { requireView } from "@/lib/auth";
@@ -61,7 +62,7 @@ export default async function WarrantyRequestPage({
       vendor: { select: { id: true, name: true, contact: true, phone: true, email: true, logins: { where: { active: true }, select: { id: true } } } },
       createdBy: { select: { name: true } },
       notes: { orderBy: { createdAt: "asc" }, include: { author: { select: { name: true, role: true } } } },
-      files: { orderBy: { createdAt: "asc" }, select: { id: true, name: true, mimeType: true } },
+      files: { orderBy: { createdAt: "asc" }, select: { id: true, name: true, mimeType: true, storagePath: true } },
     },
   });
   if (!w) notFound();
@@ -222,7 +223,7 @@ export default async function WarrantyRequestPage({
               <Row label="Where">{w.location}</Row>
               <Row label="Urgent">{w.urgent ? <span className="font-medium text-red-700">Yes</span> : "No"}</Row>
               <Row label="Details">{w.description ? <span className="whitespace-pre-line">{w.description}</span> : null}</Row>
-              <Row label="Photos">{w.files.length ? <WarrantyPhotos files={w.files} small /> : null}</Row>
+              <Row label="Photos">{w.files.length ? <WarrantyPhotos files={w.files.map((f) => ({ id: f.id, name: f.name, mimeType: f.mimeType, src: fileSrc(f) }))} small markUp /> : null}</Row>
               <Row label="Reported">{`${fmtDate(w.createdAt)} ${w.fromClient ? "by the client" : `by ${w.createdBy?.name ?? "the team"}`}`}</Row>
               {client ? (
                 <Row label="Homeowner">

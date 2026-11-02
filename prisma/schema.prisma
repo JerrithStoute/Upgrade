@@ -1065,32 +1065,34 @@ model Todo {
 // ---------------------------------------------------------------------------
 
 model FileAsset {
-  id                String           @id @default(cuid())
+  id                  String           @id @default(cuid())
   // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
-  companyId         String           @default(dbgenerated("current_setting('app.company_id'::text)"))
-  projectId         String
-  project           Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  dailyLogId        String?
-  dailyLog          DailyLog?        @relation(fields: [dailyLogId], references: [id], onDelete: SetNull)
-  uploadedById      String?
-  uploadedBy        User?            @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
-  name              String
-  storagePath       String // relative to uploads dir
-  mimeType          String
-  size              Int
-  folder            String           @default("Documents") // Photos | Plans | Documents | Contracts
-  clientVisible     Boolean          @default(true)
-  createdAt         DateTime         @default(now())
+  companyId           String           @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId           String
+  project             Project          @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  dailyLogId          String?
+  dailyLog            DailyLog?        @relation(fields: [dailyLogId], references: [id], onDelete: SetNull)
+  uploadedById        String?
+  uploadedBy          User?            @relation(fields: [uploadedById], references: [id], onDelete: SetNull)
+  name                String
+  storagePath         String // relative to uploads dir
+  mimeType            String
+  size                Int
+  // A photo that's been marked up: where the unmarked original is kept (Undo markup puts it back).
+  originalStoragePath String?
+  folder              String           @default("Documents") // Photos | Plans | Documents | Contracts
+  clientVisible       Boolean          @default(true)
+  createdAt           DateTime         @default(now())
   // A selection's file, or a choice's picture.
-  selectionId       String?
-  selection         Selection?       @relation(fields: [selectionId], references: [id], onDelete: SetNull)
-  selectionOptionId String?
-  selectionOption   SelectionOption? @relation(fields: [selectionOptionId], references: [id], onDelete: SetNull)
-  changeOrderId     String?
-  changeOrder       ChangeOrder?     @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+  selectionId         String?
+  selection           Selection?       @relation(fields: [selectionId], references: [id], onDelete: SetNull)
+  selectionOptionId   String?
+  selectionOption     SelectionOption? @relation(fields: [selectionOptionId], references: [id], onDelete: SetNull)
+  changeOrderId       String?
+  changeOrder         ChangeOrder?     @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
   // A warranty request's photo (folder Warranty).
-  warrantyRequestId String?
-  warrantyRequest   WarrantyRequest? @relation(fields: [warrantyRequestId], references: [id], onDelete: SetNull)
+  warrantyRequestId   String?
+  warrantyRequest     WarrantyRequest? @relation(fields: [warrantyRequestId], references: [id], onDelete: SetNull)
 
   takeoffPlan TakeoffPlan?
   views       FileView[]

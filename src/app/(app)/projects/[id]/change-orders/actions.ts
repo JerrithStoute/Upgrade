@@ -386,6 +386,7 @@ export async function removeChangeOrderFile(projectId: string, fileId: string): 
   if (!file) return { ok: false, error: "File not found" };
   await db.fileAsset.delete({ where: { id: file.id } });
   await deleteUpload(file.storagePath);
+  if (file.originalStoragePath) await deleteUpload(file.originalStoragePath);
   revalidate(projectId, file.changeOrderId ?? undefined);
   return { ok: true };
 }

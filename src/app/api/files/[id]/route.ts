@@ -36,9 +36,18 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   // ?open=1 is a client opening it from its link (not a thumbnail): remembered as seen.
   if (user.role === "CLIENT" && search.get("open") === "1") await recordClientView(file, { id: user.id, name: user.name });
 
+  // ?original=1: a marked-up photo as it was uploaded — for the builder's team only.
+  const original = search.get("original") === "1" && isStaff(user) && file.originalStoragePath;
   try {
     // ?download=1 saves the file instead of opening it.
-    return await fileResponse(file.storagePath, { name: file.name, mimeType: file.mimeType, inline: search.get("download") !== "1" });
+    return await fileResponse(original || file.storagePath, {
+      name: file.name,
+      mimeType: file.mimeType,
+      inline: search.get("download") !== "1",
+      ifNoneMatch: req.headers.get("if-none-match"),
+      // ?through=1: the team's page reads the picture itself (to mark it up), so it can't come from cloud storage's address.
+      through: search.get("through") === "1" && isStaff(user),
+    });
   } catch {
     return new NextResponse("File missing on disk", { status: 404 });
   }

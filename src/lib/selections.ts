@@ -4,6 +4,7 @@ import { ensureEstimateSpecs } from "./estimate-lines";
 import { allowanceAmount } from "./proposal-options";
 import { tiedDeadline } from "./deadlines";
 import { allowanceExtras, parseMarkupTable } from "./markup";
+import { fileSrc, markable } from "./file-src";
 import { markViewed, noteChange, selectionExtras, updatedSince } from "./selection-activity";
 import { fileSeen } from "./file-views";
 import { costCodeLabel } from "./utils";
@@ -176,6 +177,8 @@ export async function boardForViewer(projectId: string, userId: string, forClien
       id: f.id,
       name: f.name,
       isImage: f.mimeType.startsWith("image/"),
+      src: fileSrc(f),
+      markable: markable(f.mimeType),
       mine: f.uploadedById === userId,
       seen: seen.get(f.id) ?? null,
     })),

@@ -98,7 +98,7 @@ export async function selectionExtras(selectionIds: string[], forClient: boolean
     db.fileAsset.findMany({
       where: { selectionId: { in: selectionIds }, ...(forClient ? { clientVisible: true } : {}) },
       orderBy: { createdAt: "asc" },
-      select: { id: true, name: true, mimeType: true, selectionId: true, uploadedById: true },
+      select: { id: true, name: true, mimeType: true, selectionId: true, uploadedById: true, storagePath: true },
     }),
     db.fileAsset.findMany({
       where: { selectionOption: { selectionId: { in: selectionIds } }, mimeType: { startsWith: "image/" } },

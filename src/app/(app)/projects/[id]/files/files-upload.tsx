@@ -2,18 +2,20 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Loader2, XCircle } from "lucide-react";
-import { Field, FormGrid, SubmitButton } from "@/components/ui";
+import { Camera, CheckCircle2, Loader2, Upload, XCircle } from "lucide-react";
+import { buttonClasses } from "@/components/ui";
+import { cn } from "@/lib/utils";
 import { actionMessage } from "@/lib/action-message";
 import { putFile, startDirect } from "@/components/direct-upload";
-import { PhotoPicker } from "@/components/photos/photo-picker";
+import { preparePhoto } from "@/components/photos/prepare";
 
 type Item = { name: string; progress: number; status: "uploading" | "done" | "error"; error?: string };
 
 /**
- * Upload files to the job: the folder, the files, visible to the client or not. Online the files go
- * straight to cloud storage (with a progress bar each) and are then checked and recorded; on a PC — or
- * before that's switched on — the form sends them through the server as it always has.
+ * The Files tab's drop zone — the same as the Plans tab's: drop files on it (or click it to choose) and
+ * they upload right away, into the folder picked under it, the client seeing them or not. Photos are made
+ * web-sized first. Online each file goes straight to cloud storage (with its own progress bar) and is then
+ * checked and recorded; on a PC — or before that's switched on — they go through the server.
  */
 export function FilesUpload({
   projectId,
@@ -33,28 +35,34 @@ export function FilesUpload({
   typesNote: React.ReactNode;
 }) {
   const router = useRouter();
-  const form = useRef<HTMLFormElement>(null);
-  // Set once direct isn't available: the form then goes the old way, through the server.
-  const throughServer = useRef(false);
+  const input = useRef<HTMLInputElement>(null);
+  const [folder, setFolder] = useState(defaultFolder);
+  const [clientVisible, setClientVisible] = useState(true);
+  const [dragging, setDragging] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
   const [note, setNote] = useState<{ text: string; bad?: boolean } | null>(null);
   const busy = items.some((i) => i.status === "uploading");
 
-  const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-    if (throughServer.current) return;
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    const files = fd.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
-    if (!files.length) return;
+  const send = async (picked: File[]) => {
+    if (!picked.length || busy) return;
     setNote(null);
+    setItems(picked.map((f) => ({ name: f.name, progress: 0, status: "uploading" })));
     try {
+      const files = await Promise.all(picked.map(preparePhoto));
       const first = await startDirect(projectId, "file", files[0]);
       if (!first.direct) {
-        throughServer.current = true;
-        form.current?.requestSubmit();
+        // Through the server, the way it's always gone on a PC.
+        const fd = new FormData();
+        fd.set("projectId", projectId);
+        fd.set("returnTo", returnTo);
+        fd.set("folder", folder);
+        if (clientVisible) fd.set("clientVisible", "on");
+        for (const f of files) fd.append("files", f);
+        await action(fd);
+        setItems([]);
+        router.refresh();
         return;
       }
-      setItems(files.map((f) => ({ name: f.name, progress: 0, status: "uploading" })));
       const tickets: string[] = [];
       const problems: string[] = [];
       for (const [i, file] of files.entries()) {
@@ -71,40 +79,90 @@ export function FilesUpload({
           set({ status: "error", error: message });
         }
       }
-      const r = tickets.length
-        ? await finish({ projectId, folder: String(fd.get("folder") ?? ""), clientVisible: fd.get("clientVisible") === "on", tickets })
-        : { added: 0, failed: [] };
+      const r = tickets.length ? await finish({ projectId, folder, clientVisible, tickets }) : { added: 0, failed: [] };
       const failed = [...problems, ...r.failed];
       setNote({
-        text: `${r.added ? `Uploaded ${r.added} file${r.added === 1 ? "" : "s"}.` : ""}${failed.length ? ` ${failed.join(" ")}` : ""}`.trim(),
+        text: `${r.added ? `Uploaded ${r.added} file${r.added === 1 ? "" : "s"} to ${folder}.` : ""}${failed.length ? ` ${failed.join(" ")}` : ""}`.trim(),
         bad: failed.length > 0,
       });
-      form.current?.reset();
+      if (!failed.length) setItems([]);
       router.refresh();
     } catch (err) {
+      setItems([]);
       setNote({ text: actionMessage(err, "The files didn't upload"), bad: true });
     }
   };
 
   return (
-    <form ref={form} action={action} onSubmit={onSubmit} className="space-y-4">
-      <input type="hidden" name="projectId" value={projectId} />
-      <input type="hidden" name="returnTo" value={returnTo} />
-      <FormGrid className="md:grid-cols-3">
-        <Field label="Folder" htmlFor="up-folder">
-          <select id="up-folder" name="folder" className="input" defaultValue={defaultFolder}>
+    <div className="space-y-2">
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Drop files here, or click to choose"
+        onClick={() => input.current?.click()}
+        onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && input.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          void send(Array.from(e.dataTransfer.files));
+        }}
+        className={cn(
+          "flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed px-4 py-4 text-center transition-colors",
+          dragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/50",
+        )}
+      >
+        {busy ? <Loader2 className="h-5 w-5 animate-spin text-blue-600" /> : <Upload className={cn("h-5 w-5", dragging ? "text-blue-600" : "text-slate-400")} />}
+        <p className="text-sm font-medium text-slate-800">{busy ? "Uploading…" : "Drop files here, or click to choose"}</p>
+        <div className="text-xs text-slate-500">They upload right away. {typesNote}</div>
+        <input
+          ref={input}
+          id="up-files"
+          type="file"
+          multiple
+          aria-label="Choose files"
+          className="hidden"
+          onChange={(e) => {
+            void send(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
+        />
+      </div>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-slate-600">
+        <label className="flex items-center gap-1.5">
+          Into
+          <select id="up-folder" className="h-7 rounded-md border border-slate-300 bg-white pl-2 pr-7 text-xs text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/20 pointer-coarse:h-9 pointer-coarse:text-base" value={folder} onChange={(e) => setFolder(e.target.value)} aria-label="Folder">
             {folders.map((f) => (
               <option key={f} value={f}>
                 {f}
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Files" htmlFor="up-files" className="md:col-span-2">
-          <PhotoPicker id="up-files" name="files" required />
-          {typesNote}
-        </Field>
-      </FormGrid>
+        </label>
+        <label className="flex items-center gap-1.5 text-slate-700">
+          <input type="checkbox" checked={clientVisible} onChange={(e) => setClientVisible(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+          Client sees them
+        </label>
+        <label className={cn(buttonClasses("secondary", "xs"), "ml-auto hidden cursor-pointer pointer-coarse:inline-flex")}>
+          <Camera className="h-3.5 w-3.5" /> Take photo
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            className="sr-only"
+            onChange={(e) => {
+              void send(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
+          />
+        </label>
+      </div>
       {items.length ? (
         <ul className="space-y-1 text-sm">
           {items.map((i, n) => (
@@ -127,16 +185,7 @@ export function FilesUpload({
           ))}
         </ul>
       ) : null}
-      <div className="flex items-center gap-4">
-        <SubmitButton pendingText="Uploading…" disabled={busy}>
-          {busy ? "Uploading…" : "Upload"}
-        </SubmitButton>
-        <label className="flex items-center gap-2 text-sm text-slate-700">
-          <input type="checkbox" name="clientVisible" defaultChecked className="h-4 w-4 rounded border-slate-300" />
-          Visible to client
-        </label>
-      </div>
       {note ? <p className={note.bad ? "text-sm text-rose-700" : "text-sm text-emerald-700"}>{note.text}</p> : null}
-    </form>
+    </div>
   );
 }

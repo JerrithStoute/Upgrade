@@ -253,6 +253,7 @@ function Card({
             onRemove={(id) => removeSelectionFile(projectId, id)}
             canRemove={() => true}
             showSeen
+            markUp
           />
         </div>
         <div>

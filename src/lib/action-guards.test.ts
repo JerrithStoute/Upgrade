@@ -100,7 +100,10 @@ test("Settings actions are for administrators — or a position allowed that par
 test("a change in an area checks the position may edit that area", () => {
   // Positions: every action in a folder that belongs to an area asks for that area — a plain
   // "signed in" check would let a view-only (or hidden) position change it.
-  const own = new Set(["(app)/todos/actions.ts"]); // everyone keeps their own to-dos (the action checks the rest)
+  const own = new Set([
+    "(app)/todos/actions.ts", // everyone keeps their own to-dos (the action checks the rest)
+    "(app)/projects/[id]/files/markup-actions.ts", // a photo's markup checks the area the photo lives in (a daily log, a selection…) or Files
+  ]);
   const loose = serverActions().filter((a) => {
     const area = areaOf(a.file);
     if (!area || own.has(a.file) || !GUARD.test(a.body)) return false;

@@ -95,6 +95,7 @@ export const deleteFile = friendly(async function deleteFile(fd: FormData) {
   const file = await db.fileAsset.findFirst({ where: { id, projectId: project.id } });
   if (!file) throw new Error("File not found");
   await deleteUpload(file.storagePath);
+  if (file.originalStoragePath) await deleteUpload(file.originalStoragePath);
   await db.fileAsset.delete({ where: { id } });
   await logActivity({ projectId: project.id, userId: user.id, type: "file.deleted", description: `Deleted file "${file.name}"` });
   revalidate(project.id);

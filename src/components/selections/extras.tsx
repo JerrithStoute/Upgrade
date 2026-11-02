@@ -6,12 +6,13 @@ import { FileText, ImagePlus, Paperclip, X } from "lucide-react";
 import { cn, fmtDateTime } from "@/lib/utils";
 import { buttonClasses } from "@/components/ui";
 import { usePhotoCheck } from "@/components/photos/photo-picker";
+import { MarkUpPhoto } from "@/components/photos/mark-up-photo";
 
 type Result = { ok: true } | { ok: false; error: string };
 export type CardComment = { id: string; author: string; body: string; internal: boolean; at: Date; mine: boolean };
 export type CardLog = { id: string; who: string; what: string; at: Date };
 /** `seen`: for a client, when they opened it; for your team, "Sarah viewed Oct 6, 2:14 PM" (clients only). */
-export type CardFile = { id: string; name: string; isImage: boolean; mine: boolean; seen?: string | null };
+export type CardFile = { id: string; name: string; isImage: boolean; mine: boolean; seen?: string | null; /** The picture's address (it changes when the photo's marked up). */ src?: string; markable?: boolean };
 
 /**
  * "Did the client see it?" A client gets Open to review / ✓ Viewed (and the link counts
@@ -177,6 +178,7 @@ export function FilesBox({
   canRemove,
   track,
   showSeen,
+  markUp,
 }: {
   files: CardFile[];
   onAdd: (fd: FormData) => Promise<Result>;
@@ -186,6 +188,8 @@ export function FilesBox({
   track?: (fileId: string) => void;
   /** Your team's view of a selection: whether the client opened each file. */
   showSeen?: boolean;
+  /** Your team's view: a pencil on each photo to mark it up. */
+  markUp?: boolean;
 }) {
   const input = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
@@ -236,17 +240,20 @@ export function FilesBox({
       <ul className="flex flex-wrap gap-2">
         {files.map((f) => (
           <li key={f.id} className="group relative">
-            <a href={fileHref(f.id, track && !f.mine)} target="_blank" rel="noopener" title={f.name} className="block" onClick={() => track && !f.mine && track(f.id)}>
-              {f.isImage ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={`/api/files/${f.id}`} alt={f.name} className="h-16 w-16 rounded-md object-cover ring-1 ring-slate-200" />
-              ) : (
-                <span className="flex h-16 w-28 flex-col items-center justify-center gap-1 rounded-md bg-slate-50 px-1 text-center text-[10px] text-slate-600 ring-1 ring-slate-200">
-                  <FileText className="h-4 w-4 text-slate-400" />
-                  <span className="line-clamp-2 break-all">{f.name}</span>
-                </span>
-              )}
-            </a>
+            <span className="relative block">
+              <a href={fileHref(f.id, track && !f.mine)} target="_blank" rel="noopener" title={f.name} className="block" onClick={() => track && !f.mine && track(f.id)}>
+                {f.isImage ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={f.src ?? `/api/files/${f.id}`} alt={f.name} className="h-16 w-16 rounded-md object-cover ring-1 ring-slate-200" />
+                ) : (
+                  <span className="flex h-16 w-28 flex-col items-center justify-center gap-1 rounded-md bg-slate-50 px-1 text-center text-[10px] text-slate-600 ring-1 ring-slate-200">
+                    <FileText className="h-4 w-4 text-slate-400" />
+                    <span className="line-clamp-2 break-all">{f.name}</span>
+                  </span>
+                )}
+              </a>
+              {markUp && f.markable ? <MarkUpPhoto id={f.id} name={f.name} chip className="h-5 w-5 [&_svg]:h-3 [&_svg]:w-3" /> : null}
+            </span>
             {(track || showSeen) && !f.mine ? (
               <span className="mt-0.5 block text-center leading-none">
                 <SeenMark seen={f.seen} client={!!track} />

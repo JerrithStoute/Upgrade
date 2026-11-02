@@ -473,7 +473,7 @@ export function ChangeOrderEditor({
       </Section>
 
       <Section title="Files" note="Attached for approval — the client sees them.">
-        <FilesBox files={files} onAdd={(fd) => addChangeOrderFiles(projectId, co.id, fd)} onRemove={(fid) => removeChangeOrderFile(projectId, fid)} canRemove={() => true} />
+        <FilesBox files={files} onAdd={(fd) => addChangeOrderFiles(projectId, co.id, fd)} onRemove={(fid) => removeChangeOrderFile(projectId, fid)} canRemove={() => true} markUp />
       </Section>
 
       <Section title="Closing text">

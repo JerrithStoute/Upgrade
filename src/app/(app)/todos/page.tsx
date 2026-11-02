@@ -4,10 +4,10 @@ import { allows } from "@/lib/access";
 import { db } from "@/lib/db";
 import { staffUsers } from "@/lib/projects";
 import { PageHeader } from "@/components/ui";
-import { TodoList } from "@/components/todos/todo-list";
+import { TodoList, isOverdue } from "@/components/todos/todo-list";
 import { companyClock } from "@/lib/company-zone";
 
-export default async function TodosPage({ searchParams }: { searchParams: Promise<{ show?: string; assignee?: string; edit?: string }> }) {
+export default async function TodosPage({ searchParams }: { searchParams: Promise<{ show?: string; assignee?: string; edit?: string; add?: string }> }) {
   const user = await requireStaff();
   // Everyone has their own to-dos; everyone else's take "Schedule, daily logs & to-dos".
   const everyone = allows(user.access, "field", 1);
@@ -17,7 +17,8 @@ export default async function TodosPage({ searchParams }: { searchParams: Promis
   const where: Prisma.TodoWhereInput = {};
   if (show !== "all") where.status = show === "done" ? "DONE" : "OPEN";
   if (assignee === "me") where.assigneeId = user.id;
-  const [todos, staff, projects] = await Promise.all([
+  const mine: Prisma.TodoWhereInput = assignee === "me" ? { assigneeId: user.id } : {};
+  const [todos, staff, projects, open, done, { now: today }] = await Promise.all([
     db.todo.findMany({
       where,
       orderBy: show === "done" ? [{ completedAt: "desc" }] : [{ status: "asc" }, { dueDate: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
@@ -25,20 +26,26 @@ export default async function TodosPage({ searchParams }: { searchParams: Promis
     }),
     staffUsers(),
     db.project.findMany({ where: { status: { notIn: ["COMPLETED", "CANCELLED"] }, isTemplate: false }, orderBy: { number: "asc" }, select: { id: true, number: true, name: true } }),
+    db.todo.findMany({ where: { ...mine, status: "OPEN" }, orderBy: { dueDate: "asc" }, select: { title: true, status: true, dueDate: true } }),
+    db.todo.count({ where: { ...mine, status: "DONE" } }),
+    companyClock(),
   ]);
   return (
     <div>
       <PageHeader title="To-Dos" description="Action items across every project." />
       <TodoList
-        today={(await companyClock()).now}
+        today={today}
         todos={todos}
         staff={staff}
         projects={projects}
         basePath="/todos"
         query={{ show: sp.show, assignee: sp.assignee }}
         editId={sp.edit}
+        adding={!!sp.add}
         show={show}
         assigneeFilter={assignee}
+        canSeeEveryone={everyone}
+        summary={{ open: open.length, done, overdue: open.filter((t) => isOverdue(t, today)).map((t) => t.title) }}
         currentUserId={user.id}
       />
     </div>

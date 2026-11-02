@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { fileSrc, markable } from "@/lib/file-src";
 import { notFound } from "next/navigation";
 import { Printer } from "lucide-react";
 import { requireView } from "@/lib/auth";
@@ -27,7 +28,7 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
     db.changeOrder.findFirst({ where: { id: coId, projectId: project.id }, include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } }),
     unaddedChoices(project.id),
     db.user.findMany({ where: { role: { in: ["ADMIN", "STAFF"] }, active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    db.fileAsset.findMany({ where: { changeOrderId: coId }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, mimeType: true, uploadedById: true } }),
+    db.fileAsset.findMany({ where: { changeOrderId: coId }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, mimeType: true, uploadedById: true, storagePath: true } }),
     db.company.findFirst({ select: { changeOrderDefaults: true } }),
     db.changeOrder.findMany({ where: { projectId: project.id, status: "APPROVED", id: { not: coId } }, include: { items: true } }),
     approvedEstimateTotal(project.id),
@@ -187,7 +188,7 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
         team={team}
         clientName={clientName}
         effect={effect}
-        files={files.map((f) => ({ id: f.id, name: f.name, isImage: f.mimeType.startsWith("image/"), mine: f.uploadedById === user.id }))}
+        files={files.map((f) => ({ id: f.id, name: f.name, isImage: f.mimeType.startsWith("image/"), src: fileSrc(f), markable: markable(f.mimeType), mine: f.uploadedById === user.id }))}
         defaults={parseCoDefaults(company?.changeOrderDefaults)}
       />
     </div>

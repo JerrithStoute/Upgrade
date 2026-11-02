@@ -415,6 +415,7 @@ export async function removeSelectionFile(projectId: string, fileId: string): Pr
   if (!file) return { ok: false, error: "File not found" };
   await db.fileAsset.delete({ where: { id: file.id } });
   await deleteUpload(file.storagePath);
+  if (file.originalStoragePath) await deleteUpload(file.originalStoragePath);
   if (file.selectionId) await noteChange(file.selectionId, user, `Removed file "${file.name}"`);
   revalidate(projectId);
   revalidatePath(`/projects/${projectId}/files`);

@@ -1,6 +1,8 @@
 import { FileText } from "lucide-react";
 import { cn, fmtDate } from "@/lib/utils";
 import { warrantyLabel, warrantyTone } from "@/lib/warranty";
+import { markable } from "@/lib/file-src";
+import { MarkUpPhoto } from "@/components/photos/mark-up-photo";
 
 /** A request's status, the same words for the client, the sub and the team. */
 export function WarrantyStatus({ status, urgent }: { status: string; urgent?: boolean }) {
@@ -14,17 +16,25 @@ export function WarrantyStatus({ status, urgent }: { status: string; urgent?: bo
   );
 }
 
-/** Its photos (and any PDF): small pictures that open full size. */
-export function WarrantyPhotos({ files, small }: { files: { id: string; name: string; mimeType: string }[]; small?: boolean }) {
+/** Its photos (and any PDF): small pictures that open full size. `markUp`: your team's view, a pencil on each photo. */
+export function WarrantyPhotos({
+  files,
+  small,
+  markUp,
+}: {
+  files: { id: string; name: string; mimeType: string; /** The picture's address (it changes when the photo's marked up). */ src?: string }[];
+  small?: boolean;
+  markUp?: boolean;
+}) {
   if (!files.length) return null;
   return (
     <ul className="flex flex-wrap gap-2">
       {files.map((f) => (
-        <li key={f.id}>
+        <li key={f.id} className="relative">
           <a href={`/api/files/${f.id}?open=1`} target="_blank" rel="noreferrer" title={f.name} className="block">
             {f.mimeType.startsWith("image/") && f.mimeType !== "image/heic" ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={`/api/files/${f.id}`} alt={f.name} className={cn("rounded-md object-cover ring-1 ring-slate-200", small ? "h-12 w-12" : "h-20 w-20")} />
+              <img src={f.src ?? `/api/files/${f.id}`} alt={f.name} className={cn("rounded-md object-cover ring-1 ring-slate-200", small ? "h-12 w-12" : "h-20 w-20")} />
             ) : (
               <span className={cn("flex flex-col items-center justify-center gap-1 rounded-md bg-slate-50 px-1 text-center text-[10px] text-slate-600 ring-1 ring-slate-200", small ? "h-12 w-12" : "h-20 w-20")}>
                 <FileText className="h-5 w-5 text-slate-400" />
@@ -32,6 +42,7 @@ export function WarrantyPhotos({ files, small }: { files: { id: string; name: st
               </span>
             )}
           </a>
+          {markUp && markable(f.mimeType) ? <MarkUpPhoto id={f.id} name={f.name} chip className="h-5 w-5 [&_svg]:h-3 [&_svg]:w-3" /> : null}
         </li>
       ))}
     </ul>

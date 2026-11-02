@@ -156,6 +156,118 @@ test("opens Daily Logs: one card with New log and the Photos folder link", async
   await expect(page.getByRole("link", { name: "Photos folder" })).toBeVisible();
 });
 
+test("writes a daily log, edits it and deletes it", async () => {
+  await page.goto(`${job}/daily-logs/new`);
+  await page.getByLabel("Work done").fill("Flow set the sill plates");
+  await page.getByLabel("Weather", { exact: true }).selectOption({ index: 1 });
+  await page.getByLabel("High °F").fill("60");
+  await page.getByLabel("Low °F").fill("40");
+  await page.getByRole("button", { name: "Save log" }).first().click();
+  await expect(page.getByText("Flow set the sill plates")).toBeVisible();
+  await page.getByRole("link", { name: /^Edit the log for/ }).first().click();
+  await expect(page.getByRole("heading", { name: "Edit log" })).toBeVisible();
+  await page.getByLabel("Issues / delays").fill("Flow waiting on anchor bolts");
+  await page.getByRole("button", { name: "Save log" }).last().click();
+  await expect(page.getByText("Flow waiting on anchor bolts")).toBeVisible();
+  await page.getByRole("link", { name: /^Edit the log for/ }).first().click();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete log…" }).click();
+  await expect(page.getByText("Flow set the sill plates")).toHaveCount(0);
+});
+
+test("adds a to-do on the job, finds it, checks it off and deletes it", async () => {
+  await page.goto(`${job}/todos`);
+  await page.getByRole("link", { name: "Add to-do" }).click();
+  await page.getByLabel("Title").fill("Flow call the framer");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(page.getByText("Flow call the framer")).toBeVisible();
+  await page.getByPlaceholder("Find a to-do…").fill("zzz");
+  await expect(page.getByText("None match.")).toBeVisible();
+  await page.getByPlaceholder("Find a to-do…").fill("framer");
+  await page.getByRole("button", { name: "Mark done" }).first().click();
+  await expect(page.getByText("Flow call the framer")).toHaveCount(0);
+  await page.getByRole("link", { name: "Done", exact: true }).click();
+  page.once("dialog", (d) => d.accept());
+  await page.locator("li", { hasText: "Flow call the framer" }).getByRole("button", { name: "Delete…" }).click();
+  await expect(page.getByText("Flow call the framer")).toHaveCount(0);
+});
+
+test("drops a file on the Files tab, finds it, makes it internal and deletes it", async () => {
+  await page.goto(`${job}/files`);
+  await page.getByLabel("Folder").selectOption("Permits");
+  // Dropped on the drop zone, the way someone drags it in from their computer: it uploads right away.
+  const drop = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(["%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF"], "Flow permit.pdf", { type: "application/pdf" }));
+    return dt;
+  });
+  const zone = page.getByRole("button", { name: "Drop files here, or click to choose" });
+  await zone.dispatchEvent("dragover", { dataTransfer: drop });
+  await zone.dispatchEvent("drop", { dataTransfer: drop });
+  const row = page.locator("li", { hasText: "Flow permit.pdf" });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("Permits", { exact: true })).toBeVisible();
+  await page.getByPlaceholder("Find a file…").fill("zzz");
+  await expect(page.getByText("None match.")).toBeVisible();
+  await page.getByPlaceholder("Find a file…").fill("flow permit");
+  await row.getByRole("button", { name: "Client" }).click();
+  await expect(row.getByRole("button", { name: "Internal" })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await row.getByRole("button", { name: "Delete…" }).click();
+  await expect(page.getByText("Flow permit.pdf")).toHaveCount(0);
+});
+
+test("marks up a saved photo, sees the original, and undoes the markup", async () => {
+  await page.goto(`${job}/files`);
+  await page.getByLabel("Folder").selectOption("Photos");
+  const drop = await page.evaluateHandle(async () => {
+    const c = document.createElement("canvas");
+    c.width = c.height = 60;
+    const g = c.getContext("2d")!;
+    g.fillStyle = "#c33";
+    g.fillRect(0, 0, 60, 60);
+    const blob = await new Promise<Blob>((ok) => c.toBlob((b) => ok(b!), "image/png"));
+    const dt = new DataTransfer();
+    dt.items.add(new File([blob], "Flow photo.png", { type: "image/png" }));
+    return dt;
+  });
+  const zone = page.getByRole("button", { name: "Drop files here, or click to choose" });
+  await zone.dispatchEvent("drop", { dataTransfer: drop });
+  const row = page.locator("li", { hasText: "Flow photo" });
+  await expect(row).toBeVisible();
+  await row.getByRole("button", { name: "Mark up" }).click();
+  const editor = page.getByRole("dialog", { name: "Mark up photo" });
+  await editor.getByRole("button", { name: "Save" }).click();
+  await expect(editor).toHaveCount(0);
+  await expect(row.getByText("Marked up")).toBeVisible();
+  await expect(row.getByRole("link", { name: "Original" })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await row.getByRole("button", { name: "Undo markup…" }).click();
+  await expect(row.getByText("Marked up")).toHaveCount(0);
+  page.once("dialog", (d) => d.accept());
+  await row.getByRole("button", { name: "Delete…" }).click();
+  await expect(page.getByText("Flow photo")).toHaveCount(0);
+});
+
+test("starts an internal conversation, replies, finds it and deletes it", async () => {
+  await page.goto(`${job}/messages`);
+  await page.getByLabel("Subject").fill("Flow framing question");
+  await page.getByLabel("Client sees it").uncheck();
+  await page.getByLabel("First message").fill("Are the trusses ordered?");
+  await page.getByRole("button", { name: "Start conversation" }).click();
+  await expect(page.getByRole("heading", { name: "Flow framing question" })).toBeVisible();
+  await page.getByLabel("Reply").fill("Yes, Thursday.");
+  await page.getByRole("button", { name: "Send" }).click();
+  await expect(page.getByText("Yes, Thursday.").last()).toBeVisible();
+  await page.getByPlaceholder("Find a conversation…").fill("zzz");
+  await expect(page.getByText("None match.")).toBeVisible();
+  await page.getByPlaceholder("Find a conversation…").fill("thursday");
+  await expect(page.locator("#thread-list li", { hasText: "Flow framing question" })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete…" }).click();
+  await expect(page.getByRole("heading", { name: "Flow framing question" })).toHaveCount(0);
+});
+
 test("opens the Bids tab with its sections in order", async () => {
   await page.goto(`${job}/bids`);
   for (const name of ["What to send, and who to", "Send to subs", "Sent", "Compare and take"])

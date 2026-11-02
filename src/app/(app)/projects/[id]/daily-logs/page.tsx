@@ -6,6 +6,8 @@ import { getProject } from "@/lib/projects";
 import { fmtDate, num } from "@/lib/utils";
 import { EmptyState } from "@/components/ui";
 import { ListFind } from "@/components/list-find";
+import { MarkUpPhoto } from "@/components/photos/mark-up-photo";
+import { fileSrc, markable } from "@/lib/file-src";
 
 export default async function DailyLogsPage({ params }: { params: Promise<{ id: string }> }) {
   await requireView("field");
@@ -45,7 +47,8 @@ export default async function DailyLogsPage({ params }: { params: Promise<{ id: 
         <EmptyState icon={ClipboardList} title="No daily logs yet" description="Record weather, crew, work completed and photos each day on site." />
       ) : (
         <div id="log-list">
-          <ul data-find-group>
+          <div data-find-group>
+          <ul>
             {logs.map((log) => (
               <li
                 key={log.id}
@@ -92,10 +95,13 @@ export default async function DailyLogsPage({ params }: { params: Promise<{ id: 
                 {log.files.length ? (
                   <div className="flex flex-wrap gap-1.5">
                     {log.files.map((f) => (
-                      <a key={f.id} href={`/api/files/${f.id}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border border-slate-200 bg-slate-50" title={f.name}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={`/api/files/${f.id}`} alt={f.name} className="h-16 w-16 object-cover" />
-                      </a>
+                      <div key={f.id} className="relative">
+                        <a href={`/api/files/${f.id}`} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border border-slate-200 bg-slate-50" title={f.name}>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={fileSrc(f)} alt={f.name} className="h-16 w-16 object-cover" />
+                        </a>
+                        {markable(f.mimeType) ? <MarkUpPhoto id={f.id} name={f.name} chip className="h-5 w-5 [&_svg]:h-3 [&_svg]:w-3" /> : null}
+                      </div>
                     ))}
                   </div>
                 ) : null}
@@ -105,6 +111,7 @@ export default async function DailyLogsPage({ params }: { params: Promise<{ id: 
           <p data-find-none hidden className="px-4 py-3 text-sm text-slate-500">
             None match.
           </p>
+          </div>
         </div>
       )}
     </section>

@@ -183,6 +183,7 @@ export async function clientRemoveFile(fileId: string): Promise<Result> {
   if (!file) return { ok: false, error: "You can only remove files you added" };
   await db.fileAsset.delete({ where: { id: file.id } });
   await deleteUpload(file.storagePath);
+  if (file.originalStoragePath) await deleteUpload(file.originalStoragePath);
   if (file.selectionId) await noteChange(file.selectionId, user, `Removed file "${file.name}"`);
   revalidatePortal(file.projectId);
   return { ok: true };

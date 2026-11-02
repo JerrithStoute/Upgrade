@@ -92,7 +92,7 @@ export const deleteLog = friendly(async function deleteLog(fd: FormData) {
   const id = str(fd, "id");
   const log = await db.dailyLog.findFirst({ where: { id, projectId: project.id }, include: { files: true } });
   if (!log) throw new Error("Log not found");
-  for (const f of log.files) await deleteUpload(f.storagePath);
+  for (const f of log.files) for (const p of [f.storagePath, f.originalStoragePath]) if (p) await deleteUpload(p);
   await db.fileAsset.deleteMany({ where: { dailyLogId: id } });
   await db.dailyLog.delete({ where: { id } });
   await logActivity({ projectId: project.id, userId: user.id, type: "daily_log.deleted", description: `Deleted daily log for ${fmtDate(log.date)}` });
@@ -108,6 +108,7 @@ export const deleteLogPhoto = friendly(async function deleteLogPhoto(fd: FormDat
   const file = await db.fileAsset.findFirst({ where: { id: fileId, projectId: project.id, dailyLogId: logId } });
   if (!file) throw new Error("Photo not found");
   await deleteUpload(file.storagePath);
+  if (file.originalStoragePath) await deleteUpload(file.originalStoragePath);
   await db.fileAsset.delete({ where: { id: fileId } });
   revalidate(project.id, logId);
   redirect(`${listPath(project.id)}/${logId}/edit`);
