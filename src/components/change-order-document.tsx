@@ -24,11 +24,13 @@ export function ChangeOrderDocument({
   d: ChangeOrderDoc;
   /** The client's Approve / Decline, on their signature line (portal). */ clientAction?: React.ReactNode;
 }) {
-  const { co, totals } = d;
+  const { co, totals, doc } = d;
   const hasSelections = d.lines.some((l) => l.kind === "SELECTION");
   const prices = co.showPrices;
+  // Client choices' Client price and Allowance beside the difference (the panel can leave them off).
+  const allow = hasSelections && prices && doc.allowance;
   // Columns: item, (choice), (client price, allowance), price / difference.
-  const cols = 1 + (hasSelections ? 1 : 0) + (prices ? (hasSelections ? 3 : 1) : 0);
+  const cols = 1 + (hasSelections ? 1 : 0) + (prices ? (allow ? 3 : 1) : 0);
   const [status, statusTone] = STATUS[co.status] ?? [co.status, "text-slate-600"];
   const signers = d.signers.length ? d.signers : [{ role: "Client", name: d.client ?? "Client", approvedAt: null, as: null }];
 
@@ -41,7 +43,9 @@ export function ChangeOrderDocument({
 
       {/* Title and status */}
       <header className={cn("text-center", d.company.logoUrl && "mt-6")}>
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Change Order #{co.number}</p>
+        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
+          {doc.heading} #{co.number}
+        </p>
         <h1 className="mt-1 text-3xl font-bold tracking-tight">{co.title}</h1>
         <p className="mt-1 text-sm">
           <span className="font-semibold text-slate-700">Status:</span> <span className={cn("font-semibold", statusTone)}>{status}</span>
@@ -83,7 +87,7 @@ export function ChangeOrderDocument({
         </div>
       </section>
 
-      {co.introText ? <p className="mt-6 whitespace-pre-line text-sm leading-relaxed text-slate-700">{co.introText}</p> : null}
+      {co.introText && doc.intro ? <p className="mt-6 whitespace-pre-line text-sm leading-relaxed text-slate-700">{co.introText}</p> : null}
 
       {/* Line items — the total is the table's last row */}
       <section className="mt-8 break-inside-avoid">
@@ -95,8 +99,8 @@ export function ChangeOrderDocument({
                 <tr className="border-b-2 border-slate-800 text-left text-xs uppercase tracking-wide text-slate-600">
                   <th className="py-2 pr-3">{hasSelections ? "Selection / item" : "Item"}</th>
                   {hasSelections ? <th className="py-2 pr-3">Choice</th> : null}
-                  {hasSelections && prices ? <th className="py-2 pr-3 text-right">Client price</th> : null}
-                  {hasSelections && prices ? <th className="py-2 pr-3 text-right">Allowance</th> : null}
+                  {allow ? <th className="py-2 pr-3 text-right">Client price</th> : null}
+                  {allow ? <th className="py-2 pr-3 text-right">Allowance</th> : null}
                   {prices ? <th className="py-2 text-right">{hasSelections ? "Difference" : "Price"}</th> : null}
                 </tr>
               </thead>
@@ -105,8 +109,8 @@ export function ChangeOrderDocument({
                   <tr key={l.id} className="break-inside-avoid border-b border-slate-100 align-top">
                     <td className="py-2 pr-3">{l.kind === "CHARGE" ? <span className="text-slate-600">Extra charge — {l.description}</span> : l.description}</td>
                     {hasSelections ? <td className="py-2 pr-3 text-slate-700">{l.kind === "SELECTION" ? l.choiceName : ""}</td> : null}
-                    {hasSelections && prices ? <td className="py-2 pr-3 text-right tabular-nums">{l.kind === "CHARGE" ? "" : money(l.clientPrice)}</td> : null}
-                    {hasSelections && prices ? <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{l.allowance !== null ? money(l.allowance) : ""}</td> : null}
+                    {allow ? <td className="py-2 pr-3 text-right tabular-nums">{l.kind === "CHARGE" ? "" : money(l.clientPrice)}</td> : null}
+                    {allow ? <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{l.allowance !== null ? money(l.allowance) : ""}</td> : null}
                     {prices ? <td className="py-2 text-right tabular-nums">{money(l.amount)}</td> : null}
                   </tr>
                 ))}
@@ -123,7 +127,7 @@ export function ChangeOrderDocument({
           <tfoot>
             {co.showItems && prices && (totals.profitLine || totals.tax) ? <Foot cols={cols} label="Subtotal" value={totals.shownSubtotal} /> : null}
             {co.showItems && prices && totals.profitLine ? (
-              <Foot cols={cols} label={`${co.profitLabel}${totals.feePct !== null ? ` (${num(totals.feePct, 2)}%)` : ""}`} value={totals.profit} />
+              <Foot cols={cols} label={`${co.profitLabel}${totals.feePct !== null && doc.feePct ? ` (${num(totals.feePct, 2)}%)` : ""}`} value={totals.profit} />
             ) : null}
             {co.showItems && prices && totals.tax ? <Foot cols={cols} label={`${co.taxLabel} (${num(co.taxPct, 3)}%)`} value={totals.tax} /> : null}
             <tr className="border-y-2 border-slate-800 text-base font-bold">
@@ -137,6 +141,7 @@ export function ChangeOrderDocument({
       </section>
 
       {/* Effect on the contract */}
+      {doc.effect ? (
       <section className="mt-8 break-inside-avoid">
         <h2 className="text-lg font-semibold">Effect on contract total</h2>
         <table className="mt-2 w-full text-sm">
@@ -163,28 +168,29 @@ export function ChangeOrderDocument({
         </table>
         <p className="mt-1 text-xs text-slate-500">* May not include other change orders approved since this one was created.</p>
       </section>
+      ) : null}
 
       {/* Terms, dates, files */}
-      {co.terms || co.scheduleImpactDays || co.priorCompletion || co.newCompletion || d.files.length ? (
+      {(doc.terms && co.terms) || (doc.schedule && (co.scheduleImpactDays || co.priorCompletion || co.newCompletion)) || (doc.files && d.files.length) ? (
         <section className="mt-6 break-inside-avoid space-y-1 text-sm text-slate-700">
-          {co.terms ? (
+          {co.terms && doc.terms ? (
             <p>
               <span className="font-semibold text-slate-900">Terms:</span> {co.terms}
             </p>
           ) : null}
-          {co.scheduleImpactDays ? (
+          {co.scheduleImpactDays && doc.schedule ? (
             <p>
               <span className="font-semibold text-slate-900">Effect on completion date:</span> {co.scheduleImpactDays > 0 ? "+" : ""}
               {co.scheduleImpactDays} day{Math.abs(co.scheduleImpactDays) === 1 ? "" : "s"}
             </p>
           ) : null}
-          {co.priorCompletion || co.newCompletion ? (
+          {(co.priorCompletion || co.newCompletion) && doc.schedule ? (
             <p>
               <span className="font-semibold text-slate-900">Projected completion:</span> {co.priorCompletion ? fmtDate(co.priorCompletion) : "—"} →{" "}
               {co.newCompletion ? fmtDate(co.newCompletion) : "—"}
             </p>
           ) : null}
-          {d.files.length ? (
+          {d.files.length && doc.files ? (
             <p className="flex flex-wrap items-center gap-2 pt-1">
               <span className="font-semibold text-slate-900">Files:</span>
               {d.files.map((f) => (
@@ -203,7 +209,7 @@ export function ChangeOrderDocument({
         </section>
       ) : null}
 
-      {co.closingText ? <p className="mt-6 whitespace-pre-line text-sm leading-relaxed text-slate-700">{co.closingText}</p> : null}
+      {co.closingText && doc.closing ? <p className="mt-6 whitespace-pre-line text-sm leading-relaxed text-slate-700">{co.closingText}</p> : null}
 
       {/* Approvals: a line for each signer; the client's Approve / Decline sits on theirs */}
       <section className="mt-10 break-inside-avoid">

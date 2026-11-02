@@ -41,6 +41,7 @@ export async function addStarterLumber() {
         roundUp: it.unit === "ea",
         costCodeId: place.costCodeId,
         notes: it.notes ?? null,
+        trimUses: it.trimUses ?? [],
       },
     });
   }

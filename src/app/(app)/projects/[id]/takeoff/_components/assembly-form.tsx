@@ -3,10 +3,12 @@
 import { useMemo, useState } from "react";
 import Link from "@/components/link";
 import { BookOpen, Plus } from "lucide-react";
-import { Field, SubmitButton, buttonClasses } from "@/components/ui";
+import { SubmitButton, buttonClasses } from "@/components/ui";
 import { UNITS } from "@/lib/constants";
-import { costCodeLabel, money } from "@/lib/utils";
+import { cn, costCodeLabel, money } from "@/lib/utils";
 import { METRICS, METRICS_BY_TYPE, itemNameKey, type ConditionType } from "@/lib/takeoff";
+import { Line, SMALL_BOXES } from "./mini";
+import { ItemSearch } from "@/components/item-search";
 
 export type AssemblyFormValues = {
   id: string;
@@ -36,7 +38,8 @@ export type ItemOption = {
 };
 
 /**
- * "qty [unit] per [per] [metric unit] of [metric]" — e.g. 1 ea per 32 sf of area.
+ * One item of a takeoff, in a small box of short lines: the item; "[1] [ea] per [32]
+ * [sf of area] · [0]% waste"; "$[price] each · [cost code]"; then Remove… / Cancel / Save.
  * The item name searches the Item List; picking an entry fills in its unit, price,
  * waste and cost code. A name that isn't on the list is added to it on save.
  */
@@ -50,6 +53,7 @@ export function AssemblyForm({
   cancelHref,
   onCancel,
   pricesLocked,
+  removeAction,
 }: {
   /** Job takeoffs: this job's prices are locked (a price typed here stays on this job). Leave out on templates. */
   pricesLocked?: boolean;
@@ -62,6 +66,8 @@ export function AssemblyForm({
   values?: AssemblyFormValues;
   cancelHref?: string;
   onCancel?: () => void;
+  /** Editing: Remove… (asks first) runs this with the form's fields (projectId, id, returnTo). */
+  removeAction?: (fd: FormData) => Promise<void>;
 }) {
   const metrics = METRICS_BY_TYPE[condition.type as ConditionType] ?? [];
   const p = (k: string) => `asm-${values?.id ?? `new-${condition.id}`}-${k}`;
@@ -88,130 +94,124 @@ export function AssemblyForm({
     setCostCodeId(item.costCodeId ?? "");
   };
 
+  const listPrice = match && match.unitCost > 0 && Math.abs(Number(unitCost.replace(/[$,\s]/g, "")) - match.unitCost) > 0.0001 ? match.unitCost : null;
+
   return (
-    <form action={action} className="space-y-3">
+    <form action={action} className={cn("space-y-1.5 rounded-md bg-slate-50 p-2", SMALL_BOXES)}>
       {Object.entries(hidden).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}
       <input type="hidden" name="conditionId" value={condition.id} />
       {values ? <input type="hidden" name="id" value={values.id} /> : null}
-      {/* Item on its own row; cost code and unit cost under it — room to read the price. */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Field label="Item" htmlFor={p("description")} className="col-span-2 md:col-span-4">
-          <input
-            id={p("description")}
-            name="description"
-            required
-            list={p("items")}
-            autoComplete="off"
-            className="input"
-            value={description}
-            onChange={(e) => pick(e.target.value)}
-            placeholder="Search the Item List or type a new item"
-          />
-          <datalist id={p("items")}>
-            {items.map((i) => (
-              <option key={i.id} value={i.name}>
-                {[i.category, i.sku, `${money(i.unitCost)}/${i.unit}`].filter(Boolean).join(" · ")}
-              </option>
-            ))}
-          </datalist>
-          {description.trim() ? (
-            match ? (
-              <p className="mt-1 flex items-center gap-1 text-xs text-slate-500">
-                <BookOpen className="h-3 w-3" /> From the Item List · {match.category} · list price {money(match.unitCost)}/{match.unit}
-                {match.unitCost > 0 && Math.abs(Number(unitCost.replace(/[$,\s]/g, "")) - match.unitCost) > 0.0001 ? (
-                  <button type="button" className="ml-1 font-medium text-blue-700 hover:underline" onClick={() => setUnitCost(String(match.unitCost))}>
-                    Use {money(match.unitCost)}
-                  </button>
-                ) : null}
-              </p>
-            ) : (
-              <p className="mt-1 flex items-center gap-1 text-xs text-emerald-700">
-                <Plus className="h-3 w-3" /> New — will be added to the Item List when you save
-              </p>
-            )
-          ) : null}
-        </Field>
-        <Field
-          label="Cost code"
-          htmlFor={p("costCodeId")}
-          className="col-span-2 md:col-span-4"
-          hint="Just this takeoff's line — the same item can go under another cost code in another takeoff. The price is shared."
-        >
-          <select id={p("costCodeId")} name="costCodeId" className="input" value={costCodeId} onChange={(e) => setCostCodeId(e.target.value)}>
-            <option value="">—</option>
-            {costCodes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {costCodeLabel(c)}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Unit cost" htmlFor={p("unitCost")} className="md:col-span-2">
-          <input id={p("unitCost")} name="unitCost" inputMode="decimal" className="input" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
-        </Field>
-        {hidden.projectId ? (
-          <div className="col-span-2 space-y-1 text-xs text-slate-500 md:col-span-4">
-            {pricesLocked ? (
-              <p>This job&apos;s prices are locked — a price you save here goes on every takeoff in this job that uses this item, and nowhere else.</p>
-            ) : (
-              <>
-                <label className="flex items-center gap-2 text-slate-700">
-                  <input type="checkbox" name="pinPrice" defaultChecked={values?.pricePinned ?? false} className="h-4 w-4 rounded border-slate-300" />
-                  This job only — keep this price when the Item List changes
-                </label>
-                <p>Not ticked: the price is the Item List&apos;s, so saving it here changes it on every job that isn&apos;t locked.</p>
-              </>
-            )}
-          </div>
-        ) : null}
-      </div>
-      <div className="flex flex-wrap items-end gap-2 text-sm text-slate-600">
-        <Field label="Qty" htmlFor={p("qty")} className="w-24">
-          <input id={p("qty")} name="qty" inputMode="decimal" className="input" defaultValue={values?.qty ?? 1} />
-        </Field>
-        <Field label="Unit" htmlFor={p("unit")} className="w-24">
-          <select id={p("unit")} name="unit" className="input" value={unit} onChange={(e) => setUnit(e.target.value)}>
-            {UNITS.map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <span className="pb-2">per</span>
-        <Field label="Per" htmlFor={p("per")} className="w-24">
-          <input id={p("per")} name="per" inputMode="decimal" className="input" defaultValue={values?.per ?? 1} />
-        </Field>
-        <Field label="Of" htmlFor={p("metric")} className="w-56">
-          <select id={p("metric")} name="metric" className="input" defaultValue={values?.metric ?? condition.metric}>
-            {metrics.map((m) => (
-              <option key={m} value={m}>
-                {METRICS[m].unit} of {METRICS[m].label.toLowerCase()}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <Field label="Waste %" htmlFor={p("wastePct")} className="w-24">
-          <input id={p("wastePct")} name="wastePct" inputMode="decimal" className="input" value={wastePct} onChange={(e) => setWastePct(e.target.value)} />
-        </Field>
-        <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
-          <input type="checkbox" name="roundUp" checked={roundUp} onChange={(e) => setRoundUp(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+      <Line>
+        <ItemSearch id={p("description")} name="description" required autoFocus={!values} value={description} onChange={pick} items={items} className="flex-1" />
+      </Line>
+      {description.trim() ? (
+        match ? (
+          <p className="flex flex-wrap items-center gap-1 text-[11px] text-slate-500">
+            <BookOpen className="h-3 w-3" /> From the Item List · {match.category} · list price {money(match.unitCost)}/{match.unit}
+            {listPrice != null ? (
+              <button type="button" className="ml-1 font-medium text-blue-700 hover:underline" onClick={() => setUnitCost(String(listPrice))}>
+                Use {money(listPrice)}
+              </button>
+            ) : null}
+          </p>
+        ) : (
+          <p className="flex items-center gap-1 text-[11px] text-emerald-700">
+            <Plus className="h-3 w-3" /> New — added to the Item List when you save
+          </p>
+        )
+      ) : null}
+      <Line>
+        <input id={p("qty")} name="qty" inputMode="decimal" aria-label="How many" className="input !w-12" defaultValue={values?.qty ?? 1} />
+        <select id={p("unit")} name="unit" aria-label="Unit" className="input !w-auto" value={unit} onChange={(e) => setUnit(e.target.value)}>
+          {UNITS.map((u) => (
+            <option key={u} value={u}>
+              {u}
+            </option>
+          ))}
+        </select>
+        <span>per</span>
+        <input id={p("per")} name="per" inputMode="decimal" aria-label="Per" className="input !w-14" defaultValue={values?.per ?? 1} />
+        <select id={p("metric")} name="metric" aria-label="Of" className="input !w-32" defaultValue={values?.metric ?? condition.metric}>
+          {metrics.map((m) => (
+            <option key={m} value={m}>
+              {METRICS[m].unit} of {METRICS[m].label.toLowerCase()}
+            </option>
+          ))}
+        </select>
+      </Line>
+      <Line>
+        <input id={p("wastePct")} name="wastePct" inputMode="decimal" aria-label="Waste %" className="input !w-11" value={wastePct} onChange={(e) => setWastePct(e.target.value)} />
+        <span>% waste</span>
+        <label className="flex items-center gap-1 text-slate-700">
+          <input type="checkbox" name="roundUp" checked={roundUp} onChange={(e) => setRoundUp(e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
           Round up
         </label>
-        <div className="ml-auto flex items-center gap-2 pb-0.5">
-          <SubmitButton size="sm">{values ? "Save item" : "Add item"}</SubmitButton>
-          {onCancel ? (
-            <button type="button" onClick={onCancel} className={buttonClasses("ghost", "sm")}>
-              Cancel
-            </button>
-          ) : cancelHref ? (
-            <Link href={cancelHref} className={buttonClasses("ghost", "sm")}>
-              Cancel
-            </Link>
-          ) : null}
-        </div>
+        <span>·</span>
+        <span>$</span>
+        <input id={p("unitCost")} name="unitCost" inputMode="decimal" aria-label="Unit cost" className="input !w-20" value={unitCost} onChange={(e) => setUnitCost(e.target.value)} />
+        <span>per {unit}</span>
+      </Line>
+      <Line>
+        {hidden.projectId ? (
+          pricesLocked ? (
+            <span title="A price you save here goes on every takeoff in this job that uses this item, and nowhere else.">Prices locked on this job</span>
+          ) : (
+            <label
+              className="flex items-center gap-1 text-slate-700"
+              title="Keeps this price on this job when the Item List changes. Not ticked: the price is the Item List's, so saving it here changes it on every job that isn't locked."
+            >
+              <input type="checkbox" name="pinPrice" defaultChecked={values?.pricePinned ?? false} className="h-3.5 w-3.5 rounded border-slate-300" />
+              This job only
+            </label>
+          )
+        ) : null}
+        <select
+          id={p("costCodeId")}
+          name="costCodeId"
+          aria-label="Cost code"
+          title="Just this takeoff's line — the same item can go under another cost code in another takeoff. The price is shared."
+          className="input min-w-36 flex-1"
+          value={costCodeId}
+          onChange={(e) => setCostCodeId(e.target.value)}
+        >
+          <option value="">Cost code —</option>
+          {costCodes.map((c) => (
+            <option key={c.id} value={c.id}>
+              {costCodeLabel(c)}
+            </option>
+          ))}
+        </select>
+      </Line>
+      {/* Save comes first in the page (shown last), so Enter in a box saves rather than removes. */}
+      <div className="flex items-center gap-2 pt-0.5">
+        <SubmitButton size="xs" className="order-last">
+          {values ? "Save" : "Add"}
+        </SubmitButton>
+        {values && removeAction ? (
+          <button
+            type="submit"
+            formAction={removeAction}
+            formNoValidate
+            className="text-xs text-rose-600 hover:underline"
+            onClick={(e) => {
+              if (!window.confirm(`Remove "${values.description}"?`)) e.preventDefault();
+            }}
+          >
+            Remove…
+          </button>
+        ) : null}
+        <span className="order-1 flex-1" />
+        {onCancel ? (
+          <button type="button" onClick={onCancel} className={buttonClasses("secondary", "xs", "order-2")}>
+            Cancel
+          </button>
+        ) : cancelHref ? (
+          <Link href={cancelHref} className={buttonClasses("secondary", "xs", "order-2")}>
+            Cancel
+          </Link>
+        ) : null}
       </div>
     </form>
   );

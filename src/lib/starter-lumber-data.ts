@@ -1,4 +1,4 @@
-import { DEFAULT_WALL_OPTIONS, lumberItemName, studItemName, withSheetSize } from "./takeoff";
+import { DEFAULT_WALL_OPTIONS, DEFAULT_WINDOW_OPTIONS, lumberItemName, studItemName, withSheetSize } from "./takeoff";
 
 /**
  * What a new company starts with (the "common lumber" box at sign-up) — the lists themselves.
@@ -63,7 +63,7 @@ export const STARTER_MEMBER_SIZES: StarterSize[] = [
   ).map(([d, n]) => engineered(`Glulam 5-1/2x${d}`, 5.5, n, null)),
 ];
 
-export type StarterItem = { name: string; category: string; unit: string; notes?: string };
+export type StarterItem = { name: string; category: string; unit: string; notes?: string; trimUses?: string[] };
 
 /** The Item List entries a first wall takeoff orders, named the way it names them. */
 export function starterItems(): StarterItem[] {
@@ -81,5 +81,10 @@ export function starterItems(): StarterItem[] {
   for (const size of ["2x4", "2x6"]) out.push({ name: plate(`${size} treated`), category: "Framing Lumber", unit: "ea", notes: "Bottom plates (treated)" });
   out.push({ name: withSheetSize(o.sheathingItem, o.sheathingSheet), category: "Sheathing", unit: "ea" });
   out.push({ name: withSheetSize(o.drywallItem, o.drywallSheet), category: "Drywall", unit: "ea" });
+  // Generic trim, $0, one for each trim box — each company adds its own from there.
+  out.push({ name: o.baseItem, category: "Trim", unit: "lf", trimUses: ["base"] });
+  out.push({ name: DEFAULT_WINDOW_OPTIONS.casingItem, category: "Trim", unit: "lf", trimUses: ["casing"] });
+  out.push({ name: DEFAULT_WINDOW_OPTIONS.apronItem, category: "Trim", unit: "lf", trimUses: ["apron"] });
+  out.push({ name: DEFAULT_WINDOW_OPTIONS.liningItem, category: "Trim", unit: "lf", trimUses: ["lining"] });
   return out;
 }

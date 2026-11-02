@@ -840,10 +840,10 @@ describe("windows", () => {
     assert.equal(qty("stool"), 2);
     // aprons 3'-4" ×2 share one; the 2'-4" needs another
     assert.equal(qty("apron"), 2);
-    // the stool is always "Window stool"; cased windows are lined with 1x6 primed (2 × height + width), by the foot
+    // the stool is always "Window stool"; cased windows are lined with the generic Lining (2 × height + width), by the foot
     assert.equal(lines.find((l) => l.key === "stool")?.name, "Window stool");
     const lining = lines.find((l) => l.key === "lining")!;
-    assert.equal(lining.name, "1x6 primed");
+    assert.equal(lining.name, "Lining");
     near(lining.qty, 2 * (2 * 5 + 3) + (2 * 3 + 2), 1e-9, "lining lf");
   });
 
@@ -860,7 +860,8 @@ describe("windows", () => {
   });
 
   it("trim with no stick length is ordered by the foot", () => {
-    const { lines } = windowTakeoff([w3050], { ...DEFAULT_WINDOW_OPTIONS, apronItem: "Apron" });
+    // No casing picked: no casing lines.
+    const { lines } = windowTakeoff([w3050], { ...DEFAULT_WINDOW_OPTIONS, casingItem: "" });
     const apron = lines.find((l) => l.key === "apron")!;
     assert.equal(apron.unit, "lf");
     near(apron.qty, (36 + 4) / 12, 1e-9, "apron lf");

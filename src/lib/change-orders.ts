@@ -89,7 +89,75 @@ export function effectOnContract(basePrice: number, previous: number, thisOne: n
 }
 
 /** "Use as default" values for new change orders. */
-export type CoDefaults = { introText?: string; closingText?: string; terms?: string; ifDeclined?: string; profitMode?: string; profitValue?: number; profitShown?: string };
+export type CoDefaults = {
+  introText?: string;
+  closingText?: string;
+  terms?: string;
+  ifDeclined?: string;
+  profitMode?: string;
+  profitValue?: number;
+  profitShown?: string;
+  // What the client sees (the Print / PDF page's "Use these as my defaults").
+  profitLabel?: string;
+  taxShown?: string;
+  taxLabel?: string;
+  showItems?: boolean;
+  showPrices?: boolean;
+  doc?: Partial<DocOptions>;
+};
+
+/** What the client sees on the paper, beyond items and prices (ChangeOrder.docOptions). */
+export type DocOptions = {
+  /** The word over the title ("Change Order", "Change Request"…). */
+  heading: string;
+  intro: boolean;
+  closing: boolean;
+  /** Client choices: the Client price and Allowance columns beside the difference. */
+  allowance: boolean;
+  /** The Effect on contract table. */
+  effect: boolean;
+  /** Days added and projected completion dates. */
+  schedule: boolean;
+  terms: boolean;
+  files: boolean;
+  /** The % beside a separate fee line ("Builder's fee (10%)"). */
+  feePct: boolean;
+};
+
+export const DEFAULT_DOC_OPTIONS: DocOptions = {
+  heading: "Change Order",
+  intro: true,
+  closing: true,
+  allowance: true,
+  effect: true,
+  schedule: true,
+  terms: true,
+  files: true,
+  feePct: true,
+};
+
+/** A change order's paper settings: what it saved, over the company's defaults, over the built-in ones. */
+export function parseDocOptions(json: string | null | undefined, defaults?: Partial<DocOptions>): DocOptions {
+  let saved: Partial<DocOptions> = {};
+  try {
+    const v = json ? JSON.parse(json) : {};
+    if (v && typeof v === "object" && !Array.isArray(v)) saved = v as Partial<DocOptions>;
+  } catch {
+    /* unreadable: the defaults */
+  }
+  const out = { ...DEFAULT_DOC_OPTIONS, ...(defaults ?? {}), ...saved };
+  return {
+    heading: typeof out.heading === "string" && out.heading.trim() ? out.heading.trim().slice(0, 60) : DEFAULT_DOC_OPTIONS.heading,
+    intro: out.intro !== false,
+    closing: out.closing !== false,
+    allowance: out.allowance !== false,
+    effect: out.effect !== false,
+    schedule: out.schedule !== false,
+    terms: out.terms !== false,
+    files: out.files !== false,
+    feePct: out.feePct !== false,
+  };
+}
 
 export function parseCoDefaults(json: string | null | undefined): CoDefaults {
   if (!json) return {};

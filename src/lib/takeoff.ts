@@ -1188,6 +1188,9 @@ export function round(value: number, digits = 2) {
  * Item List identity: ignores case, extra spaces and inch / foot marks, so
  * "Concrete" = "concrete " and '1/2" 4x12 Drywall' = "1/2 4x12 drywall".
  */
+/** Which trim box (Baseboard, casing Legs / Head, Apron, Lining) an Item List item is listed in — MaterialItem.trimUses. */
+export type TrimUse = "base" | "casing" | "apron" | "lining";
+
 export function itemNameKey(name: string) {
   return name
     .replace(/["'‘’“”′″]/g, "")
@@ -1584,7 +1587,8 @@ export type DoorOptions = {
   headStickFt: number;
 };
 
-export const DEFAULT_DOOR_OPTIONS: DoorOptions = { casingItem: "", casingSides: 2, casingStickFt: 0, headItem: "", headStickFt: 0 };
+// New takeoffs start with the generic trim a new company is given (rename or replace it any time).
+export const DEFAULT_DOOR_OPTIONS: DoorOptions = { casingItem: "Casing", casingSides: 2, casingStickFt: 0, headItem: "", headStickFt: 0 };
 
 export function feetInchesIn(inches: number) {
   const ft = Math.floor(inches / 12);
@@ -1686,15 +1690,15 @@ export type WindowOptions = {
 };
 
 export const DEFAULT_WINDOW_OPTIONS: WindowOptions = {
-  casingItem: "",
+  casingItem: "Casing",
   casingStickFt: 0,
   headItem: "",
   headStickFt: 0,
-  liningItem: "1x6 primed",
+  liningItem: "Lining",
   liningStickFt: 0,
   stoolStickFt: 0,
   stoolExtraIn: 6,
-  apronItem: "",
+  apronItem: "Apron",
   apronStickFt: 0,
   apronExtraIn: 4,
 };

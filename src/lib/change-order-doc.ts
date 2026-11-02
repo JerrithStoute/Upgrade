@@ -2,7 +2,7 @@ import "server-only";
 import { db } from "./db";
 import { getBrand } from "./company-brand";
 import { approvedEstimateTotal } from "./projects";
-import { changeOrderTotals, effectOnContract, parseApprovals, parseIds } from "./change-orders";
+import { changeOrderTotals, effectOnContract, parseApprovals, parseDocOptions, parseIds } from "./change-orders";
 import { companyClock } from "@/lib/company-zone";
 
 /** Everything the printed change order shows: your letterhead, the client and job, lines, totals, effect on contract, signatures. */
@@ -35,6 +35,8 @@ export async function loadChangeOrderDoc(projectId: string, coId: string) {
   const onWall = (d: Date | null) => (d ? wall(d) : null);
   return {
     co: { ...co, decidedAt: onWall(co.decidedAt) },
+    // What the client sees on the paper (the Print / PDF page's panel).
+    doc: parseDocOptions(co.docOptions),
     lines: co.items.map((i) => ({
       id: i.id,
       kind: i.kind,

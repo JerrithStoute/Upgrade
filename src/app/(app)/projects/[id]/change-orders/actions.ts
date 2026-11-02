@@ -8,7 +8,7 @@ import { requireEdit } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { intField, money, str, strOrNull } from "@/lib/utils";
-import { parseApprovals, parseCoDefaults, type CoDefaults } from "@/lib/change-orders";
+import { parseApprovals, parseCoDefaults, parseDocOptions, type CoDefaults } from "@/lib/change-orders";
 import { applyDecline, coTotal, finalizeIfApproved, unaddedChoices } from "@/lib/change-orders-server";
 import { newChangeOrder } from "@/lib/billing-flow";
 import { noteChange } from "@/lib/selection-activity";
@@ -86,6 +86,20 @@ const fields = z
     ifDeclined: z.enum(["KEEP", "CLEAR"]),
     showItems: z.boolean(),
     showPrices: z.boolean(),
+    // What the client sees on the paper (any of them; the rest stay).
+    docOptions: z
+      .object({
+        heading: z.string().trim().max(60),
+        intro: z.boolean(),
+        closing: z.boolean(),
+        allowance: z.boolean(),
+        effect: z.boolean(),
+        schedule: z.boolean(),
+        terms: z.boolean(),
+        files: z.boolean(),
+        feePct: z.boolean(),
+      })
+      .partial(),
   })
   .partial();
 
@@ -98,7 +112,7 @@ export async function saveChangeOrder(projectId: string, coId: string, raw: unkn
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the fields" };
   try {
     const current = await draftCO(projectId, coId);
-    const { priorCompletion, newCompletion, approverIds, description, reason, introText, closingText, terms, profitLabel, taxLabel, ...rest } = parsed.data;
+    const { priorCompletion, newCompletion, approverIds, description, reason, introText, closingText, terms, profitLabel, taxLabel, docOptions, ...rest } = parsed.data;
     // Tax added to a change order that had none: its items (not extra charges) are taxed — untick any you don't pay tax on.
     if (rest.taxPct !== undefined && rest.taxPct > 0 && !(current.taxPct > 0))
       await db.changeOrderItem.updateMany({ where: { changeOrderId: current.id, kind: { not: "CHARGE" } }, data: { taxed: true } });
@@ -117,6 +131,7 @@ export async function saveChangeOrder(projectId: string, coId: string, raw: unkn
         ...(priorCompletion !== undefined ? { priorCompletion: day(priorCompletion) } : {}),
         ...(newCompletion !== undefined ? { newCompletion: day(newCompletion) } : {}),
         ...(approverIds !== undefined ? { approverIds: JSON.stringify(approverIds) } : {}),
+        ...(docOptions !== undefined ? { docOptions: JSON.stringify({ ...parseDocOptions(current.docOptions), ...docOptions }) } : {}),
       },
     });
   } catch (e) {
@@ -135,6 +150,30 @@ export async function saveCoDefault(field: keyof CoDefaults, value: string | num
   const d = parseCoDefaults(company.changeOrderDefaults) as Record<string, unknown>;
   if (value === null || value === "") delete d[field];
   else d[field] = value;
+  await db.company.update({ where: { id: company.id }, data: { changeOrderDefaults: JSON.stringify(d) } });
+  return { ok: true };
+}
+
+/**
+ * The Print / PDF page's "Use these as my defaults": how this change order shows the client —
+ * items and prices, the profit and tax lines and their names, and the paper's choices — for
+ * every new change order.
+ */
+export async function saveCoDocDefaults(projectId: string, coId: string): Promise<Result> {
+  await requireEdit("selections", { costs: true });
+  const [co, company] = await Promise.all([loadCO(projectId, coId).catch(() => null), db.company.findFirst({ select: { id: true, changeOrderDefaults: true } })]);
+  if (!co) return { ok: false, error: "Change order not found" };
+  if (!company) return { ok: false, error: "Set up your company first (Settings)." };
+  const d: CoDefaults = {
+    ...parseCoDefaults(company.changeOrderDefaults),
+    showItems: co.showItems,
+    showPrices: co.showPrices,
+    profitShown: co.profitShown,
+    profitLabel: co.profitLabel,
+    taxShown: co.taxShown,
+    taxLabel: co.taxLabel,
+    doc: parseDocOptions(co.docOptions),
+  };
   await db.company.update({ where: { id: company.id }, data: { changeOrderDefaults: JSON.stringify(d) } });
   return { ok: true };
 }

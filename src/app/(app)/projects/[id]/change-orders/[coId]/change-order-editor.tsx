@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Pencil, Trash2, X } from "lucide-react";
+import Link from "@/components/link";
+import { CheckCircle2, ChevronRight, X } from "lucide-react";
 import { cn, costCodeLabel, fmtDate, money, num } from "@/lib/utils";
 import { LINE_PROFIT_MODES, changeOrderTotals, type CoDefaults } from "@/lib/change-orders";
 import type { UnaddedChoice } from "@/lib/change-orders-server";
@@ -68,6 +69,11 @@ type Item = {
 };
 type Code = { id: string; code: string | null; name: string };
 
+/**
+ * One change order: the line items and what the client reads on the left; the contract,
+ * pricing, schedule and approvals as small cards on the right. Lines open to change with a
+ * click; empty texts are one "+ Add" line until you open them.
+ */
 export function ChangeOrderEditor({
   projectId,
   me,
@@ -98,37 +104,8 @@ export function ChangeOrderEditor({
   const [err, setErr] = useState<string | null>(null);
   const [picking, setPicking] = useState(false);
   const [adding, setAdding] = useState<"LINE" | "CHARGE" | null>(null);
-  // The item or extra charge being changed (draft only).
+  // The line opened to change.
   const [editing, setEditing] = useState<string | null>(null);
-  const editForm = (i: Item, kind: "LINE" | "CHARGE") => (
-    <LineForm
-      key={i.id}
-      kind={kind}
-      choices={ch}
-      codes={costCodes}
-      busy={busy}
-      initial={{ description: i.description, amount: kind === "LINE" ? (i.clientPrice ?? i.unitCost) : i.unitCost, costCodeId: i.costCodeId }}
-      onCancel={() => setEditing(null)}
-      onSave={(v) =>
-        run(
-          () => saveChangeOrderLine(projectId, co.id, { ...v, id: i.id }),
-          () => setEditing(null),
-        )
-      }
-    />
-  );
-  const editButton = (i: Item) => (
-    <button
-      type="button"
-      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-      aria-label={`Edit ${i.description}`}
-      title="Edit"
-      disabled={editing !== null || adding !== null}
-      onClick={() => setEditing(i.id)}
-    >
-      <Pencil className="h-3.5 w-3.5" />
-    </button>
-  );
   const draft = co.status === "DRAFT";
   const run = (fn: () => Promise<Result>, after?: () => void) =>
     start(async () => {
@@ -144,407 +121,296 @@ export function ChangeOrderEditor({
 
   const totals = changeOrderTotals(co, items);
   const taxOn = co.taxPct > 0;
-  // Taxed or not, beside the line's profit (only when the change order has tax).
-  const taxTick = (i: Item) =>
-    taxOn ? (
-      <label
-        className="flex cursor-pointer items-center gap-1 whitespace-nowrap text-[11px] text-slate-600"
-        title="You pay sales tax on it — part of its price, profit figured on it too"
-      >
-        <input
-          type="checkbox"
-          className="h-3.5 w-3.5 rounded border-slate-300"
-          checked={i.taxed}
-          disabled={!draft || busy}
-          onChange={(e) => run(() => setChangeOrderLineTax(projectId, co.id, i.id, e.target.checked))}
-        />
-        Tax
-      </label>
-    ) : null;
   const selections = items.filter((i) => i.kind !== "CHARGE");
   // No client choices on it: the Choice and Allowance columns would only ever be empty — leave them out.
   const ch = items.some((i) => i.kind === "SELECTION");
   const charges = items.filter((i) => i.kind === "CHARGE");
+  // The Profit column only when there's profit or tax to show.
+  const showProfit = co.profitMode !== "NONE" || taxOn || items.some((i) => (i.profitMode || "CO") !== "CO");
+  const cols = 4 + (ch ? 2 : 0) + (showProfit ? 1 : 0);
+  const codeName = (id: string | null) => {
+    const c = id ? costCodes.find((x) => x.id === id) : null;
+    return c ? costCodeLabel(c) : null;
+  };
+  const profitText = (i: Item) => {
+    const mode = i.profitMode || "CO";
+    return `${mode === "CO" ? "Change order's" : mode === "NONE" ? "None" : mode === "PCT" ? `${num(i.profitValue, 2)}%` : `+${money(i.profitValue)}`}${taxOn && i.taxed ? " · tax" : ""}`;
+  };
+
+  const row = (i: Item) => {
+    const open = editing === i.id;
+    const charge = i.kind === "CHARGE";
+    return [
+      <tr
+        key={i.id}
+        className={cn("cursor-pointer hover:bg-slate-50", charge && "bg-slate-50/40", open && "bg-blue-50/50")}
+        onClick={() => {
+          setAdding(null);
+          setEditing(open ? null : i.id);
+        }}
+        title={draft ? "Click to change it" : "Click to change its cost code"}
+      >
+        <td className="px-3 py-1.5 text-slate-900">
+          {charge ? <span className="text-slate-500">Extra charge — </span> : null}
+          {i.description}
+        </td>
+        {ch ? <td className="px-3 py-1.5 text-slate-700">{i.kind === "SELECTION" ? i.choiceName : "—"}</td> : null}
+        <td className="px-3 py-1.5 text-slate-500">{codeName(i.costCodeId) ?? <span className="text-amber-700">No cost code</span>}</td>
+        <td className="px-3 py-1.5 text-right tabular-nums">{money(charge ? i.unitCost : (i.clientPrice ?? i.quantity * i.unitCost * (1 + i.markupPct / 100)))}</td>
+        {ch ? <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">{i.allowance !== null ? money(i.allowance) : ""}</td> : null}
+        <td className="px-3 py-1.5 text-right font-medium tabular-nums">{money(totals.shown(i))}</td>
+        {showProfit ? <td className="px-3 py-1.5 text-slate-500">{profitText(i)}</td> : null}
+        <td className="w-6 pr-2 text-slate-400">
+          <ChevronRight className={cn("h-3.5 w-3.5 transition-transform", open && "rotate-90")} />
+        </td>
+      </tr>,
+      open ? (
+        <tr key={`${i.id}-edit`} className="bg-blue-50/50">
+          <td colSpan={cols + 1} className="px-3 pb-3">
+            <LineEditor
+              item={i}
+              co={co}
+              codes={costCodes}
+              draft={draft}
+              taxOn={taxOn}
+              busy={busy}
+              onCancel={() => setEditing(null)}
+              onRemove={() => run(() => removeChangeOrderLine(projectId, co.id, i.id), () => setEditing(null))}
+              onSave={(v) =>
+                run(
+                  async () => {
+                    // Only what changed, one after another.
+                    if (draft && (i.kind === "LINE" || charge) && (v.description !== i.description || v.amount !== (charge ? i.unitCost : (i.clientPrice ?? i.unitCost)) || v.costCodeId !== i.costCodeId)) {
+                      const r = await saveChangeOrderLine(projectId, co.id, { kind: charge ? "CHARGE" : "LINE", description: v.description, amount: v.amount, costCodeId: v.costCodeId, id: i.id });
+                      if (!r.ok) return r;
+                    } else if (v.costCodeId !== i.costCodeId) {
+                      const r = await setChangeOrderLineCode(projectId, co.id, i.id, v.costCodeId);
+                      if (!r.ok) return r;
+                    }
+                    if (draft && (v.profitMode !== (i.profitMode || "CO") || v.profitValue !== i.profitValue)) {
+                      const r = await setChangeOrderLineProfit(projectId, co.id, i.id, v.profitMode, v.profitValue);
+                      if (!r.ok) return r;
+                    }
+                    if (draft && taxOn && v.taxed !== i.taxed) return setChangeOrderLineTax(projectId, co.id, i.id, v.taxed);
+                    return { ok: true };
+                  },
+                  () => setEditing(null),
+                )
+              }
+            />
+          </td>
+        </tr>
+      ) : null,
+    ];
+  };
 
   return (
     <div className="space-y-3">
       {err ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p> : null}
 
-      <Section title="Details">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <Text label="Title" value={co.title} disabled={!draft} onSave={(v) => save({ title: v })} />
-          <Text label="Description (for you)" value={co.description} disabled={!draft} onSave={(v) => save({ description: v })} />
-        </div>
-        <LongText
-          label="Intro text"
-          value={co.introText}
-          disabled={!draft}
-          onSave={(v) => save({ introText: v })}
-          isDefault={(defaults.introText ?? "") === co.introText && !!co.introText}
-          onDefault={() => run(() => saveCoDefault("introText", co.introText))}
-        />
-      </Section>
+      <div className="grid grid-cols-1 items-start gap-3 lg:grid-cols-[minmax(0,1fr)_20rem]">
+        <div className="min-w-0 space-y-3">
+          {draft ? (
+            <Card title="Details">
+              <Row label="Title">
+                <TextBox value={co.title} onSave={(v) => save({ title: v })} />
+              </Row>
+              <Row label="Description" hint="For you — the client doesn't see it">
+                <TextBox value={co.description} onSave={(v) => save({ description: v })} placeholder="What it's about, for your team" />
+              </Row>
+            </Card>
+          ) : null}
 
-      <Section title="Line items">
-        {draft && open.length ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-900">
-            <span>
-              There {open.length === 1 ? "is a client choice" : `are ${open.length} client choices`} that {open.length === 1 ? "hasn't" : "haven't"} been added to a change order
-              yet.
-            </span>
-            <button type="button" className="font-semibold text-blue-800 underline hover:text-blue-950" onClick={() => setPicking(true)}>
-              Add items
-            </button>
-          </div>
-        ) : null}
-
-        <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="border-b border-slate-100 text-xs text-slate-500">
-              <tr>
-                <th className="px-3 py-2 font-normal" title="Yours — the budget uses it; the client never sees it">
-                  Cost code
-                </th>
-                <th className="px-3 py-2 font-normal">{ch ? "Selection / item" : "Item"}</th>
-                {ch ? <th className="px-3 py-2 font-normal">Choice</th> : null}
-                <th className="px-3 py-2 text-right font-normal">{ch ? "Client price" : "Amount"}</th>
-                {ch ? <th className="px-3 py-2 text-right font-normal">Allowance</th> : null}
-                <th className="px-3 py-2 text-right font-normal">{ch ? "Difference" : "Price"}</th>
-                <th className="px-3 py-2 font-normal" title="This line's own profit — or the change order's">
-                  {taxOn ? "Profit · tax" : "Profit"}
-                </th>
-                <th className="w-10" />
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {selections.length === 0 ? (
-                <tr>
-                  <td colSpan={ch ? 8 : 6} className="px-3 py-4 text-center text-slate-500">
-                    Nothing on this change order yet{draft ? " — add client choices or a new item." : "."}
-                  </td>
-                </tr>
-              ) : null}
-              {selections.map((i) =>
-                editing === i.id && i.kind === "LINE" ? (
-                  editForm(i, "LINE")
-                ) : (
-                  <tr key={i.id}>
-                    <td className="px-2 py-1.5">
-                      <CodeSelect codes={costCodes} value={i.costCodeId} disabled={busy} onChange={(v) => run(() => setChangeOrderLineCode(projectId, co.id, i.id, v))} />
-                    </td>
-                    <td className="px-3 py-2 font-medium text-slate-900">{i.description}</td>
-                    {ch ? <td className="px-3 py-2 text-slate-700">{i.kind === "SELECTION" ? i.choiceName : "—"}</td> : null}
-                    <td className="px-3 py-2 text-right tabular-nums">{money(i.clientPrice ?? i.quantity * i.unitCost * (1 + i.markupPct / 100))}</td>
-                    {ch ? <td className="px-3 py-2 text-right tabular-nums text-slate-600">{i.allowance !== null ? money(i.allowance) : ""}</td> : null}
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">{money(totals.shown(i))}</td>
-                    <td className="px-2 py-1.5">
-                      <span className="flex items-center gap-2">
-                        <ProfitCell item={i} co={co} disabled={!draft || busy} onSave={(m, v) => run(() => setChangeOrderLineProfit(projectId, co.id, i.id, m, v))} />
-                        {taxTick(i)}
-                      </span>
-                    </td>
-                    <td className="px-1">
-                      {draft ? (
-                        <span className="inline-flex">
-                          {i.kind === "LINE" ? editButton(i) : null}
-                          <button
-                            type="button"
-                            className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
-                            aria-label={`Remove ${i.description}`}
-                            onClick={() => run(() => removeChangeOrderLine(projectId, co.id, i.id))}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </span>
-                      ) : null}
-                    </td>
+          <Card
+            title={`Line items${items.length ? ` · ${items.length}` : ""}`}
+            right={
+              draft ? (
+                <span className="flex gap-3">
+                  <button type="button" className="text-xs text-blue-700 hover:underline disabled:text-slate-400" disabled={adding !== null} onClick={() => (setEditing(null), setAdding("LINE"))}>
+                    + New item
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs text-blue-700 hover:underline disabled:text-slate-400"
+                    disabled={adding !== null}
+                    title="e.g. a change order fee"
+                    onClick={() => (setEditing(null), setAdding("CHARGE"))}
+                  >
+                    + Extra charge
+                  </button>
+                </span>
+              ) : null
+            }
+          >
+            {draft && open.length ? (
+              <p className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-amber-50/60 px-3 py-1.5 text-xs text-amber-900">
+                {open.length === 1 ? "A client choice isn't" : `${open.length} client choices aren't`} on a change order yet.
+                <button type="button" className="font-medium text-blue-700 hover:underline" onClick={() => setPicking(true)}>
+                  Add them…
+                </button>
+              </p>
+            ) : null}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[560px] text-left text-xs">
+                <thead className="border-b border-slate-100 text-slate-500">
+                  <tr>
+                    <th className="px-3 py-1.5 font-normal">{ch ? "Selection / item" : "Item"}</th>
+                    {ch ? <th className="px-3 py-1.5 font-normal">Choice</th> : null}
+                    <th className="px-3 py-1.5 font-normal" title="Yours — the budget uses it; the client never sees it">
+                      Cost code
+                    </th>
+                    <th className="px-3 py-1.5 text-right font-normal">{ch ? "Client price" : "Amount"}</th>
+                    {ch ? <th className="px-3 py-1.5 text-right font-normal">Allowance</th> : null}
+                    <th className="px-3 py-1.5 text-right font-normal">{ch ? "Difference" : "Price"}</th>
+                    {showProfit ? (
+                      <th className="px-3 py-1.5 font-normal" title="This line's own profit — or the change order's">
+                        {taxOn ? "Profit · tax" : "Profit"}
+                      </th>
+                    ) : null}
+                    <th className="w-6" />
                   </tr>
-                ),
-              )}
-              {adding === "LINE" ? (
-                <LineForm
-                  kind="LINE"
-                  choices={ch}
-                  codes={costCodes}
-                  busy={busy}
-                  onCancel={() => setAdding(null)}
-                  onSave={(v) =>
-                    run(
-                      () => saveChangeOrderLine(projectId, co.id, { ...v, id: null }),
-                      () => setAdding(null),
-                    )
-                  }
-                />
-              ) : null}
-              {charges.map((i) =>
-                editing === i.id ? (
-                  editForm(i, "CHARGE")
-                ) : (
-                  <tr key={i.id} className="bg-slate-50/40">
-                    <td className="px-2 py-1.5">
-                      <CodeSelect codes={costCodes} value={i.costCodeId} disabled={busy} onChange={(v) => run(() => setChangeOrderLineCode(projectId, co.id, i.id, v))} />
-                    </td>
-                    {ch ? (
-                      <>
-                        <td className="px-3 py-2 text-slate-600">Extra charge</td>
-                        <td className="px-3 py-2 text-slate-700">{i.description}</td>
-                      </>
-                    ) : (
-                      <td className="px-3 py-2 text-slate-700">
-                        <span className="text-slate-500">Extra charge — </span>
-                        {i.description}
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {items.length === 0 && !adding ? (
+                    <tr>
+                      <td colSpan={cols + 1} className="px-3 py-3 text-center text-slate-500">
+                        Nothing on it yet{draft ? " — add a new item or client choices." : "."}
                       </td>
-                    )}
-                    <td className="px-3 py-2 text-right tabular-nums">{money(i.unitCost)}</td>
-                    {ch ? <td /> : null}
-                    <td className="px-3 py-2 text-right font-medium tabular-nums">{money(totals.shown(i))}</td>
-                    <td className="px-2 py-1.5">
-                      <span className="flex items-center gap-2">
-                        <ProfitCell item={i} co={co} disabled={!draft || busy} onSave={(m, v) => run(() => setChangeOrderLineProfit(projectId, co.id, i.id, m, v))} />
-                        {taxTick(i)}
-                      </span>
-                    </td>
-                    <td className="px-1">
-                      {draft ? (
-                        <span className="inline-flex">
-                          {editButton(i)}
-                          <button
-                            type="button"
-                            className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
-                            aria-label={`Remove ${i.description}`}
-                            onClick={() => run(() => removeChangeOrderLine(projectId, co.id, i.id))}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </span>
-                      ) : null}
-                    </td>
-                  </tr>
-                ),
-              )}
-              {adding === "CHARGE" ? (
-                <LineForm
-                  kind="CHARGE"
-                  choices={ch}
-                  codes={costCodes}
-                  busy={busy}
-                  onCancel={() => setAdding(null)}
-                  onSave={(v) =>
-                    run(
-                      () => saveChangeOrderLine(projectId, co.id, { ...v, id: null }),
-                      () => setAdding(null),
-                    )
-                  }
-                />
-              ) : null}
-            </tbody>
-            <tfoot className="border-t border-slate-200 text-sm">
-              <SumRow choices={ch} label="Subtotal" value={totals.shownSubtotal} strong />
-              {totals.profitLine ? <SumRow choices={ch} label={`${co.profitLabel}${totals.feePct !== null ? ` (${num(totals.feePct, 2)}%)` : ""}`} value={totals.profit} /> : null}
-              {totals.tax ? <SumRow choices={ch} label={`${co.taxLabel} (${num(co.taxPct, 3)}%)`} value={totals.tax} /> : null}
-              <SumRow choices={ch} label="Total" value={totals.total} strong big />
-            </tfoot>
-          </table>
-        </div>
-        {draft ? (
-          <div className="flex flex-wrap gap-4">
-            <button type="button" className="text-xs font-medium text-blue-700 hover:underline disabled:text-slate-400" onClick={() => setAdding("LINE")} disabled={adding !== null}>
-              + New item
-            </button>
-            <button type="button" className="text-xs font-medium text-blue-700 hover:underline disabled:text-slate-400" onClick={() => setAdding("CHARGE")} disabled={adding !== null}>
-              + Extra charge (e.g. change order fee)
-            </button>
-          </div>
-        ) : null}
-      </Section>
-
-      <Section title="What the client sees">
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <Seg
-            value={!co.showItems ? "TOTAL" : co.showPrices ? "ITEMS" : "NOPRICES"}
-            disabled={!draft}
-            options={[
-              ["ITEMS", "Itemized with prices"],
-              ["NOPRICES", "Items, no prices"],
-              ["TOTAL", "Total only"],
-            ]}
-            onChange={(v) => save({ showItems: v !== "TOTAL", showPrices: v === "ITEMS" })}
-          />
-          <span className="text-xs text-slate-500">
-            {!co.showItems
-              ? "The client sees the title, your intro text and the total — not the items."
-              : co.showPrices
-                ? "The client sees every item and its price (never your cost codes)."
-                : "The client sees every item listed, but only the total — no line prices."}
-          </span>
-        </div>
-      </Section>
-
-      <Section
-        title="Profit & tax"
-        note="Your call on each change order — the % is for lines set to “Change order's”; a $ amount is added once. Any line can have its own in its Profit column."
-      >
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <Seg
-            value={co.profitMode}
-            disabled={!draft}
-            options={[
-              ["NONE", "No profit"],
-              ["PCT", "Markup %"],
-              ["AMOUNT", "Profit $"],
-            ]}
-            onChange={(v) => save({ profitMode: v })}
-          />
-          {co.profitMode !== "NONE" ? (
-            <>
-              <NumInput value={co.profitValue} disabled={!draft} label={co.profitMode === "PCT" ? "%" : "$"} onSave={(v) => save({ profitValue: v })} />
-              <Seg
-                value={co.profitShown}
-                disabled={!draft}
-                options={[
-                  ["LINE", "Its own line"],
-                  ["FOLDED", "Folded into the prices"],
-                ]}
-                onChange={(v) => save({ profitShown: v })}
-              />
-              {co.profitShown === "LINE" ? <Text inline label="Line name" value={co.profitLabel} disabled={!draft} onSave={(v) => save({ profitLabel: v })} /> : null}
-              <DefaultBox
-                checked={defaults.profitMode === co.profitMode && defaults.profitValue === co.profitValue && (defaults.profitShown ?? "LINE") === co.profitShown}
-                disabled={busy}
-                onClick={() =>
-                  run(async () => {
-                    await saveCoDefault("profitMode", co.profitMode);
-                    await saveCoDefault("profitShown", co.profitShown);
-                    return saveCoDefault("profitValue", co.profitValue);
-                  })
-                }
-              />
-            </>
-          ) : null}
-        </div>
-        <div className="flex flex-wrap items-center gap-3 text-sm">
-          <span className="text-slate-600">Sales tax you pay</span>
-          <NumInput value={co.taxPct} disabled={!draft} label="%" onSave={(v) => save({ taxPct: v })} />
-          {co.taxPct ? (
-            <>
-              <Seg
-                value={co.taxShown}
-                disabled={!draft}
-                options={[
-                  ["LINE", "Its own line"],
-                  ["FOLDED", "Built into the prices"],
-                ]}
-                onChange={(v) => save({ taxShown: v })}
-              />
-              {co.taxShown === "LINE" ? <Text inline label="Line name" value={co.taxLabel} disabled={!draft} onSave={(v) => save({ taxLabel: v })} /> : null}
-            </>
-          ) : null}
-        </div>
-        {co.taxPct ? (
-          <p className="text-xs text-slate-500">
-            On the lines ticked Tax (your items start ticked; extra charges don&apos;t), it&apos;s part of their price — profit is figured on it too, like the estimate.
-          </p>
-        ) : null}
-      </Section>
-
-      <Section title="Effect on contract">
-        <dl className="grid max-w-md grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm">
-          <dt className="text-slate-600">Base price</dt>
-          <dd className="text-right tabular-nums">{money(effect.basePrice)}</dd>
-          <dt className="text-slate-600">Total from previously approved change orders</dt>
-          <dd className="text-right tabular-nums">{money(effect.previous)}</dd>
-          <dt className="text-slate-600">Total from this change order</dt>
-          <dd className="text-right tabular-nums">{money(effect.thisOne)}</dd>
-          <dt className="border-t border-slate-200 pt-1.5 font-semibold">Total price</dt>
-          <dd className="border-t border-slate-200 pt-1.5 text-right font-semibold tabular-nums">{money(effect.total)}</dd>
-        </dl>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-          <div>
-            <Text label="Terms" value={co.terms} disabled={!draft} onSave={(v) => save({ terms: v })} placeholder="e.g. Payment due on approval" />
-            <DefaultBox checked={(defaults.terms ?? "") === co.terms && !!co.terms} disabled={busy || !co.terms} onClick={() => run(() => saveCoDefault("terms", co.terms))} />
-          </div>
-          <label className="block text-sm">
-            <span className="label">Effect on completion date (days)</span>
-            <NumInput value={co.scheduleImpactDays} disabled={!draft} label="days" onSave={(v) => save({ scheduleImpactDays: Math.round(v) })} />
-          </label>
-          <DateInput label="Prior projected completion date" value={co.priorCompletion} disabled={!draft} onSave={(v) => save({ priorCompletion: v })} />
-          <DateInput label="New projected completion date" value={co.newCompletion} disabled={!draft} onSave={(v) => save({ newCompletion: v })} />
-        </div>
-      </Section>
-
-      <Section title="Files" note="Attached for approval — the client sees them.">
-        <FilesBox files={files} onAdd={(fd) => addChangeOrderFiles(projectId, co.id, fd)} onRemove={(fid) => removeChangeOrderFile(projectId, fid)} canRemove={() => true} markUp />
-      </Section>
-
-      <Section title="Closing text">
-        <LongText
-          label="Closing text"
-          value={co.closingText}
-          disabled={!draft}
-          onSave={(v) => save({ closingText: v })}
-          isDefault={(defaults.closingText ?? "") === co.closingText && !!co.closingText}
-          onDefault={() => run(() => saveCoDefault("closingText", co.closingText))}
-        />
-      </Section>
-
-      <Section title="Approvals" note="Who needs to approve this change order.">
-        <div className="space-y-2 text-sm">
-          <p className="font-medium text-slate-800">Team members</p>
-          <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-            {team.map((t) => {
-              const on = co.approverIds.includes(t.id);
-              const at = co.approvals[t.id];
-              return (
-                <label key={t.id} className="flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 rounded border-slate-300"
-                    checked={on}
-                    disabled={!draft || busy}
-                    onChange={(e) => save({ approverIds: e.target.checked ? [...co.approverIds, t.id] : co.approverIds.filter((x) => x !== t.id) })}
-                  />
-                  {t.name}
-                  {on && at ? <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-label={`Approved ${fmtDate(at)}`} /> : null}
-                  {on && !at && co.status === "PENDING_APPROVAL" && t.id === me ? (
-                    <button type="button" className={buttonClasses("primary", "xs")} disabled={busy} onClick={() => run(() => teamApproveChangeOrder(projectId, co.id))}>
-                      Approve
-                    </button>
+                    </tr>
                   ) : null}
-                </label>
-              );
-            })}
-          </div>
-          <p className="pt-2 font-medium text-slate-800">Client</p>
-          <label className="flex items-center gap-1.5">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300"
-              checked={co.clientApproval}
-              disabled={!draft || busy}
-              onChange={(e) => save({ clientApproval: e.target.checked })}
+                  {selections.flatMap(row)}
+                  {adding === "LINE" ? (
+                    <NewLine kind="LINE" cols={cols + 1} codes={costCodes} busy={busy} onCancel={() => setAdding(null)} onSave={(v) => run(() => saveChangeOrderLine(projectId, co.id, { ...v, id: null }), () => setAdding(null))} />
+                  ) : null}
+                  {charges.flatMap(row)}
+                  {adding === "CHARGE" ? (
+                    <NewLine kind="CHARGE" cols={cols + 1} codes={costCodes} busy={busy} onCancel={() => setAdding(null)} onSave={(v) => run(() => saveChangeOrderLine(projectId, co.id, { ...v, id: null }), () => setAdding(null))} />
+                  ) : null}
+                </tbody>
+                <tfoot className="border-t border-slate-200">
+                  {totals.profitLine || totals.tax ? <SumRow span={cols - (showProfit ? 2 : 1)} label="Subtotal" value={totals.shownSubtotal} /> : null}
+                  {totals.profitLine ? <SumRow span={cols - (showProfit ? 2 : 1)} label={`${co.profitLabel}${totals.feePct !== null ? ` (${num(totals.feePct, 2)}%)` : ""}`} value={totals.profit} /> : null}
+                  {totals.tax ? <SumRow span={cols - (showProfit ? 2 : 1)} label={`${co.taxLabel} (${num(co.taxPct, 3)}%)`} value={totals.tax} /> : null}
+                  <SumRow span={cols - (showProfit ? 2 : 1)} label="Total" value={totals.total} strong />
+                </tfoot>
+              </table>
+            </div>
+          </Card>
+
+          <Card title="For the client" note="Printed above and below the lines">
+            <TextRow
+              label="Intro"
+              add="+ Add intro text"
+              value={co.introText}
+              long
+              draft={draft}
+              onSave={(v) => save({ introText: v })}
+              isDefault={(defaults.introText ?? "") === co.introText && !!co.introText}
+              onDefault={() => run(() => saveCoDefault("introText", co.introText))}
             />
-            {clientName ?? "The client"} (signs in the portal)
-            {co.clientApproval && co.clientApprovedAt ? <span className="text-xs text-emerald-700">approved {fmtDate(co.clientApprovedAt)}</span> : null}
-          </label>
-          <p className="pt-2 font-medium text-slate-800">If declined</p>
-          <label className="flex items-center gap-1.5">
-            <input type="radio" name="ifDeclined" className="h-4 w-4" checked={co.ifDeclined === "KEEP"} disabled={!draft || busy} onChange={() => save({ ifDeclined: "KEEP" })} />
-            Take the selections off this change order, but keep the choices made
-          </label>
-          <label className="flex items-center gap-1.5">
-            <input
-              type="radio"
-              name="ifDeclined"
-              className="h-4 w-4"
-              checked={co.ifDeclined === "CLEAR"}
-              disabled={!draft || busy}
-              onChange={() => save({ ifDeclined: "CLEAR" })}
+            <TextRow
+              label="Closing"
+              add="+ Add closing text"
+              value={co.closingText}
+              long
+              draft={draft}
+              onSave={(v) => save({ closingText: v })}
+              isDefault={(defaults.closingText ?? "") === co.closingText && !!co.closingText}
+              onDefault={() => run(() => saveCoDefault("closingText", co.closingText))}
             />
-            Take the selections off this change order and clear the choices made
-          </label>
-          <DefaultBox checked={(defaults.ifDeclined ?? "KEEP") === co.ifDeclined} disabled={busy} onClick={() => run(() => saveCoDefault("ifDeclined", co.ifDeclined))} />
+            <TextRow
+              label="Terms"
+              add="+ Add terms"
+              value={co.terms}
+              draft={draft}
+              placeholder="e.g. Payment due on approval"
+              onSave={(v) => save({ terms: v })}
+              isDefault={(defaults.terms ?? "") === co.terms && !!co.terms}
+              onDefault={() => run(() => saveCoDefault("terms", co.terms))}
+            />
+            <Row label="Files" hint="The client sees them">
+              <FilesBox files={files} onAdd={(fd) => addChangeOrderFiles(projectId, co.id, fd)} onRemove={(fid) => removeChangeOrderFile(projectId, fid)} canRemove={() => true} markUp />
+            </Row>
+          </Card>
         </div>
-      </Section>
+
+        <div className="space-y-3">
+          <Card title="Contract">
+            <Row label="Base price">
+              <Money value={effect.basePrice} />
+            </Row>
+            <Row label="Earlier COs" hint="Approved change orders before this one">
+              <Money value={effect.previous} />
+            </Row>
+            <Row label="This CO">
+              <Money value={effect.thisOne} sign />
+            </Row>
+            <Row label="New total" strong>
+              <Money value={effect.total} />
+            </Row>
+          </Card>
+
+          <Card
+            title="Pricing"
+            right={
+              <Link href={`/projects/${projectId}/change-orders/${co.id}/print`} className="text-xs text-blue-700 hover:underline" title="How the items, profit and tax show the client — on the Print / PDF page">
+                What the client sees →
+              </Link>
+            }
+          >
+            <Row label="Profit" hint="The % is for lines set to “Change order's”; a $ amount is added once. Any line can have its own.">
+              <div className="space-y-1.5">
+                <Seg
+                  value={co.profitMode}
+                  disabled={!draft}
+                  options={[
+                    ["NONE", "None"],
+                    ["PCT", "Markup %"],
+                    ["AMOUNT", "Profit $"],
+                  ]}
+                  onChange={(v) => save({ profitMode: v })}
+                />
+                {co.profitMode !== "NONE" ? (
+                  <>
+                    <NumInput value={co.profitValue} disabled={!draft} label={co.profitMode === "PCT" ? "%" : "$"} onSave={(v) => save({ profitValue: v })} />
+                    <DefaultBox
+                      checked={defaults.profitMode === co.profitMode && defaults.profitValue === co.profitValue}
+                      disabled={busy}
+                      onClick={() =>
+                        run(async () => {
+                          await saveCoDefault("profitMode", co.profitMode);
+                          return saveCoDefault("profitValue", co.profitValue);
+                        })
+                      }
+                    />
+                  </>
+                ) : null}
+              </div>
+            </Row>
+            <Row
+              label="Sales tax"
+              hint={taxOn ? "Sales tax you pay, on the lines ticked Tax (your items start ticked; extra charges don't) — part of their price, so profit is figured on it too." : "Sales tax you pay"}
+            >
+              <NumInput value={co.taxPct} disabled={!draft} label="%" onSave={(v) => save({ taxPct: v })} />
+            </Row>
+          </Card>
+
+          <ScheduleCard co={co} draft={draft} save={save} />
+
+          <ApprovalsCard
+            co={co}
+            draft={draft}
+            busy={busy}
+            me={me}
+            team={team}
+            clientName={clientName}
+            save={save}
+            isDefault={(defaults.ifDeclined ?? "KEEP") === co.ifDeclined}
+            onDefault={() => run(() => saveCoDefault("ifDeclined", co.ifDeclined))}
+            onApprove={() => run(() => teamApproveChangeOrder(projectId, co.id))}
+          />
+        </div>
+      </div>
 
       {picking ? (
         <PickChoices
@@ -563,90 +429,156 @@ export function ChangeOrderEditor({
   );
 }
 
-/** A card: its small title, what it's for as one gray line, then its fields. */
-function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
+/** A card: a small title (and gray note), something on the right, then its rows. */
+function Card({ title, note, right, children }: { title: string; note?: string; right?: React.ReactNode; children: React.ReactNode }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
-      <h2 className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900">{title}</h2>
-      {note ? <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">{note}</p> : null}
-      <div className="space-y-3 px-4 py-3">{children}</div>
+    <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex items-center gap-2 border-b border-slate-100 px-3 py-2">
+        <h2 className="text-xs font-semibold text-slate-900">{title}</h2>
+        {note ? <span className="text-xs text-slate-500">{note}</span> : null}
+        {right ? <span className="ml-auto">{right}</span> : null}
+      </header>
+      <div className="divide-y divide-slate-100">{children}</div>
     </section>
   );
 }
 
-function SumRow({ label, value, strong, big, choices }: { label: string; value: number; strong?: boolean; big?: boolean; choices: boolean }) {
+/** A label / value row; `hint` shows when you hold the mouse over the label. */
+function Row({ label, hint, strong, children }: { label: string; hint?: string; strong?: boolean; children: React.ReactNode }) {
   return (
-    <tr className={cn(strong && "font-semibold", big && "border-t border-slate-300 text-base")}>
-      <td colSpan={choices ? 5 : 3} className="px-3 py-2 text-right">
+    <div className={cn("grid grid-cols-[6.5rem_minmax(0,1fr)] items-start gap-2 px-3 py-1.5 text-xs", strong && "font-semibold")}>
+      <span className={cn("pt-1", strong ? "text-slate-900" : "text-slate-500")} title={hint}>
+        {label}
+      </span>
+      <div className="min-w-0 pt-0.5">{children}</div>
+    </div>
+  );
+}
+
+function Money({ value, sign }: { value: number; sign?: boolean }) {
+  return (
+    <span className="block pt-0.5 text-right tabular-nums">
+      {sign && value > 0.004 ? "+" : ""}
+      {money(value)}
+    </span>
+  );
+}
+
+function SumRow({ label, value, strong, span }: { label: string; value: number; strong?: boolean; span: number }) {
+  return (
+    <tr className={cn(strong && "font-semibold text-slate-900")}>
+      <td colSpan={span} className="px-3 py-1.5 text-right">
         {label}
       </td>
-      <td className="px-3 py-2 text-right tabular-nums">{money(value)}</td>
+      <td className="px-3 py-1.5 text-right tabular-nums">{money(value)}</td>
       <td colSpan={2} />
     </tr>
   );
 }
 
-/** A text field that saves when you leave it. */
-function Text({
-  label,
-  value,
-  disabled,
-  onSave,
-  inline,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  disabled?: boolean;
-  onSave: (v: string) => void;
-  inline?: boolean;
-  placeholder?: string;
-}) {
+/** A one-line box that saves when you leave it. */
+function TextBox({ value, onSave, disabled, placeholder, label }: { value: string; onSave: (v: string) => void; disabled?: boolean; placeholder?: string; label?: string }) {
   return (
-    <label className={cn("text-sm", inline ? "flex items-center gap-2" : "block")}>
-      <span className={inline ? "text-slate-600" : "label"}>{label}</span>
-      <input
-        key={value}
-        className={cn("input !h-8 !py-0 text-sm", inline && "!w-48 text-xs")}
-        defaultValue={value}
-        placeholder={placeholder}
-        disabled={disabled}
-        onBlur={(e) => e.target.value.trim() !== value && onSave(e.target.value)}
-        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-      />
-    </label>
+    <input
+      key={value}
+      aria-label={label}
+      title={label}
+      className="input !h-7 !px-2 !py-0 !text-xs"
+      defaultValue={value}
+      placeholder={placeholder ?? label}
+      disabled={disabled}
+      onBlur={(e) => e.target.value.trim() !== value && onSave(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+    />
   );
 }
 
-function LongText({
+/**
+ * Intro, closing text and terms: the text (or "+ Add …" while empty); click to change it,
+ * with "Use as default" while it's open. Saves when you leave the box.
+ */
+function TextRow({
   label,
+  add,
   value,
-  disabled,
+  long,
+  draft,
+  placeholder,
   onSave,
   isDefault,
   onDefault,
 }: {
   label: string;
+  add: string;
   value: string;
-  disabled?: boolean;
+  long?: boolean;
+  draft: boolean;
+  placeholder?: string;
   onSave: (v: string) => void;
   isDefault: boolean;
   onDefault: () => void;
 }) {
+  const [open, setOpen] = useState(false);
+  if (!open || !draft)
+    return (
+      <Row label={label}>
+        {value ? (
+          <button
+            type="button"
+            disabled={!draft}
+            onClick={() => setOpen(true)}
+            className="block w-full whitespace-pre-line text-left text-slate-700 enabled:hover:text-slate-900 [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] overflow-hidden"
+            title={draft ? "Click to change it" : undefined}
+          >
+            {value}
+          </button>
+        ) : draft ? (
+          <button type="button" className="pt-0.5 text-blue-700 hover:underline" onClick={() => setOpen(true)}>
+            {add}
+          </button>
+        ) : (
+          <span className="text-slate-400">None</span>
+        )}
+      </Row>
+    );
   return (
-    <div>
-      <label className="block text-sm">
-        <span className="label">{label}</span>
-        <textarea key={value} className="input text-sm" rows={3} defaultValue={value} disabled={disabled} onBlur={(e) => e.target.value.trim() !== value && onSave(e.target.value)} />
-      </label>
-      <DefaultBox checked={isDefault} disabled={!value} onClick={onDefault} />
-    </div>
+    <Row label={label}>
+      <div className="space-y-1">
+        {long ? (
+          <textarea
+            key={value}
+            autoFocus
+            className="input !px-2 !py-1 !text-xs"
+            rows={3}
+            defaultValue={value}
+            placeholder={placeholder}
+            onBlur={(e) => e.target.value.trim() !== value && onSave(e.target.value)}
+          />
+        ) : (
+          <input
+            key={value}
+            autoFocus
+            className="input !h-7 !px-2 !py-0 !text-xs"
+            defaultValue={value}
+            placeholder={placeholder}
+            onBlur={(e) => e.target.value.trim() !== value && onSave(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+          />
+        )}
+        <div className="flex items-center gap-3">
+          <DefaultBox checked={isDefault} disabled={!value} onClick={onDefault} />
+          <button type="button" className="ml-auto text-blue-700 hover:underline" onClick={() => setOpen(false)}>
+            Done
+          </button>
+        </div>
+      </div>
+    </Row>
   );
 }
 
 function DefaultBox({ checked, disabled, onClick }: { checked: boolean; disabled?: boolean; onClick: () => void }) {
   return (
-    <label className={cn("mt-1 inline-flex items-center gap-1.5 text-xs text-slate-600", disabled && "opacity-50")}>
+    <label className={cn("inline-flex items-center gap-1.5 text-xs text-slate-600", disabled && "opacity-50")} title="Start every new change order with this">
       <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300" checked={checked} disabled={disabled || checked} onChange={onClick} />
       Use as default
     </label>
@@ -658,7 +590,7 @@ function NumInput({ value, disabled, label, onSave }: { value: number; disabled?
     <span className="inline-flex items-center gap-1">
       <input
         key={value}
-        className="input !h-8 !w-24 !py-0 text-right text-xs"
+        className="input !h-7 !w-20 !px-2 !py-0 text-right !text-xs"
         inputMode="decimal"
         defaultValue={value || ""}
         placeholder="0"
@@ -676,23 +608,30 @@ function NumInput({ value, disabled, label, onSave }: { value: number; disabled?
 
 function DateInput({ label, value, disabled, onSave }: { label: string; value: string; disabled?: boolean; onSave: (v: string) => void }) {
   return (
-    <label className="block text-sm">
-      <span className="label">{label}</span>
-      <input key={value} type="date" className="input !h-8 !w-48 !py-0 text-sm" defaultValue={value} disabled={disabled} onChange={(e) => e.target.value !== value && onSave(e.target.value)} />
-    </label>
+    <input
+      key={value}
+      type="date"
+      aria-label={label}
+      title={label}
+      className="input !h-7 !w-36 !px-2 !py-0 !text-xs"
+      defaultValue={value}
+      disabled={disabled}
+      onChange={(e) => e.target.value !== value && onSave(e.target.value)}
+    />
   );
 }
 
-function Seg({ value, options, disabled, onChange }: { value: string; options: [string, string][]; disabled?: boolean; onChange: (v: string) => void }) {
+function Seg({ value, options, disabled, onChange }: { value: string; options: ([string, string] | [string, string, string])[]; disabled?: boolean; onChange: (v: string) => void }) {
   return (
     <span className="inline-flex rounded-md border border-slate-300 p-0.5">
-      {options.map(([v, l]) => (
+      {options.map(([v, l, hint]) => (
         <button
           key={v}
           type="button"
           disabled={disabled}
+          title={hint}
           onClick={() => v !== value && onChange(v)}
-          className={cn("rounded px-2.5 py-1 text-xs font-medium", value === v ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 disabled:hover:bg-transparent")}
+          className={cn("rounded px-2 py-0.5 text-xs font-medium", value === v ? "bg-blue-700 text-white" : "text-slate-600 hover:bg-slate-100 disabled:hover:bg-transparent")}
         >
           {l}
         </button>
@@ -701,126 +640,155 @@ function Seg({ value, options, disabled, onChange }: { value: string; options: [
   );
 }
 
-function LineForm({
-  kind,
-  choices,
-  codes,
+/** How many days it adds and the completion dates; Edit opens them (draft only). */
+function ScheduleCard({ co, draft, save }: { co: Co; draft: boolean; save: (patch: Partial<Co>) => void }) {
+  const [open, setOpen] = useState(false);
+  const date = (d: string) => (d ? fmtDate(new Date(`${d}T12:00:00`)) : "—");
+  return (
+    <Card
+      title="Schedule"
+      right={
+        draft ? (
+          <button type="button" className="text-xs text-blue-700 hover:underline" onClick={() => setOpen((o) => !o)}>
+            {open ? "Done" : "Edit"}
+          </button>
+        ) : null
+      }
+    >
+      <Row label="Adds" hint="Effect on the completion date">
+        {open ? <NumInput value={co.scheduleImpactDays} label="days" onSave={(v) => save({ scheduleImpactDays: Math.round(v) })} /> : <span className="block pt-0.5">{co.scheduleImpactDays ? `${co.scheduleImpactDays} day${co.scheduleImpactDays === 1 ? "" : "s"}` : "No days"}</span>}
+      </Row>
+      <Row label="Completion" hint="Projected completion before → after this change order">
+        {open ? (
+          <span className="flex flex-wrap items-center gap-1">
+            <DateInput label="Prior projected completion" value={co.priorCompletion} onSave={(v) => save({ priorCompletion: v })} />
+            →
+            <DateInput label="New projected completion" value={co.newCompletion} onSave={(v) => save({ newCompletion: v })} />
+          </span>
+        ) : (
+          <span className="block pt-0.5 text-slate-700">
+            {date(co.priorCompletion)} → {date(co.newCompletion)}
+          </span>
+        )}
+      </Row>
+    </Card>
+  );
+}
+
+/** Who approves it — the client in the portal, and any of the team — and what happens if it's declined. */
+function ApprovalsCard({
+  co,
+  draft,
   busy,
-  initial,
-  onSave,
-  onCancel,
+  me,
+  team,
+  clientName,
+  save,
+  isDefault,
+  onDefault,
+  onApprove,
 }: {
-  kind: "LINE" | "CHARGE";
-  /** The change order has client choices (the Choice and Allowance columns are there). */
-  choices: boolean;
-  codes: Code[];
+  co: Co;
+  draft: boolean;
   busy: boolean;
-  /** Editing one already on the change order. */
-  initial?: { description: string; amount: number; costCodeId: string | null };
-  onSave: (v: { kind: "LINE" | "CHARGE"; description: string; amount: number; costCodeId: string | null }) => void;
-  onCancel: () => void;
+  me: string;
+  team: { id: string; name: string }[];
+  clientName: string | null;
+  save: (patch: Partial<Co>) => void;
+  isDefault: boolean;
+  onDefault: () => void;
+  onApprove: () => void;
 }) {
-  const [d, setD] = useState(initial?.description ?? "");
-  const [a, setA] = useState(initial ? String(initial.amount) : "");
-  const [code, setCode] = useState<string | null>(initial?.costCodeId ?? null);
-  const n = Number(a.replace(/[$,\s]/g, "") || 0);
+  const [open, setOpen] = useState(false);
+  const approvers = team.filter((t) => co.approverIds.includes(t.id));
   return (
-    <tr className="bg-blue-50/40">
-      <td className="px-2 py-2">
-        <CodeSelect codes={codes} value={code} onChange={setCode} />
-      </td>
-      <td colSpan={choices ? 2 : 1} className="px-3 py-2">
-        <input
-          className="input !h-8 !py-0 text-sm"
-          autoFocus
-          placeholder={kind === "CHARGE" ? "Extra charge, e.g. Change order fee" : "What's being added or changed"}
-          value={d}
-          onChange={(e) => setD(e.target.value)}
-          onKeyDown={(e) => e.key === "Escape" && onCancel()}
-        />
-      </td>
-      <td className="px-3 py-2">
-        <input className="input !h-8 !py-0 text-right text-sm" inputMode="decimal" placeholder="$0.00" value={a} onChange={(e) => setA(e.target.value)} />
-      </td>
-      <td colSpan={choices ? 2 : 1} />
-      <td className="px-2 py-2 text-[11px] text-slate-400">{initial ? "" : "Profit: set it on the line once it's added"}</td>
-      <td className="px-3 py-2 text-right">
-        <span className="inline-flex gap-1">
-          <button
-            type="button"
-            className={buttonClasses("primary", "xs")}
-            disabled={busy || !d.trim() || !Number.isFinite(n)}
-            onClick={() => onSave({ kind, description: d.trim(), amount: n, costCodeId: code })}
-          >
-            {initial ? "Save" : "Add"}
+    <Card
+      title="Approvals"
+      right={
+        draft ? (
+          <button type="button" className="text-xs text-blue-700 hover:underline" onClick={() => setOpen((o) => !o)}>
+            {open ? "Done" : "Edit"}
           </button>
-          <button type="button" className={buttonClasses("ghost", "xs")} onClick={onCancel}>
-            Cancel
-          </button>
-        </span>
-      </td>
-    </tr>
+        ) : null
+      }
+    >
+      <Row label="Client" hint="Signs in the client portal">
+        {open ? (
+          <label className="flex items-center gap-1.5 pt-0.5">
+            <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300" checked={co.clientApproval} disabled={busy} onChange={(e) => save({ clientApproval: e.target.checked })} />
+            {clientName ?? "The client"} signs in the portal
+          </label>
+        ) : (
+          <span className="block pt-0.5">
+            {co.clientApproval ? (clientName ?? "The client") : <span className="text-slate-400">Not asked</span>}
+            {co.clientApproval && co.clientApprovedAt ? <span className="text-emerald-700"> · approved {fmtDate(co.clientApprovedAt)}</span> : null}
+          </span>
+        )}
+      </Row>
+      <Row label="Team">
+        {open ? (
+          <span className="flex flex-col gap-1 pt-0.5">
+            {team.map((t) => (
+              <label key={t.id} className="flex items-center gap-1.5">
+                <input
+                  type="checkbox"
+                  className="h-3.5 w-3.5 rounded border-slate-300"
+                  checked={co.approverIds.includes(t.id)}
+                  disabled={busy}
+                  onChange={(e) => save({ approverIds: e.target.checked ? [...co.approverIds, t.id] : co.approverIds.filter((x) => x !== t.id) })}
+                />
+                {t.name}
+              </label>
+            ))}
+          </span>
+        ) : approvers.length ? (
+          <span className="flex flex-col gap-1 pt-0.5">
+            {approvers.map((t) => {
+              const at = co.approvals[t.id];
+              return (
+                <span key={t.id} className="flex items-center gap-1.5">
+                  {t.name}
+                  {at ? (
+                    <span className="inline-flex items-center gap-0.5 text-emerald-700">
+                      <CheckCircle2 className="h-3.5 w-3.5" /> {fmtDate(at)}
+                    </span>
+                  ) : co.status === "PENDING_APPROVAL" && t.id === me ? (
+                    <button type="button" className={buttonClasses("primary", "xs")} disabled={busy} onClick={onApprove}>
+                      Approve
+                    </button>
+                  ) : (
+                    <span className="text-slate-400">waiting</span>
+                  )}
+                </span>
+              );
+            })}
+          </span>
+        ) : (
+          <span className="block pt-0.5 text-slate-400">No one</span>
+        )}
+      </Row>
+      <Row label="If declined" hint="What happens to the client choices on it">
+        {open ? (
+          <div className="space-y-1 pt-0.5">
+            <select className="input !h-7 !px-2 !py-0 !text-xs" value={co.ifDeclined} disabled={busy} onChange={(e) => save({ ifDeclined: e.target.value })}>
+              <option value="KEEP">Take the selections off, keep the choices made</option>
+              <option value="CLEAR">Take the selections off, clear the choices made</option>
+            </select>
+            <DefaultBox checked={isDefault} disabled={busy} onClick={onDefault} />
+          </div>
+        ) : (
+          <span className="block pt-0.5 text-slate-700">{co.ifDeclined === "CLEAR" ? "Clear the choices made" : "Keep the choices made"}</span>
+        )}
+      </Row>
+    </Card>
   );
 }
 
-/** A line's own profit: the change order's, none, a % or a $ — saved as you change it (draft only). */
-function ProfitCell({ item, co, disabled, onSave }: { item: Item; co: Co; disabled: boolean; onSave: (mode: string, value: number) => void }) {
-  const [text, setText] = useState<string | null>(null);
-  const mode = item.profitMode || "CO";
-  const own = mode === "PCT" || mode === "AMOUNT";
-  if (disabled)
-    return (
-      <span className="text-xs text-slate-600">
-        {mode === "CO" ? "Change order's" : mode === "NONE" ? "None" : mode === "PCT" ? `${num(item.profitValue, 2)}%` : `+${money(item.profitValue)}`}
-      </span>
-    );
-  const commit = (raw: string) => {
-    setText(null);
-    const n = Number(raw.replace(/[$,%\s]/g, "") || 0);
-    if (Number.isFinite(n) && n !== item.profitValue) onSave(mode, n);
-  };
-  return (
-    <span className="flex items-center gap-1">
-      <select
-        className="input !h-8 !w-[13rem] !py-0 text-xs"
-        value={mode}
-        aria-label={`Profit on ${item.description}`}
-        onChange={(e) => {
-          const m = e.target.value;
-          // Switching to % starts at the change order's %, so there's a number to adjust.
-          onSave(
-            m,
-            m === "PCT" ? (mode === "PCT" ? item.profitValue : co.profitMode === "PCT" ? co.profitValue : 0) : m === "AMOUNT" ? (mode === "AMOUNT" ? item.profitValue : 0) : 0,
-          );
-        }}
-      >
-        {LINE_PROFIT_MODES.map((m) => (
-          <option key={m.value} value={m.value}>
-            {m.value === "CO" ? `Change order's${co.profitMode === "PCT" ? ` (${num(co.profitValue, 2)}%)` : ""}` : m.label}
-          </option>
-        ))}
-      </select>
-      {own ? (
-        <input
-          className="input !h-8 !w-16 !py-0 text-right text-xs"
-          inputMode="decimal"
-          aria-label={mode === "PCT" ? "Markup %" : "Profit $"}
-          value={text ?? String(item.profitValue)}
-          onFocus={(e) => e.currentTarget.select()}
-          onChange={(e) => setText(e.target.value)}
-          onBlur={(e) => commit(e.currentTarget.value)}
-          onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
-        />
-      ) : null}
-    </span>
-  );
-}
-
-/** An item's cost code (yours — the budget uses it). */
+/** A cost code box (yours — the budget uses it). */
 function CodeSelect({ codes, value, disabled, onChange }: { codes: Code[]; value: string | null; disabled?: boolean; onChange: (id: string | null) => void }) {
   return (
     <select
-      className={cn("input !h-8 !w-56 !py-0 text-xs", !value && "text-slate-400")}
+      className={cn("input !h-7 !w-auto min-w-40 !px-2 !py-0 !text-xs", !value && "text-slate-400")}
       value={value ?? ""}
       disabled={disabled}
       aria-label="Cost code"
@@ -835,6 +803,158 @@ function CodeSelect({ codes, value, disabled, onChange }: { codes: Code[]; value
     </select>
   );
 }
+
+type LineValues = { description: string; amount: number; costCodeId: string | null; profitMode: string; profitValue: number; taxed: boolean };
+
+/**
+ * A line opened to change: your own items and extra charges — what and how much; any line —
+ * its cost code, its own profit and tax (those only while it's a draft). Remove… asks first.
+ */
+function LineEditor({
+  item,
+  co,
+  codes,
+  draft,
+  taxOn,
+  busy,
+  onSave,
+  onCancel,
+  onRemove,
+}: {
+  item: Item;
+  co: Co;
+  codes: Code[];
+  draft: boolean;
+  taxOn: boolean;
+  busy: boolean;
+  onSave: (v: LineValues) => void;
+  onCancel: () => void;
+  onRemove: () => void;
+}) {
+  const charge = item.kind === "CHARGE";
+  const own = draft && (item.kind === "LINE" || charge);
+  const [d, setD] = useState(item.description);
+  const [a, setA] = useState(String(charge ? item.unitCost : (item.clientPrice ?? item.unitCost)));
+  const [code, setCode] = useState<string | null>(item.costCodeId);
+  const [mode, setMode] = useState(item.profitMode || "CO");
+  const [pv, setPv] = useState(String(item.profitValue));
+  const [taxed, setTaxed] = useState(item.taxed);
+  const n = Number(a.replace(/[$,\s]/g, "") || 0);
+  const p = Number(pv.replace(/[$,%\s]/g, "") || 0);
+  return (
+    <div className="space-y-1.5 rounded-md border border-slate-200 bg-white p-2 text-xs" onClick={(e) => e.stopPropagation()}>
+      {own ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <input className="input !h-7 min-w-48 flex-1 !px-2 !py-0 !text-xs" autoFocus aria-label="What" value={d} onChange={(e) => setD(e.target.value)} onKeyDown={(e) => e.key === "Escape" && onCancel()} />
+          <span className="text-slate-500">$</span>
+          <input className="input !h-7 !w-24 !px-2 !py-0 text-right !text-xs" inputMode="decimal" aria-label="Amount" value={a} onChange={(e) => setA(e.target.value)} />
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-1.5 text-slate-500">
+        <CodeSelect codes={codes} value={code} onChange={setCode} />
+        {draft ? (
+          <>
+            <span>· profit</span>
+            <select className="input !h-7 !w-auto !px-2 !py-0 !text-xs" aria-label="Profit" value={mode} onChange={(e) => {
+              const m = e.target.value;
+              setMode(m);
+              // Switching to % starts at the change order's %, so there's a number to adjust.
+              if (m === "PCT" && mode !== "PCT") setPv(String(co.profitMode === "PCT" ? co.profitValue : 0));
+              if (m === "AMOUNT" && mode !== "AMOUNT") setPv("0");
+            }}>
+              {LINE_PROFIT_MODES.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.value === "CO" ? `Change order's${co.profitMode === "PCT" ? ` (${num(co.profitValue, 2)}%)` : ""}` : m.label}
+                </option>
+              ))}
+            </select>
+            {mode === "PCT" || mode === "AMOUNT" ? (
+              <input className="input !h-7 !w-16 !px-2 !py-0 text-right !text-xs" inputMode="decimal" aria-label={mode === "PCT" ? "Markup %" : "Profit $"} value={pv} onChange={(e) => setPv(e.target.value)} />
+            ) : null}
+            {taxOn ? (
+              <label className="flex items-center gap-1 text-slate-700" title="You pay sales tax on it — part of its price, profit figured on it too">
+                <input type="checkbox" className="h-3.5 w-3.5 rounded border-slate-300" checked={taxed} onChange={(e) => setTaxed(e.target.checked)} />
+                Tax
+              </label>
+            ) : null}
+          </>
+        ) : null}
+      </div>
+      <div className="flex items-center gap-2 pt-0.5">
+        {draft ? (
+          <button type="button" className="text-rose-600 hover:underline" disabled={busy} onClick={() => window.confirm(`Remove "${item.description}"?`) && onRemove()}>
+            Remove…
+          </button>
+        ) : null}
+        <span className="flex-1" />
+        <button type="button" className={buttonClasses("secondary", "xs")} onClick={onCancel}>
+          Cancel
+        </button>
+        <button
+          type="button"
+          className={buttonClasses("primary", "xs")}
+          disabled={busy || (own && (!d.trim() || !Number.isFinite(n))) || !Number.isFinite(p)}
+          onClick={() => onSave({ description: d.trim(), amount: n, costCodeId: code, profitMode: mode, profitValue: mode === "PCT" || mode === "AMOUNT" ? p : 0, taxed })}
+        >
+          Save
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A new item or extra charge: what, how much, its cost code. */
+function NewLine({
+  kind,
+  cols,
+  codes,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  kind: "LINE" | "CHARGE";
+  cols: number;
+  codes: Code[];
+  busy: boolean;
+  onSave: (v: { kind: "LINE" | "CHARGE"; description: string; amount: number; costCodeId: string | null }) => void;
+  onCancel: () => void;
+}) {
+  const [d, setD] = useState("");
+  const [a, setA] = useState("");
+  const [code, setCode] = useState<string | null>(null);
+  const n = Number(a.replace(/[$,\s]/g, "") || 0);
+  const ok = !busy && !!d.trim() && Number.isFinite(n);
+  return (
+    <tr className="bg-blue-50/50">
+      <td colSpan={cols} className="px-3 py-2">
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <input
+            className="input !h-7 min-w-48 flex-1 !px-2 !py-0 !text-xs"
+            autoFocus
+            aria-label={kind === "CHARGE" ? "Extra charge" : "New item"}
+            placeholder={kind === "CHARGE" ? "Extra charge, e.g. Change order fee" : "What's being added or changed"}
+            value={d}
+            onChange={(e) => setD(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") onCancel();
+              if (e.key === "Enter" && ok) onSave({ kind, description: d.trim(), amount: n, costCodeId: code });
+            }}
+          />
+          <span className="text-slate-500">$</span>
+          <input className="input !h-7 !w-24 !px-2 !py-0 text-right !text-xs" inputMode="decimal" aria-label="Amount" placeholder="0.00" value={a} onChange={(e) => setA(e.target.value)} />
+          <CodeSelect codes={codes} value={code} onChange={setCode} />
+          <button type="button" className={buttonClasses("secondary", "xs")} onClick={onCancel}>
+            Cancel
+          </button>
+          <button type="button" className={buttonClasses("primary", "xs")} disabled={!ok} onClick={() => onSave({ kind, description: d.trim(), amount: n, costCodeId: code })}>
+            Add
+          </button>
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 
 /** "Select items": the client choices not on a change order yet. */
 function PickChoices({ open, busy, onAdd, onCancel }: { open: UnaddedChoice[]; busy: boolean; onAdd: (ids: string[]) => void; onCancel: () => void }) {

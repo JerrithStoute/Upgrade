@@ -24,6 +24,7 @@ export function materialItemOptions() {
       exterior: true,
       style: true,
       lengthFt: true,
+      trimUses: true,
     },
   });
 }

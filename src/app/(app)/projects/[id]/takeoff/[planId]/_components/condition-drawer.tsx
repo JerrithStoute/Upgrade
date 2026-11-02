@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Copy, Plus } from "lucide-react";
-import { ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";
-import { costCodeLabel, money, num } from "@/lib/utils";
+import { ChevronRight, Copy, Plus } from "lucide-react";
+import { ConfirmForm, SubmitButton } from "@/components/ui";
+import { cn, costCodeLabel, money, num } from "@/lib/utils";
 import type { CodeRules } from "@/lib/code-groups";
-import { isLumberMetric, metricLabel, metricUnit, type ConditionType } from "@/lib/takeoff";
+import { isLumberMetric, metricUnit, type ConditionType } from "@/lib/takeoff";
+import { Section } from "../../_components/mini";
 import { ConditionForm, type ConditionFormValues, type MemberSizeOption } from "../../_components/condition-form";
 import { AssemblyForm, type AssemblyFormValues, type ItemOption } from "../../_components/assembly-form";
 import {
@@ -72,7 +73,7 @@ export function ConditionDrawer({
 
   return (
     <div className="absolute inset-y-0 right-0 z-20 flex w-[min(100%,32rem)] flex-col border-l border-slate-200 bg-white shadow-2xl">
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
         <ConditionForm
           title={condition ? `Edit ${condition.name}` : "New takeoff"}
           initialType={newType}
@@ -108,80 +109,96 @@ export function ConditionDrawer({
         />
 
         {condition ? (
-          <div className="space-y-2 border-t border-slate-100 pt-4">
-            <p className="text-xs font-semibold text-slate-800">{isMember ? "Lumber and add-on items" : "What it orders"}</p>
-            {condition.items.length === 0 ? (
-              <p className="text-xs text-slate-500">{isMember ? "None yet." : "None yet — until it has one, this takeoff is a measurement only (not on the estimate)."}</p>
+          <Section title={isMember ? "Add-ons" : "Orders"} className="mt-3">
+            {condition.items.length === 0 && !adding ? (
+              <p className="pt-1.5 text-xs text-slate-500">{isMember ? "None — hangers, ties, blocking…" : "Nothing yet — until it has an item, it's a measurement only (not on the estimate)."}</p>
             ) : null}
-            <ul className="divide-y divide-slate-100 border-y border-slate-100">
-              {condition.items.map((item) =>
-                editItem === item.id ? (
-                  <li key={item.id} className="py-3">
-                    <AssemblyForm
-                      action={updateAssemblyItem}
-                      hidden={{ projectId, returnTo: stayHref }}
-                      condition={{ id: condition.id, type: condition.type, metric: condition.metric }}
-                      costCodes={costCodes}
-                      items={items}
-                      values={item}
-                      pricesLocked={pricesLocked}
-                      onCancel={() => setEditItem(null)}
-                    />
-                  </li>
-                ) : (
-                  <li key={item.id} className="flex items-start gap-2 py-1.5 text-sm">
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-slate-900">{item.description}</span>
-                      <span className="block text-xs text-slate-500">
-                        {isLumberMetric(item.metric)
-                          ? `From the layout · price in Catalog → Item List${item.metric.startsWith("pieces:") ? " · extra boards from the takeoff's waste %" : item.wastePct > 0 ? ` · ${num(item.wastePct, 1)}% waste from the takeoff` : ""}`
-                          : `${num(item.qty, 4)} ${item.unit} per ${num(item.per, 4)} ${metricUnit(item.metric)} of ${metricLabel(item.metric)
-                              .replace(/ \(.*\)$/, "")
-                              .toLowerCase()}`}
-                        {" · "}
+            {condition.items.length ? (
+              <ul className="border-t border-slate-100">
+                {condition.items.map((item) => {
+                  const auto = isLumberMetric(item.metric);
+                  const recipe = auto
+                    ? "from the drawing"
+                    : `${num(item.qty, 4)} ${item.unit} per ${num(item.per, 4)} ${metricUnit(item.metric)}${item.roundUp ? " · round up" : ""}${item.wastePct > 0 ? ` · ${num(item.wastePct, 1)}% waste` : ""}`;
+                  const line = (
+                    <>
+                      <span className="min-w-0 flex-1 truncate text-slate-900">{item.description}</span>
+                      <span className="shrink-0 text-slate-500">{recipe}</span>
+                      <span className="w-20 shrink-0 text-right tabular-nums text-slate-700">
                         {money(item.unitCost)}/{item.unit}
-                        {item.pricePinned ? " · this job only" : ""}
-                        {item.costCode ? ` · ${costCodeLabel(item.costCode)}` : ""}
                       </span>
-                    </span>
-                    {isLumberMetric(item.metric) ? (
-                      <span className="pt-0.5 text-xs text-slate-400">Auto</span>
-                    ) : (
-                      <span className="flex shrink-0 items-center gap-1">
-                        <button type="button" className={buttonClasses("ghost", "sm")} onClick={() => setEditItem(item.id)}>
-                          Edit
+                    </>
+                  );
+                  const facts = [item.costCode ? costCodeLabel(item.costCode) : "No cost code", item.pricePinned ? "this job only" : null].filter(Boolean).join(" · ");
+                  return (
+                    <li key={item.id} className="border-b border-slate-100">
+                      {auto ? (
+                        <div className="flex min-h-8 items-center gap-2 text-xs" title={`Added from the drawing; priced from Catalog → Item List · ${facts}`}>
+                          {line}
+                          <span className="w-8 shrink-0 text-right text-slate-400">Auto</span>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-expanded={editItem === item.id}
+                          title={facts}
+                          className="flex min-h-8 w-full items-center gap-2 text-left text-xs hover:bg-slate-50"
+                          onClick={() => {
+                            setAdding(false);
+                            setEditItem(editItem === item.id ? null : item.id);
+                          }}
+                        >
+                          {line}
+                          <ChevronRight className={cn("h-3.5 w-8 shrink-0 text-slate-400 transition-transform", editItem === item.id && "rotate-90")} />
                         </button>
-                        <ConfirmForm action={deleteAssemblyItem} hidden={{ projectId, id: item.id, returnTo: stayHref }} message={`Remove "${item.description}"?`} variant="ghost">
-                          <span className="text-xs text-rose-600">Remove</span>
-                        </ConfirmForm>
-                      </span>
-                    )}
-                  </li>
-                ),
-              )}
-            </ul>
+                      )}
+                      {editItem === item.id ? (
+                        <div className="pb-2">
+                          <AssemblyForm
+                            action={updateAssemblyItem}
+                            removeAction={deleteAssemblyItem}
+                            hidden={{ projectId, returnTo: stayHref }}
+                            condition={{ id: condition.id, type: condition.type, metric: condition.metric }}
+                            costCodes={costCodes}
+                            items={items}
+                            values={item}
+                            pricesLocked={pricesLocked}
+                            onCancel={() => setEditItem(null)}
+                          />
+                        </div>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
             {adding ? (
-              <div className="rounded-md bg-slate-50 p-3">
-                <AssemblyForm
-                  action={createAssemblyItem}
-                  hidden={{ projectId, returnTo: stayHref }}
-                  condition={{ id: condition.id, type: condition.type, metric: condition.metric }}
-                  costCodes={costCodes}
-                  items={items}
-                  pricesLocked={pricesLocked}
-                  onCancel={() => setAdding(false)}
-                />
-              </div>
+              <AssemblyForm
+                action={createAssemblyItem}
+                hidden={{ projectId, returnTo: stayHref }}
+                condition={{ id: condition.id, type: condition.type, metric: condition.metric }}
+                costCodes={costCodes}
+                items={items}
+                pricesLocked={pricesLocked}
+                onCancel={() => setAdding(false)}
+              />
             ) : (
-              <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1 text-xs font-medium text-blue-700">
-                <Plus className="h-3.5 w-3.5" /> {isMember ? "Add an add-on item (hangers, ties, blocking…)" : "Add an item"}
+              <button
+                type="button"
+                onClick={() => {
+                  setEditItem(null);
+                  setAdding(true);
+                }}
+                className="inline-flex h-7 items-center gap-1 text-xs font-medium text-blue-700 hover:underline"
+              >
+                <Plus className="h-3.5 w-3.5" /> Add an item
               </button>
             )}
-          </div>
+          </Section>
         ) : null}
 
         {condition ? (
-          <div className="flex justify-end border-t border-slate-100 pt-4">
+          <div className="flex justify-end border-t border-slate-100 pt-3">
             <ConfirmForm
               action={deleteCondition}
               hidden={{ projectId, id: condition.id, returnTo: closeHref }}

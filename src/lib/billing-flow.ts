@@ -53,7 +53,13 @@ export async function newChangeOrder(
       profitShown: d.profitShown === "FOLDED" ? "FOLDED" : "LINE",
       // Tax starts at the estimate's — the sales tax you pay.
       taxPct: tableTaxRate(rows),
-      taxLabel: tableTaxLabel(rows),
+      taxLabel: d.taxLabel || tableTaxLabel(rows),
+      // What the client sees: your defaults from the Print / PDF page.
+      ...(d.profitLabel ? { profitLabel: d.profitLabel } : {}),
+      taxShown: d.taxShown === "FOLDED" ? "FOLDED" : "LINE",
+      showItems: d.showItems ?? true,
+      showPrices: d.showPrices ?? true,
+      docOptions: d.doc ? JSON.stringify(d.doc) : null,
     },
   });
 }

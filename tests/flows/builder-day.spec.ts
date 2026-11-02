@@ -148,6 +148,10 @@ test("uploads a plan, adds a takeoff from the new-takeoff panel, renames the pla
   const panel = page.locator("form").filter({ has: page.getByText("New takeoff", { exact: true }) });
   await expect(panel.getByRole("link", { name: "Cancel" })).toBeVisible();
   await expect(panel.getByText("Plates", { exact: true })).toBeVisible();
+  // Each trim box lists only its own trim: a new company starts with the generic Baseboard.
+  const base = panel.getByLabel("Baseboard item");
+  await expect(base).toHaveValue("Baseboard");
+  expect(await base.locator("option").allTextContents()).not.toContain("Window stool");
   await panel.getByLabel("Type").selectOption("BEAM");
   await expect(panel.getByLabel("Plies")).toBeVisible();
   await panel.getByLabel("Type").selectOption("AREA");
@@ -163,7 +167,16 @@ test("uploads a plan, adds a takeoff from the new-takeoff panel, renames the pla
   await page.getByRole("link", { name: "Edit Flow LVP" }).click();
   const edit = page.locator("form").filter({ has: page.getByText("Edit Flow LVP", { exact: true }) });
   await expect(edit.getByRole("button", { name: "Make a copy" })).toBeVisible();
-  await expect(page.getByText("Flow plank")).toBeVisible();
+  // Its items: click one to change it in place; Remove… asks first.
+  await page.getByRole("button", { name: /^Flow plank/ }).click();
+  const item = page.locator("form").filter({ has: page.getByLabel("Unit cost") });
+  await item.getByLabel("Unit cost").fill("2.5");
+  await item.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("button", { name: /^Flow plank.*\$2\.50/ })).toBeVisible();
+  await page.getByRole("button", { name: /^Flow plank/ }).click();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Remove…" }).click();
+  await expect(page.getByText(/^Nothing yet/)).toBeVisible();
   await edit.getByRole("button", { name: "Save", exact: true }).first().click();
   await expect(page.getByText('Saved "Flow LVP"')).toBeVisible();
 
@@ -360,8 +373,31 @@ test("writes a change order", async () => {
   await expect(page.getByText("Upgrade the front door").first()).toBeVisible();
   // Its page: the money big at the top, and the way back.
   await expect(page.getByText("New contract total", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Send for approval" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review and send →" })).toBeVisible();
   await expect(page.getByRole("link", { name: "← Change orders" })).toBeVisible();
+  // A line: + New item, then click it to change its price.
+  await page.getByRole("button", { name: "+ New item" }).click();
+  await page.getByLabel("New item").fill("Fiberglass front door");
+  await page.getByLabel("Amount").fill("1200");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  // The saved line (not the box it was typed in).
+  const doorLine = page.getByRole("row", { name: /Fiberglass front door.*\$1,200\.00/ });
+  await doorLine.click();
+  await page.getByLabel("Amount").fill("1500");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("+$1,500.00").first()).toBeVisible();
+  // A draft's title and description are open in Details.
+  await expect(page.getByText("Details", { exact: true })).toBeVisible();
+  // Print / PDF: what the client sees, beside the paper.
+  await page.getByRole("link", { name: "Review and send →" }).click();
+  await expect(page.getByRole("heading", { name: "What the client sees" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send for approval" })).toBeVisible();
+  await expect(page.getByText("Effect on contract total")).toBeVisible();
+  await page.getByLabel("Effect on contract").uncheck();
+  await expect(page.getByText("Effect on contract total")).toHaveCount(0);
+  await page.getByLabel("Effect on contract").check();
+  await expect(page.getByText("Effect on contract total")).toBeVisible();
+  await page.getByRole("link", { name: "Back to change order" }).click();
   // On the list: the money up top, and Find narrows it.
   await page.goto(`${job}/change-orders`);
   await expect(page.getByText("Pending approval", { exact: true })).toBeVisible();

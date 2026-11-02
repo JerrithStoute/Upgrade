@@ -23,6 +23,7 @@ import {
   sheetSizeInName,
   withSheetSize,
   type OpeningOptions,
+  type TrimUse,
   type WallOptions,
 } from "@/lib/takeoff";
 import type { MemberSizeOption } from "./condition-form";
@@ -46,7 +47,7 @@ function Sides({ name, value, onChange, label }: { name: string; value: number; 
   );
 }
 
-export type ItemChoice = { name: string; category: string; kind?: string | null; lengthFt?: number | null };
+export type ItemChoice = { name: string; category: string; kind?: string | null; lengthFt?: number | null; trimUses?: string[] };
 
 const NEW_ITEM = "__new__";
 
@@ -54,6 +55,7 @@ const NEW_ITEM = "__new__";
  * Pick one of the Item List items of a `kind` (e.g. sheathing — whatever category
  * you file them under), or type a new one — saving the condition adds it to the
  * Item List as that kind, so it's in this list from then on. Posts `name`.
+ * A trim box (`use`) lists only the trim used there before (Baseboard: only base).
  */
 function ItemPicker({
   id,
@@ -65,6 +67,7 @@ function ItemPicker({
   kind,
   placeholder,
   disabled,
+  use,
 }: {
   id: string;
   name: string;
@@ -75,8 +78,9 @@ function ItemPicker({
   kind: ItemKind;
   placeholder: string;
   disabled?: boolean;
+  use?: TrimUse;
 }) {
-  const list = items.filter((i) => itemKind(i) === kind).sort((a, b) => compareMaterialNames(a.name, b.name));
+  const list = items.filter((i) => (use ? i.trimUses?.includes(use) : itemKind(i) === kind)).sort((a, b) => compareMaterialNames(a.name, b.name));
   const inList = list.find((i) => itemNameKey(i.name) === itemNameKey(value));
   const [typing, setTyping] = useState(false);
   if (typing) {
@@ -387,6 +391,7 @@ export function WallOptionsFields({
             placeholder='3-1/4" MDF colonial base'
             items={items}
             kind="trim"
+            use="base"
             disabled={o.baseSides === 0}
           />
           <NumBox
@@ -417,6 +422,7 @@ function TrimPicker({
   items,
   placeholder,
   disabled,
+  use,
 }: {
   id: string;
   label: string;
@@ -429,6 +435,7 @@ function TrimPicker({
   items: ItemChoice[];
   placeholder: string;
   disabled?: boolean;
+  use: TrimUse;
 }) {
   return (
     <>
@@ -444,6 +451,7 @@ function TrimPicker({
         placeholder={placeholder}
         items={items}
         kind="trim"
+        use={use}
         disabled={disabled}
       />
       <NumBox name={stickName} label={`${label} stick (ft)`} step="0.5" width="!w-11" placeholder="8" title="Blank = by the foot" value={stick || ""} onChange={(v) => onStick(Number(v) || 0)} />
@@ -475,6 +483,7 @@ export function DoorOptionsFields({ idPrefix, values, items }: { idPrefix: strin
           onStick={(ft) => setO((cur) => ({ ...cur, casingStickFt: ft }))}
           items={items}
           placeholder="1x4 casing"
+          use="casing"
           disabled={o.casingSides === 0}
         />
       </Line>
@@ -491,6 +500,7 @@ export function DoorOptionsFields({ idPrefix, values, items }: { idPrefix: strin
           onStick={(ft) => setO((cur) => ({ ...cur, headStickFt: ft }))}
           items={items}
           placeholder="Blank = same as the legs"
+          use="casing"
           disabled={o.casingSides === 0}
         />
       </Line>
@@ -508,6 +518,7 @@ export function WindowOptionsFields({ idPrefix, values, items }: { idPrefix: str
   const stoolLen = items.find((i) => itemNameKey(i.name) === itemNameKey(WINDOW_STOOL_ITEM))?.lengthFt ?? null;
   const set = <K extends keyof WindowOptions>(k: K, v: WindowOptions[K]) => setO((cur) => ({ ...cur, [k]: v }));
   const trim = (k: "apron" | "casing" | "head" | "lining", label: string, placeholder: string) => {
+    const use: TrimUse = k === "apron" ? "apron" : k === "lining" ? "lining" : "casing";
     const item = `${k}Item` as "apronItem" | "casingItem" | "headItem" | "liningItem";
     const stick = `${k}StickFt` as "apronStickFt" | "casingStickFt" | "headStickFt" | "liningStickFt";
     return (
@@ -522,6 +533,7 @@ export function WindowOptionsFields({ idPrefix, values, items }: { idPrefix: str
         onStick={(ft) => set(stick, ft)}
         items={items}
         placeholder={placeholder}
+        use={use}
       />
     );
   };

@@ -794,6 +794,9 @@ model ChangeOrder {
   taxPct             Float     @default(0)
   taxLabel           String    @default("Sales tax")
   taxShown           String    @default("LINE")
+  // What the client sees on the paper (the Print / PDF page's panel), JSON: heading, intro, closing,
+  // allowance columns, effect on contract, schedule, terms, files, fee % — see parseDocOptions.
+  docOptions         String?
   priorCompletion    DateTime?
   newCompletion      DateTime?
   // Who must approve: team members (JSON array of user ids), and the client (true/false).
@@ -1362,6 +1365,9 @@ model MaterialItem {
   // What the program uses it as, whatever category you file it under:
   // windows | doors | framing lumber | sheathing | drywall | trim (null = your own item).
   kind           String?
+  // Trim: which takeoff boxes list it — base | casing | apron | lining. Set when it's picked or
+  // added from that box (a box lists only its own, so base never offers window stool).
+  trimUses       String[]  @default([])
   // When its price was last set or confirmed ("Price still good") — stale once past its cost code's recheck time.
   priceCheckedAt DateTime  @default(now())
   createdAt      DateTime  @default(now())

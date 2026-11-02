@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { BookOpen, Plus, X } from "lucide-react";
 import { buttonClasses } from "@/components/ui";
 import { Field, Line, Section } from "./mini";
+import { ItemSearch } from "@/components/item-search";
 import { UNITS } from "@/lib/constants";
 import { cn, costCodeLabel, money, num } from "@/lib/utils";
 import { METRICS, METRICS_BY_TYPE, itemNameKey, type ConditionType, type MetricKey } from "@/lib/takeoff";
@@ -148,23 +149,7 @@ export function PendingItems({
       {open || editing != null ? (
         <>
       <div className="flex flex-wrap items-center gap-1.5 text-sm">
-        <input
-          list="pending-items-list"
-          autoComplete="off"
-          aria-label="Item"
-          className="input min-w-48 flex-1"
-          value={draft.description}
-          onChange={(e) => pick(e.target.value)}
-          onKeyDown={enter}
-          placeholder="Find in the Item List or type a new one"
-        />
-        <datalist id="pending-items-list">
-          {items.map((i) => (
-            <option key={i.id} value={i.name}>
-              {[i.category, `${money(i.unitCost)}/${i.unit}`].join(" · ")}
-            </option>
-          ))}
-        </datalist>
+        <ItemSearch value={draft.description} onChange={pick} onEnter={commit} items={items} autoFocus className="min-w-32 flex-1" />
         <input type="number" step="any" min="0" aria-label="How many" className="input !w-14" value={draft.qty} onChange={(e) => set("qty", Number(e.target.value) || 0)} onKeyDown={enter} />
         <span className="text-xs text-slate-500">{draft.unit} per</span>
         <input type="number" step="any" min="0" aria-label="Per" className="input !w-14" value={draft.per} onChange={(e) => set("per", Number(e.target.value) || 0)} onKeyDown={enter} />

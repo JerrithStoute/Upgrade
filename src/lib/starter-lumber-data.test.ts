@@ -20,8 +20,9 @@ test("a first wall takeoff finds every material it orders already in the starter
       }
 });
 
-test("the starter Item List is small: only what a first wall takeoff uses", () => {
-  assert.equal(starterItems().length, 12);
+test("the starter Item List is small: what a first wall takeoff uses, and one generic piece of each trim", () => {
+  assert.equal(starterItems().length, 16);
+  for (const use of ["base", "casing", "apron", "lining"]) assert.equal(starterItems().filter((i) => i.trimUses?.includes(use)).length, 1, use);
   assert.ok(starterItems().every((i) => !/ FJ\b/.test(i.name)), "no finger-jointed labels");
 });
 

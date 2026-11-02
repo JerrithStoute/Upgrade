@@ -1,17 +1,23 @@
 import "server-only";
 import { db } from "./db";
+import { itemNameKey } from "./takeoff";
+
+/** Where wall, door and window takeoffs name an Item List item (by name) in their settings. */
+const NAMED = ["sheathingItem", "drywallItem", "baseItem", "casingItem", "headItem", "liningItem", "apronItem"];
 
 /**
  * Two Item List items that are one (Catalog → Item List → Possible duplicates): everything that points at
  * `dropId` — doors and windows placed on plans, takeoff and template items, estimate lines, bid lines,
  * substitutions, the jobs' door and window lists — points at `keepId` instead, and `dropId` is deleted.
- * The one kept keeps its own name, price and cost code. Inventory: only one of them may be stocked.
+ * The one kept keeps its own name, price and cost code, and is listed in both one's trim boxes. Wall, door
+ * and window takeoffs (and templates) that name the dropped one name the kept one. Inventory: only one of
+ * them may be stocked.
  */
 export async function mergeItems(keepId: string, dropId: string) {
   if (keepId === dropId) throw new Error("Pick two different items");
   const [keep, drop] = await Promise.all([
-    db.materialItem.findUnique({ where: { id: keepId }, select: { id: true, name: true, inventory: { select: { id: true } } } }),
-    db.materialItem.findUnique({ where: { id: dropId }, select: { id: true, name: true, inventory: { select: { id: true } } } }),
+    db.materialItem.findUnique({ where: { id: keepId }, select: { id: true, name: true, trimUses: true, inventory: { select: { id: true } } } }),
+    db.materialItem.findUnique({ where: { id: dropId }, select: { id: true, name: true, trimUses: true, inventory: { select: { id: true } } } }),
   ]);
   if (!keep || !drop) throw new Error("That item isn't on the Item List any more — reload the page");
   if (keep.inventory && drop.inventory) throw new Error(`Both are in Inventory — take "${drop.name}" off Inventory first, then merge`);
@@ -31,6 +37,33 @@ export async function mergeItems(keepId: string, dropId: string) {
       return undefined;
     }
   };
+  // Takeoff settings that name the dropped one.
+  const dropKey = itemNameKey(drop.name);
+  const rename = (raw: string | null) => {
+    if (!raw) return undefined;
+    try {
+      const o = JSON.parse(raw) as Record<string, unknown>;
+      let changed = false;
+      for (const k of NAMED)
+        if (typeof o[k] === "string" && itemNameKey(o[k] as string) === dropKey) {
+          o[k] = keep.name;
+          changed = true;
+        }
+      return changed ? JSON.stringify(o) : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+  const where = { type: { in: ["WALL", "DOOR", "WINDOW"] }, options: { not: null } };
+  const renamed = (await db.takeoffCondition.findMany({ where, select: { id: true, options: true } })).flatMap((c) => {
+    const options = rename(c.options);
+    return options ? [db.takeoffCondition.update({ where: { id: c.id }, data: { options } })] : [];
+  });
+  const renamedTemplates = (await db.takeoffTemplateCondition.findMany({ where, select: { id: true, options: true } })).flatMap((c) => {
+    const options = rename(c.options);
+    return options ? [db.takeoffTemplateCondition.update({ where: { id: c.id }, data: { options } })] : [];
+  });
+
   // A substitution for the dropped one on a job that already has one for the kept one: the kept one's stays.
   const subs = await db.jobSubstitution.findMany({ where: { fromItemId: dropId }, select: { id: true, projectId: true } });
   const keptSubs = new Set((await db.jobSubstitution.findMany({ where: { fromItemId: keepId }, select: { projectId: true } })).map((s) => s.projectId));
@@ -46,6 +79,9 @@ export async function mergeItems(keepId: string, dropId: string) {
     db.jobSubstitution.updateMany({ where: { toItemId: dropId }, data: { toItemId: keepId } }),
     ...(drop.inventory ? [db.inventoryItem.update({ where: { id: drop.inventory.id }, data: { materialItemId: keepId } })] : []),
     ...listed.map((p) => db.project.update({ where: { id: p.id }, data: { windowList: swap(p.windowList), doorList: swap(p.doorList) } })),
+    ...renamed,
+    ...renamedTemplates,
+    db.materialItem.update({ where: { id: keepId }, data: { trimUses: Array.from(new Set([...keep.trimUses, ...drop.trimUses])) } }),
     db.materialItem.delete({ where: { id: dropId } }),
   ]);
   return { kept: keep.name, dropped: drop.name, jobs: listed.length };

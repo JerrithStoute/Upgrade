@@ -27,6 +27,7 @@ import {
   DEFAULT_BEAM_OPTIONS,
   DEFAULT_FRAMING_OPTIONS,
   framingOptions,
+  type TrimUse,
 } from "./takeoff";
 
 /**
@@ -78,16 +79,22 @@ export async function conditionFields(fd: FormData) {
   await saveCodeRulesFromForm(fd);
   if (type === "WALL" && options) await rememberItems(options);
   // Door / window trim goes on the Item List (Trim) when saved, with its stick length.
-  const trim: [string, number][] = [];
+  const trim: [string, number, TrimUse | null][] = [];
   if (type === "DOOR" && options) {
     const o = JSON.parse(options) as DoorOptions;
-    if (o.casingSides > 0) trim.push([o.casingItem, o.casingStickFt], [o.headItem, o.headStickFt]);
+    if (o.casingSides > 0) trim.push([o.casingItem, o.casingStickFt, "casing"], [o.headItem, o.headStickFt, "casing"]);
   }
   if (type === "WINDOW" && options) {
     const o = JSON.parse(options) as WindowOptions;
-    trim.push([o.casingItem, o.casingStickFt], [o.headItem, o.headStickFt], [o.liningItem, o.liningStickFt], [WINDOW_STOOL_ITEM, o.stoolStickFt], [o.apronItem, o.apronStickFt]);
+    trim.push(
+      [o.casingItem, o.casingStickFt, "casing"],
+      [o.headItem, o.headStickFt, "casing"],
+      [o.liningItem, o.liningStickFt, "lining"],
+      [WINDOW_STOOL_ITEM, o.stoolStickFt, null],
+      [o.apronItem, o.apronStickFt, "apron"],
+    );
   }
-  for (const [item, stick] of trim) await rememberCasing(JSON.stringify({ casingItem: item, casingSides: 1, casingStickFt: stick }));
+  for (const [item, stick, use] of trim) await rememberCasing(item, stick, use);
   return {
     name,
     type,
@@ -148,15 +155,22 @@ function wallOptions(fd: FormData) {
  * once walls are drawn with it.
  */
 async function rememberItems(json: string) {
-  const wanted: { name: string; kind: ItemKind; unit: string }[] = [];
+  const wanted: { name: string; kind: ItemKind; unit: string; use?: TrimUse }[] = [];
   const o = JSON.parse(json) as WallOptions;
   if (o.sheathingSides > 0 && o.sheathingItem.trim()) wanted.push({ name: o.sheathingItem.trim(), kind: "sheathing", unit: "ea" });
   if (o.drywallSides > 0 && o.drywallItem.trim()) wanted.push({ name: o.drywallItem.trim(), kind: "drywall", unit: "ea" });
-  if (o.baseSides > 0 && o.baseItem.trim()) wanted.push({ name: o.baseItem.trim(), kind: "trim", unit: "lf" });
+  if (o.baseItem.trim()) wanted.push({ name: o.baseItem.trim(), kind: "trim", unit: "lf", use: "base" });
   if (!wanted.length) return;
   for (const w of wanted) {
     const nameKey = itemNameKey(w.name);
-    if (await db.materialItem.findFirst({ where: { nameKey }, select: { id: true } })) continue;
+    const existing = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, trimUses: true } });
+    if (existing) {
+      // Picked (or typed) in the Baseboard box: listed there from now on.
+      if (w.use && !existing.trimUses.includes(w.use)) await db.materialItem.update({ where: { id: existing.id }, data: { trimUses: { push: w.use } } });
+      continue;
+    }
+    // Only a used baseboard goes on the list; one just sitting in the box (no sides) waits.
+    if (w.use && o.baseSides === 0) continue;
     const place = await newItemPlacement(w.kind);
     await db.materialItem.create({
       data: {
@@ -168,23 +182,29 @@ async function rememberItems(json: string) {
         unitCost: 0,
         roundUp: w.unit === "ea",
         costCodeId: place.costCodeId,
+        trimUses: w.use ? [w.use] : [],
       },
     });
   }
 }
 
-/** A Doors / Windows takeoff's trim goes on the Item List (as trim) when saved, with its stick length. */
-async function rememberCasing(json: string) {
-  const o = JSON.parse(json) as { casingItem: string; casingSides: number; casingStickFt: number };
-  const name = o.casingItem.trim();
-  if (!name || o.casingSides <= 0) return;
+/**
+ * A Doors / Windows takeoff's trim goes on the Item List (as trim) when saved, with its stick
+ * length — listed from then on in the box it was picked in (`use`: casing, apron, lining).
+ */
+async function rememberCasing(item: string, stickFt: number, use: TrimUse | null) {
+  const name = item.trim();
+  if (!name) return;
   const nameKey = itemNameKey(name);
-  const existing = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, lengthFt: true } });
+  const existing = await db.materialItem.findFirst({ where: { nameKey }, select: { id: true, lengthFt: true, trimUses: true } });
   if (existing) {
-    if (!existing.lengthFt && o.casingStickFt > 0) await db.materialItem.update({ where: { id: existing.id }, data: { lengthFt: o.casingStickFt } });
+    const data: { lengthFt?: number; trimUses?: { push: string } } = {};
+    if (!existing.lengthFt && stickFt > 0) data.lengthFt = stickFt;
+    if (use && !existing.trimUses.includes(use)) data.trimUses = { push: use };
+    if (Object.keys(data).length) await db.materialItem.update({ where: { id: existing.id }, data });
     return;
   }
-  const sticks = o.casingStickFt > 0;
+  const sticks = stickFt > 0;
   const place = await newItemPlacement("trim");
   await db.materialItem.create({
     data: {
@@ -196,7 +216,8 @@ async function rememberCasing(json: string) {
       roundUp: sticks,
       unitCost: 0,
       costCodeId: place.costCodeId,
-      lengthFt: sticks ? o.casingStickFt : null,
+      lengthFt: sticks ? stickFt : null,
+      trimUses: use ? [use] : [],
     },
   });
 }

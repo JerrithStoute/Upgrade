@@ -9,15 +9,15 @@ import { fmtDate, money } from "@/lib/utils";
 import { changeOrderTotals, effectOnContract, parseApprovals, parseCoDefaults, parseIds } from "@/lib/change-orders";
 import { unaddedChoices } from "@/lib/change-orders-server";
 import { Badge, ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";
-import { approveChangeOrder, declineChangeOrder, deleteChangeOrder, sendChangeOrder, voidChangeOrder } from "../actions";
+import { approveChangeOrder, declineChangeOrder, deleteChangeOrder, voidChangeOrder } from "../actions";
 import { ChangeOrderEditor } from "./change-order-editor";
 import { ClientEmailNote } from "@/components/client-email-note";
 
 /**
- * A change order, laid out like your CoConstruct change orders: intro text, line
- * items (client choices with Client Price / Allowance / Difference, items, extra
- * charges), profit your way, tax, Effect on Contract, terms and completion dates,
- * files, closing text and approvals.
+ * A change order: which one and the money big at the top (a draft's title and description
+ * open in a small card below); line items (client choices with Client Price / Allowance /
+ * Difference, items, extra charges) and what the client reads (intro, closing, terms, files)
+ * on the left; the contract, pricing (profit, tax), schedule and approvals on the right.
  */
 export default async function ChangeOrderDetailPage({ params }: { params: Promise<{ id: string; coId: string }> }) {
   const { id, coId } = await params;
@@ -58,6 +58,8 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
             <h1 className="text-xl font-semibold text-slate-900">{co.title}</h1>
             <Badge status={co.status} />
           </div>
+          {/* A draft has its title and description open below; once sent, the description reads here. */}
+          {co.description && co.status !== "DRAFT" ? <p className="text-sm text-slate-600">{co.description}</p> : null}
           <p className="text-xs text-slate-500">
             Created {fmtDate(co.createdAt)}
             {co.sentAt ? ` · Sent ${fmtDate(co.sentAt)}` : ""}
@@ -86,16 +88,18 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
         </div>
       </div>
       <div className="flex flex-wrap items-center justify-end gap-1.5">
-        <Link href={`/projects/${project.id}/change-orders/${co.id}/print`} className={buttonClasses("secondary", "xs")}>
-          <Printer className="h-3.5 w-3.5" /> Print / PDF
-        </Link>
+        {/* A draft opens the paper from Review and send; a sent one from here (to print a signed copy). */}
+        {co.status !== "DRAFT" ? (
+          <Link href={`/projects/${project.id}/change-orders/${co.id}/print`} className={buttonClasses("secondary", "xs")}>
+            <Printer className="h-3.5 w-3.5" /> Print / PDF
+          </Link>
+        ) : null}
         {co.status === "DRAFT" ? (
           <>
-            <form action={sendChangeOrder}>
-              <input type="hidden" name="projectId" value={project.id} />
-              <input type="hidden" name="id" value={co.id} />
-              <SubmitButton size="xs">Send for approval</SubmitButton>
-            </form>
+            {/* Sent from the paper, where you see what the client gets. */}
+            <Link href={`/projects/${project.id}/change-orders/${co.id}/print`} className={buttonClasses("primary", "xs")}>
+              Review and send →
+            </Link>
             <ConfirmForm action={deleteChangeOrder} hidden={ids} variant="ghost" size="xs" message={`Delete change order #${co.number}? This cannot be undone.`}>
               <span className="text-rose-600">Delete…</span>
             </ConfirmForm>

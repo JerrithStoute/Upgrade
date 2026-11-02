@@ -46,13 +46,11 @@ export default async function ChangeOrderDefaultsPage({ searchParams }: { search
             <Field label="Markup % or profit $" htmlFor="co-profit-value" hint="Used when Profit is Markup % or Profit $.">
               <input id="co-profit-value" name="profitValue" type="number" min={0} step="0.01" className="input" defaultValue={d.profitValue ?? ""} />
             </Field>
-            <Field label="Shown to the client as" htmlFor="co-profit-shown">
-              <select id="co-profit-shown" name="profitShown" className="input" defaultValue={d.profitShown ?? "LINE"}>
-                <option value="LINE">Its own line</option>
-                <option value="FOLDED">Folded into the prices</option>
-              </select>
-            </Field>
           </FormGrid>
+          <p className="mt-3 text-xs text-slate-500">
+            How the profit, tax and items show the client is set on a change order&apos;s <strong>Print / PDF</strong> page — <strong>Use these as my defaults</strong> there starts
+            every new one that way.
+          </p>
         </CardBody>
       </Card>
 
