@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { GripVertical, Plus, Trash2, X } from "lucide-react";
+import { GripVertical, Plus, X } from "lucide-react";
 import { ColorSwatches } from "@/components/ui/color-swatches";
 import { PhasePicker } from "@/components/ui/phase-picker";
 import { Button } from "@/components/ui";
@@ -27,9 +27,8 @@ const newKey = () => `n${Date.now().toString(36)}${++seq}`;
  * A schedule template's tasks, in order: each with its length in workdays and what it waits
  * on (several, each with lag). Saved all at once.
  */
-export function TemplateEditor({ id, name: initialName, tasks: initial, staff }: { id: string; name: string; tasks: EditorTask[]; staff: { id: string; name: string }[] }) {
+export function TemplateEditor({ id, tasks: initial, staff }: { id: string; tasks: EditorTask[]; staff: { id: string; name: string }[] }) {
   const router = useRouter();
-  const [name, setName] = useState(initialName);
   const [tasks, setTasks] = useState(initial);
   const [dirty, setDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +82,7 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
   const save = () =>
     start(async () => {
       setError(null);
-      const r = await saveScheduleTemplate(id, { name, tasks });
+      const r = await saveScheduleTemplate(id, { tasks });
       if (!r.ok) return setError(r.error);
       setDirty(false);
       router.refresh();
@@ -96,27 +95,22 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
   };
 
   return (
-    <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <input
-          className="input !w-80 font-semibold"
-          value={name}
-          aria-label="Template name"
-          onChange={(e) => {
-            setName(e.target.value);
-            setDirty(true);
-          }}
-        />
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">
         <span className="text-xs text-slate-500">
           {tasks.length} task{tasks.length === 1 ? "" : "s"} · {tasks.reduce((n, t) => n + (t.isMilestone ? 0 : t.duration), 0)} workdays of work (before overlaps)
         </span>
         <span className="ml-auto flex items-center gap-2">
-          {error ? <span className="text-sm text-rose-700">{error}</span> : dirty ? <span className="text-xs text-amber-700">Not saved yet</span> : null}
-          <Button type="button" onClick={save} disabled={saving || !dirty}>
-            {saving ? "Saving…" : "Save template"}
+          {error ? <span className="text-xs text-rose-700">{error}</span> : dirty ? <span className="text-xs text-amber-700">Not saved yet</span> : null}
+          <Button type="button" size="sm" className="!h-7 !px-2.5 !text-xs" onClick={save} disabled={saving || !dirty}>
+            {saving ? "Saving…" : "Save"}
           </Button>
         </span>
-      </div>
+      </header>
+      <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
+        On a job: Schedule → Start from a template. Each task goes as early as what it waits on allows, on your workdays (Settings → Schedule), holidays skipped. Drag the
+        number to move a task; point between two tasks for a + to put one there. Nothing saves until you click Save.
+      </p>
 
       {/* The + rides in the left margin, outside the scrolling table, so it isn't cut off. */}
       <div
@@ -135,24 +129,24 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
         }}
         onMouseLeave={() => setGap(null)}
       >
-        <div className="overflow-x-auto rounded-lg border border-slate-200">
-          <table className="w-full min-w-[960px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[920px] text-left text-sm">
+            <thead className="border-b border-slate-100 text-xs text-slate-500">
               <tr>
-                <th className="w-12 px-2 py-2" />
-                <th className="px-2 py-2 font-medium">Task</th>
-                <th className="w-44 px-2 py-2 font-medium">Phase</th>
-                <th className="w-24 px-2 py-2 text-right font-medium">Workdays</th>
-                <th className="px-2 py-2 font-medium">Waits on (then lag, workdays)</th>
-                <th className="w-40 px-2 py-2 font-medium">Default person</th>
-                <th className="w-12 px-2 py-2" />
+                <th className="w-12 px-2 py-2 pl-4" />
+                <th className="px-2 py-2 font-normal">Task</th>
+                <th className="w-44 px-2 py-2 font-normal">Phase</th>
+                <th className="w-20 px-2 py-2 text-right font-normal">Workdays</th>
+                <th className="px-2 py-2 font-normal">Waits on, then lag in workdays</th>
+                <th className="w-40 px-2 py-2 font-normal">Usual person</th>
+                <th className="w-10 px-2 py-2 pr-4" />
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {tasks.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-3 py-4 text-center text-slate-500">
-                    No tasks yet — add the first one below.
+                  <td colSpan={7} className="px-4 py-4 text-center text-sm text-slate-500">
+                    No tasks yet. Add the first one below.
                   </td>
                 </tr>
               ) : null}
@@ -179,7 +173,7 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
                     endDrag();
                   }}
                 >
-                  <td className="px-1 py-2">
+                  <td className="py-2 pl-3 pr-1">
                     {/* Drag to move it (or Alt + ↑ / ↓). */}
                     <span
                       draggable
@@ -215,7 +209,7 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
                     <div className="flex items-center gap-1.5">
                       <ColorSwatches value={t.color} onChange={(c) => set(t.key, { color: c })} label="Bar color" />
                       <input
-                        className="input !h-8 !py-0"
+                        className="input !h-7 !py-0 text-xs"
                         value={t.name}
                         placeholder="e.g. Pour slab"
                         aria-label="Task name"
@@ -234,14 +228,14 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
                     </label>
                   </td>
                   <td className="px-2 py-1.5">
-                    <PhasePicker className="input !h-8 !py-0" value={t.phase} extra={phases} onChange={(phase) => set(t.key, { phase })} />
+                    <PhasePicker className="input !h-7 !py-0 text-xs" value={t.phase} extra={phases} onChange={(phase) => set(t.key, { phase })} />
                   </td>
                   <td className="px-2 py-1.5">
                     <input
                       type="number"
                       min={1}
                       max={999}
-                      className="input !h-8 !py-0 text-right"
+                      className="input !h-7 !py-0 text-right text-xs"
                       value={t.isMilestone ? 1 : t.duration}
                       disabled={t.isMilestone}
                       aria-label="Workdays"
@@ -253,7 +247,7 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
                       {t.links.map((l, j) => (
                         <div key={j} className="flex items-center gap-1.5">
                           <select
-                            className="input !h-8 !py-0 min-w-0 flex-1 text-xs"
+                            className="input !h-7 !py-0 min-w-0 flex-1 text-xs"
                             value={l.key}
                             aria-label="Waits on"
                             onChange={(e) => set(t.key, { links: t.links.map((x, k) => (k === j ? { ...x, key: e.target.value } : x)) })}
@@ -270,7 +264,7 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
                             type="number"
                             min={0}
                             max={365}
-                            className="input !h-8 !w-14 !py-0 text-right text-xs"
+                            className="input !h-7 !w-14 !py-0 text-right text-xs"
                             value={l.lag}
                             aria-label="Lag workdays"
                             onChange={(e) => set(t.key, { links: t.links.map((x, k) => (k === j ? { ...x, lag: Math.max(0, Math.round(Number(e.target.value) || 0)) } : x)) })}
@@ -278,7 +272,7 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
                           <button
                             type="button"
                             className="rounded p-1 text-slate-400 hover:text-slate-700"
-                            aria-label="Remove"
+                            aria-label="Stop waiting on this"
                             onClick={() => set(t.key, { links: t.links.filter((_, k) => k !== j) })}
                           >
                             <X className="h-3.5 w-3.5" />
@@ -301,9 +295,9 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
                   </td>
                   <td className="px-2 py-1.5">
                     <select
-                      className="input !h-8 !py-0 text-xs"
+                      className="input !h-7 !py-0 text-xs"
                       value={t.assigneeId ?? ""}
-                      aria-label="Default person"
+                      aria-label="Usual person"
                       onChange={(e) => set(t.key, { assigneeId: e.target.value || null })}
                     >
                       <option value="">—</option>
@@ -314,17 +308,16 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
                       ))}
                     </select>
                   </td>
-                  <td className="px-2 py-1.5 text-right">
-                    <span className="inline-flex">
-                      <button
-                        type="button"
-                        onClick={() => remove(t.key)}
-                        className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
-                        aria-label={`Remove ${t.name || "task"}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
+                  <td className="px-2 py-1.5 pr-4 text-right">
+                    <button
+                      type="button"
+                      onClick={() => remove(t.key)}
+                      className="rounded p-1 text-slate-400 hover:bg-rose-50 hover:text-rose-700"
+                      aria-label={`Remove ${t.name || "task"}`}
+                      title="Remove this task"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -334,7 +327,7 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
         {gap ? (
           <>
             <div className="pointer-events-none absolute inset-x-0 z-10 h-px -translate-y-px border-t border-dashed border-blue-400" style={{ top: gap.top }} />
-            <div data-insert-plus className="absolute -left-3.5 z-20 -translate-y-1/2" style={{ top: gap.top }}>
+            <div data-insert-plus className="absolute -left-3 z-20 -translate-y-1/2" style={{ top: gap.top }}>
               <button
                 type="button"
                 onClick={() => {
@@ -351,9 +344,11 @@ export function TemplateEditor({ id, name: initialName, tasks: initial, staff }:
           </>
         ) : null}
       </div>
-      <Button type="button" variant="secondary" size="sm" onClick={() => add()}>
-        <Plus className="h-3.5 w-3.5" /> Add task
-      </Button>
-    </div>
+      <div className="border-t border-slate-100 px-4 py-2">
+        <button type="button" onClick={() => add()} className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline">
+          <Plus className="h-3.5 w-3.5" /> Add a task
+        </button>
+      </div>
+    </section>
   );
 }

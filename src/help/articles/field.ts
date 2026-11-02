@@ -120,9 +120,11 @@ export const FIELD: HelpArticle[] = [
       {
         heading: "Schedule templates",
         items: [
-          { name: "New schedule template", what: "Starts an empty template." },
-          { name: "Add the sample: New home, slab on grade", what: "About 50 tasks from plans to the client walkthrough, about 6 months. Edit it to fit how you build." },
-          { name: "The editor", what: "Each task: name, milestone, phase, workdays, what it waits on (with lag), and a default person. Drag to reorder; the blue + inserts. Click **Save template**; nothing saves until you do." },
+          { name: "Find", what: "Type part of a template's name to narrow the list as you type." },
+          { name: "+ New template", what: "Opens a one-line box: give it a name and click **Create**. The new template opens to add its tasks." },
+          { name: "Add the sample: New home, slab on grade", what: "The link in the gray note. About 50 tasks from plans to the client walkthrough, about 6 months. Edit it to fit how you build." },
+          { name: "A template's page", what: "Click a template's name. **Edit** beside the name renames it; **Delete template…** at the top right deletes it (jobs built from it keep their schedules). **← Schedule templates** goes back." },
+          { name: "The tasks", what: "Each task: name, milestone, phase, workdays, what it waits on (with lag), and a usual person. Drag a task's number to move it; point between two tasks and click the blue + to put one there; **+ Add a task** adds one at the end; the × removes one. Click **Save** at the top of the card; nothing saves until you do." },
         ],
         text: ["Or save a real job's schedule as a template from its Schedule tab."],
       },

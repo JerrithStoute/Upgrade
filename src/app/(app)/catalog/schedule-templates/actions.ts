@@ -18,7 +18,18 @@ export const createScheduleTemplate = friendly(async function createScheduleTemp
   if (!name) throw new Error("Give it a name");
   const t = await db.scheduleTemplate.create({ data: { name } });
   revalidatePath(path);
-  redirect(`${path}?edit=${t.id}`);
+  redirect(`${path}/${t.id}`);
+});
+
+/** Renames it, from the name at the top of its page. */
+export const renameScheduleTemplate = friendly(async function renameScheduleTemplate(fd: FormData) {
+  await requireEdit("lists");
+  const id = str(fd, "id");
+  const name = str(fd, "name");
+  if (!name) throw new Error("Give it a name");
+  await db.scheduleTemplate.update({ where: { id }, data: { name } });
+  revalidatePath(path);
+  redirect(`${path}/${id}`);
 });
 
 export const deleteScheduleTemplate = friendly(async function deleteScheduleTemplate(fd: FormData) {
@@ -38,14 +49,13 @@ const taskInput = z.object({
   assigneeId: z.string().nullable(),
   links: z.array(z.object({ key: z.string(), lag: z.number().int().min(0).max(365) })).max(50),
 });
-const templateInput = z.object({ name: z.string().trim().min(1, "Give it a name").max(120), tasks: z.array(taskInput).max(500) });
+const templateInput = z.object({ tasks: z.array(taskInput).max(500) });
 
 /** Saves the whole template: its tasks in order, each with what it waits on (by the editor's row keys). */
 export async function saveScheduleTemplate(id: string, raw: unknown): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireEdit("lists");
   const parsed = templateInput.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Check the tasks" };
-  const { name } = parsed.data;
   // What waits on what, without loops (a link that would make one is dropped).
   const kept: { taskId: string; predecessorId: string }[] = [];
   const tasks = parsed.data.tasks.map((t) => ({
@@ -59,7 +69,8 @@ export async function saveScheduleTemplate(id: string, raw: unknown): Promise<{ 
   const template = await db.scheduleTemplate.findUnique({ where: { id }, select: { id: true } });
   if (!template) return { ok: false, error: "Template not found" };
   await db.$transaction(async (tx) => {
-    await tx.scheduleTemplate.update({ where: { id }, data: { name } });
+    // Touch it so Updated moves.
+    await tx.scheduleTemplate.update({ where: { id }, data: { updatedAt: new Date() } });
     await tx.scheduleTemplateTask.deleteMany({ where: { templateId: id } });
     const ids = new Map<string, string>();
     for (const [i, t] of tasks.entries()) {
@@ -83,6 +94,7 @@ export async function saveScheduleTemplate(id: string, raw: unknown): Promise<{ 
     }
   });
   revalidatePath(path);
+  revalidatePath(`${path}/${id}`);
   return { ok: true };
 }
 
@@ -114,5 +126,5 @@ export async function addSampleScheduleTemplate() {
     return template;
   });
   revalidatePath(path);
-  redirect(`${path}?edit=${t.id}`);
+  redirect(`${path}/${t.id}`);
 }

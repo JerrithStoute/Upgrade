@@ -1,116 +1,98 @@
 import Link from "@/components/link";
-import { LayoutTemplate } from "lucide-react";
+import { LayoutTemplate, Plus } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { staffUsers } from "@/lib/projects";
-import { parseTemplateLinks } from "@/lib/schedule-templates";
 import { fmtDate } from "@/lib/utils";
-import { ButtonLink, Card, CardBody, CardHeader, ConfirmForm, EmptyState, SubmitButton, Table, TBody, THead, Td, Th, Tr } from "@/components/ui";
-import { addSampleScheduleTemplate, createScheduleTemplate, deleteScheduleTemplate } from "./actions";
-import { TemplateEditor } from "./template-editor";
+import { EmptyState, SubmitButton } from "@/components/ui";
+import { ListFind } from "@/components/list-find";
+import { addSampleScheduleTemplate, createScheduleTemplate } from "./actions";
 
 export const metadata = { title: "Schedule templates" };
 
-/** Schedules you start jobs from: tasks with lengths in workdays and what each waits on. */
-export default async function ScheduleTemplatesPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
-  await requireView("lists");
-  const { edit } = await searchParams;
-  const [templates, staff] = await Promise.all([db.scheduleTemplate.findMany({ orderBy: { name: "asc" }, include: { tasks: { orderBy: { sortOrder: "asc" } } } }), staffUsers()]);
-  const editing = edit ? templates.find((t) => t.id === edit) : undefined;
+const PATH = "/catalog/schedule-templates";
 
-  if (editing)
-    return (
-      <div className="space-y-4">
-        <Link href="/catalog/schedule-templates" className="text-sm text-blue-700 hover:underline">
-          ← All schedule templates
-        </Link>
-        <TemplateEditor
-          key={`${editing.id}:${editing.updatedAt.getTime()}`}
-          id={editing.id}
-          name={editing.name}
-          staff={staff}
-          tasks={editing.tasks.map((t) => ({
-            key: t.id,
-            name: t.name,
-            phase: t.phase,
-            duration: t.duration,
-            isMilestone: t.isMilestone,
-            color: t.color,
-            assigneeId: t.assigneeId,
-            links: parseTemplateLinks(t.links).map((l) => ({ key: l.id, lag: l.lag })),
-          }))}
-        />
-        <p className="text-xs text-slate-500">
-          On a job: Schedule → Schedule templates → Start from a template. Each task goes as early as what it waits on allows, on your workdays (Settings → Schedule), holidays
-          skipped.
-        </p>
-      </div>
-    );
+/** Schedules you start jobs from: tasks with lengths in workdays and what each waits on. */
+export default async function ScheduleTemplatesPage({ searchParams }: { searchParams: Promise<{ add?: string }> }) {
+  await requireView("lists");
+  const { add } = await searchParams;
+  const templates = await db.scheduleTemplate.findMany({
+    orderBy: { name: "asc" },
+    include: { tasks: { select: { duration: true, isMilestone: true } } },
+  });
+  // Nothing made yet: the New box is open to start.
+  const adding = add === "1" || templates.length === 0;
+  const num = "px-3 py-2 text-right text-xs tabular-nums text-slate-600";
 
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader title="New schedule template" description="Or save a job's schedule as one from its Schedule tab." />
-        <CardBody>
-          <form action={createScheduleTemplate} className="flex items-center gap-2">
-            <input name="name" required placeholder="e.g. 2,400 sq ft one-story slab" className="input max-w-sm" aria-label="Template name" />
-            <SubmitButton size="sm">Create</SubmitButton>
-          </form>
-          <form action={addSampleScheduleTemplate} className="mt-4 flex flex-wrap items-center gap-3 border-t border-slate-100 pt-4">
-            <SubmitButton size="sm" variant="secondary" pendingText="Adding…">
-              Add the sample: New home, slab on grade
-            </SubmitButton>
-            <span className="text-xs text-slate-500">
-              About 50 tasks from plans to the client walkthrough, with lengths in workdays and what waits on what — about 6 months on a Monday–Friday week. Edit it to fit how you
-              build.
-            </span>
-          </form>
-        </CardBody>
-      </Card>
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5">
+        <ListFind listId="schedule-template-list" placeholder="Find a template…" />
+        <Link
+          href={`${PATH}?add=1`}
+          scroll={false}
+          className="inline-flex h-7 items-center gap-1 rounded-md bg-blue-700 px-2.5 text-xs font-medium text-white hover:bg-blue-800"
+        >
+          <Plus className="h-3.5 w-3.5" /> New template
+        </Link>
+      </header>
+      {adding ? (
+        // One line; Create opens the new template to add its tasks.
+        <form action={createScheduleTemplate} className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 bg-blue-50/40 px-4 py-2.5">
+          <span className="text-sm font-semibold text-slate-900">New template</span>
+          <input name="name" required autoFocus aria-label="Template name" className="input !h-7 !w-72 !py-0 text-xs" placeholder="2,400 sq ft one-story slab" />
+          <SubmitButton size="sm" className="!h-7 !px-2.5 !text-xs">
+            Create
+          </SubmitButton>
+          <Link href={PATH} scroll={false} className="text-xs font-medium text-blue-700 hover:underline">
+            Cancel
+          </Link>
+        </form>
+      ) : null}
+      <div className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
+        Tasks with lengths in workdays and what each waits on. Start a job&apos;s schedule from one, or use{" "}
+        <strong className="font-medium text-slate-700">Save as template</strong> on a job&apos;s Schedule tab.{" "}
+        <form action={addSampleScheduleTemplate} className="inline">
+          <button type="submit" className="font-medium text-blue-700 hover:underline" title="About 50 tasks from plans to the client walkthrough, about 6 months. Edit it to fit how you build.">
+            Add the sample: New home, slab on grade
+          </button>
+        </form>
+      </div>
+
       {templates.length === 0 ? (
-        <EmptyState icon={LayoutTemplate} title="No schedule templates yet" description="Build one here, or save a job's schedule as a template from its Schedule tab." />
+        <EmptyState icon={LayoutTemplate} title="No schedule templates yet" description="Create one above, add the sample, or save a job's schedule as a template." />
       ) : (
-        <Table>
-          <THead>
-            <tr>
-              <Th>Template</Th>
-              <Th right>Tasks</Th>
-              <Th right>Workdays of work</Th>
-              <Th>Updated</Th>
-              <Th right />
-            </tr>
-          </THead>
-          <TBody>
-            {templates.map((t) => (
-              <Tr key={t.id}>
-                <Td>
-                  <Link href={`?edit=${t.id}`} className="font-medium text-slate-900 hover:underline">
-                    {t.name}
-                  </Link>
-                </Td>
-                <Td right>{t.tasks.length}</Td>
-                <Td right>{t.tasks.reduce((n, x) => n + (x.isMilestone ? 0 : x.duration), 0)}</Td>
-                <Td className="text-slate-500">{fmtDate(t.updatedAt)}</Td>
-                <Td right>
-                  <span className="inline-flex gap-1.5">
-                    <ButtonLink href={`?edit=${t.id}`} size="sm" variant="secondary">
-                      Edit
-                    </ButtonLink>
-                    <ConfirmForm
-                      action={deleteScheduleTemplate}
-                      hidden={{ id: t.id }}
-                      message={`Delete the schedule template "${t.name}"? Jobs already built from it keep their schedules.`}
-                      variant="ghost"
-                    >
-                      Delete
-                    </ConfirmForm>
-                  </span>
-                </Td>
-              </Tr>
-            ))}
-          </TBody>
-        </Table>
+        <div id="schedule-template-list">
+          <div className="overflow-x-auto" data-find-group>
+            <table className="w-full min-w-[560px] text-left text-sm">
+              <thead className="border-b border-slate-100 text-xs text-slate-500">
+                <tr>
+                  <th className="px-3 py-2 pl-4 font-normal">Template</th>
+                  <th className="px-3 py-2 text-right font-normal">Tasks</th>
+                  <th className="px-3 py-2 text-right font-normal">Workdays of work</th>
+                  <th className="px-3 py-2 pr-4 font-normal">Updated</th>
+                </tr>
+              </thead>
+              <tbody>
+                {templates.map((t) => (
+                  <tr key={t.id} data-find={t.name.toLowerCase()} className="border-t border-slate-100 first:border-t-0 hover:bg-slate-50">
+                    <td className="px-3 py-2 pl-4">
+                      <Link href={`${PATH}/${t.id}`} className="font-medium text-blue-700 hover:underline">
+                        {t.name}
+                      </Link>
+                    </td>
+                    <td className={num}>{t.tasks.length}</td>
+                    <td className={num}>{t.tasks.reduce((n, x) => n + (x.isMilestone ? 0 : x.duration), 0)}</td>
+                    <td className="whitespace-nowrap px-3 py-2 pr-4 text-xs text-slate-500">{fmtDate(t.updatedAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <p data-find-none hidden className="px-4 py-3 text-sm text-slate-500">
+              None match.
+            </p>
+          </div>
+        </div>
       )}
-    </div>
+    </section>
   );
 }

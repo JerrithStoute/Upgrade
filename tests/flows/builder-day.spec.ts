@@ -312,6 +312,31 @@ test("makes an estimate template, sets its notes, duplicates it and deletes both
   await expect(page.getByText("Flow test estimate")).toHaveCount(0);
 });
 
+test("makes a schedule template with two tasks, renames it and deletes it", async () => {
+  await page.goto("/catalog/schedule-templates");
+  await page.getByRole("link", { name: "New template" }).click();
+  await page.getByLabel("Template name").fill("Flow test schedule");
+  await page.getByRole("button", { name: "Create" }).click();
+  await expect(page.getByRole("heading", { name: "Flow test schedule" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "← Schedule templates" })).toBeVisible();
+  await page.getByRole("button", { name: "Add a task" }).click();
+  await page.getByLabel("Task name").last().fill("Flow permits");
+  await page.getByRole("button", { name: "Add a task" }).click();
+  await page.getByLabel("Task name").last().fill("Flow site prep");
+  await expect(page.getByText("Not saved yet")).toBeVisible();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByText("Not saved yet")).toHaveCount(0);
+  await expect(page.getByText("2 tasks")).toBeVisible();
+  await page.getByRole("link", { name: "Edit", exact: true }).click();
+  await page.getByLabel("Template name").fill("Flow test schedule 2");
+  await page.locator("form", { has: page.getByLabel("Template name") }).getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("heading", { name: "Flow test schedule 2" })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete template…" }).click();
+  await expect(page).toHaveURL(/\/catalog\/schedule-templates$/);
+  await expect(page.getByText("Flow test schedule")).toHaveCount(0);
+});
+
 test("makes a takeoff template with a takeoff and an item, then deletes it", async () => {
   await page.goto("/catalog/takeoff-templates");
   await page.getByRole("link", { name: "New template" }).click();

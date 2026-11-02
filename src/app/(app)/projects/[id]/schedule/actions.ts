@@ -226,7 +226,7 @@ export const saveAsScheduleTemplate = friendly(async function saveAsScheduleTemp
   const { template, count } = await saveScheduleAsTemplate(project.id, name);
   await logActivity({ projectId: project.id, userId: user.id, type: "schedule.template_saved", description: `Saved the schedule as template "${name}" (${count} tasks)` });
   revalidatePath("/catalog/schedule-templates");
-  redirect(`/catalog/schedule-templates?edit=${template.id}`);
+  redirect(`/catalog/schedule-templates/${template.id}`);
 });
 
 /**
