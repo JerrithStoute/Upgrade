@@ -640,7 +640,7 @@ export const TAKEOFF: HelpArticle[] = [
         heading: "The top",
         items: [
           { name: "Find", what: "Type part of an item's name, SKU, vendor, category or takeoff to narrow the list as you type." },
-          { name: "Prices / No prices", what: "Shows or hides prices. Printing and the CSV follow this." },
+          { name: "Prices switch", what: "Beside Find: shows prices, or takes them off (for a list to send a supplier). Printing and the CSV follow it." },
           { name: "All plans / a plan set", what: "Shows the list for every plan set, or one. Only there when the job has two or more plan sets." },
           { name: "Pull from inventory", what: "Uses materials you have in stock on this job, so the list orders that much less." },
           { name: "Send to vendors", what: "Sends the list (or part of it) to vendors for prices and compares what comes back.", how: "See **Sending lists to vendors for prices**." },

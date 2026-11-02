@@ -9,7 +9,7 @@ import { divisionCategories, loadEstimateCategories } from "@/lib/estimate-categ
 import { codeDivisions } from "@/lib/cost-code-divisions";
 import { estimateValues, loadParameters, refreshFormulaQuantities } from "@/lib/estimate-parameters";
 import { pct, fmtDate, cn } from "@/lib/utils";
-import { Badge, Card, CardHeader, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
+import { Badge, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
 import { EstimateSheet } from "@/components/estimate/estimate-sheet";
 import {
   createEstimate,
@@ -40,11 +40,11 @@ import { bidComparison, overWarnings } from "@/lib/bids";
 import { addDays } from "date-fns";
 import { ClientEmailNote } from "@/components/client-email-note";
 
-export default async function EstimatePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ estimate?: string }> }) {
+export default async function EstimatePage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ estimate?: string; rename?: string }> }) {
   const user = await requireView("estimates");
   const isAdmin = user.role === "ADMIN";
   const { id } = await params;
-  const { estimate: estimateParam } = await searchParams;
+  const { estimate: estimateParam, rename } = await searchParams;
   const project = await getProject(id);
 
   const [estimates, templates] = await Promise.all([
@@ -138,235 +138,215 @@ export default async function EstimatePage({ params, searchParams }: { params: P
   const nextVersion = Math.max(...estimates.map((e) => e.version)) + 1;
   const itemPrices = Object.fromEntries(estimate.items.flatMap((i) => (i.materialItem ? [[i.materialItem.id, i.materialItem.unitCost]] : [])));
 
+  const here = `/projects/${project.id}/estimate?estimate=${estimate.id}`;
+
   return (
-    <div className="space-y-6">
-      {estimates.length > 1 ? (
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Versions</span>
-          {estimates.map((e) => (
+    <div className="space-y-3">
+      {/* Line 1: which estimate (and its versions), and the buttons. */}
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+        {rename ? (
+          <form action={updateEstimateDetails} className="flex items-center gap-1.5">
+            <input type="hidden" name="projectId" value={project.id} />
+            <input type="hidden" name="id" value={estimate.id} />
+            <input name="name" defaultValue={estimate.name} aria-label="Estimate name" required autoFocus className="input !h-7 !w-64 !py-0 text-sm font-semibold" />
+            <SubmitButton size="xs">Save</SubmitButton>
+            <Link href={here} className="text-xs font-medium text-blue-700 hover:underline">
+              Cancel
+            </Link>
+          </form>
+        ) : (
+          <h2 className="text-lg font-semibold text-slate-900">{estimate.name}</h2>
+        )}
+        {estimates.length > 1 ? (
+          [...estimates].reverse().map((e) => (
             <Link
               key={e.id}
               href={`/projects/${project.id}/estimate?estimate=${e.id}`}
+              title={`${e.name} · ${e.status.toLowerCase()}`}
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
+                "rounded-full border px-2 py-0.5 text-[11px] font-medium",
                 e.id === estimate.id ? "border-blue-700 bg-blue-50 text-blue-800" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50",
               )}
             >
               v{e.version}
-              <Badge status={e.status} className="!px-1.5 !py-0 text-[10px]" />
             </Link>
-          ))}
-        </div>
-      ) : null}
-
-      <Card>
-        <CardHeader
-          title={
-            <span className="flex flex-wrap items-center gap-2">
-              <form action={updateEstimateDetails} className="flex items-center gap-1.5">
-                <input type="hidden" name="projectId" value={project.id} />
-                <input type="hidden" name="id" value={estimate.id} />
-                <input name="name" defaultValue={estimate.name} aria-label="Estimate name" className="input !w-64 !py-1 text-base font-semibold" />
-                <SubmitButton variant="ghost" size="sm">
-                  Rename
-                </SubmitButton>
-              </form>
-              <span className="text-sm font-normal text-slate-500">v{estimate.version}</span>
-              <Badge status={estimate.status} />
-            </span>
-          }
-          description={
-            <>
-              Created {fmtDate(estimate.createdAt)}
-              {estimate.sentAt ? ` · Sent ${fmtDate(estimate.sentAt)}` : ""}
-              {estimate.approvedAt ? ` · Approved ${fmtDate(estimate.approvedAt)}${estimate.signedBy && estimate.status === "APPROVED" ? ` (signed ${estimate.signedBy})` : ""}` : ""}
-              {estimate.status === "DECLINED" && estimate.decidedAt ? ` · Declined by ${estimate.signedBy ?? "the client"} ${fmtDate(estimate.decidedAt)}${estimate.decisionNote ? `: “${estimate.decisionNote}”` : ""}` : ""}
-              {` · New lines start at ${pct(estimate.defaultMarkup, 1)} markup`}
-              {isDraft ? "" : " · Changes save as a new version"}
-              {!project.isSpec && estimate.status === "DRAFT" ? <ClientEmailNote clientId={project.clientId} button="Mark sent" /> : null}
-            </>
-          }
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              {project.isSpec && (estimate.status === "DRAFT" || estimate.status === "SENT") ? (
-                // A spec house has no client to send it to: one step makes it the budget.
-                <ConfirmForm
-                  action={estimateAsBudget}
-                  hidden={{ projectId: project.id, id: estimate.id }}
-                  variant="success"
-                  message={`Use "${estimate.name}" as this spec house's budget? The Budget follows it and the job's prices lock.${
-                    blanks
-                      ? `
+          ))
+        ) : (
+          <span className="text-xs text-slate-500">v{estimate.version}</span>
+        )}
+        <Badge status={estimate.status} />
+        {rename ? null : (
+          <Link href={`${here}&rename=1`} className="text-xs font-medium text-blue-700 hover:underline">
+            Rename
+          </Link>
+        )}
+        <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          {project.isSpec && (estimate.status === "DRAFT" || estimate.status === "SENT") ? (
+            // A spec house has no client to send it to: one step makes it the budget.
+            <ConfirmForm
+              action={estimateAsBudget}
+              hidden={{ projectId: project.id, id: estimate.id }}
+              variant="success"
+              size="xs"
+              message={`Use "${estimate.name}" as this spec house's budget? The Budget follows it and the job's prices lock.${
+                blanks
+                  ? `
 
 Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) have no price` : "", zeroLines.length ? `${zeroLines.length} estimate item(s) are $0` : ""].filter(Boolean).join(" and ")}.`
-                      : ""
-                  }`}
-                >
-                  Use as the budget
-                </ConfirmForm>
-              ) : null}
-              {!project.isSpec && estimate.status === "DRAFT" ? (
-                blanks ? (
-                  <ConfirmForm
-                    action={markEstimateSent}
-                    hidden={{ projectId: project.id, id: estimate.id }}
-                    variant="primary"
-                    message={`Before you send: ${[
-                      check?.unpriced.length ? `${check.unpriced.length} takeoff item${check.unpriced.length === 1 ? " has" : "s have"} no price` : "",
-                      zeroLines.length ? `${zeroLines.length} estimate item${zeroLines.length === 1 ? " is" : "s are"} $0` : "",
-                    ]
-                      .filter(Boolean)
-                      .join(" and ")} — they'd show at $0 on the proposal.\n\nMark sent anyway?`}
-                  >
-                    Mark sent
-                  </ConfirmForm>
-                ) : (
-                  <form action={markEstimateSent}>
-                    <input type="hidden" name="projectId" value={project.id} />
-                    <input type="hidden" name="id" value={estimate.id} />
-                    <SubmitButton size="sm">Mark sent</SubmitButton>
-                  </form>
-                )
-              ) : null}
-              {!project.isSpec && estimate.status === "SENT" ? (
-                <>
-                  <form action={markEstimateApproved}>
-                    <input type="hidden" name="projectId" value={project.id} />
-                    <input type="hidden" name="id" value={estimate.id} />
-                    <SubmitButton size="sm" variant="success">
-                      Mark approved
-                    </SubmitButton>
-                  </form>
-                  <form action={markEstimateDeclined}>
-                    <input type="hidden" name="projectId" value={project.id} />
-                    <input type="hidden" name="id" value={estimate.id} />
-                    <SubmitButton size="sm" variant="danger">
-                      Mark declined
-                    </SubmitButton>
-                  </form>
-                </>
-              ) : null}
-              <Link href={`/projects/${project.id}/estimate/${estimate.id}/proposal`} className={buttonClasses("secondary", "sm")}>
-                <ExternalLink className="h-3.5 w-3.5" /> View proposal
-              </Link>
-              {isDraft ? (
-                <form action={lockEstimate}>
-                  <input type="hidden" name="projectId" value={project.id} />
-                  <input type="hidden" name="id" value={estimate.id} />
-                  <input type="hidden" name="lock" value={locked ? "0" : "1"} />
-                  <SubmitButton size="sm" variant="secondary">
-                    {locked ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />} {locked ? "Unlock" : "Lock"}
-                  </SubmitButton>
-                </form>
-              ) : null}
-              {/* A new version: a copy of this one (same plans), or a fresh start (other plans). */}
-              <details className="group relative">
-                <summary className={cn(buttonClasses("secondary", "sm"), "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
-                  <Plus className="h-3.5 w-3.5" /> New version <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-                </summary>
-                <div className="absolute right-0 z-30 mt-1 w-80 space-y-3 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-lg">
-                  <form action={createEstimateVersion} className="space-y-1">
-                    <input type="hidden" name="projectId" value={project.id} />
-                    <input type="hidden" name="id" value={estimate.id} />
-                    <SubmitButton size="sm" variant="secondary" className="w-full">
-                      <Copy className="h-3.5 w-3.5" /> Copy v{estimate.version}
-                    </SubmitButton>
-                    <p className="text-xs text-slate-500">Same plans, a revision: every line, price and parameter value of v{estimate.version}.</p>
-                  </form>
-                  <form action={createEstimate} className="space-y-1.5 border-t border-slate-100 pt-3">
-                    <input type="hidden" name="projectId" value={project.id} />
-                    <select name="templateId" aria-label="Start fresh from" className="input !py-1 text-sm" defaultValue="">
-                      <option value="">Blank estimate</option>
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({t._count.items} lines)
-                        </option>
-                      ))}
-                    </select>
-                    <SubmitButton size="sm" variant="secondary" className="w-full">
-                      <Plus className="h-3.5 w-3.5" /> Start fresh
-                    </SubmitButton>
-                    <p className="text-xs text-slate-500">Other plans: blank, or from a template. Parameters start blank (or with the template&apos;s values).</p>
-                  </form>
-                </div>
-              </details>
-              {isDraft ? (
-                <ConfirmForm action={deleteEstimate} hidden={{ projectId: project.id, id: estimate.id }} message={`Delete estimate v${estimate.version}? This cannot be undone.`}>
-                  Delete
-                </ConfirmForm>
-              ) : null}
-            </div>
-          }
-        />
-      </Card>
-
-      {(isDraft && templates.length > 0) || isAdmin ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm">
-          {isDraft && templates.length > 0 ? (
-            <form action={addTemplateToEstimate} className="flex flex-wrap items-center gap-2">
-              <input type="hidden" name="projectId" value={project.id} />
-              <input type="hidden" name="estimateId" value={estimate.id} />
-              <FileStack className="h-4 w-4 text-slate-400" />
-              <label htmlFor="add-template" className="text-sm font-medium text-slate-700">
-                Add from template
-              </label>
-              <select id="add-template" name="templateId" className="input !w-60 !py-1" required defaultValue="">
-                <option value="" disabled>
-                  Choose a template…
-                </option>
-                {templates.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name} ({t._count.items} lines)
-                  </option>
-                ))}
-              </select>
-              <SubmitButton size="sm" variant="secondary">
-                <Plus className="h-3.5 w-3.5" /> Add lines
-              </SubmitButton>
-            </form>
-          ) : (
-            <span />
-          )}
-          {isAdmin ? (
-            <form action={saveEstimateAsTemplate} className="flex flex-wrap items-center gap-2">
-              <input type="hidden" name="projectId" value={project.id} />
-              <input type="hidden" name="estimateId" value={estimate.id} />
-              <input name="name" aria-label="Template name" defaultValue={estimate.name} className="input !w-56 !py-1" required />
-              <label
-                className="flex items-center gap-1.5 text-xs text-slate-600"
-                title="Keeps your formulas and typed unit costs. Quantities, allowances and the takeoff's totals start at 0."
+                  : ""
+              }`}
+            >
+              Use as the budget
+            </ConfirmForm>
+          ) : null}
+          {!project.isSpec && estimate.status === "DRAFT" ? (
+            blanks ? (
+              <ConfirmForm
+                action={markEstimateSent}
+                hidden={{ projectId: project.id, id: estimate.id }}
+                variant="primary"
+                size="xs"
+                message={`Before you send: ${[
+                  check?.unpriced.length ? `${check.unpriced.length} takeoff item${check.unpriced.length === 1 ? " has" : "s have"} no price` : "",
+                  zeroLines.length ? `${zeroLines.length} estimate item${zeroLines.length === 1 ? " is" : "s are"} $0` : "",
+                ]
+                  .filter(Boolean)
+                  .join(" and ")} — they'd show at $0 on the proposal.\n\nMark sent anyway?`}
               >
-                <input type="checkbox" name="clear" value="1" defaultChecked className="h-3.5 w-3.5 rounded border-slate-300" />
-                Clear this job&apos;s numbers
-              </label>
-              <SubmitButton size="sm" variant="ghost">
-                <Copy className="h-3.5 w-3.5" /> Save as template
+                Mark sent
+              </ConfirmForm>
+            ) : (
+              <form action={markEstimateSent}>
+                <input type="hidden" name="projectId" value={project.id} />
+                <input type="hidden" name="id" value={estimate.id} />
+                <SubmitButton size="xs">Mark sent</SubmitButton>
+              </form>
+            )
+          ) : null}
+          {!project.isSpec && estimate.status === "SENT" ? (
+            <>
+              <form action={markEstimateApproved}>
+                <input type="hidden" name="projectId" value={project.id} />
+                <input type="hidden" name="id" value={estimate.id} />
+                <SubmitButton size="xs" variant="success">
+                  Mark approved
+                </SubmitButton>
+              </form>
+              <form action={markEstimateDeclined}>
+                <input type="hidden" name="projectId" value={project.id} />
+                <input type="hidden" name="id" value={estimate.id} />
+                <SubmitButton size="xs" variant="danger">
+                  Mark declined
+                </SubmitButton>
+              </form>
+            </>
+          ) : null}
+          <Link href={`/projects/${project.id}/estimate/${estimate.id}/proposal`} className={buttonClasses("secondary", "xs")}>
+            <ExternalLink className="h-3.5 w-3.5" /> View proposal
+          </Link>
+          {isDraft ? (
+            <form action={lockEstimate}>
+              <input type="hidden" name="projectId" value={project.id} />
+              <input type="hidden" name="id" value={estimate.id} />
+              <input type="hidden" name="lock" value={locked ? "0" : "1"} />
+              <SubmitButton size="xs" variant="secondary">
+                {locked ? <LockOpen className="h-3.5 w-3.5" /> : <Lock className="h-3.5 w-3.5" />} {locked ? "Unlock" : "Lock"}
               </SubmitButton>
             </form>
           ) : null}
+          {/* A new version: a copy of this one (same plans), or a fresh start (other plans). Admins: or a template from it. */}
+          <details className="group relative">
+            <summary className={cn(buttonClasses("secondary", "xs"), "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
+              <Plus className="h-3.5 w-3.5" /> New version <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+            </summary>
+            <div className="absolute right-0 z-30 mt-1 w-80 space-y-3 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-lg">
+              <form action={createEstimateVersion} className="space-y-1">
+                <input type="hidden" name="projectId" value={project.id} />
+                <input type="hidden" name="id" value={estimate.id} />
+                <SubmitButton size="xs" variant="secondary" className="w-full">
+                  <Copy className="h-3.5 w-3.5" /> Copy v{estimate.version}
+                </SubmitButton>
+                <p className="text-xs text-slate-500">Same plans, a revision: every line, price and parameter value of v{estimate.version}.</p>
+              </form>
+              <form action={createEstimate} className="space-y-1.5 border-t border-slate-100 pt-3">
+                <input type="hidden" name="projectId" value={project.id} />
+                <select name="templateId" aria-label="Start fresh from" className="input !h-7 !py-0 text-xs" defaultValue="">
+                  <option value="">Blank estimate</option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t._count.items} lines)
+                    </option>
+                  ))}
+                </select>
+                <SubmitButton size="xs" variant="secondary" className="w-full">
+                  <Plus className="h-3.5 w-3.5" /> Start fresh
+                </SubmitButton>
+                <p className="text-xs text-slate-500">Other plans: blank, or from a template. Parameters start blank (or with the template&apos;s values).</p>
+              </form>
+              {isAdmin ? (
+                <form action={saveEstimateAsTemplate} className="space-y-1.5 border-t border-slate-100 pt-3">
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <input type="hidden" name="estimateId" value={estimate.id} />
+                  <input name="name" aria-label="Template name" defaultValue={estimate.name} className="input !h-7 !py-0 text-xs" required />
+                  <SubmitButton size="xs" variant="secondary" className="w-full">
+                    <FileStack className="h-3.5 w-3.5" /> Save as template
+                  </SubmitButton>
+                  <p className="text-xs text-slate-500">Keeps your lines, formulas and typed unit costs; this job&apos;s quantities and numbers start blank.</p>
+                </form>
+              ) : null}
+            </div>
+          </details>
+          {isDraft ? (
+            <ConfirmForm
+              action={deleteEstimate}
+              hidden={{ projectId: project.id, id: estimate.id }}
+              variant="ghost"
+              size="xs"
+              message={`Delete estimate v${estimate.version}? This cannot be undone.`}
+            >
+              <span className="text-rose-600">Delete</span>
+            </ConfirmForm>
+          ) : null}
         </div>
-      ) : null}
+      </div>
 
-      {/* The job's prices: following the Item List, or locked. */}
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+      {/* Line 2: its dates and details, and where the job's prices stand. */}
+      <p className="flex flex-wrap items-center gap-x-1 text-xs text-slate-500">
+        <span>
+          Created {fmtDate(estimate.createdAt)}
+          {estimate.sentAt ? ` · Sent ${fmtDate(estimate.sentAt)}` : ""}
+          {estimate.approvedAt ? ` · Approved ${fmtDate(estimate.approvedAt)}${estimate.signedBy && estimate.status === "APPROVED" ? ` (signed ${estimate.signedBy})` : ""}` : ""}
+          {estimate.status === "DECLINED" && estimate.decidedAt
+            ? ` · Declined by ${estimate.signedBy ?? "the client"} ${fmtDate(estimate.decidedAt)}${estimate.decisionNote ? `: “${estimate.decisionNote}”` : ""}`
+            : ""}
+          {` · New lines start at ${pct(estimate.defaultMarkup, 1)} markup`}
+          {isDraft ? "" : " · Changes save as a new version"} ·{" "}
+        </span>
         {jobLocked ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-900 ring-1 ring-inset ring-amber-200">
-            <Lock className="h-3.5 w-3.5" /> Job prices locked {fmtDate(project.pricesLockedAt)}
+          <span className="inline-flex items-center gap-1 font-medium text-amber-800">
+            <Lock className="h-3 w-3" /> Job prices locked {fmtDate(project.pricesLockedAt)}
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-900 ring-1 ring-inset ring-emerald-200">
-            <LockOpen className="h-3.5 w-3.5" /> Job prices follow the Item List
+          <span className="inline-flex items-center gap-1">
+            <LockOpen className="h-3 w-3" /> Job prices follow the Item List
           </span>
         )}
-        <Link href={reviewHref} className="text-xs font-medium text-blue-700 hover:underline">
+        <span>·</span>
+        <Link href={reviewHref} className="font-medium text-blue-700 hover:underline">
           {jobLocked ? "Price review / unlock" : "Price review / lock"}
         </Link>
         {locked ? (
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-inset ring-slate-200">
-            <Lock className="h-3.5 w-3.5" /> This estimate is locked — no automatic updates or edits until you unlock it
+          <span className="inline-flex items-center gap-1 font-medium text-slate-700">
+            · <Lock className="h-3 w-3" /> This estimate is locked: no automatic updates or edits until you unlock it
           </span>
         ) : null}
-      </div>
+        {!project.isSpec && estimate.status === "DRAFT" ? (
+          <>
+            <span>·</span>
+            <ClientEmailNote clientId={project.clientId} button="Mark sent" className="text-xs text-slate-500" />
+          </>
+        ) : null}
+      </p>
 
       {autoNote ? (
         <AutoChanges
@@ -416,6 +396,33 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
         saveValues={saveParameterValues.bind(null, project.id, estimate.id)}
         allowanceProfitDefault={company?.allowanceProfit ?? false}
         markupTable={parseMarkupTable(estimate.markupTable, estimate.defaultMarkup)}
+        toolbarExtra={
+          isDraft && templates.length > 0 ? (
+            <details className="group relative">
+              <summary className={cn(buttonClasses("secondary", "xs"), "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
+                <FileStack className="h-3.5 w-3.5" /> Add from template <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+              </summary>
+              <form action={addTemplateToEstimate} className="absolute right-0 z-30 mt-1 w-72 space-y-1.5 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-lg">
+                <input type="hidden" name="projectId" value={project.id} />
+                <input type="hidden" name="estimateId" value={estimate.id} />
+                <select name="templateId" aria-label="Template to add" className="input !h-7 !py-0 text-xs" required defaultValue="">
+                  <option value="" disabled>
+                    Choose a template…
+                  </option>
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t._count.items} lines)
+                    </option>
+                  ))}
+                </select>
+                <SubmitButton size="xs" variant="secondary" className="w-full">
+                  <Plus className="h-3.5 w-3.5" /> Add its lines
+                </SubmitButton>
+                <p className="text-xs text-slate-500">Adds the template&apos;s categories and items to this draft.</p>
+              </form>
+            </details>
+          ) : null
+        }
         markupLocked={
           changeOrders > 0
             ? `This estimate is approved and the job has change order${changeOrders === 1 ? "" : "s"}, so its markup, margin & tax stay as the contract was priced.`

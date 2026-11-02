@@ -2,7 +2,7 @@ import Link from "@/components/link";
 import { cn } from "@/lib/utils";
 
 type Variant = "primary" | "secondary" | "danger" | "ghost" | "success";
-type Size = "sm" | "md";
+type Size = "xs" | "sm" | "md";
 
 const base =
   "inline-flex items-center justify-center gap-1.5 whitespace-nowrap rounded-md font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 disabled:pointer-events-none disabled:opacity-50";
@@ -17,6 +17,7 @@ const variants: Record<Variant, string> = {
 
 // (Touchscreens: a little taller, for a thumb.)
 const sizes: Record<Size, string> = {
+  xs: "h-7 px-2.5 text-xs pointer-coarse:h-9",
   sm: "h-8 px-2.5 text-xs pointer-coarse:h-10",
   md: "h-9 px-3.5 text-sm pointer-coarse:h-11",
 };

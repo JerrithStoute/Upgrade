@@ -110,6 +110,8 @@ export type SheetProps = {
   markupLocked?: string | null;
   /** Locked by hand: shown as it is, no edits until it's unlocked. */
   locked?: boolean;
+  /** More in the toolbar, beside Divisions (the job's estimate: Add from template). */
+  toolbarExtra?: React.ReactNode;
   /** Admins: "Save as my default". */
   saveMarkupDefault?: (rows: MarkupRow[]) => Promise<{ ok: true } | { ok: false; error: string }>;
 };
@@ -206,6 +208,7 @@ export function EstimateSheet({
   markupLocked = null,
   saveMarkupDefault,
   locked = false,
+  toolbarExtra,
 }: SheetProps) {
   const router = useRouter();
   const start = useMemo<SheetState>(
@@ -590,15 +593,15 @@ export function EstimateSheet({
   return (
     <div className="space-y-3">
       {/* Toolbar — one fixed-height row; its contents change, its size doesn't. (On a phone it wraps.) */}
-      <div className="flex h-10 items-center justify-between gap-3 max-md:h-auto max-md:flex-wrap">
+      <div className="flex h-8 items-center justify-between gap-3 max-md:h-auto max-md:flex-wrap">
         <div className="flex items-center gap-2 max-md:flex-wrap">
-          <button type="button" className={buttonClasses("secondary", "sm")} onClick={addCategory}>
+          <button type="button" className={buttonClasses("secondary", "xs")} onClick={addCategory}>
             <Plus className="h-3.5 w-3.5" /> Division
           </button>
-          <button type="button" className={buttonClasses("ghost", "sm")} onClick={() => setCollapsed(new Set())}>
+          <button type="button" className={buttonClasses("ghost", "xs")} onClick={() => setCollapsed(new Set())}>
             Expand all
           </button>
-          <button type="button" className={buttonClasses("ghost", "sm")} onClick={() => setCollapsed(allCollapsed)}>
+          <button type="button" className={buttonClasses("ghost", "xs")} onClick={() => setCollapsed(allCollapsed)}>
             Collapse all
           </button>
         </div>
@@ -606,31 +609,32 @@ export function EstimateSheet({
           {divisionsSetup ? (
             <button
               type="button"
-              className={buttonClasses("secondary", "sm")}
+              className={buttonClasses("secondary", "xs")}
               onClick={() => setEditingDivisions(true)}
               title="Your divisions and the categories in each (same as Settings)"
             >
               <FolderTree className="h-3.5 w-3.5" /> Divisions
             </button>
           ) : null}
-          <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setPicking(true)} title="Tick cost codes to add as categories">
+          {toolbarExtra}
+          <button type="button" className={buttonClasses("secondary", "xs")} onClick={() => setPicking(true)} title="Tick cost codes to add as categories">
             <ListChecks className="h-3.5 w-3.5" /> Add from cost codes
           </button>
           <button
             type="button"
-            className={cn(buttonClasses("secondary", "sm"), codesOpen && "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100")}
+            className={cn(buttonClasses("secondary", "xs"), codesOpen && "border-blue-300 bg-blue-50 text-blue-800 hover:bg-blue-100")}
             aria-pressed={codesOpen}
             onClick={() => writePref(CODES_KEY, codesOpen ? "" : "1")}
           >
             <BookOpen className="h-3.5 w-3.5" /> Cost codes
           </button>
-          <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setMarkupOpen(true)} title="Profit, overhead and tax for this estimate">
+          <button type="button" className={buttonClasses("secondary", "xs")} onClick={() => setMarkupOpen(true)} title="Profit, overhead and tax for this estimate">
             <Percent className="h-3.5 w-3.5" /> Markup &amp; tax
           </button>
           {estimate || saveValues ? (
             <button
               type="button"
-              className={buttonClasses("secondary", "sm")}
+              className={buttonClasses("secondary", "xs")}
               onClick={() => paramsMode("values")}
               title={`This ${valuesOwner}'s numbers that item quantities and unit costs use`}
             >
@@ -1868,7 +1872,7 @@ function ColumnPicker({ hidden }: { hidden: Set<string> }) {
   const flip = (k: string) => writeHidden(hidden.has(k) ? Array.from(hidden).filter((x) => x !== k) : [...hidden, k]);
   return (
     <div ref={ref} className="relative">
-      <button type="button" className={buttonClasses("secondary", "sm")} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+      <button type="button" className={buttonClasses("secondary", "xs")} aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <Eye className="h-3.5 w-3.5" /> Columns{hidden.size ? ` (${hidden.size} hidden)` : ""}
       </button>
       {open ? (

@@ -184,6 +184,12 @@ test("builds an estimate: a line, saved, adds up", async () => {
   await page.reload();
   await expect(page.getByText("$1,200.00").first()).toBeVisible();
   await expect(page.locator("tfoot").getByText("TOTALS", { exact: false })).toBeVisible();
+  // Rename, right on its line at the top.
+  await page.getByRole("link", { name: "Rename" }).click();
+  await page.getByLabel("Estimate name").fill("Flow estimate");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Flow estimate" })).toBeVisible();
+  await expect(page.getByText("Job prices follow the Item List")).toBeVisible();
 });
 
 test("writes a change order", async () => {

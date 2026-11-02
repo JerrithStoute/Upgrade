@@ -330,8 +330,9 @@ export const addTemplateToEstimate = friendly(async function addTemplateToEstima
 
 /**
  * Admins: copy this estimate (spec items, lines, notes, terms, markup) into a new template.
- * "Clear this job's numbers" (on by default) keeps your formulas and typed unit costs and
- * drops the rest (clearJobNumbers). The template is a copy: jobs made from it never change with it.
+ * It keeps your formulas and typed unit costs and drops this job's numbers (clearJobNumbers):
+ * quantities, allowances, the takeoff's totals and parameter values start blank for the next job.
+ * The template is a copy: jobs made from it never change with it.
  */
 export const saveEstimateAsTemplate = friendly(async function saveEstimateAsTemplate(formData: FormData) {
   const admin = await requireAdmin();
@@ -339,21 +340,18 @@ export const saveEstimateAsTemplate = friendly(async function saveEstimateAsTemp
   const estimateId = str(formData, "estimateId");
   const est = await loadEstimate(projectId, estimateId);
   const name = str(formData, "name") || est.name;
-  const clear = formData.get("clear") === "1";
-  // Parameter values: blank when clearing this job's numbers, else this version's.
-  const paramValues = clear ? null : JSON.stringify(await estimateValues(est.id));
   const template = await db.$transaction(async (tx) => {
     const created = await tx.estimateTemplate.create({
-      data: { name, notes: est.notes, terms: est.terms, defaultMarkup: est.defaultMarkup, markupTable: est.markupTable, paramValues },
+      data: { name, notes: est.notes, terms: est.terms, defaultMarkup: est.defaultMarkup, markupTable: est.markupTable, paramValues: null },
     });
-    const items = clear ? est.items.map((i) => ({ ...i, ...clearJobNumbers({ ...i, fromTakeoff: !!i.takeoffRollup || !!i.takeoffConditionId }) })) : est.items;
+    const items = est.items.map((i) => ({ ...i, ...clearJobNumbers({ ...i, fromTakeoff: !!i.takeoffRollup || !!i.takeoffConditionId }) }));
     await copyIntoTemplate(tx, created.id, { ...est, items });
     return created;
   });
   await logActivity({
     userId: admin.id,
     type: "estimate_template.created",
-    description: `Saved estimate v${est.version} as template "${name}"${formData.get("clear") === "1" ? " (this job's numbers cleared)" : ""}`,
+    description: `Saved estimate v${est.version} as template "${name}"`,
   });
   revalidatePath("/catalog/estimate-templates");
   redirect(`/catalog/estimate-templates/${template.id}`);

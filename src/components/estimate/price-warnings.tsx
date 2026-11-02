@@ -34,9 +34,9 @@ function Box({ tone, icon, title, note, children }: { tone: keyof typeof TONE; i
       </span>
     </>
   );
-  if (!children) return <div className={cn("flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm", TONE[tone])}>{line}</div>;
+  if (!children) return <div className={cn("flex items-center gap-2 rounded-lg border px-3 py-1 text-xs", TONE[tone])}>{line}</div>;
   return (
-    <details className={cn("group rounded-lg border px-3 py-1.5 text-sm", TONE[tone])}>
+    <details className={cn("group rounded-lg border px-3 py-1 text-xs", TONE[tone])}>
       <summary className="flex cursor-pointer list-none items-center gap-2 [&::-webkit-details-marker]:hidden">
         {line}
         <span className="flex shrink-0 items-center gap-0.5 text-xs font-medium underline-offset-2 hover:underline">
