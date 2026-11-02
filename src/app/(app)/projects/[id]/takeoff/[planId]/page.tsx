@@ -9,7 +9,7 @@ import { activeCostCodes, getProject } from "@/lib/projects";
 import { conditionEstimateLines, conditionTotals, loadConditions } from "@/lib/takeoff-data";
 import { materialListFrom } from "@/lib/takeoff-materials";
 import { materialItemOptions } from "@/lib/material-items";
-import { CONDITION_COLORS, boardFeetPerLf, isCountType, metricLabel, parseArcs, parsePoints, type MetricKey } from "@/lib/takeoff";
+import { CONDITION_COLORS, CONDITION_TYPES, type ConditionType, boardFeetPerLf, isCountType, metricLabel, parseArcs, parsePoints, type MetricKey } from "@/lib/takeoff";
 import { itemsNeedingCodes, loadCodeRules } from "@/lib/item-codes";
 import { NeedsCodes } from "../_components/needs-codes";
 import { libraryTakeoffs, templateOptions } from "@/lib/takeoff-templates";
@@ -24,6 +24,7 @@ export default async function PlanViewerPage({
   searchParams: Promise<{
     page?: string;
     cond?: string;
+    ctype?: string;
     applied?: string;
     skipped?: string;
     templateError?: string;
@@ -35,7 +36,7 @@ export default async function PlanViewerPage({
 }) {
   const user = await requireView("takeoffs");
   const { id, planId } = await params;
-  const { page, cond, applied, skipped, templateError, toolbox, library: libraryNote, note, at } = await searchParams;
+  const { page, cond, ctype, applied, skipped, templateError, toolbox, library: libraryNote, note, at } = await searchParams;
   const project = await getProject(id);
   const [plan, plans, conditions, doorItems, costCodes, codeRules, needsCodes, templates, library] = await Promise.all([
     db.takeoffPlan.findFirst({
@@ -217,6 +218,8 @@ export default async function PlanViewerPage({
       pricesLocked: !!project.pricesLockedAt,
       nextColor: CONDITION_COLORS[conditions.length % CONDITION_COLORS.length],
       toolbox: user.role === "ADMIN" ? templates.map((t) => ({ id: t.id, name: t.name })) : undefined,
+      // New takeoff ▾: the type picked.
+      newType: (CONDITION_TYPES as readonly string[]).includes(ctype ?? "") ? (ctype as ConditionType) : undefined,
     };
   }
 

@@ -47,13 +47,6 @@ import { assemblyFields, conditionFields, type AssemblyFields } from "@/lib/take
 import { addConditionsToTemplate, applyTemplate, pullLibraryTakeoff, saveTemplateFromProject } from "@/lib/takeoff-templates";
 import { addSubstitution, swapBack } from "@/lib/substitutions";
 import {
-  CONDITION_COLORS,
-  CONDITION_TYPES,
-  DEFAULT_METRIC,
-  DEFAULT_DOOR_OPTIONS,
-  DEFAULT_OPENING_OPTIONS,
-  DEFAULT_WINDOW_OPTIONS,
-  DEFAULT_WALL_OPTIONS,
   LUMBER_LF_METRIC,
   LUMBER_METRIC_PREFIX,
   hasAutoLines,
@@ -187,33 +180,38 @@ export const createCondition = friendly(async function createCondition(fd: FormD
   // Assembly items added on the form before the takeoff was saved.
   for (const [k, item] of pending.entries())
     await db.takeoffAssemblyItem.create({ data: { ...(await withMaterialItem(item, user.id, project.id)), conditionId: c.id, sortOrder: k } });
-  // "Also add to template": the new takeoff (items and all) goes into your toolbox too. Admins only.
-  const toTemplate = strOrNull(fd, "toTemplate");
-  let toolbox: string | null = null;
-  if (toTemplate && user.role === "ADMIN") {
-    const t = await db.takeoffTemplate.findUnique({ where: { id: toTemplate }, select: { id: true, name: true } });
-    const full = await db.takeoffCondition.findUnique({ where: { id: c.id }, include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } });
-    if (t && full) {
-      const r = await db.$transaction((tx) => addConditionsToTemplate(tx, t.id, [full]));
-      toolbox = t.name;
-      await logActivity({
-        projectId: project.id,
-        userId: user.id,
-        type: "takeoff_template.saved",
-        description: r.added.length
-          ? `Added takeoff "${c.name}" to template "${t.name}"`
-          : `Takeoff "${c.name}" is already in template "${t.name}" — left as it is`,
-      });
-      revalidatePath(`/catalog/takeoff-templates/${t.id}`);
-    }
-  }
+  // "Add + save to Library": the new takeoff (items and all) goes into a template too. Admins only.
+  const saved = user.role === "ADMIN" ? await intoLibrary(fd, project.id, user.id, c.id) : null;
   revalidate(project.id);
   const back = returnTo(fd, project.id, "", "conditions");
-  redirect(`${back}${toolbox ? `${back.includes("?") ? "&" : "?"}toolbox=${encodeURIComponent(toolbox)}` : ""}#condition-${c.id}`);
+  redirect(`${back}${saved ? `${back.includes("?") ? "&" : "?"}library=${encodeURIComponent(saved)}&at=${Date.now()}` : ""}#condition-${c.id}`);
 });
 
+/**
+ * "Add / Save + save to Library": the takeoff (settings and items) into the template the
+ * button named (toTemplate), or a new one (toTemplate = "new", named newTemplate). One there
+ * by this name is refreshed. Returns what to say, or null when no template was asked for.
+ */
+async function intoLibrary(fd: FormData, projectId: string, userId: string, conditionId: string) {
+  const templateId = strOrNull(fd, "toTemplate");
+  if (!templateId) return null;
+  const newName = str(fd, "newTemplate");
+  if (templateId === "new" && !newName) return "Saved — not in your Library: the new template needs a name";
+  const t =
+    templateId === "new"
+      ? await db.takeoffTemplate.create({ data: { name: newName }, select: { id: true, name: true } })
+      : await db.takeoffTemplate.findUnique({ where: { id: templateId }, select: { id: true, name: true } });
+  const c = await db.takeoffCondition.findUnique({ where: { id: conditionId }, include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } } });
+  if (!t || !c) return null;
+  const r = await db.$transaction((tx) => addConditionsToTemplate(tx, t.id, [c], true));
+  const done = r.updated.length ? "Updated" : "Saved";
+  await logActivity({ projectId, userId, type: "takeoff_template.saved", description: `${done} takeoff "${c.name}" in template "${t.name}"` });
+  revalidatePath("/catalog/takeoff-templates");
+  return `${done} "${c.name}" in your Library (${t.name})`;
+}
+
 export const updateCondition = friendly(async function updateCondition(fd: FormData) {
-  await requireEdit("takeoffs");
+  const user = await requireEdit("takeoffs");
   const project = await getProject(str(fd, "projectId"));
   const id = str(fd, "id");
   const existing = await loadCondition(project.id, id);
@@ -248,11 +246,13 @@ export const updateCondition = friendly(async function updateCondition(fd: FormD
   if (resize) await resizeFamily(project.id, id);
   // Size, spacing, pitch, overhang or stock lengths can change the lumber.
   if (hasAutoLines(data.type) || hasAutoLines(existing.type)) await syncAutoItems(project.id, resize ? undefined : id);
+  // "Save + save to Library": as just saved, into a template too. Admins only.
+  const saved = user.role === "ADMIN" ? await intoLibrary(fd, project.id, user.id, id) : null;
   revalidate(project.id);
   // From the plan's edit panel: it stays open, and says so.
   if (str(fd, "stay")) {
     const back = returnTo(fd, project.id);
-    redirect(`${back}${back.includes("?") ? "&" : "?"}note=${encodeURIComponent(`Saved "${data.name}"`)}&at=${Date.now()}`);
+    redirect(`${back}${back.includes("?") ? "&" : "?"}${saved ? `library=${encodeURIComponent(saved)}` : `note=${encodeURIComponent(`Saved "${data.name}"`)}`}&at=${Date.now()}`);
   }
   redirect(returnTo(fd, project.id, `#condition-${id}`, "conditions"));
 });
@@ -274,8 +274,10 @@ export const copyCondition = friendly(async function copyCondition(fd: FormData)
   const project = await getProject(str(fd, "projectId"));
   const copy = await copyConditionRow(project.id, user.id, str(fd, "id"));
   revalidate(project.id);
-  // Back to the plan with the copy's edit panel open.
-  const back = returnTo(fd, project.id);
+  // Back to the plan with the copy's edit panel open (in place of the one it came from).
+  const back = returnTo(fd, project.id)
+    .replace(/([?&])(cond|note|library|at)=[^&#]*&?/g, "$1")
+    .replace(/[?&]$/, "");
   redirect(`${back}${back.includes("?") ? "&" : "?"}cond=${copy.id}`);
 });
 
@@ -473,39 +475,6 @@ export async function pullFromLibrary(input: { projectId: string; templateCondit
   }
   return r;
 }
-
-/**
- * Admins: one takeoff (items and all) into the Library — a template you have (refreshing
- * the one by that name if it's there) or a new one.
- */
-export const saveConditionToLibrary = friendly(async function saveConditionToLibrary(fd: FormData) {
-  const admin = await requireAdmin();
-  const project = await getProject(str(fd, "projectId"));
-  const back = returnTo(fd, project.id);
-  const join = back.includes("?") ? "&" : "?";
-  const c = await db.takeoffCondition.findFirst({
-    where: { id: str(fd, "id"), projectId: project.id },
-    include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] } },
-  });
-  if (!c) throw new Error("Takeoff not found");
-  const templateId = str(fd, "templateId");
-  const newName = str(fd, "newName");
-  if (templateId === "new" && !newName) redirect(`${back}${join}templateError=${encodeURIComponent("Give the new template a name")}`);
-  const t =
-    templateId === "new"
-      ? await db.takeoffTemplate.create({ data: { name: newName }, select: { id: true, name: true } })
-      : await db.takeoffTemplate.findUnique({ where: { id: templateId }, select: { id: true, name: true } });
-  if (!t) redirect(`${back}${join}templateError=${encodeURIComponent("Pick a template")}`);
-  const r = await db.$transaction((tx) => addConditionsToTemplate(tx, t!.id, [c], true));
-  await logActivity({
-    projectId: project.id,
-    userId: admin.id,
-    type: "takeoff_template.saved",
-    description: `${r.updated.length ? "Updated" : "Saved"} takeoff "${c.name}" in template "${t!.name}"`,
-  });
-  revalidatePath("/catalog/takeoff-templates");
-  redirect(`${back}${join}library=${encodeURIComponent(`${r.updated.length ? "Updated" : "Saved"} "${c.name}" in your Library (${t!.name})`)}&at=${Date.now()}`);
-});
 
 /**
  * Admins: this job's takeoffs (items and all) into a template — a new one, added to one
@@ -1412,53 +1381,6 @@ export async function restoreShapes(input: {
   );
   revalidate(data.projectId);
   return { ids };
-}
-
-/** Minimal condition created from the viewer; details can be filled in on the Takeoff page. */
-export async function quickCreateCondition(input: { projectId: string; name: string; type: string }) {
-  await requireEdit("takeoffs");
-  const { projectId, name, type } = z.object({ projectId: z.string(), name: z.string().trim().min(1).max(120), type: z.enum(CONDITION_TYPES) }).parse(input);
-  await getProject(projectId);
-  const count = await db.takeoffCondition.count({ where: { projectId } });
-  // Walls and openings start from sensible defaults; a size in the name ("Ext 2x6 Wall", "2x10 Headers") is used.
-  let extra = {};
-  if (type === "DOOR") extra = { wastePct: 10, options: JSON.stringify(DEFAULT_DOOR_OPTIONS) };
-  if (type === "WINDOW") extra = { wastePct: 10, options: JSON.stringify(DEFAULT_WINDOW_OPTIONS) };
-  if (type === "WALL" || type === "OPENING") {
-    const sizes = await db.memberSize.findMany({ select: { id: true, name: true, stockLengths: true } });
-    const lower = name.toLowerCase();
-    const named = sizes.filter((m) => lower.includes(m.name.toLowerCase())).sort((a, b) => b.name.length - a.name.length)[0];
-    const size = named ?? (type === "WALL" ? sizes.find((m) => m.name.toLowerCase() === "2x4") : undefined);
-    extra =
-      type === "WALL"
-        ? {
-            memberSizeId: size?.id ?? null,
-            memberSize: size?.name ?? null,
-            height: 8,
-            spacing: 16,
-            wastePct: 10,
-            options: JSON.stringify(DEFAULT_WALL_OPTIONS),
-          }
-        : {
-            memberSizeId: size?.id ?? null,
-            memberSize: size?.name ?? null,
-            stockLengths: size?.stockLengths ?? null,
-            options: JSON.stringify(DEFAULT_OPENING_OPTIONS),
-          };
-  }
-  const c = await db.takeoffCondition.create({
-    data: {
-      projectId,
-      name,
-      type,
-      metric: DEFAULT_METRIC[type],
-      color: CONDITION_COLORS[count % CONDITION_COLORS.length],
-      ...extra,
-      sortOrder: await nextConditionSort(projectId),
-    },
-  });
-  revalidate(projectId);
-  return { id: c.id };
 }
 
 /** A door picked for a Doors marker must be an Item List item with a size (null = not picked yet). */

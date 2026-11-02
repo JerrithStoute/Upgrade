@@ -13,7 +13,7 @@ export const TAKEOFF: HelpArticle[] = [
     how: [
       "Open the job, click the **Takeoff** tab (or **Measure** on a plan in the **Plans** tab).",
       "Make sure the sheet has a scale: pick one in the scale box, or click **Calibrate** (see Scale and Calibrate).",
-      "On the left, type a name in **Find or add a takeoff**, pick its type, and click **+ Add**. Or pull ready-made takeoffs from the **Library**.",
+      "On the left, click **New takeoff**, pick its type, type its name and press Enter. Or pick **From your Library…** in the same menu to pull ready-made takeoffs.",
       "With the takeoff picked, click on the plan to draw: corners for an area, points along a line, one click per item for a count.",
       "Finish a shape with a right-click, a double-click, or Enter. Watch the totals on the left update.",
       "Open **Totals** or **Material list** at the top right to see everything the takeoff orders.",
@@ -50,10 +50,9 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "The left panel: your takeoffs",
         items: [
-          { name: "Find or add a takeoff", what: "Finds a takeoff on this job by name, or names a new one.", how: "Start typing. Pick one from the list, or pick a **type** in the box next to it and click **+ Add** to make a new one. It's picked and ready to measure." },
-          { name: "Type", what: "How the new takeoff is drawn and counted: Area, Linear, Count, Joists / Rafters, Hip / Valley, Beams, Walls, Openings / Headers, Doors, Windows." },
-          { name: "More options", what: "Opens the full form for a new takeoff, with every setting." },
-          { name: "Library", what: "Pulls ready-made takeoffs from your takeoff templates onto this job.", how: "Search or pick a template on the left, click the ones you want — anywhere on the row adds it (it stays open so you can add several) — then **Done**." },
+          { name: "Find a takeoff", what: "Narrows the list as you type, to every takeoff on the job by that name.", how: "Click one to measure with it (or press Enter when only one is left). Esc clears it." },
+          { name: "New takeoff ▾", what: "A menu of the types: Area, Linear, Count · Walls, Doors, Windows, Openings / Headers · Joists / Rafters, Hip / Valley, Beams.", how: "Pick one and the **New takeoff** panel opens set to it, ready for a name. Type the name and press Enter to add it and start measuring." },
+          { name: "From your Library…", what: "At the bottom of the **New takeoff** menu: pulls ready-made takeoffs from your takeoff templates onto this job.", how: "Search or pick a template on the left, click the ones you want — anywhere on the row adds it (it stays open so you can add several) — then **Done**." },
           { name: "Just this page / Show all", what: "Lists only the takeoffs used on this sheet, or every takeoff on the job." },
           { name: "Eye (in the header)", what: "Hides every takeoff for a clean look at the plan, or shows them all again." },
           { name: "A takeoff's line", what: "One line each: its color, name and how much is measured on this sheet. Hold the mouse over it to see its type (wall, area, pitch, beam size…) and the whole job's total. **Ref** means it's measured for information only and isn't on the estimate. The ⌄, pencil and eye show on the line you're over or measuring with (always on a phone or tablet); a hidden takeoff keeps its crossed-out eye.", how: "Click the line to pick it and start measuring." },
@@ -230,25 +229,25 @@ export const TAKEOFF: HelpArticle[] = [
     pages: [VIEWER],
     what: "A **takeoff** is a named, colored measuring tool: \"LVP Flooring\", \"Ext 2x6 Wall\", \"Window Headers\". Its settings decide how it's drawn and what it counts, and its **items** decide what it orders. For example, one sheet of drywall for every 32 sf of wall. Items get their prices from your Item List.",
     how: [
-      "Click the pencil next to a takeoff on the left (or **More options** for a new one).",
-      "Set its name, type, color, what quantity it reports, and the settings for its type.",
-      "Add the items it orders. Framing, wall, opening, door and window takeoffs add their lumber and trim by themselves; add extras like hangers or sheathing.",
-      "Click **Save takeoff**.",
+      "Click the pencil next to a takeoff on the left, or **New takeoff** and its type for a new one. The panel opens on the right, with **Cancel** and **Add takeoff** (or **Save**) at the top.",
+      "Name it and pick its color (the square beside the name). Its settings read like sentences down the panel, a short label on the left (Studs, Plates, Sheathing…): fill in the boxes. Hold the mouse over a box to see what it does.",
+      "To add what it orders, click **Add** on the **Orders** (or **Add-ons**) line at the bottom: find the item, how many per how much, then **Add**. Framing, wall, opening, door and window takeoffs add their lumber and trim by themselves; add extras like hangers there.",
+      "Click **Add takeoff** (or **Save**), at the top or the bottom, or press Enter in the name. Admins can click **+ Library** instead, to put it in a takeoff template too.",
     ],
     sections: [
       {
         heading: "Settings",
         items: [
-          { name: "Name / Color", what: "What it's called and the color it's drawn in." },
-          { name: "Type", what: "How it's drawn: Area, Linear, Count, Joists / Rafters, Hip / Valley, Beams, Walls, Openings / Headers, Doors, Windows. Locked once the takeoff has measurements." },
-          { name: "Quantity", what: "What it reports and sends to the estimate. Area: sf, flat plan area, sy, roofing squares, perimeter, or volume in cy. Linear: length, flat length, or wall area. Lumber: members, length, stock length ordered, or board feet." },
-          { name: "Pitch (rise / 12)", what: "For sloped work: 6/12 makes the plan area 1.118 times larger. 0 is flat." },
+          { name: "Name / Color", what: "What it's called and the color it's drawn in (click the square to change it)." },
+          { name: "Type", what: "The box between the color and the name: set by **New takeoff ▾**, and changeable there until the takeoff has measurements (then it's just shown). Hold the mouse over it to see how that type is drawn." },
+          { name: "Report", what: "What it reports and sends to the estimate. Area: sf, flat plan area, sy, roofing squares, perimeter, or volume in cy. Linear: length, flat length, or wall area. Lumber: members, length, stock length ordered, or board feet." },
+          { name: "Pitch /12", what: "For sloped work: 6/12 makes the plan area 1.118 times larger. 0 is flat. The gray note beside it shows what it does." },
           { name: "Height (ft) / Depth (in)", what: "Linear: length × height gives wall area. Area: area × depth gives concrete volume in cubic yards." },
-          { name: "Walls", what: "Stud size, spacing, wall height, precut or cut-from-stock studs, extra studs per corner, top and bottom plates, and sheathing, drywall and baseboard on none, one or both sides. It orders all of it from what you draw. Baseboard is figured in lineal feet; when your Item List sells it **each** (by the stick), it's ordered in sticks — the feet ÷ the stick length (from the item's name, like \"× 16'\" or \"1x6x16\", or the **Piece length** box), rounded up and priced each. Window lining and anything else figured in feet but sold each works the same way." },
+          { name: "Walls", what: "Stud size, spacing, wall height, precut or cut-from-stock studs, extra studs per corner, top and bottom plates, and sheathing, drywall and baseboard on none, one or both sides. It orders all of it from what you draw. Baseboard is figured in lineal feet; when your Item List sells it **each** (by the stick), it's ordered in sticks — the feet ÷ the stick length (from the item's name, like \"× 16'\" or \"1x6x16\", or the **Stick** box), rounded up and priced each. Window lining and anything else figured in feet but sold each works the same way." },
           { name: "Openings / Doors / Windows", what: "Header size and plies, king and jack studs, casing, leg and head trim, window stools, aprons and lining." },
           { name: "Joists / Rafters / Beams", what: "Spacing, lap over walls, size (one size or by span table), packing, overhang, member size, stock lengths, bearing and plies.", how: "See **Joists, rafters and beams**." },
-          { name: "Where new items go, and their cost codes", what: "For lumber, doors, windows and the like: which Item List category new items go in and which cost code they use. Your answers are remembered for every job." },
-          { name: "Waste % / Extra boards (waste %)", what: "Extra added for cutting and mistakes. For lumber it's whole extra boards of the length you order most." },
+          { name: "Cost codes", what: "For lumber, doors, windows and the like: the cost code each kind of item gets (or **Ask me for each one**). Set once for your company: the first time it's open in amber; after that it's one line, **All set**, and **Change** opens it (**Close** folds it). Codes already on an item never change. Which Item List category they go in is set in Catalog → Item List." },
+          { name: "Waste % / Extra boards %", what: "Extra added for cutting and mistakes. For lumber it's whole extra boards of the length you order most." },
           { name: "Reference only", what: "Measures it for information only. It stays off the estimate and the Material list." },
         ],
       },
@@ -258,6 +257,7 @@ export const TAKEOFF: HelpArticle[] = [
           "Each item reads like a recipe: **qty** of an item **per** so much of the measurement. For example, 1 sheet per 32 sf of area. The program works out: measured amount × qty ÷ per, plus waste, rounded up if **Round up** is ticked.",
         ],
         items: [
+          { name: "Orders / Add-ons", what: "On a new takeoff: one line, **Add** opens it. Find the item (or type a new one), how many per how much of the measurement, then **Add**. Picking an Item List item fills in its unit, price, waste, round-up and cost code; **More…** opens those to change them. A new name is added to the Item List when you save. Click an added item to change it, × to take it off." },
           { name: "Item", what: "Search the Item List or type a new item. Picking one fills in its unit, price, waste, round-up and cost code. A new name is added to the Item List when you save." },
           { name: "Cost code", what: "Where this item's cost lands on the estimate and Budget, for this takeoff only. The price is shared with the Item List." },
           { name: "Unit cost", what: "The price. Changing it changes the Item List, and every job that isn't locked." },
@@ -268,15 +268,18 @@ export const TAKEOFF: HelpArticle[] = [
         ],
       },
       {
-        heading: "In the drawer",
+        heading: "In the panel",
         items: [
           {
-            name: "Save takeoff",
-            what: "Saves your changes and keeps the drawer open, so you can go right on to Save to Library. Close it with the ×. Adding a new takeoff closes the drawer, so you can start measuring.",
+            name: "Save / Add takeoff",
+            what: "At the top and the bottom. **Save** keeps the panel open (it says Saved). **Add takeoff** closes it, so you can start measuring. **Cancel** closes it without saving.",
           },
-          { name: "Make a copy", what: "A new takeoff with the same settings and items but none of the shapes, for another pitch or height." },
-          { name: "Save to Library", what: "Admins: saves this takeoff into a takeoff template so other jobs can use it." },
-          { name: "Delete takeoff", what: "Deletes it and all its measurements. Lines already on an estimate stay there." },
+          {
+            name: "+ Library",
+            what: "Admins: does the same, and also puts the takeoff, settings and items, in a takeoff template so any job can pull it. With one template it goes straight there; with more, pick one (or type a name for a new one). One there by this name is updated.",
+          },
+          { name: "Make a copy", what: "On an existing takeoff, beside Save at the bottom: a new takeoff with the same settings and items (as last saved) but none of the shapes, for another pitch or height." },
+          { name: "Delete takeoff…", what: "At the bottom: asks, then deletes it and all its measurements. Lines already on an estimate stay there." },
         ],
       },
       {

@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import Link from "@/components/link";
-import { BookMarked, Copy, Plus, X } from "lucide-react";
+import { Copy, Plus } from "lucide-react";
 import { ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";
 import { costCodeLabel, money, num } from "@/lib/utils";
 import type { CodeRules } from "@/lib/code-groups";
-import { isLumberMetric, metricLabel, metricUnit } from "@/lib/takeoff";
+import { isLumberMetric, metricLabel, metricUnit, type ConditionType } from "@/lib/takeoff";
 import { ConditionForm, type ConditionFormValues, type MemberSizeOption } from "../../_components/condition-form";
 import { AssemblyForm, type AssemblyFormValues, type ItemOption } from "../../_components/assembly-form";
 import {
@@ -15,7 +14,6 @@ import {
   createCondition,
   deleteAssemblyItem,
   deleteCondition,
-  saveConditionToLibrary,
   updateAssemblyItem,
   updateCondition,
 } from "../../actions";
@@ -43,6 +41,7 @@ export function ConditionDrawer({
   spanTables,
   closeHref,
   stayHref,
+  newType,
 }: {
   projectId: string;
   condition: DrawerCondition | null; // null = new condition
@@ -57,6 +56,8 @@ export function ConditionDrawer({
   spanTables?: { id: string; name: string; use: string }[];
   closeHref: string; // the viewer without the panel
   stayHref: string; // the viewer with this panel open
+  /** A new takeoff: the type picked from New takeoff ▾. */
+  newType?: ConditionType;
 }) {
   const [editItem, setEditItem] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -70,27 +71,26 @@ export function ConditionDrawer({
     condition?.type === "WINDOW";
 
   return (
-    <div className="absolute inset-y-0 right-0 z-20 flex w-[min(100%,34rem)] flex-col border-l border-slate-200 bg-white shadow-2xl">
-      <div className="flex items-center gap-2 border-b border-slate-200 px-4 py-3">
-        {condition ? <span className="h-3.5 w-3.5 rounded-sm" style={{ background: condition.color }} /> : null}
-        <p className="flex-1 truncate font-semibold text-slate-900">{condition ? `Edit ${condition.name}` : "New takeoff"}</p>
-        {condition ? (
-          // A roof with several pitches: copy it (items and all), change the pitch, measure.
-          <form action={copyCondition}>
-            <input type="hidden" name="projectId" value={projectId} />
-            <input type="hidden" name="id" value={condition.id} />
-            <input type="hidden" name="returnTo" value={closeHref} />
-            <SubmitButton variant="secondary" size="sm" pendingText="Copying…" title="A new takeoff with the same settings and items (none of the shapes) — e.g. for another pitch">
-              <Copy className="h-3.5 w-3.5" /> Make a copy
-            </SubmitButton>
-          </form>
-        ) : null}
-        <Link href={closeHref} scroll={false} className={buttonClasses("ghost", "sm")} aria-label="Close">
-          <X className="h-4 w-4" />
-        </Link>
-      </div>
-      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 py-4">
+    <div className="absolute inset-y-0 right-0 z-20 flex w-[min(100%,32rem)] flex-col border-l border-slate-200 bg-white shadow-2xl">
+      <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-4 pb-4">
         <ConditionForm
+          title={condition ? `Edit ${condition.name}` : "New takeoff"}
+          initialType={newType}
+          headExtra={
+            condition ? (
+              // A roof with several pitches: copy it (items and all, as last saved), change the pitch, measure.
+              <SubmitButton
+                formAction={copyCondition}
+                formNoValidate
+                variant="secondary"
+                size="xs"
+                pendingText="Copying…"
+                title="A new takeoff with the same settings and items (none of the shapes), as last saved — e.g. for another pitch"
+              >
+                <Copy className="h-3.5 w-3.5" /> Make a copy
+              </SubmitButton>
+            ) : null
+          }
           action={condition ? updateCondition : createCondition}
           // Saving changes keeps the panel open (Save to Library is right below); a new takeoff closes it, to measure.
           hidden={condition ? { projectId, returnTo: stayHref, stay: "1" } : { projectId, returnTo: closeHref }}
@@ -109,14 +109,14 @@ export function ConditionDrawer({
 
         {condition ? (
           <div className="space-y-2 border-t border-slate-100 pt-4">
-            <p className="label">{isMember ? "Lumber & add-on items" : "Assembly items"}</p>
+            <p className="text-xs font-semibold text-slate-800">{isMember ? "Lumber and add-on items" : "What it orders"}</p>
             {condition.items.length === 0 ? (
               <p className="text-xs text-slate-500">{isMember ? "None yet." : "None yet — until it has one, this takeoff is a measurement only (not on the estimate)."}</p>
             ) : null}
-            <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+            <ul className="divide-y divide-slate-100 border-y border-slate-100">
               {condition.items.map((item) =>
                 editItem === item.id ? (
-                  <li key={item.id} className="p-3">
+                  <li key={item.id} className="py-3">
                     <AssemblyForm
                       action={updateAssemblyItem}
                       hidden={{ projectId, returnTo: stayHref }}
@@ -129,7 +129,7 @@ export function ConditionDrawer({
                     />
                   </li>
                 ) : (
-                  <li key={item.id} className="flex items-start gap-2 px-3 py-2 text-sm">
+                  <li key={item.id} className="flex items-start gap-2 py-1.5 text-sm">
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-slate-900">{item.description}</span>
                       <span className="block text-xs text-slate-500">
@@ -161,7 +161,7 @@ export function ConditionDrawer({
               )}
             </ul>
             {adding ? (
-              <div className="rounded-lg border border-slate-200 p-3">
+              <div className="rounded-md bg-slate-50 p-3">
                 <AssemblyForm
                   action={createAssemblyItem}
                   hidden={{ projectId, returnTo: stayHref }}
@@ -174,13 +174,11 @@ export function ConditionDrawer({
               </div>
             ) : (
               <button type="button" onClick={() => setAdding(true)} className="inline-flex items-center gap-1 text-xs font-medium text-blue-700">
-                <Plus className="h-3.5 w-3.5" /> {isMember ? "Add an add-on item (hangers, ties, blocking, sheathing…)" : "Add assembly item"}
+                <Plus className="h-3.5 w-3.5" /> {isMember ? "Add an add-on item (hangers, ties, blocking…)" : "Add an item"}
               </button>
             )}
           </div>
         ) : null}
-
-        {condition && toolbox ? <SaveToLibrary projectId={projectId} condition={condition} templates={toolbox} returnTo={stayHref} /> : null}
 
         {condition ? (
           <div className="flex justify-end border-t border-slate-100 pt-4">
@@ -189,54 +187,11 @@ export function ConditionDrawer({
               hidden={{ projectId, id: condition.id, returnTo: closeHref }}
               message={`Delete "${condition.name}" and all of its measurements? Lines already on an estimate stay there.`}
             >
-              Delete takeoff
+              Delete takeoff…
             </ConfirmForm>
           </div>
         ) : null}
       </div>
     </div>
-  );
-}
-
-/**
- * Admins: this takeoff, settings and items, into the Library (one of your takeoff templates)
- * so the next job can pull it from the plan. One by that name there already is refreshed.
- */
-function SaveToLibrary({
-  projectId,
-  condition,
-  templates,
-  returnTo,
-}: {
-  projectId: string;
-  condition: { id: string; name: string };
-  templates: { id: string; name: string }[];
-  returnTo: string;
-}) {
-  const [pick, setPick] = useState(templates[0]?.id ?? "new");
-  return (
-    <form action={saveConditionToLibrary} className="space-y-2 border-t border-slate-100 pt-4">
-      <input type="hidden" name="projectId" value={projectId} />
-      <input type="hidden" name="id" value={condition.id} />
-      <input type="hidden" name="returnTo" value={returnTo} />
-      <p className="label !mb-0">Save to Library</p>
-      <p className="text-xs text-slate-500">
-        Puts &ldquo;{condition.name}&rdquo; — settings and items — in a template, so any job can find it on the plan. One there by this name is updated.
-      </p>
-      <div className="flex flex-wrap items-center gap-2">
-        <select name="templateId" aria-label="Template to save it in" className="input !h-8 !w-auto !py-0 text-xs" value={pick} onChange={(e) => setPick(e.target.value)}>
-          {templates.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name}
-            </option>
-          ))}
-          <option value="new">New template…</option>
-        </select>
-        {pick === "new" ? <input name="newName" required placeholder="New template name" aria-label="New template name" className="input !h-8 !w-44 !py-0 text-xs" /> : null}
-        <SubmitButton variant="secondary" size="sm" pendingText="Saving…">
-          <BookMarked className="h-3.5 w-3.5" /> Save to Library
-        </SubmitButton>
-      </div>
-    </form>
   );
 }

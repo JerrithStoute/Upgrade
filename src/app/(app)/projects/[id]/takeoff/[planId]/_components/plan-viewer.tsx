@@ -17,7 +17,6 @@ import {
   MoveVertical,
   Spline,
   Pencil,
-  Plus,
   RotateCw,
   Ruler,
   RulerDimensionLine,
@@ -40,7 +39,7 @@ import {
   PaintBucket,
   Scissors,
   Eraser,
-  Library,
+  Search,
   X,
 } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
@@ -48,7 +47,6 @@ import { LibraryPicker } from "./library-picker";
 import { recommendScale, type ScaleRecommendation } from "@/lib/scale-recommend";
 import { cn, money, num } from "@/lib/utils";
 import {
-  CONDITION_TYPES,
   CONDITION_TYPE_LABELS,
   PDF_UNITS_PER_INCH,
   PRESET_SCALES,
@@ -115,6 +113,7 @@ import {
 import { findDimensions } from "@/lib/room-detect";
 import { buildSnapIndex, findSnap, type SnapHit } from "./snap";
 import { ConditionDrawer, type DrawerCondition } from "./condition-drawer";
+import { NewTakeoffMenu } from "./new-takeoff-menu";
 import { TotalsPanel, type PanelView, type TotalsPanelData } from "./totals-panel";
 import type { DoorChoice, UnitCodes } from "./door-picker";
 import { UnitBidList, UnitListPanel } from "./unit-list-panel";
@@ -137,7 +136,6 @@ import {
   createShapes,
   deleteMeasurement,
   initPlanPages,
-  quickCreateCondition,
   renameSheet,
   setSheetScale,
   updateMeasurement,
@@ -567,6 +565,8 @@ export function PlanViewer({
     toolbox?: { id: string; name: string }[];
     /** Catalog → Span tables, for joists / rafters sized by span. */
     spanTables?: { id: string; name: string; use: string }[];
+    /** A new takeoff: the type picked from New takeoff ▾. */
+    newType?: ConditionType;
   } | null;
 }) {
   const router = useRouter();
@@ -766,12 +766,10 @@ export function PlanViewer({
   const [calibInches, setCalibInches] = useState("");
   const [applyToPlan, setApplyToPlan] = useState(false);
   const [sheetName, setSheetName] = useState(sheet?.name ?? "");
-  const [newCondName, setNewCondName] = useState("");
-  const [newCondType, setNewCondType] = useState<ConditionType>("AREA");
+  // "Find a takeoff": narrows the list as you type.
+  const [findText, setFindText] = useState("");
   // The takeoff search under the name box: open while you're in it; ↑ / ↓ move through it.
-  const [findOpen, setFindOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [findAt, setFindAt] = useState(0);
   const showAll = useSyncExternalStore(subscribeShowAll, readShowAll, () => false);
   // Takeoffs picked onto this page this visit (nothing measured with them here yet) stay in the list.
   const [pulled, setPulled] = useState<{ sheetId: string | null; ids: Set<string> }>({ sheetId: sheet?.id ?? null, ids: new Set() });
@@ -1101,8 +1099,13 @@ export function PlanViewer({
     return ids;
   }, [shapes, conditions]);
   const pulledIds = pulled.sheetId === (sheet?.id ?? null) ? pulled.ids : NO_IDS;
-  const shownList = showAll ? listed : listed.filter((c) => onPage.has(c.id) || c.id === activeId || pulledIds.has(c.id));
-  const shownIds = new Set(shownList.map((c) => c.id));
+  const findQ = findText.trim().toLowerCase();
+  // Typing in the find box lists every takeoff on the job by that name.
+  const shownList = findQ
+    ? listed.filter((c) => c.name.toLowerCase().includes(findQ))
+    : showAll
+      ? listed
+      : listed.filter((c) => onPage.has(c.id) || c.id === activeId || pulledIds.has(c.id));
   /** Puts a takeoff in this page's list and starts measuring with it. */
   const pickTakeoff = (id: string) => {
     setPulled((cur) => ({ sheetId: sheet?.id ?? null, ids: new Set([...(cur.sheetId === (sheet?.id ?? null) ? cur.ids : []), id]) }));
@@ -1110,12 +1113,11 @@ export function PlanViewer({
     setTool("measure");
     resetDraft();
     showTakeoff(id);
-    setNewCondName("");
-    setFindOpen(false);
+    setFindText("");
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-cond-row="${id}"]`)?.scrollIntoView({ block: "nearest" }));
   };
-  // Back from making a takeoff with "More options" (the address ends #condition-<id>): it goes on
-  // this page's list, picked and ready to measure — as one added from the box above does.
+  // Back from making a takeoff in the New takeoff panel (the address ends #condition-<id>): it goes
+  // on this page's list, picked and ready to measure.
   const madeHandled = useRef<string | null>(null);
   const pickRef = useRef(pickTakeoff);
   useEffect(() => {
@@ -1139,37 +1141,7 @@ export function PlanViewer({
       return null;
     }
   };
-  const createNew = () => {
-    const name = newCondName.trim();
-    if (!name) return;
-    startTransition(async () => {
-      try {
-        const { id } = await quickCreateCondition({ projectId, name, type: newCondType });
-        pickTakeoff(id);
-        router.refresh();
-        // Walls and openings need their options set: open the new condition's settings.
-        if (["WALL", "OPENING", "DOOR", "WINDOW"].includes(newCondType)) router.push(editHref(id), { scroll: false });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Could not add the takeoff");
-      }
-    });
-  };
-  // What the search finds: this job's other takeoffs (the Library has its own window).
-  const findQ = newCondName.trim().toLowerCase();
-  const findMatch = (n: string) => !findQ || n.toLowerCase().includes(findQ);
-  const jobHits = conditions.filter((c) => !shownIds.has(c.id) && findMatch(c.name));
   const jobNames = useMemo(() => new Set(conditions.map((c) => c.name.trim().toLowerCase())), [conditions]);
-  const exact = conditions.some((c) => c.name.trim().toLowerCase() === findQ);
-  const findOptions: ({ kind: "job"; c: ViewerCondition } | { kind: "new" })[] = [
-    ...jobHits.map((c) => ({ kind: "job" as const, c })),
-    ...(findQ && !exact ? [{ kind: "new" as const }] : []),
-  ];
-  const chooseFind = (i: number) => {
-    const o = findOptions[i];
-    if (!o) return;
-    if (o.kind === "job") pickTakeoff(o.c.id);
-    else createNew();
-  };
   const picked = multi.length ? multi : selectedId ? [selectedId] : [];
   /** Picks these shapes: one is selected for editing, more are a group. */
   const selectSet = (ids: string[]) => {
@@ -4029,126 +4001,27 @@ export function PlanViewer({
       <div className="flex min-h-0 flex-1">
         {/* Conditions panel ------------------------------------------------------------------- */}
         <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200">
-          {/* Find or add a takeoff — this job's, the Library's, or a new one. At the top, always in reach. */}
-          <form
-            className="space-y-2 border-b border-slate-200 bg-slate-50/60 p-3"
-            onSubmit={(e) => {
-              e.preventDefault();
-              createNew();
-            }}
-          >
-            <div className="flex items-center justify-between">
-              <p className="label !mb-0">Find or add a takeoff</p>
-              <Link href={editHref("new")} scroll={false} className="text-xs text-blue-700 hover:underline">
-                More options
-              </Link>
-            </div>
-            <div className="relative">
+          {/* Find a takeoff (narrows the list as you type) and New takeoff ▾ (pick its type, or one from the Library). */}
+          <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/60 p-3">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
-                value={newCondName}
-                onChange={(e) => {
-                  setNewCondName(e.target.value);
-                  setFindOpen(true);
-                  setFindAt(0);
-                }}
-                onFocus={() => {
-                  setFindOpen(true);
-                  setFindAt(0);
-                }}
-                onBlur={() => setFindOpen(false)}
+                type="search"
+                value={findText}
+                onChange={(e) => setFindText(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") setFindOpen(false);
-                  else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    setFindOpen(true);
-                    const n = findOptions.length;
-                    if (n) setFindAt((i) => (i + (e.key === "ArrowDown" ? 1 : n - 1)) % n);
-                  } else if (e.key === "Enter" && findOpen && findOptions.length) {
-                    e.preventDefault();
-                    chooseFind(Math.min(findAt, findOptions.length - 1));
-                  }
+                  if (e.key === "Escape") setFindText("");
+                  // Enter on one match: measure with it.
+                  else if (e.key === "Enter" && findQ && shownList.length === 1) pickTakeoff(shownList[0].id);
                 }}
-                placeholder="Type to find one, or name a new one"
-                className="input !py-1.5 text-xs"
-                aria-label="Find or add a takeoff"
-                role="combobox"
-                aria-controls="takeoff-find-list"
-                aria-expanded={findOpen}
+                placeholder="Find…"
+                aria-label="Find a takeoff"
                 autoComplete="off"
+                className="input !h-8 !py-1 !pl-7 text-xs"
               />
-              {findOpen && (findOptions.length || findQ) ? (
-                // Floats over the list below, so nothing moves.
-                <div
-                  className="absolute inset-x-0 top-full z-30 mt-1 max-h-80 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 text-xs shadow-xl"
-                  role="listbox"
-                  id="takeoff-find-list"
-                >
-                  {findOptions.length === 0 ? <p className="px-3 py-2 text-slate-500">Nothing by that name — pick its type below and Add.</p> : null}
-                  {findOptions.map((o, i) => {
-                    const head =
-                      i === 0 || findOptions[i - 1].kind !== o.kind ? (
-                        <p className="px-3 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
-                          {o.kind === "job" ? "On this job" : "New"}
-                        </p>
-                      ) : null;
-                    const color = o.kind === "job" ? o.c.color : null;
-                    return (
-                      <div key={o.kind === "job" ? o.c.id : "new"}>
-                        {head}
-                        <button
-                          type="button"
-                          role="option"
-                          aria-selected={i === findAt}
-                          // Keep the box's focus until the click lands.
-                          onMouseDown={(e) => e.preventDefault()}
-                          onMouseEnter={() => setFindAt(i)}
-                          onClick={() => chooseFind(i)}
-                          className={cn("flex w-full items-center gap-2 px-3 py-1.5 text-left", i === findAt ? "bg-blue-50 text-blue-900" : "text-slate-700")}
-                        >
-                          {color ? (
-                            <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: color }} />
-                          ) : (
-                            <Plus className="h-3 w-3 shrink-0 text-blue-700" />
-                          )}
-                          <span className="min-w-0 flex-1 truncate">{o.kind === "job" ? o.c.name : `New "${newCondName.trim()}"`}</span>
-                          <span className="shrink-0 text-[10px] text-slate-400">
-                            {o.kind === "job" ? (CONDITION_TYPE_LABELS[o.c.type as ConditionType] ?? o.c.type) : CONDITION_TYPE_LABELS[newCondType]}
-                          </span>
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : null}
             </div>
-            <div className="flex gap-2">
-              <select
-                value={newCondType}
-                onChange={(e) => setNewCondType(e.target.value as ConditionType)}
-                className="input !py-1.5 text-xs"
-                aria-label="New takeoff type"
-              >
-                {CONDITION_TYPES.map((t) => (
-                  <option key={t} value={t}>
-                    {CONDITION_TYPE_LABELS[t]}
-                  </option>
-                ))}
-              </select>
-              <Button type="submit" size="sm" disabled={!newCondName.trim()} title="A new takeoff with this name and type">
-                <Plus className="h-3.5 w-3.5" /> Add
-              </Button>
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="w-full"
-              onClick={() => setLibraryOpen(true)}
-              title="Pull takeoffs from your templates onto this job"
-            >
-              <Library className="h-3.5 w-3.5" /> Library{library.length ? ` (${library.length})` : ""}
-            </Button>
-          </form>
+            <NewTakeoffMenu hrefFor={(t) => `${editHref("new")}&ctype=${t}`} onLibrary={() => setLibraryOpen(true)} libraryCount={library.length} />
+          </div>
           {libraryOpen ? (
             <LibraryPicker
               library={library}
@@ -4161,8 +4034,8 @@ export function PlanViewer({
             />
           ) : null}
           <div className="flex items-center gap-2 py-2 pl-3 pr-2">
-            <p className="label !mb-0 flex-1">{showAll ? "All takeoffs" : "On this page"}</p>
-            {conditions.length ? (
+            <p className="label !mb-0 flex-1">{findQ ? "Found" : showAll ? "All takeoffs" : "On this page"}</p>
+            {conditions.length && !findQ ? (
               <button
                 type="button"
                 className="rounded px-1.5 py-0.5 text-[11px] font-medium text-blue-700 hover:bg-blue-50"
@@ -4193,11 +4066,11 @@ export function PlanViewer({
           </div>
           <ul className="min-h-0 flex-1 overflow-y-auto">
             {conditions.length === 0 ? (
-              <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — pull some from the Library or add one above.</li>
+              <li className="px-3 py-2 text-xs text-slate-500">No takeoffs yet — click New takeoff to make one, or pull some from your Library.</li>
             ) : null}
             {conditions.length > 0 && shownList.length === 0 ? (
               <li className="px-3 py-2 text-xs text-slate-500">
-                Nothing measured on this page yet — find a takeoff above (or pull one from the Library) and start measuring.
+                {findQ ? "None by that name — New takeoff makes one." : "Nothing measured on this page yet — find a takeoff above (or pull one from your Library) and start measuring."}
               </li>
             ) : null}
             {shownList.map((c) => {
@@ -5019,7 +4892,7 @@ export function PlanViewer({
 
           {editor ? (
             <ConditionDrawer
-              key={editor.condition ? JSON.stringify(editor.condition.items) : "new"}
+              key={editor.condition ? JSON.stringify(editor.condition.items) : `new-${editor.newType ?? ""}`}
               projectId={projectId}
               condition={editor.condition}
               costCodes={editor.costCodes}
@@ -5032,6 +4905,7 @@ export function PlanViewer({
               spanTables={editor.spanTables}
               closeHref={viewerHref}
               stayHref={editor.condition ? editHref(editor.condition.id) : editHref("new")}
+              newType={editor.newType}
             />
           ) : null}
 

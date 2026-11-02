@@ -1,17 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Field } from "@/components/ui";
+import { Line, Section, Switch } from "./mini";
 import { cn } from "@/lib/utils";
 import { itemKind, type ItemKind } from "@/lib/code-groups";
 import {
   DEFAULT_DOOR_OPTIONS,
   DEFAULT_WINDOW_OPTIONS,
   WINDOW_STOOL_ITEM,
-  windowSummary,
   type WindowOptions,
   DEFAULT_OPENING_OPTIONS,
-  doorSummary,
   type DoorOptions,
   DEFAULT_WALL_OPTIONS,
   SHEET_SIZES,
@@ -21,50 +19,30 @@ import {
   defaultStudLength,
   inchesText,
   itemNameKey,
-  openingSummary,
   parseOptions,
   sheetSizeInName,
-  wallSummary,
   withSheetSize,
   type OpeningOptions,
   type WallOptions,
 } from "@/lib/takeoff";
 import type { MemberSizeOption } from "./condition-form";
 
-/** None / 1 side / Both sides as three buttons, posted as `name`. */
+/** None / 1 side / Both as one small switch, posted as `name`. */
 function Sides({ name, value, onChange, label }: { name: string; value: number; onChange: (n: number) => void; label: string }) {
   return (
-    <div>
+    <>
       <input type="hidden" name={name} value={value} />
-      <div role="radiogroup" aria-label={label} className="inline-flex overflow-hidden rounded-md border border-slate-300">
-        {[
+      <Switch
+        label={label}
+        value={value}
+        onChange={onChange}
+        options={[
           [0, "None"],
           [1, "1 side"],
-          [2, "Both sides"],
-        ].map(([n, text]) => (
-          <button
-            key={n}
-            type="button"
-            role="radio"
-            aria-checked={value === n}
-            onClick={() => onChange(n as number)}
-            className={cn("px-3 py-1.5 text-xs font-medium", value === n ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50")}
-          >
-            {text}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Section({ title, children, hint }: { title: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <fieldset className="rounded-lg border border-slate-200 bg-white p-3">
-      <legend className="px-1 text-sm font-semibold text-slate-900">{title}</legend>
-      {hint ? <p className="mb-2 text-xs text-slate-500">{hint}</p> : null}
-      <div className="flex flex-wrap items-end gap-3">{children}</div>
-    </fieldset>
+          [2, "Both"],
+        ]}
+      />
+    </>
   );
 }
 
@@ -80,6 +58,7 @@ const NEW_ITEM = "__new__";
 function ItemPicker({
   id,
   name,
+  label,
   value,
   onChange,
   items,
@@ -89,6 +68,7 @@ function ItemPicker({
 }: {
   id: string;
   name: string;
+  label: string;
   value: string;
   onChange: (v: string) => void;
   items: ItemChoice[];
@@ -101,13 +81,13 @@ function ItemPicker({
   const [typing, setTyping] = useState(false);
   if (typing) {
     return (
-      <div className="flex items-center gap-2">
+      <span className="flex min-w-28 flex-1 items-center gap-1.5">
         <input type="hidden" name={name} value={value} />
-        <input id={id} autoFocus className="input" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
+        <input id={id} aria-label={label} autoFocus className="input min-w-0 flex-1" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} />
         <button type="button" className="shrink-0 text-xs text-blue-700 hover:underline" onClick={() => setTyping(false)}>
           Pick from list
         </button>
-      </div>
+      </span>
     );
   }
   return (
@@ -115,7 +95,8 @@ function ItemPicker({
       <input type="hidden" name={name} value={value} />
       <select
         id={id}
-        className={cn("input", disabled && "opacity-50")}
+        aria-label={label}
+        className={cn("input !w-auto min-w-24 flex-1", disabled && "opacity-50")}
         value={inList?.name ?? value}
         onChange={(e) => {
           if (e.target.value === NEW_ITEM) {
@@ -162,63 +143,76 @@ function StudPicker({
   const label = (inches: number) => (precut ? `${inchesText(inches)}${PRECUT_FOR[String(inches)] ? ` (${PRECUT_FOR[String(inches)]})` : ""}` : `${inches / 12}'`);
   const autoLen = auto ? (precut ? auto.precut : auto.stock) : null;
   return (
-    <div className="flex flex-wrap items-end gap-3">
+    <>
       <input type="hidden" name="opt_studPrecut" value={precut ? "true" : "false"} />
       <input type="hidden" name="opt_studLengthIn" value={lengthIn} />
-      <div>
-        <p className="label">Stud type</p>
-        <div role="radiogroup" aria-label="Stud kind" className="inline-flex overflow-hidden rounded-md border border-slate-300">
-          {[
-            [true, "Precut"],
-            [false, "Cut from stock"],
-          ].map(([v, text]) => (
-            <button
-              key={String(v)}
-              type="button"
-              role="radio"
-              aria-checked={precut === v}
-              onClick={() => {
-                if (precut === v) return;
-                const next = v as boolean;
-                // Switching kinds: the length that suits the wall, or a sensible default.
-                onChange(next, auto ? (next ? auto.precut : auto.stock) : next ? STUD_PRECUTS_IN[0] : 96);
-                auto?.reset();
-              }}
-              className={cn("px-3 py-1.5 text-xs font-medium", precut === v ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50")}
-            >
-              {text as string}
-            </button>
-          ))}
-        </div>
-      </div>
-      <Field
-        label={precut ? "Precut length" : "Stock length"}
-        htmlFor={id}
-        hint={
-          auto && autoLen != null ? (
-            auto.touched && Math.abs(autoLen - lengthIn) > 0.01 ? (
-              <button type="button" className="text-blue-700 hover:underline" onClick={auto.reset}>
-                Use {label(autoLen)} for this height
-              </button>
-            ) : (
-              "Matches the wall height"
-            )
-          ) : undefined
-        }
+      <Switch
+        label="Precut or from stock"
+        value={precut}
+        onChange={(next) => {
+          if (precut === next) return;
+          // Switching kinds: the length that suits the wall, or a sensible default.
+          onChange(next, auto ? (next ? auto.precut : auto.stock) : next ? STUD_PRECUTS_IN[0] : 96);
+          auto?.reset();
+        }}
+        options={[
+          [true, "Precut"],
+          [false, "From stock"],
+        ]}
+      />
+      <select
+        id={id}
+        aria-label="Stud length"
+        title={auto && autoLen != null && Math.abs(autoLen - lengthIn) < 0.01 ? "Matches the wall height" : undefined}
+        className="input !w-auto"
+        value={lengthIn}
+        onChange={(e) => onChange(precut, Number(e.target.value))}
       >
-        <select id={id} className="input !w-44" value={lengthIn} onChange={(e) => onChange(precut, Number(e.target.value))}>
-          {list.map((c) => (
-            <option key={c} value={c}>
-              {label(c)}
-            </option>
-          ))}
-        </select>
-      </Field>
-    </div>
+        {list.map((c) => (
+          <option key={c} value={c}>
+            {label(c)}
+          </option>
+        ))}
+      </select>
+      {auto && autoLen != null && auto.touched && Math.abs(autoLen - lengthIn) > 0.01 ? (
+        <button type="button" className="text-blue-700 hover:underline" onClick={auto.reset}>
+          Use {label(autoLen)} for this height
+        </button>
+      ) : null}
+    </>
   );
 }
 
 const lumber = (sizes: MemberSizeOption[]) => sizes.filter((m) => m.kind === "DIMENSIONAL");
+
+/** A small number box. */
+function NumBox({ name, label, value, onChange, step = "1", width = "!w-11", placeholder, title, text }: {
+  name: string;
+  label: string;
+  value: number | string;
+  onChange: (v: string) => void;
+  step?: string;
+  width?: string;
+  placeholder?: string;
+  title?: string;
+  /** Free text (stock lengths like "8-16"), not just a number. */
+  text?: boolean;
+}) {
+  return (
+    <input
+      name={name}
+      aria-label={label}
+      title={title}
+      type={text ? "text" : "number"}
+      step={text ? undefined : step}
+      min={text ? undefined : "0"}
+      className={cn("input", width)}
+      value={value}
+      placeholder={placeholder}
+      onChange={(e) => onChange(e.target.value)}
+    />
+  );
+}
 
 /**
  * Walls: studs, top plate, bottom plate, sheathing, drywall and baseboard. Posts
@@ -259,47 +253,39 @@ export function WallOptionsFields({
   const studSize = sizes.find((m) => m.id === studId)?.name ?? "";
   const p = (k: string) => `${idPrefix}-${k}`;
   const sizeSelect = (k: "topPlateSize" | "bottomPlateSize", label: string) => (
-    <Field label={label} htmlFor={p(k)}>
-      <select id={p(k)} name={`opt_${k}`} className="input !w-40" value={o[k]} onChange={(e) => set(k, e.target.value)}>
-        <option value="">Same as studs{studSize ? ` (${studSize})` : ""}</option>
-        {sizes.map((m) => (
-          <option key={m.id} value={m.name}>
-            {m.name}
-          </option>
-        ))}
-      </select>
-    </Field>
+    <select id={p(k)} name={`opt_${k}`} aria-label={label} className="input !w-auto" value={o[k]} onChange={(e) => set(k, e.target.value)}>
+      <option value="">Like studs{studSize ? ` (${studSize})` : ""}</option>
+      {sizes.map((m) => (
+        <option key={m.id} value={m.name}>
+          {m.name}
+        </option>
+      ))}
+    </select>
   );
   const countSelect = (k: "topPlates" | "bottomPlates", label: string, max: number) => (
-    <Field label={label} htmlFor={p(k)}>
-      <select id={p(k)} name={`opt_${k}`} className="input !w-24" value={o[k]} onChange={(e) => set(k, Number(e.target.value))}>
-        {Array.from({ length: max + 1 }, (_, n) => n).map((n) => (
-          <option key={n} value={n}>
-            {n}
-          </option>
-        ))}
-      </select>
-    </Field>
+    <select id={p(k)} name={`opt_${k}`} aria-label={label} className="input !w-11" value={o[k]} onChange={(e) => set(k, Number(e.target.value))}>
+      {Array.from({ length: max + 1 }, (_, n) => n).map((n) => (
+        <option key={n} value={n}>
+          {n}
+        </option>
+      ))}
+    </select>
   );
-  const sheetSelect = (k: "sheathingSheet" | "drywallSheet", item: "sheathingItem" | "drywallItem") => (
-    <Field label="Sheet" htmlFor={p(k)}>
-      <select id={p(k)} name={`opt_${k}`} className="input !w-24" value={o[k]} onChange={(e) => setSheetSize(item, k, e.target.value)}>
-        {Object.keys(SHEET_SIZES).map((s) => (
-          <option key={s} value={s}>
-            {s}
-          </option>
-        ))}
-      </select>
-    </Field>
+  const sheetSelect = (k: "sheathingSheet" | "drywallSheet", item: "sheathingItem" | "drywallItem", label: string) => (
+    <select id={p(k)} name={`opt_${k}`} aria-label={label} className="input !w-16" value={o[k]} onChange={(e) => setSheetSize(item, k, e.target.value)}>
+      {Object.keys(SHEET_SIZES).map((s) => (
+        <option key={s} value={s}>
+          {s}
+        </option>
+      ))}
+    </select>
   );
 
   return (
-    <div className="space-y-3 rounded-lg border border-teal-200 bg-teal-50/40 p-3">
-      <p className="text-sm text-teal-900">{wallSummary({ studSize, spacing: Number(spacing) || 16, heightFt: height }, { ...o, studPrecut, studLengthIn: studLen })}</p>
-
-      <Section title="Studs" hint="One per spacing along each wall, one to close an open run, and the extras at each corner.">
-        <Field label="Stud size" htmlFor={p("memberSizeId")}>
-          <select id={p("memberSizeId")} name="memberSizeId" required className="input !w-32" value={studId} onChange={(e) => setStudId(e.target.value)}>
+    <>
+      <Section title="Studs">
+        <Line>
+          <select id={p("memberSizeId")} name="memberSizeId" aria-label="Stud size" required className="input !w-auto" value={studId} onChange={(e) => setStudId(e.target.value)}>
             <option value="">—</option>
             {sizes.map((m) => (
               <option key={m.id} value={m.id}>
@@ -307,119 +293,95 @@ export function WallOptionsFields({
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Spacing" htmlFor={p("spacing")}>
-          <select id={p("spacing")} name="spacing" className="input !w-28" value={spacing} onChange={(e) => setSpacing(e.target.value)}>
+          @
+          <select id={p("spacing")} name="spacing" aria-label="Stud spacing" className="input !w-auto" value={spacing} onChange={(e) => setSpacing(e.target.value)}>
             {["12", "16", "19.2", "24"].map((s) => (
               <option key={s} value={s}>
                 {s}&quot; o.c.
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Wall height (ft)" htmlFor={p("height")}>
-          <input id={p("height")} name="height" type="number" step="0.25" min="1" className="input !w-24" value={heightText} onChange={(e) => setHeightText(e.target.value)} />
-        </Field>
-        <StudPicker
-          id={p("studLen")}
-          precut={studPrecut}
-          lengthIn={studLen}
-          onChange={(pc, len) => {
-            setStudPrecut(pc);
-            setStudPicked(len);
-            setStudTouched(true);
-          }}
-          auto={{ precut: defaultStudLength(height, true), stock: defaultStudLength(height, false), touched: studTouched, reset: () => setStudTouched(false) }}
-        />
-        <Field label="Extra studs per corner" htmlFor={p("cornerStuds")}>
-          <input
-            id={p("cornerStuds")}
-            name="opt_cornerStuds"
-            type="number"
-            step="1"
-            min="0"
-            className="input !w-24"
-            value={o.cornerStuds}
-            onChange={(e) => set("cornerStuds", Number(e.target.value) || 0)}
+          <NumBox name="height" label="Wall height (ft)" step="0.25" value={heightText} onChange={setHeightText} />
+          ft high
+        </Line>
+        <Line>
+          <StudPicker
+            id={p("studLen")}
+            precut={studPrecut}
+            lengthIn={studLen}
+            onChange={(pc, len) => {
+              setStudPrecut(pc);
+              setStudPicked(len);
+              setStudTouched(true);
+            }}
+            auto={{ precut: defaultStudLength(height, true), stock: defaultStudLength(height, false), touched: studTouched, reset: () => setStudTouched(false) }}
           />
-        </Field>
+          <NumBox name="opt_cornerStuds" label="Extra studs per corner" width="!w-10" value={o.cornerStuds} onChange={(v) => set("cornerStuds", Number(v) || 0)} />
+          <span title="Extra studs at each corner">per corner</span>
+        </Line>
       </Section>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <Section title="Top plate">
-          {countSelect("topPlates", "How many", 10)}
-          {sizeSelect("topPlateSize", "Size")}
-          <Field label="Stock lengths (ft)" htmlFor={p("topStock")}>
-            <input
-              id={p("topStock")}
-              name="opt_topPlateStock"
-              className="input !w-28"
-              value={o.topPlateStock}
-              onChange={(e) => set("topPlateStock", e.target.value)}
-              placeholder="16"
-            />
-          </Field>
-        </Section>
-        <Section title="Bottom plate">
-          {countSelect("bottomPlates", "How many", 3)}
-          {sizeSelect("bottomPlateSize", "Size")}
-          <Field label="Stock lengths (ft)" htmlFor={p("bottomStock")}>
-            <input
-              id={p("bottomStock")}
-              name="opt_bottomPlateStock"
-              className="input !w-28"
-              value={o.bottomPlateStock}
-              onChange={(e) => set("bottomPlateStock", e.target.value)}
-              placeholder="16"
-            />
-          </Field>
-          <label className="flex items-center gap-2 pb-2 text-sm text-slate-700">
+      <Section title="Plates">
+        <Line>
+          <span className="w-11">Top</span>
+          {countSelect("topPlates", "Top plates", 10)}
+          {sizeSelect("topPlateSize", "Top plate size")}
+          <NumBox name="opt_topPlateStock" label="Top plate stock (ft)" width="!w-12" placeholder="16" text value={o.topPlateStock} onChange={(v) => set("topPlateStock", v)} />
+          <span title="Stock length">ft</span>
+        </Line>
+        <Line>
+          <span className="w-11">Bottom</span>
+          {countSelect("bottomPlates", "Bottom plates", 3)}
+          {sizeSelect("bottomPlateSize", "Bottom plate size")}
+          <NumBox name="opt_bottomPlateStock" label="Bottom plate stock (ft)" width="!w-12" placeholder="16" text value={o.bottomPlateStock} onChange={(v) => set("bottomPlateStock", v)} />
+          <span title="Stock length">ft</span>
+          <label className="flex items-center gap-1 text-slate-700">
             <input type="checkbox" name="opt_treatedBottom" checked={o.treatedBottom} onChange={(e) => set("treatedBottom", e.target.checked)} /> Treated
           </label>
-        </Section>
-      </div>
+        </Line>
+      </Section>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <Section title="Sheathing" hint="Wall length × height × sides, in sheets.">
+      <Section title="Sheathing">
+        <Line>
           <Sides name="opt_sheathingSides" label="Sheathing sides" value={o.sheathingSides} onChange={(n) => set("sheathingSides", n)} />
-          <Field label="Item" htmlFor={p("sheathingItem")} className="min-w-48 flex-1">
-            <ItemPicker
-              id={p("sheathingItem")}
-              name="opt_sheathingItem"
-              value={o.sheathingItem}
-              onChange={(v) => setSheetItem("sheathingItem", "sheathingSheet", v)}
-              placeholder='7/16" ZIP System sheathing 4x8'
-              items={items}
-              kind="sheathing"
-              disabled={o.sheathingSides === 0}
-            />
-          </Field>
-          {sheetSelect("sheathingSheet", "sheathingItem")}
-        </Section>
-        <Section title="Drywall" hint="Wall length × height × sides, in sheets.">
+          <ItemPicker
+            id={p("sheathingItem")}
+            name="opt_sheathingItem"
+            label="Sheathing item"
+            value={o.sheathingItem}
+            onChange={(v) => setSheetItem("sheathingItem", "sheathingSheet", v)}
+            placeholder='7/16" ZIP System sheathing 4x8'
+            items={items}
+            kind="sheathing"
+            disabled={o.sheathingSides === 0}
+          />
+          {sheetSelect("sheathingSheet", "sheathingItem", "Sheathing sheet size")}
+        </Line>
+      </Section>
+      <Section title="Drywall">
+        <Line>
           <Sides name="opt_drywallSides" label="Drywall sides" value={o.drywallSides} onChange={(n) => set("drywallSides", n)} />
-          <Field label="Item" htmlFor={p("drywallItem")} className="min-w-48 flex-1">
-            <ItemPicker
-              id={p("drywallItem")}
-              name="opt_drywallItem"
-              value={o.drywallItem}
-              onChange={(v) => setSheetItem("drywallItem", "drywallSheet", v)}
-              placeholder='5/8" Type X Drywall 4x12'
-              items={items}
-              kind="drywall"
-              disabled={o.drywallSides === 0}
-            />
-          </Field>
-          {sheetSelect("drywallSheet", "drywallItem")}
-        </Section>
-      </div>
-
-      <Section title="Baseboard" hint="Wall length × sides, in lineal feet — or in sticks, when your Item List sells it each.">
-        <Sides name="opt_baseSides" label="Baseboard sides" value={o.baseSides} onChange={(n) => set("baseSides", n)} />
-        <Field label="Item" htmlFor={p("baseItem")} className="min-w-48 flex-1">
+          <ItemPicker
+            id={p("drywallItem")}
+            name="opt_drywallItem"
+            label="Drywall item"
+            value={o.drywallItem}
+            onChange={(v) => setSheetItem("drywallItem", "drywallSheet", v)}
+            placeholder='5/8" Type X Drywall 4x12'
+            items={items}
+            kind="drywall"
+            disabled={o.drywallSides === 0}
+          />
+          {sheetSelect("drywallSheet", "drywallItem", "Drywall sheet size")}
+        </Line>
+      </Section>
+      <Section title="Baseboard">
+        <Line>
+          <Sides name="opt_baseSides" label="Baseboard sides" value={o.baseSides} onChange={(n) => set("baseSides", n)} />
           <ItemPicker
             id={p("baseItem")}
             name="opt_baseItem"
+            label="Baseboard item"
             value={o.baseItem}
             onChange={(v) => set("baseItem", v)}
             placeholder='3-1/4" MDF colonial base'
@@ -427,27 +389,22 @@ export function WallOptionsFields({
             kind="trim"
             disabled={o.baseSides === 0}
           />
-        </Field>
-        <Field label="Piece length (ft)" htmlFor={p("basePieceFt")}>
-          <input
-            id={p("basePieceFt")}
+          <NumBox
             name="opt_basePieceFt"
-            type="number"
-            step="1"
-            min="1"
-            className="input !w-24"
-            value={o.basePieceFt}
-            onChange={(e) => set("basePieceFt", Number(e.target.value) || 16)}
-            disabled={o.baseSides === 0}
+            label="Baseboard stick (ft)"
+            width="!w-11"
             title="When the item is priced each: how long a stick is (a length in its name, like × 16', wins)"
+            value={o.basePieceFt}
+            onChange={(v) => set("basePieceFt", Number(v) || 16)}
           />
-        </Field>
+          ft sticks
+        </Line>
       </Section>
-    </div>
+    </>
   );
 }
 
-/** A trim item from the Item List (Trim) with its stick length, which fills in from the item. */
+/** A trim item from the Item List (Trim) and its stick length, which fills in from the item. */
 function TrimPicker({
   id,
   label,
@@ -475,34 +432,22 @@ function TrimPicker({
 }) {
   return (
     <>
-      <Field label={label} htmlFor={`${id}-item`} className="min-w-48 flex-1">
-        <ItemPicker
-          id={`${id}-item`}
-          name={itemName}
-          value={item}
-          onChange={(name) => {
-            const len = items.find((i) => itemNameKey(i.name) === itemNameKey(name))?.lengthFt;
-            onItem(name, len && len > 0 ? len : null);
-          }}
-          placeholder={placeholder}
-          items={items}
-          kind="trim"
-          disabled={disabled}
-        />
-      </Field>
-      <Field label="Stick (ft)" htmlFor={`${id}-stick`} hint="Blank = by the foot">
-        <input
-          id={`${id}-stick`}
-          name={stickName}
-          type="number"
-          step="0.5"
-          min="0"
-          className="input !w-20"
-          value={stick || ""}
-          onChange={(e) => onStick(Number(e.target.value) || 0)}
-          placeholder="8"
-        />
-      </Field>
+      <ItemPicker
+        id={`${id}-item`}
+        name={itemName}
+        label={label}
+        value={item}
+        onChange={(name) => {
+          const len = items.find((i) => itemNameKey(i.name) === itemNameKey(name))?.lengthFt;
+          onItem(name, len && len > 0 ? len : null);
+        }}
+        placeholder={placeholder}
+        items={items}
+        kind="trim"
+        disabled={disabled}
+      />
+      <NumBox name={stickName} label={`${label} stick (ft)`} step="0.5" width="!w-11" placeholder="8" title="Blank = by the foot" value={stick || ""} onChange={(v) => onStick(Number(v) || 0)} />
+      <span>ft sticks</span>
     </>
   );
 }
@@ -512,14 +457,13 @@ export function DoorOptionsFields({ idPrefix, values, items }: { idPrefix: strin
   const [o, setO] = useState<DoorOptions>(parseOptions(values?.options, DEFAULT_DOOR_OPTIONS));
   const p = (k: string) => `${idPrefix}-${k}`;
   return (
-    <div className="space-y-3 rounded-lg border border-sky-200 bg-sky-50/40 p-3">
-      <p className="text-sm text-sky-900">
-        Click each door on the plan, then pick which door it is (filter by height, width, interior / exterior). Doors are counted by name; {doorSummary(o).toLowerCase()}.
-      </p>
-      <Section title="Casing" hint="Per door per side: 2 legs (the height) and a head (the width). Each piece is cut from whole sticks and rounded up.">
+    <Section title="Casing">
+      <Line>
         <Sides name="opt_casingSides" label="Casing sides" value={o.casingSides} onChange={(n) => setO((cur) => ({ ...cur, casingSides: n }))} />
-      </Section>
-      <Section title="Legs">
+        per door: 2 legs and a head, from whole sticks
+      </Line>
+      <Line>
+        <span className="w-11">Legs</span>
         <TrimPicker
           id={p("casing")}
           label="Leg trim"
@@ -533,8 +477,9 @@ export function DoorOptionsFields({ idPrefix, values, items }: { idPrefix: strin
           placeholder="1x4 casing"
           disabled={o.casingSides === 0}
         />
-      </Section>
-      <Section title="Head" hint="Leave blank to use the leg trim for the head too.">
+      </Line>
+      <Line>
+        <span className="w-11">Head</span>
         <TrimPicker
           id={p("head")}
           label="Head trim"
@@ -545,11 +490,11 @@ export function DoorOptionsFields({ idPrefix, values, items }: { idPrefix: strin
           onItem={(name, len) => setO((cur) => ({ ...cur, headItem: name, headStickFt: len ?? cur.headStickFt }))}
           onStick={(ft) => setO((cur) => ({ ...cur, headStickFt: ft }))}
           items={items}
-          placeholder="1x6 head (blank = same as legs)"
+          placeholder="Blank = same as the legs"
           disabled={o.casingSides === 0}
         />
-      </Section>
-    </div>
+      </Line>
+    </Section>
   );
 }
 
@@ -562,101 +507,65 @@ export function WindowOptionsFields({ idPrefix, values, items }: { idPrefix: str
   const p = (k: string) => `${idPrefix}-${k}`;
   const stoolLen = items.find((i) => itemNameKey(i.name) === itemNameKey(WINDOW_STOOL_ITEM))?.lengthFt ?? null;
   const set = <K extends keyof WindowOptions>(k: K, v: WindowOptions[K]) => setO((cur) => ({ ...cur, [k]: v }));
+  const trim = (k: "apron" | "casing" | "head" | "lining", label: string, placeholder: string) => {
+    const item = `${k}Item` as "apronItem" | "casingItem" | "headItem" | "liningItem";
+    const stick = `${k}StickFt` as "apronStickFt" | "casingStickFt" | "headStickFt" | "liningStickFt";
+    return (
+      <TrimPicker
+        id={p(k)}
+        label={label}
+        itemName={`opt_${item}`}
+        stickName={`opt_${stick}`}
+        item={o[item]}
+        stick={o[stick]}
+        onItem={(name, len) => setO((cur) => ({ ...cur, [item]: name, [stick]: len ?? cur[stick] }))}
+        onStick={(ft) => set(stick, ft)}
+        items={items}
+        placeholder={placeholder}
+      />
+    );
+  };
   return (
-    <div className="space-y-3 rounded-lg border border-cyan-200 bg-cyan-50/40 p-3">
-      <p className="text-sm text-cyan-900">
-        Click each window on the plan, then pick which window it is (filter by type, height and width) and whether it&apos;s cased. Windows are counted by name. {windowSummary(o)}.
-      </p>
-      <Section title="Every window">
-        <Field label="Stool longer than the window by (in)" htmlFor={p("stoolExtraIn")} hint={`Ordered as "${WINDOW_STOOL_ITEM}"`}>
-          <input
-            id={p("stoolExtraIn")}
-            name="opt_stoolExtraIn"
-            type="number"
-            step="0.25"
-            min="0"
-            className="input !w-24"
-            value={o.stoolExtraIn}
-            onChange={(e) => set("stoolExtraIn", Number(e.target.value) || 0)}
-          />
-        </Field>
-        <Field label="Stool stick (ft)" htmlFor={p("stoolStickFt")} hint={stoolLen ? `${stoolLen}' on the Item List` : "Blank = by the foot"}>
-          <input
-            id={p("stoolStickFt")}
+    <>
+      <Section title="Stool">
+        <Line>
+          <NumBox name="opt_stoolExtraIn" label="Stool longer than the window by (in)" step="0.25" width="!w-11" value={o.stoolExtraIn} onChange={(v) => set("stoolExtraIn", Number(v) || 0)} />
+          in longer ·
+          <NumBox
             name="opt_stoolStickFt"
-            type="number"
+            label="Stool stick (ft)"
             step="0.5"
-            min="0"
-            className="input !w-20"
-            value={o.stoolStickFt || ""}
-            onChange={(e) => set("stoolStickFt", Number(e.target.value) || 0)}
+            width="!w-11"
             placeholder={stoolLen ? String(stoolLen) : "8"}
+            title={`Ordered as "${WINDOW_STOOL_ITEM}". ${stoolLen ? `${stoolLen}' on the Item List` : "Blank = by the foot"}`}
+            value={o.stoolStickFt || ""}
+            onChange={(v) => set("stoolStickFt", Number(v) || 0)}
           />
-        </Field>
-        <TrimPicker
-          id={p("apron")}
-          label="Apron trim"
-          itemName="opt_apronItem"
-          stickName="opt_apronStickFt"
-          item={o.apronItem}
-          stick={o.apronStickFt}
-          onItem={(name, len) => setO((cur) => ({ ...cur, apronItem: name, apronStickFt: len ?? cur.apronStickFt }))}
-          onStick={(ft) => set("apronStickFt", ft)}
-          items={items}
-          placeholder="Apron trim"
-        />
-        <Field label="Apron longer than the window by (in)" htmlFor={p("apronExtraIn")}>
-          <input
-            id={p("apronExtraIn")}
-            name="opt_apronExtraIn"
-            type="number"
-            step="0.25"
-            min="0"
-            className="input !w-24"
-            value={o.apronExtraIn}
-            onChange={(e) => set("apronExtraIn", Number(e.target.value) || 0)}
-          />
-        </Field>
+          ft sticks
+        </Line>
       </Section>
-      <Section title="Cased windows" hint="Legs (the height ×2) and a head (the width), plus the lining inside the opening (2 × height + width).">
-        <TrimPicker
-          id={p("casing")}
-          label="Leg trim"
-          itemName="opt_casingItem"
-          stickName="opt_casingStickFt"
-          item={o.casingItem}
-          stick={o.casingStickFt}
-          onItem={(name, len) => setO((cur) => ({ ...cur, casingItem: name, casingStickFt: len ?? cur.casingStickFt }))}
-          onStick={(ft) => set("casingStickFt", ft)}
-          items={items}
-          placeholder="1x4 casing"
-        />
-        <TrimPicker
-          id={p("head")}
-          label="Head trim"
-          itemName="opt_headItem"
-          stickName="opt_headStickFt"
-          item={o.headItem}
-          stick={o.headStickFt}
-          onItem={(name, len) => setO((cur) => ({ ...cur, headItem: name, headStickFt: len ?? cur.headStickFt }))}
-          onStick={(ft) => set("headStickFt", ft)}
-          items={items}
-          placeholder="1x6 head (blank = same as legs)"
-        />
-        <TrimPicker
-          id={p("lining")}
-          label="Lining"
-          itemName="opt_liningItem"
-          stickName="opt_liningStickFt"
-          item={o.liningItem}
-          stick={o.liningStickFt}
-          onItem={(name, len) => setO((cur) => ({ ...cur, liningItem: name, liningStickFt: len ?? cur.liningStickFt }))}
-          onStick={(ft) => set("liningStickFt", ft)}
-          items={items}
-          placeholder="1x6 primed"
-        />
+      <Section title="Apron">
+        <Line>
+          <NumBox name="opt_apronExtraIn" label="Apron longer than the window by (in)" step="0.25" width="!w-11" value={o.apronExtraIn} onChange={(v) => set("apronExtraIn", Number(v) || 0)} />
+          <span>in longer ·</span>
+          {trim("apron", "Apron trim", "Apron trim")}
+        </Line>
       </Section>
-    </div>
+      <Section title="Cased">
+        <Line>
+          <span className="w-11">Legs</span>
+          {trim("casing", "Leg trim", "1x4 casing")}
+        </Line>
+        <Line>
+          <span className="w-11">Head</span>
+          {trim("head", "Head trim", "Blank = same as the legs")}
+        </Line>
+        <Line>
+          <span className="w-11">Lining</span>
+          {trim("lining", "Lining", "1x6 primed")}
+        </Line>
+      </Section>
+    </>
   );
 }
 
@@ -677,21 +586,16 @@ export function OpeningOptionsFields({
   const header = headerSizes.find((m) => m.id === headerId) ?? null;
   const [stock, setStock] = useState(values?.stockLengths ?? "");
   const p = (k: string) => `${idPrefix}-${k}`;
-  const num = (k: "headerPlies" | "headerExtraIn" | "kingStuds" | "jackStuds", label: string, step = "1", hint?: string) => (
-    <Field label={label} htmlFor={p(k)} hint={hint}>
-      <input id={p(k)} name={`opt_${k}`} type="number" step={step} min="0" className="input !w-24" value={o[k]} onChange={(e) => set(k, Number(e.target.value) || 0)} />
-    </Field>
-  );
 
   return (
-    <div className="space-y-3 rounded-lg border border-amber-200 bg-amber-50/40 p-3">
-      <p className="text-sm text-amber-900">Draw a line across each opening — one line is one opening, and its length is the width. {openingSummary(header?.name ?? null, o)}</p>
-      <Section title="Header" hint="Each opening gets plies × (width + extra), cut from your stock lengths.">
-        <Field label="Size" htmlFor={p("memberSizeId")}>
+    <>
+      <Section title="Header">
+        <Line>
           <select
             id={p("memberSizeId")}
             name="memberSizeId"
-            className="input !w-48"
+            aria-label="Header size"
+            className="input !w-auto"
             value={headerId}
             onChange={(e) => {
               const next = headerSizes.find((m) => m.id === e.target.value) ?? null;
@@ -706,27 +610,39 @@ export function OpeningOptionsFields({
               </option>
             ))}
           </select>
-        </Field>
-        <Field label="Plies" htmlFor={p("headerPlies")}>
-          <select id={p("headerPlies")} name="opt_headerPlies" className="input !w-20" value={o.headerPlies} onChange={(e) => set("headerPlies", Number(e.target.value))}>
+          ×
+          <select id={p("headerPlies")} name="opt_headerPlies" aria-label="Header plies" className="input !w-12" value={o.headerPlies} onChange={(e) => set("headerPlies", Number(e.target.value))}>
             {[1, 2, 3, 4].map((n) => (
               <option key={n} value={n}>
                 {n}
               </option>
             ))}
           </select>
-        </Field>
-        {num("headerExtraIn", "Extra length (in)", "0.5", "Bearing, added to the width")}
-        <Field label="Stock lengths (ft)" htmlFor={p("stockLengths")} hint="Blank = even lengths from 8'">
-          <input id={p("stockLengths")} name="stockLengths" className="input !w-36" value={stock} onChange={(e) => setStock(e.target.value)} placeholder="8-20" />
-        </Field>
+          plies, width +
+          <NumBox name="opt_headerExtraIn" label="Extra header length (in)" step="0.5" width="!w-11" title="Bearing, added to the width" value={o.headerExtraIn} onChange={(v) => set("headerExtraIn", Number(v) || 0)} />
+          in
+        </Line>
+        <Line>
+          <input
+            id={p("stockLengths")}
+            name="stockLengths"
+            aria-label="Header stock lengths (ft)"
+            title="Blank = even lengths from 8'"
+            className="input !w-20"
+            value={stock}
+            onChange={(e) => setStock(e.target.value)}
+            placeholder="8-20"
+          />
+          ft stock
+        </Line>
       </Section>
-
-      <Section title="King & jack studs" hint="Per opening.">
-        {num("kingStuds", "King studs")}
-        {num("jackStuds", "Jack studs")}
-        <Field label="Stud size" htmlFor={p("studSize")}>
-          <select id={p("studSize")} name="opt_studSize" className="input !w-28" value={o.studSize} onChange={(e) => set("studSize", e.target.value)}>
+      <Section title="Studs">
+        <Line>
+          <NumBox name="opt_kingStuds" label="King studs" width="!w-10" value={o.kingStuds} onChange={(v) => set("kingStuds", Number(v) || 0)} />
+          kings ·
+          <NumBox name="opt_jackStuds" label="Jack studs" width="!w-10" value={o.jackStuds} onChange={(v) => set("jackStuds", Number(v) || 0)} />
+          jacks per opening ·
+          <select id={p("studSize")} name="opt_studSize" aria-label="Stud size" className="input !w-auto" value={o.studSize} onChange={(e) => set("studSize", e.target.value)}>
             {lumber(memberSizes).map((m) => (
               <option key={m.id} value={m.name}>
                 {m.name}
@@ -734,9 +650,11 @@ export function OpeningOptionsFields({
             ))}
             {lumber(memberSizes).some((m) => m.name === o.studSize) ? null : <option value={o.studSize}>{o.studSize}</option>}
           </select>
-        </Field>
-        <StudPicker id={p("studLen")} precut={o.studPrecut} lengthIn={o.studLengthIn} onChange={(pc, len) => setO((cur) => ({ ...cur, studPrecut: pc, studLengthIn: len }))} />
+        </Line>
+        <Line>
+          <StudPicker id={p("studLen")} precut={o.studPrecut} lengthIn={o.studLengthIn} onChange={(pc, len) => setO((cur) => ({ ...cur, studPrecut: pc, studLengthIn: len }))} />
+        </Line>
       </Section>
-    </div>
+    </>
   );
 }

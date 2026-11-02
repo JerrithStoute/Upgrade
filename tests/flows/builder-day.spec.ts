@@ -134,12 +134,40 @@ test("finds that job on the Projects list by typing the client's name", async ()
   await expect(page.locator("#project-list tr[data-find]:visible").first()).toContainText("Flowers Residence");
 });
 
-test("uploads a plan on the Plans tab, renames it from Edit and deletes it", async () => {
+test("uploads a plan, adds a takeoff from the new-takeoff panel, renames the plan from Edit and deletes it", async () => {
   await page.goto(`${job}/plans`);
   await expect(page.getByText("Drop plan files here, or click to choose")).toBeVisible();
   const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF");
   await page.getByLabel("Choose plan files").setInputFiles({ name: "Flow plans.pdf", mimeType: "application/pdf", buffer: pdf });
   await expect(page.getByRole("link", { name: "Measure" })).toBeVisible();
+
+  // The new-takeoff panel: type chips, short settings, Cancel and Add at the top, a one-line item add.
+  await page.getByRole("link", { name: "Measure" }).click();
+  await page.getByRole("button", { name: "New takeoff" }).click();
+  await page.getByRole("menuitem", { name: "Walls" }).click();
+  const panel = page.locator("form").filter({ has: page.getByText("New takeoff", { exact: true }) });
+  await expect(panel.getByRole("link", { name: "Cancel" })).toBeVisible();
+  await expect(panel.getByText("Plates", { exact: true })).toBeVisible();
+  await panel.getByLabel("Type").selectOption("BEAM");
+  await expect(panel.getByLabel("Plies")).toBeVisible();
+  await panel.getByLabel("Type").selectOption("AREA");
+  await panel.getByLabel("Name", { exact: true }).fill("Flow LVP");
+  await panel.getByRole("button", { name: "Add", exact: true }).click();
+  await panel.getByLabel("Item", { exact: true }).fill("Flow plank");
+  await panel.getByRole("button", { name: "Add", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Flow plank", exact: true })).toBeVisible();
+  await panel.getByRole("button", { name: "Add takeoff" }).first().click();
+  // It's on the list, and the find box narrows the list to it; its edit panel has Make a copy.
+  await page.getByLabel("Find a takeoff").fill("flow l");
+  await expect(page.getByText("Found", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Edit Flow LVP" }).click();
+  const edit = page.locator("form").filter({ has: page.getByText("Edit Flow LVP", { exact: true }) });
+  await expect(edit.getByRole("button", { name: "Make a copy" })).toBeVisible();
+  await expect(page.getByText("Flow plank")).toBeVisible();
+  await edit.getByRole("button", { name: "Save", exact: true }).first().click();
+  await expect(page.getByText('Saved "Flow LVP"')).toBeVisible();
+
+  await page.goto(`${job}/plans`);
   await page.getByRole("link", { name: /^Edit Flow plans/ }).click();
   await page.getByLabel("Plan name").fill("Flow permit set");
   await page.getByRole("button", { name: "Save", exact: true }).click();
@@ -521,7 +549,7 @@ test("makes a takeoff template with a takeoff and an item, then deletes it", asy
   // Empty: the Add takeoff box is open to start.
   await expect(page.getByText("Add a takeoff")).toBeVisible();
   await page.getByLabel("Name", { exact: true }).fill("Flow slab");
-  await page.getByRole("button", { name: "Add takeoff" }).click();
+  await page.getByRole("button", { name: "Add takeoff" }).first().click();
   await expect(page.getByText("Flow slab", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "+ Add an item" }).click();
   await expect(page.getByText("Add an item", { exact: true })).toBeVisible();
