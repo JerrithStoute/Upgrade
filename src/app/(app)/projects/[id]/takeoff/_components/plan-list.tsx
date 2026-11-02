@@ -1,7 +1,7 @@
 import Link from "@/components/link";
-import { Download, Eye, EyeOff, FileText, Image as ImageIcon, Printer, Ruler } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";
+import { ConfirmForm, SubmitButton } from "@/components/ui";
 import { deletePlan, renamePlan, togglePlanClientVisible } from "../actions";
 import { RevisionUpload } from "./revision-upload";
 import { SheetNames } from "./sheet-names";
@@ -19,86 +19,93 @@ export type PlanListPlan = {
   sheets: { id: string; pageNumber: number; name: string; unitsPerFoot: number | null; scaleLabel: string | null; _count: { measurements: number } }[];
 };
 
+const link = "text-xs font-medium text-blue-700 hover:underline";
+
 /**
- * The job's plan sets: open, measure, print, download, rename, delete, and whether
- * the client sees them — with each sheet's scale and measurement count. Shared by
- * the project's Plans tab and the Takeoff tab's Plans list.
- * `here` is the page the list is on (rename links and redirects come back to it).
+ * The job's plan sets, one line each: Measure, then View / Print / Download / New revision / Edit as
+ * small links, with each sheet's scale and measurement count under it. **Edit** opens on the plan's
+ * own line (its name, and Delete plan…). `here` is the page the list is on (links come back to it).
  */
-export function PlanList({ projectId, plans, renamePlanId, here }: { projectId: string; plans: PlanListPlan[]; renamePlanId?: string; here: string }) {
+export function PlanList({ projectId, plans, editId, here }: { projectId: string; plans: PlanListPlan[]; editId?: string; here: string }) {
   const base = `/projects/${projectId}/takeoff`;
-  const withParam = (k: string, v: string) => `${here}${here.includes("?") ? "&" : "?"}${k}=${v}`;
   return (
-    <ul className="divide-y divide-slate-100 rounded-xl border border-slate-200">
-      {plans.map((plan) => (
-        <li key={plan.id} className={cn("space-y-3 px-4 py-3", plan.supersededAt && "bg-slate-50/70 opacity-75")}>
-          <div className="flex flex-wrap items-center gap-3">
-            {plan.kind === "PDF" ? <FileText className="h-5 w-5 text-rose-500" /> : <ImageIcon className="h-5 w-5 text-violet-600" />}
-            {renamePlanId === plan.id ? (
-              <form action={renamePlan} className="flex items-center gap-2">
+    <ul>
+      {plans.map((plan) =>
+        editId === plan.id ? (
+          <li key={plan.id} id={`plan-${plan.id}`} className="scroll-mt-24 border-t border-slate-100 bg-blue-50/40 px-4 py-3 first:border-t-0">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-slate-900">Edit {plan.name}</span>
+              <Link href={here} scroll={false} className={link}>
+                Cancel
+              </Link>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <form action={renamePlan} className="flex flex-wrap items-center gap-1.5">
                 <input type="hidden" name="projectId" value={projectId} />
                 <input type="hidden" name="id" value={plan.id} />
                 <input type="hidden" name="returnTo" value={here} />
-                <input name="name" defaultValue={plan.name} required className="input !w-72" aria-label="Plan name" autoFocus />
-                <SubmitButton size="sm">Save</SubmitButton>
-                <Link href={here} className={buttonClasses("ghost", "sm")}>
-                  Cancel
-                </Link>
+                <input name="name" defaultValue={plan.name} required className="input !h-7 !w-72 !py-0 text-xs" aria-label="Plan name" autoFocus />
+                <SubmitButton size="sm" className="!h-7 !px-2.5 !text-xs">
+                  Save
+                </SubmitButton>
               </form>
-            ) : (
-              <Link href={`${base}/${plan.id}`} className="font-medium text-slate-900 hover:text-blue-700">
+              <span className="ml-auto">
+                <ConfirmForm
+                  action={deletePlan}
+                  hidden={{ projectId, id: plan.id, returnTo: here }}
+                  message={`Delete "${plan.name}"? Every measurement on it is removed and the file is deleted from Files and storage.`}
+                  variant="ghost"
+                >
+                  <span className="text-xs text-rose-600">Delete plan…</span>
+                </ConfirmForm>
+              </span>
+            </div>
+          </li>
+        ) : (
+          <li key={plan.id} id={`plan-${plan.id}`} className={cn("scroll-mt-24 space-y-1.5 border-t border-slate-100 px-4 py-2.5 first:border-t-0", plan.supersededAt && "bg-slate-50/70 opacity-75")}>
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <Link href={`${base}/${plan.id}`} className="text-sm font-medium text-blue-700 hover:underline">
                 {plan.name}
               </Link>
-            )}
-            {plan.revision > 1 || plan.supersededAt ? (
-              <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", plan.supersededAt ? "bg-slate-200 text-slate-600" : "bg-blue-100 text-blue-800")}>
-                Rev {plan.revision}
-                {plan.supersededAt ? " · replaced" : ""}
+              {plan.revision > 1 || plan.supersededAt ? (
+                <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", plan.supersededAt ? "bg-slate-200 text-slate-600" : "bg-blue-100 text-blue-800")}>
+                  Rev {plan.revision}
+                  {plan.supersededAt ? " · replaced" : ""}
+                </span>
+              ) : null}
+              <span className="text-xs text-slate-500">
+                {plan.pageCount ? `${plan.pageCount} sheet${plan.pageCount === 1 ? "" : "s"}` : "Pages counted when first opened"} · {(plan.file.size / (1024 * 1024)).toFixed(1)} MB
               </span>
-            ) : null}
-            <span className="text-xs text-slate-500">
-              {plan.pageCount ? `${plan.pageCount} sheet${plan.pageCount === 1 ? "" : "s"}` : "Pages counted when first opened"} · {(plan.file.size / (1024 * 1024)).toFixed(1)} MB
-            </span>
-            <ClientSwitch projectId={projectId} planId={plan.id} visible={plan.file.clientVisible} here={here} />
-            <div className="ml-auto flex flex-wrap items-center gap-1">
-              {plan.supersededAt ? (
-                <Link href={`${base}/${plan.id}`} className={buttonClasses("secondary", "sm")}>
-                  <Eye className="h-3.5 w-3.5" /> Open
+              <ClientSwitch projectId={projectId} planId={plan.id} visible={plan.file.clientVisible} here={here} />
+              <span className="ml-auto flex flex-wrap items-center gap-3">
+                {plan.supersededAt ? (
+                  <Link href={`${base}/${plan.id}`} className={link}>
+                    Open
+                  </Link>
+                ) : (
+                  <Link href={`${base}/${plan.id}`} className="inline-flex h-7 items-center rounded-md bg-blue-700 px-2.5 text-xs font-medium text-white hover:bg-blue-800">
+                    Measure
+                  </Link>
+                )}
+                <a href={`/api/files/${plan.fileId}`} target="_blank" rel="noreferrer" className={link} title="Open the plan set to look at it">
+                  View
+                </a>
+                <Link href={`${base}/${plan.id}/print?pages=all`} className={link} title="Print or save the measured sheets with the takeoff drawn on them">
+                  Print
                 </Link>
-              ) : (
-                <Link href={`${base}/${plan.id}`} className={buttonClasses("primary", "sm")}>
-                  <Ruler className="h-3.5 w-3.5" /> Measure
+                <a href={`/api/files/${plan.fileId}?download=1`} className={link} title="Download the original file">
+                  Download
+                </a>
+                {!plan.supersededAt && plan._count.revisions === 0 ? <RevisionUpload projectId={projectId} planId={plan.id} nextRevision={plan.revision + 1} /> : null}
+                <Link href={`${here}?edit=${plan.id}#plan-${plan.id}`} scroll={false} className={link} aria-label={`Edit ${plan.name}`}>
+                  Edit
                 </Link>
-              )}
-              {!plan.supersededAt && plan._count.revisions === 0 ? <RevisionUpload projectId={projectId} planId={plan.id} nextRevision={plan.revision + 1} /> : null}
-              <a href={`/api/files/${plan.fileId}`} target="_blank" rel="noreferrer" className={buttonClasses("ghost", "sm")} title="Open the plan set to look at it">
-                <Eye className="h-3.5 w-3.5" /> View
-              </a>
-              <Link href={`${base}/${plan.id}/print?pages=all`} className={buttonClasses("ghost", "sm")} title="Print or save the measured sheets with the takeoff drawn on them">
-                <Printer className="h-3.5 w-3.5" /> Print
-              </Link>
-              <a href={`/api/files/${plan.fileId}?download=1`} className={buttonClasses("ghost", "sm")} title="Download the original file">
-                <Download className="h-3.5 w-3.5" />
-                <span className="sr-only">Download</span>
-              </a>
-              <Link href={withParam("renamePlan", plan.id)} className={buttonClasses("ghost", "sm")}>
-                Rename
-              </Link>
-              <ConfirmForm
-                action={deletePlan}
-                hidden={{ projectId, id: plan.id, returnTo: here }}
-                message={`Delete "${plan.name}"? Every measurement on it is removed and the file is deleted from Files and storage.`}
-                variant="ghost"
-              >
-                <span className="text-xs text-rose-600">Delete</span>
-              </ConfirmForm>
+              </span>
             </div>
-          </div>
-          {plan.sheets.length > 0 ? (
-            <SheetNames projectId={projectId} planId={plan.id} sheets={plan.sheets} />
-          ) : null}
-        </li>
-      ))}
+            {plan.sheets.length > 0 ? <SheetNames projectId={projectId} planId={plan.id} sheets={plan.sheets} /> : null}
+          </li>
+        ),
+      )}
     </ul>
   );
 }

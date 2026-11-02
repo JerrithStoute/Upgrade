@@ -93,7 +93,7 @@ export function PlanUpload({ projectId }: { projectId: string }) {
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       <div
         role="button"
         tabIndex={0}
@@ -112,11 +112,11 @@ export function PlanUpload({ projectId }: { projectId: string }) {
           addFiles(Array.from(e.dataTransfer.files));
         }}
         className={cn(
-          "flex cursor-pointer flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed px-6 py-8 text-center transition-colors",
-          dragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-slate-50 hover:border-blue-400 hover:bg-blue-50/50",
+          "flex cursor-pointer flex-col items-center justify-center gap-0.5 rounded-lg border-2 border-dashed px-4 py-4 text-center transition-colors",
+          dragging ? "border-blue-500 bg-blue-50" : "border-slate-300 bg-white hover:border-blue-400 hover:bg-blue-50/50",
         )}
       >
-        <Upload className={cn("h-6 w-6", dragging ? "text-blue-600" : "text-slate-400")} />
+        <Upload className={cn("h-5 w-5", dragging ? "text-blue-600" : "text-slate-400")} />
         <p className="text-sm font-medium text-slate-800">Drop plan files here, or click to choose</p>
         <p className="text-xs text-slate-500">PDF plan sets or PNG/JPG/WebP images · several at once · up to 100 MB each · also saved in Files → Plans</p>
         <input
@@ -124,6 +124,7 @@ export function PlanUpload({ projectId }: { projectId: string }) {
           type="file"
           multiple
           accept={ACCEPT}
+          aria-label="Choose plan files"
           className="hidden"
           onChange={(e) => {
             addFiles(Array.from(e.target.files ?? []));
@@ -131,7 +132,7 @@ export function PlanUpload({ projectId }: { projectId: string }) {
           }}
         />
       </div>
-      <label className="flex items-center gap-2 text-sm text-slate-700">
+      <label className="flex items-center gap-2 text-xs text-slate-600">
         <input
           type="checkbox"
           checked={clientVisible}
@@ -139,14 +140,14 @@ export function PlanUpload({ projectId }: { projectId: string }) {
           disabled={busy}
           className="h-4 w-4 rounded border-slate-300"
         />
-        Visible to client in Files
+        Client sees them
       </label>
       {items.length > 0 ? (
         <ul className="space-y-1.5">
           {items.map((i) => {
             const isPdf = i.file.type === "application/pdf" || i.file.name.toLowerCase().endsWith(".pdf");
             return (
-              <li key={i.key} className="flex items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+              <li key={i.key} className="flex items-center gap-3 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs">
                 {isPdf ? <FileText className="h-4 w-4 shrink-0 text-rose-500" /> : <ImageIcon className="h-4 w-4 shrink-0 text-violet-600" />}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-slate-900">{i.file.name}</span>

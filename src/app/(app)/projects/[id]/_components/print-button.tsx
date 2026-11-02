@@ -3,7 +3,14 @@
 import { Printer } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export function PrintButton({ label = "Print", small }: { label?: string; small?: boolean }) {
+export function PrintButton({ label = "Print", small, asLink }: { label?: string; small?: boolean; asLink?: boolean }) {
+  // A small text link, for a card's header line.
+  if (asLink)
+    return (
+      <button type="button" onClick={() => window.print()} className="no-print text-xs font-medium text-blue-700 hover:underline">
+        {label}
+      </button>
+    );
   return (
     <Button
       type="button"

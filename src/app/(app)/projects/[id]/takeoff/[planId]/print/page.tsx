@@ -5,7 +5,7 @@ import { getProject } from "@/lib/projects";
 import { conditionTotals, loadConditions } from "@/lib/takeoff-data";
 import { materialListFrom } from "@/lib/takeoff-materials";
 import { CONDITION_TYPE_LABELS, boardFeetPerLf, metricUnit, parseArcs, parsePoints, type ConditionType, type MetricKey } from "@/lib/takeoff";
-import { MaterialTable } from "../../_components/material-table";
+import { CutSheet, MaterialTable } from "../../_components/material-table";
 import { PrintSheets, type PrintSheet } from "./print-sheets";
 
 /**
@@ -144,7 +144,10 @@ export default async function PrintPlanPage({
             <p className="max-w-md text-right text-xs text-slate-600">For the takeoffs printed: {shown.length ? shown.map((c) => c.name).join(", ") : "none"}</p>
           </div>
           <div className="space-y-3">
-            <MaterialTable lines={materials.lines} cutLists={materials.cutLists} total={materials.total} showPrices={false} />
+            <div className="rounded-xl border border-slate-200 bg-white">
+              <MaterialTable lines={materials.lines} total={materials.total} showPrices={false} />
+            </div>
+            <CutSheet cutLists={materials.cutLists} />
           </div>
         </section>
       }

@@ -17,6 +17,9 @@ type Status = "saving" | "saved" | { error: string };
 export function SheetNames({ projectId, planId, sheets }: { projectId: string; planId: string; sheets: Sheet[] }) {
   const href = (page: number) => `/projects/${projectId}/takeoff/${planId}?page=${page}`;
   const [editing, setEditing] = useState(false);
+  // Past a few sheets, "+N more" shows the rest.
+  const [all, setAll] = useState(false);
+  const FIRST = 4;
   const [status, setStatus] = useState<Record<string, Status>>({});
   const [, startTransition] = useTransition();
 
@@ -35,7 +38,7 @@ export function SheetNames({ projectId, planId, sheets }: { projectId: string; p
   const toggle = (
     <button
       type="button"
-      className="tap inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-blue-700 hover:bg-blue-50"
+      className="tap inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-medium text-blue-700 hover:underline"
       onClick={() => setEditing((v) => !v)}
     >
       {editing ? (
@@ -53,17 +56,26 @@ export function SheetNames({ projectId, planId, sheets }: { projectId: string; p
   if (!editing)
     return (
       <div className="flex flex-wrap items-center gap-1.5">
-        {sheets.map((sh) => (
+        {(all ? sheets : sheets.slice(0, FIRST)).map((sh) => (
           <Link
             key={sh.id}
             href={href(sh.pageNumber)}
-            className="rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-700 hover:border-blue-300 hover:bg-blue-50"
+            className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-700 hover:border-blue-300 hover:bg-blue-50"
           >
             <span className="font-medium">{sh.name}</span>
             <span className={cn("ml-1.5", sh.unitsPerFoot ? "text-slate-500" : "text-amber-700")}>{sh.unitsPerFoot ? sh.scaleLabel : "no scale"}</span>
             {sh._count.measurements ? <span className="ml-1.5 rounded-full bg-slate-100 px-1.5 text-[11px] text-slate-600">{sh._count.measurements}</span> : null}
           </Link>
         ))}
+        {sheets.length > FIRST ? (
+          <button
+            type="button"
+            onClick={() => setAll((v) => !v)}
+            className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs text-slate-500 hover:border-blue-300 hover:text-blue-700"
+          >
+            {all ? "Fewer" : `+${sheets.length - FIRST} more`}
+          </button>
+        ) : null}
         {toggle}
       </div>
     );

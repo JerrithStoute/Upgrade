@@ -92,7 +92,7 @@ export const TAKEOFF: HelpArticle[] = [
     what: "The **Plans** tab holds every plan set for the job. You upload plans here, open them to measure, upload new revisions, print the measured sheets, and choose whether your client can see each set.",
     how: [
       "Open the job and click the **Plans** tab.",
-      "Drag your PDF plans (or PNG/JPG pictures) onto the box, or click it to choose files. Several at once is fine, up to 100 MB each.",
+      "Drag your PDF plans (or PNG/JPG pictures) onto the box at the top of the card, or click it to choose files. Several at once is fine, up to 100 MB each.",
       "Click **Measure** on a plan set to start the takeoff.",
       "When the architect sends updated plans, click **New revision** on that set.",
     ],
@@ -101,7 +101,7 @@ export const TAKEOFF: HelpArticle[] = [
         heading: "Uploading",
         items: [
           { name: "Drop plan files here, or click to choose", what: "Uploads plan sets. They're also saved in the job's Files → Plans." },
-          { name: "Visible to client in Files", what: "Tick it before uploading if your client should see these plans in their portal." },
+          { name: "Client sees them", what: "Tick it before uploading if your client should see these plans in their portal." },
         ],
       },
       {
@@ -113,14 +113,14 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "New revision", what: "Uploads the architect's updated plans as the next revision.", how: "Pick the file. The new revision opens, and you can compare it with the old one and bring your takeoffs forward. See **Revisions**." },
           { name: "View / Download", what: "Opens the original PDF in a new tab, or downloads it." },
           { name: "Print", what: "Prints the measured sheets with the takeoff drawn on them." },
-          { name: "Rename / Delete", what: "Change the set's name, or delete it. Deleting removes every measurement on it too." },
+          { name: "Edit", what: "Opens on the plan's own line: change its name and click **Save**, or **Delete plan…** (removes every measurement on it too). **Cancel** closes it." },
           { name: "Rename pages", what: "Every page of the set in a list, each name in a box to type over. It saves when you click away; Enter moves to the next page. The ↗ beside a page opens it in a new tab so you can see what it is. **Done** goes back to the chips." },
-          { name: "Sheet chips", what: "Each sheet with its scale (\"no scale\" in amber) and how many measurements it has.", how: "Click a chip to open that sheet." },
+          { name: "Sheet chips", what: "Each sheet with its scale (\"no scale\" in amber) and how many measurements it has. Past four sheets, **+N more** shows the rest.", how: "Click a chip to open that sheet." },
         ],
       },
       {
         heading: "Other plan files",
-        text: ["Files in the job's Files → Plans that aren't set up for takeoff yet. Click **Use for takeoff** on a PDF or picture to measure on it."],
+        text: ["Under the gray \"In Files → Plans but not set up for takeoff\" line: files in the job's Files → Plans that aren't plan sets yet. Click **Use for takeoff** on a PDF or picture to measure on it."],
       },
     ],
     related: ["takeoff-screen", "takeoff-revisions", "takeoff-scale"],
@@ -639,12 +639,14 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "The top",
         items: [
-          { name: "All plans / a plan set", what: "Shows the list for every plan set, or one." },
-          { name: "Show prices / Hide prices", what: "Shows or hides prices. Printing and the CSV follow this." },
+          { name: "Find", what: "Type part of an item's name, SKU, vendor, category or takeoff to narrow the list as you type." },
+          { name: "Prices / No prices", what: "Shows or hides prices. Printing and the CSV follow this." },
+          { name: "All plans / a plan set", what: "Shows the list for every plan set, or one. Only there when the job has two or more plan sets." },
           { name: "Pull from inventory", what: "Uses materials you have in stock on this job, so the list orders that much less." },
           { name: "Send to vendors", what: "Sends the list (or part of it) to vendors for prices and compares what comes back.", how: "See **Sending lists to vendors for prices**." },
           { name: "CSV / Print", what: "Downloads the list as a spreadsheet file, or prints it on letter paper." },
-          { name: "Price review / lock", what: "Compares this job's prices with today's Item List, and locks or unlocks the job's prices.", how: "See **Price review**." },
+          { name: "Price review / lock", what: "The link at the end of the gray note. Compares this job's prices with today's Item List, and locks or unlocks the job's prices.", how: "See **Price review**." },
+          { name: "In contract / Substitutions", what: "Thin strips under the note: the blue one asks (once a job is in contract) whether to pull from your inventory; the amber one lists this job's substitutions, each with **Swap back**." },
         ],
       },
       {
@@ -654,7 +656,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Unit cost", what: "The price, before markup. \"No price\" in amber means it's still $0.", how: "Click it, type, press Enter. On a job that isn't locked, it changes the Item List and every job that isn't locked. On a locked job it changes this job only." },
           { name: "Pin", what: "Keeps this job's price when the Item List changes. Click again to follow the Item List." },
           { name: "Substitute…", what: "Orders something else on this job only: another length of the same lumber, another Item List item, or something new. Another length applies everywhere the job uses that lumber — joists and rafters, and the walls' plates and studs cut from stock (\"2x4 treated × 18'\" → 20': the bottom plates are cut from 20's) — at the substitution's price. **Swap back** undoes it." },
-          { name: "Framing cut sheet", what: "What each stock board is cut into, allowing for the saw cut, plus the extra boards for waste." },
+          { name: "Framing cut sheet", what: "Its own card under the list: what each stock board is cut into, allowing for the saw cut, plus the extra boards for waste." },
         ],
       },
     ],

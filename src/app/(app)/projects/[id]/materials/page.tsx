@@ -1,15 +1,14 @@
 import Link from "@/components/link";
-import { Download, PackageOpen, Replace, Truck, Undo2 } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { buildMaterialList } from "@/lib/takeoff-materials";
 import { cn, fmtDate, money } from "@/lib/utils";
-import { SubmitButton, buttonClasses } from "@/components/ui";
+import { ListFind } from "@/components/list-find";
 import { jobSubstitutions } from "@/lib/substitutions";
 import { swapBackSubstitution } from "../takeoff/actions";
 import { PrintButton } from "../_components/print-button";
-import { MaterialTable } from "../takeoff/_components/material-table";
+import { CutSheet, MaterialTable } from "../takeoff/_components/material-table";
 import { getBrand } from "@/lib/company-brand";
 import { PrintLogo } from "@/components/brand-mark";
 import { jobPulls } from "@/lib/inventory";
@@ -51,128 +50,123 @@ export default async function MaterialListPage({ params, searchParams }: { param
     );
   const address = [project.address, project.city, project.state].filter(Boolean).join(", ");
 
-  return (
-    <div className="space-y-5">
-      <div className="no-print flex flex-wrap items-center gap-2">
-        <div className="flex flex-wrap items-center gap-1.5">
-          <Link href={href({ plan: null })} className={chip(!planId)}>
-            All plans
-          </Link>
-          {plans.map((p) => (
-            <Link key={p.id} href={href({ plan: p.id })} className={chip(planId === p.id)}>
-              {p.name}
-            </Link>
-          ))}
-        </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          {/* Prices on or off — off for a list to send a supplier. The printout and CSV follow it. */}
-          <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs font-medium" role="group" aria-label="Prices">
-            <Link href={href({ prices: true })} className={cn("px-2.5 py-1.5", showPrices ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50")}>
-              Show prices
-            </Link>
-            <Link href={href({ prices: false })} className={cn("px-2.5 py-1.5", !showPrices ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50")}>
-              Hide prices
-            </Link>
-          </div>
-          <Link href={`${base}/inventory`} className={buttonClasses("secondary", "sm")} title="Use your stored materials on this job — the list orders that much less">
-            <PackageOpen className="h-3.5 w-3.5" /> Pull from inventory
-          </Link>
-          <Link
-            href={`/projects/${project.id}/bids`}
-            className={buttonClasses("primary", "sm")}
-            title="Send the list (or part of it) to vendors for prices — as Excel or a printout — bring their prices back, compare, and take one per cost code"
-          >
-            <Truck className="h-3.5 w-3.5" /> Send to vendors
-          </Link>
-          <a href={csvHref} className={buttonClasses("secondary", "sm")}>
-            <Download className="h-3.5 w-3.5" /> CSV
-          </a>
-          <PrintButton />
-        </div>
-      </div>
+  const link = "text-xs font-medium text-blue-700 hover:underline";
 
-      <div>
-        {/* The logo heads the printout */}
-        <PrintLogo logoUrl={brand.logoUrl} className="hidden print:block" />
+  return (
+    <div className="space-y-4">
+      {/* On paper: the logo, then what this list is, for whom, and when. */}
+      <div className="hidden print:block">
+        <PrintLogo logoUrl={brand.logoUrl} />
         <h2 className="text-lg font-semibold text-slate-900">Material list</h2>
         <p className="text-sm text-slate-500">
           #{project.number} {project.name}
           {address ? ` · ${address}` : ""} · {planId ? plans.find((p) => p.id === planId)?.name : "All plans"} · {fmtDate(new Date())}
         </p>
-        <p className="no-print mt-1 text-xs text-slate-500">
-          Everything your takeoffs order, from every plan set (or pick one above). Quantities include waste. Items used by several conditions are combined and rounded up once on
-          the total. Prices are this job&apos;s costs, before markup.
-        </p>
-        <p className="no-print mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+      </div>
+
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm print:border-0 print:shadow-none">
+        <header className="no-print flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+          <ListFind listId="material-list" placeholder="Find an item…" />
+          {/* Prices on or off — off for a list to send a supplier. The printout and CSV follow it. */}
+          <div className="inline-flex overflow-hidden rounded-md border border-slate-300 text-xs font-medium" role="group" aria-label="Prices">
+            <Link href={href({ prices: true })} className={cn("px-2.5 py-1", showPrices ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50")}>
+              Prices
+            </Link>
+            <Link href={href({ prices: false })} className={cn("px-2.5 py-1", !showPrices ? "bg-slate-900 text-white" : "bg-white text-slate-700 hover:bg-slate-50")}>
+              No prices
+            </Link>
+          </div>
+          <span className="ml-auto flex flex-wrap items-center gap-3">
+            <Link href={`${base}/inventory`} className={link} title="Use your stored materials on this job — the list orders that much less">
+              Pull from inventory
+            </Link>
+            <a href={csvHref} className={link}>
+              CSV
+            </a>
+            <PrintButton asLink />
+            <Link
+              href={`/projects/${project.id}/bids`}
+              className="inline-flex h-7 items-center rounded-md bg-blue-700 px-2.5 text-xs font-medium text-white hover:bg-blue-800"
+              title="Send the list (or part of it) to vendors for prices — as Excel or a printout — bring their prices back, compare, and take one per cost code"
+            >
+              Send to vendors
+            </Link>
+          </span>
+        </header>
+        {plans.length > 1 ? (
+          <div className="no-print flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-4 py-2">
+            <Link href={href({ plan: null })} className={chip(!planId)}>
+              All plans
+            </Link>
+            {plans.map((p) => (
+              <Link key={p.id} href={href({ plan: p.id })} className={chip(planId === p.id)}>
+                {p.name}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+        <p className="no-print border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
+          Everything your takeoffs order, waste included; an item used by several takeoffs is combined and rounded up once. Prices are this job&apos;s costs, before markup.{" "}
           {project.pricesLockedAt ? (
-            <span className="font-medium text-amber-800">Prices locked {fmtDate(project.pricesLockedAt)} — a price you change here stays on this job.</span>
+            <span className="font-medium text-amber-800">Prices locked {fmtDate(project.pricesLockedAt)}: a price you change here stays on this job.</span>
           ) : (
-            <span>Click a price to change it: it changes in the Item List and on every job that isn&apos;t locked. The pin keeps a price for this job only.</span>
-          )}
+            <>Click a price to change it in the Item List (and every job that isn&apos;t locked); the pin keeps a price for this job only.</>
+          )}{" "}
           <Link href={`/projects/${project.id}/takeoff/rebid`} className="font-medium text-blue-700 hover:underline">
             {project.pricesLockedAt ? "Price review / unlock" : "Price review / lock"}
           </Link>
         </p>
-      </div>
 
-      {askInventory ? (
-        <div className="no-print flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-3">
-          <PackageOpen className="h-5 w-5 shrink-0 text-blue-700" />
-          <p className="min-w-0 flex-1 text-sm text-slate-800">
-            <strong>This job is in contract.</strong> Pull anything from your inventory before you order?
-          </p>
-          <form action={answerInventory} className="flex gap-2">
+        {askInventory ? (
+          <form action={answerInventory} className="no-print flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-100 bg-blue-50 px-4 py-2 text-xs text-blue-900">
             <input type="hidden" name="projectId" value={project.id} />
-            <button type="submit" name="answer" value="YES" className={buttonClasses("primary", "sm")}>
+            <span className="min-w-0 flex-1">
+              <strong className="font-semibold">This job is in contract.</strong> Pull anything from your inventory before you order?
+            </span>
+            <button type="submit" name="answer" value="YES" className="font-semibold text-blue-800 hover:underline">
               Yes, show inventory
             </button>
-            <button type="submit" name="answer" value="NO" className={buttonClasses("secondary", "sm")}>
+            <button type="submit" name="answer" value="NO" className="text-blue-800 hover:underline">
               No, order everything
             </button>
           </form>
-        </div>
-      ) : null}
+        ) : null}
 
-      {substitutions.length ? (
-        // What this job orders instead — each with its way back.
-        <div className="no-print rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-3">
-          <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-900">
-            <Replace className="h-4 w-4" /> Substitutions on this job
-          </p>
-          <ul className="mt-1.5 divide-y divide-amber-100">
+        {substitutions.length ? (
+          // What this job orders instead — each with its way back.
+          <ul className="no-print border-b border-slate-100 bg-amber-50 px-4 py-1.5 text-xs text-amber-900">
             {substitutions.map((s) => (
-              <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-1.5 text-sm">
-                <span className="min-w-0 flex-1 text-slate-800">
-                  <span className="font-medium">{s.toName}</span> instead of {s.fromName}
-                  <span className="text-xs text-slate-500">
-                    {" "}
-                    · {s.source ?? "you"}
-                    {s.unitCost != null && showPrices ? ` · ${money(s.unitCost)}` : ""}
-                  </span>
+              <li key={s.id} className="flex flex-wrap items-center gap-x-2 py-0.5">
+                <span>
+                  Substitution: <strong className="font-semibold">{s.toName}</strong> instead of {s.fromName} · {s.source ?? "you"}
+                  {s.unitCost != null && showPrices ? ` · ${money(s.unitCost)}` : ""}
                 </span>
                 <form action={swapBackSubstitution}>
                   <input type="hidden" name="projectId" value={project.id} />
                   <input type="hidden" name="id" value={s.id} />
                   <input type="hidden" name="back" value={href({})} />
-                  <SubmitButton variant="ghost" size="sm" pendingText="Swapping back…">
-                    <Undo2 className="h-3.5 w-3.5" /> Swap back
-                  </SubmitButton>
+                  <button type="submit" className="font-medium underline hover:text-amber-700">
+                    Swap back
+                  </button>
                 </form>
               </li>
             ))}
           </ul>
-        </div>
-      ) : null}
+        ) : null}
 
-      <MaterialTable
-        lines={lines}
-        cutLists={cutLists}
-        total={total}
-        showPrices={showPrices}
-        pulled={pulledFor}
-        stale={showPrices ? stale : undefined}
-        edit={{ projectId: project.id, locked: !!project.pricesLockedAt, substitutions: substitutions.map((s) => ({ fromName: s.fromName, toName: s.toName })) }}
-      />
+        <div id="material-list">
+          <MaterialTable
+            lines={lines}
+            total={total}
+            showPrices={showPrices}
+            pulled={pulledFor}
+            stale={showPrices ? stale : undefined}
+            edit={{ projectId: project.id, locked: !!project.pricesLockedAt, substitutions: substitutions.map((s) => ({ fromName: s.fromName, toName: s.toName })) }}
+          />
+        </div>
+      </section>
+
+      <CutSheet cutLists={cutLists} />
     </div>
   );
 }

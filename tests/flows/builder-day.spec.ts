@@ -134,6 +134,32 @@ test("finds that job on the Projects list by typing the client's name", async ()
   await expect(page.locator("#project-list tr[data-find]:visible").first()).toContainText("Flowers Residence");
 });
 
+test("uploads a plan on the Plans tab, renames it from Edit and deletes it", async () => {
+  await page.goto(`${job}/plans`);
+  await expect(page.getByText("Drop plan files here, or click to choose")).toBeVisible();
+  const pdf = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF");
+  await page.getByLabel("Choose plan files").setInputFiles({ name: "Flow plans.pdf", mimeType: "application/pdf", buffer: pdf });
+  await expect(page.getByRole("link", { name: "Measure" })).toBeVisible();
+  await page.getByRole("link", { name: /^Edit Flow plans/ }).click();
+  await page.getByLabel("Plan name").fill("Flow permit set");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Flow permit set", exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Edit Flow permit set" }).click();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete plan…" }).click();
+  await expect(page.getByRole("link", { name: "Flow permit set", exact: true })).toHaveCount(0);
+});
+
+test("opens the Material list and switches prices off and on", async () => {
+  await page.goto(`${job}/materials`);
+  await expect(page.getByRole("link", { name: "Send to vendors" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Print" })).toBeVisible();
+  await page.getByRole("link", { name: "No prices" }).click();
+  await expect(page).toHaveURL(/prices=0/);
+  await page.getByRole("link", { name: "Prices", exact: true }).click();
+  await expect(page).not.toHaveURL(/prices=0/);
+});
+
 test("builds an estimate: a line, saved, adds up", async () => {
   await page.goto(`${job}/estimate`);
   await page.getByRole("button", { name: "Create estimate" }).click();

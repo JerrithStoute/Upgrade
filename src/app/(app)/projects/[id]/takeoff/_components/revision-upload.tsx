@@ -3,8 +3,6 @@
 import { actionMessage } from "@/lib/action-message";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FilePlus2, Loader2 } from "lucide-react";
-import { buttonClasses } from "@/components/ui";
 import { putFile, startDirect } from "@/components/direct-upload";
 
 /**
@@ -65,10 +63,10 @@ export function RevisionUpload({ projectId, planId, nextRevision }: { projectId:
         type="button"
         disabled={busy}
         onClick={() => input.current?.click()}
-        className={buttonClasses("ghost", "sm")}
+        className="text-xs font-medium text-blue-700 hover:underline disabled:text-slate-400 disabled:no-underline"
         title={`Upload the updated plans as Rev ${nextRevision}, then compare and bring your takeoffs forward`}
       >
-        {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FilePlus2 className="h-3.5 w-3.5" />} New revision
+        {busy ? "Uploading…" : "New revision"}
       </button>
       {error ? <span className="text-xs text-rose-600">{error}</span> : null}
     </>
