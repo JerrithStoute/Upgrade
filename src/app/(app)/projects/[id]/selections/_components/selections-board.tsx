@@ -96,7 +96,7 @@ export function SelectionsBoard({
         </div>
         {divisions.map(([d, list]) => (
           <div key={d}>
-            <p className="px-1.5 pb-1 pt-2 text-[11px] font-bold uppercase tracking-wide text-slate-600">{d}</p>
+            <p className="px-1.5 pb-1 pt-2 text-xs text-slate-500">{d}</p>
             <ul className="space-y-0.5">
               {list.map((c) => {
                 const st = deadlineState(c.deadline.date ? new Date(c.deadline.date) : null, c.status);
@@ -209,8 +209,8 @@ function Card({
         )}
       >
         <div className="min-w-0">
-          <h3 className="text-lg font-semibold text-slate-900">{c.name}</h3>
-          {c.costCodes.length ? <p className="text-sm font-medium text-slate-700">{c.costCodes.join(" · ")}</p> : null}
+          <h3 className="text-base font-semibold text-slate-900">{c.name}</h3>
+          {c.costCodes.length ? <p className="text-xs text-slate-600">{c.costCodes.join(" · ")}</p> : null}
           <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-slate-600">
             {c.kind === "SELECTION" ? <Tag className="bg-violet-50 text-violet-800 ring-violet-200">Selection</Tag> : null}
             {c.isAllowance ? <Tag className="bg-amber-50 text-amber-800 ring-amber-200">Allowance</Tag> : null}
@@ -477,12 +477,12 @@ function Card({
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setEditing("new")} disabled={editing !== null}>
+          <button type="button" className={buttonClasses("secondary", "xs")} onClick={() => setEditing("new")} disabled={editing !== null}>
             <Plus className="h-3.5 w-3.5" /> Add choice
           </button>
           <span className="ml-auto text-xs text-rose-700">{err}</span>
           {made !== null || c.status !== "PENDING" ? (
-            <span className="text-sm text-slate-600">
+            <span className="text-xs text-slate-600">
               {c.status === "DECLINED" ? "Declined" : `Chose #${c.choices.findIndex((x) => x.id === c.chosenId) + 1}`}
               {made !== null ? (
                 <>
@@ -495,7 +495,7 @@ function Card({
           {/* Unticking the saved choice turns this into "Clear choice". */}
           <button
             type="button"
-            className={buttonClasses("primary", "sm")}
+            className={buttonClasses("primary", "xs")}
             disabled={busy || pick === current || (pick === null && c.status === "PENDING")}
             onClick={() => run(() => makeChoice(projectId, c.selectionId, pick))}
           >

@@ -19,6 +19,7 @@ export function Gantt({
   draggable = false,
   insertHref,
   rowTools,
+  bare,
 }: {
   tasks: GanttTask[];
   today?: Date;
@@ -34,6 +35,8 @@ export function Gantt({
   insertHref?: (task: GanttTask, at: "above" | "below") => string;
   /** More hover tools on each row, after the insert links (e.g. erase). */
   rowTools?: (task: GanttTask) => React.ReactNode;
+  /** Inside a card of its own (the job's Schedule): no border of its own. */
+  bare?: boolean;
 }) {
   const win = ganttWindow(tasks, today, fixedWindow);
   const leftW = compact ? 200 : 272;
@@ -58,7 +61,7 @@ export function Gantt({
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+    <div className={cn("overflow-x-auto bg-white", !bare && "rounded-xl border border-slate-200 shadow-sm")}>
       <div className="relative min-w-[720px] text-sm">
         {/* Grid overlay: week columns, weekend shading and today line — behind rows, right of the left column. */}
         <div className="pointer-events-none absolute inset-y-0 right-0" style={{ left: leftW }} aria-hidden>
@@ -73,7 +76,7 @@ export function Gantt({
         {/* Header */}
         <div className="relative flex border-b border-slate-200" style={{ height: headerH }}>
           <div
-            className="flex shrink-0 items-end border-r border-slate-200 bg-slate-50 px-3 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500"
+            className="flex shrink-0 items-end border-r border-slate-200 bg-slate-50 px-3 pb-1.5 text-xs text-slate-500"
             style={{ width: leftW }}
           >
             {compact ? "Task" : "Task · dates · % · owner"}
@@ -103,7 +106,7 @@ export function Gantt({
             {/* Phase row */}
             <div className="relative flex border-b border-slate-100" style={{ height: compact ? 22 : 24 }}>
               <div
-                className="flex shrink-0 items-center border-r border-slate-200 bg-slate-50 px-3 text-[11px] font-semibold uppercase tracking-wide text-slate-700"
+                className="flex shrink-0 items-center border-r border-slate-200 bg-slate-50 px-3 text-xs font-medium text-slate-700"
                 style={{ width: leftW }}
               >
                 <span className="truncate">

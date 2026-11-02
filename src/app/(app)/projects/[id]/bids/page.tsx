@@ -1,5 +1,5 @@
 import Link from "@/components/link";
-import { AlertTriangle, Check, Download, Eye, FileSpreadsheet, FileText, Lock, Pencil, Printer, Replace } from "lucide-react";
+import { AlertTriangle, Check, Download, Eye, FileSpreadsheet, FileText, Lock, Printer, Replace } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
@@ -8,7 +8,7 @@ import { vendorCodes } from "@/lib/vendors";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { substituteLength } from "@/lib/takeoff";
 import { beamLength } from "@/lib/bid-beams";
-import { Card, CardBody, CardHeader, ConfirmForm, EmptyState, SubmitButton, buttonClasses } from "@/components/ui";
+import { ConfirmForm, EmptyState, SubmitButton } from "@/components/ui";
 import { RequestBids } from "./_components/request-bids";
 import { ImportButton } from "./_components/import-button";
 import { EmailPreview } from "./_components/email-preview";
@@ -133,15 +133,12 @@ export default async function BidsPage({
   const onlineUrls = new Map(await Promise.all(cmp.bids.map(async (b) => [b.id, appUrl(`/prices/${await makeBidLink(b.id, b.companyId)}`)] as const)));
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-lg font-semibold text-slate-900">Bids</h2>
-        <span className="text-sm text-slate-500">
-          — send your Material list to vendors and your plans to subs, bring their prices back, compare, and take one per cost code.
-        </span>
-      </div>
+    <div className="space-y-4">
+      <p className="text-xs text-slate-500">
+        Send your Material list to vendors and your plans to subs, bring their prices back, compare, and take one per cost code.
+      </p>
 
-      {q.error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm text-rose-800">{q.error}</p> : null}
+      {q.error ? <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-800">{q.error}</p> : null}
       {confirm && subLines.length ? (
         <form action={takeBids} id="substitutes" className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
           <input type="hidden" name="projectId" value={project.id} />
@@ -187,35 +184,37 @@ export default async function BidsPage({
             })}
           </ul>
           <div className="mt-2 flex items-center gap-2">
-            <SubmitButton pendingText="Taking…">Take the bids</SubmitButton>
-            <Link href={`${base}#compare`} className={buttonClasses("ghost", "sm")}>
+            <SubmitButton size="xs" pendingText="Taking…">
+              Take the bids
+            </SubmitButton>
+            <Link href={`${base}#compare`} className="text-xs font-medium text-blue-700 hover:underline">
               Cancel
             </Link>
           </div>
         </form>
       ) : null}
       {q.made && q.subs ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">
           Made {q.made} sub bid{q.made === "1" ? "" : "s"} — {q.made === "1" ? "its email is open" : "their emails open one after another"}: read it over and
           click Send. Closed one by mistake? Click Email on its row below. Whatever they send back goes in Files → Bids.
         </p>
       ) : null}
-      {q.subTaken ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">{q.subTaken}</p> : null}
+      {q.subTaken ? <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">{q.subTaken}</p> : null}
       {q.made && !q.subs ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">
           Sent to {q.made} vendor{q.made === "1" ? "" : "s"} — below, download the Excel file (or Print / PDF) and email it. When the vendor sends it back,
           their file is saved to Files → Bids.
         </p>
       ) : null}
       {importedBid ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">
           Bid #{importedBid.number} ({importedBid.vendorName}) is back: {q.priced} item{q.priced === "1" ? "" : "s"} priced
           {Number(q.blank) > 0 ? `, ${q.blank} left blank` : ""}
           {Number(q.ladder) > 0 ? `, plus ${q.ladder} length${q.ladder === "1" ? "" : "s"} on the price list` : ""}. The file is in Files → Bids.
         </p>
       ) : null}
       {q.taken ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-sm text-emerald-900">
+        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">
           Took {q.taken} bid{q.taken === "1" ? "" : "s"} — {q.items} price{q.items === "1" ? "" : "s"}{" "}
           {q.scope === "COMPANY"
             ? locked
@@ -233,7 +232,7 @@ export default async function BidsPage({
       {warnings.length ? (
         <div className="space-y-1.5">
           {warnings.map((w, i) => (
-            <p key={i} className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-sm text-rose-900">
+            <p key={i} className="flex items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-900">
               <AlertTriangle className="h-4 w-4 shrink-0" />
               <span>
                 <b>{w.codeLabel}:</b> Bid #{w.bidNumber} from {w.vendorName} came back <b>{pctText(w.pct)}</b> over the bid you took (same items, today&apos;s
@@ -245,7 +244,7 @@ export default async function BidsPage({
       ) : null}
 
       {locked ? (
-        <p className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-sm text-amber-900">
+        <p className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
           <Lock className="h-4 w-4 shrink-0" />
           <span>
             Prices locked {fmtDate(project.pricesLockedAt!)} (proposal sent). New bids are re-bids, for seeing if you&apos;re over or under — you get a warning
@@ -254,12 +253,12 @@ export default async function BidsPage({
         </p>
       ) : null}
 
-      <Card>
-        <CardHeader
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <CardTop
           title="What to send, and who to"
-          description="Each vendor gets the items you pick with quantities, as an Excel file (prices come back in by themselves) and a sheet you can print or save as PDF."
+          note="Each vendor gets the items you pick with quantities, as an Excel file (prices come back in by themselves) and a sheet you can print or save as PDF."
         />
-        <CardBody>
+        <div className="px-4 py-3">
           {groups.length ? (
             <RequestBids
               action={requestBids}
@@ -278,16 +277,16 @@ export default async function BidsPage({
               description="The Material list is empty — measure takeoffs with items on them first."
             />
           )}
-        </CardBody>
-      </Card>
+        </div>
+      </section>
 
-      <Card>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div id="subs" className="scroll-mt-40" />
-        <CardHeader
+        <CardTop
           title="Send to subs"
-          description="Ask subs to bid a whole trade from the plans: they get a link to the plans and send their price (and their own quote) back on it. Or they email you their quote — add it on their row."
+          note="Ask subs to bid a whole trade from the plans: they get a link to the plans and send their price (and their own quote) back on it. Or they email you their quote — add it on their row."
         />
-        <CardBody>
+        <div className="px-4 py-3">
           <SendToSubs
             action={requestSubBids}
             addVendor={quickAddVendor}
@@ -297,36 +296,36 @@ export default async function BidsPage({
             vendors={vendors.map((v) => ({ id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) }))}
             plans={plans}
           />
-        </CardBody>
-      </Card>
+        </div>
+      </section>
 
-      <Card>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div id="bids" className="scroll-mt-40" />
-        <CardHeader
+        <CardTop
           title="Sent"
-          description="Email each bid to its vendor from here (the Excel file goes with it), or all of them at once. When they send it back, upload it on its row (or anywhere — the file knows which bid it is)."
+          note="Email each bid to its vendor from here (the Excel file goes with it), or all of them at once. When they send it back, upload it on its row (or anywhere — the file knows which bid it is)."
           actions={
             cmp.bids.length ? (
               <>
                 {waitingToEmail ? <EmailAllButton projectId={project.id} count={waitingToEmail} /> : null}
-                <ImportButton action={importBid} projectId={project.id} />
+                <ImportButton action={importBid} projectId={project.id} label="Add a file they sent…" variant="link" />
               </>
             ) : null
           }
         />
         {cmp.bids.length === 0 ? (
-          <CardBody>
+          <div className="px-4 py-3">
             <p className="text-sm text-slate-500">No bids yet.</p>
-          </CardBody>
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
                 <tr>
-                  <th className="px-4 py-2">Bid</th>
-                  <th className="px-4 py-2">Vendor</th>
-                  <th className="px-4 py-2">Status</th>
-                  <th className="px-4 py-2">Files</th>
+                  <th className="px-4 py-2 font-normal">Bid</th>
+                  <th className="px-4 py-2 font-normal">Vendor</th>
+                  <th className="px-4 py-2 font-normal">Status</th>
+                  <th className="px-4 py-2 font-normal">Files</th>
                   <th className="px-4 py-2" />
                 </tr>
               </thead>
@@ -407,7 +406,7 @@ export default async function BidsPage({
                         ) : null}
                       </td>
                       <td className="px-4 py-2.5">
-                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
                           <EmailPreview
                             projectId={project.id}
                             bidId={b.id}
@@ -423,21 +422,22 @@ export default async function BidsPage({
                             vendorName={b.vendorName}
                             bidNumber={b.number}
                           />
-                          <ImportButton action={importBid} projectId={project.id} bidId={b.id} label="Add what they sent…" variant="ghost" />
+                          <ImportButton action={importBid} projectId={project.id} bidId={b.id} label="Add what they sent…" variant="link" />
                           <Link
                             href={`${base}/${b.id}`}
-                            className={buttonClasses("ghost", "sm")}
+                            className="text-xs font-medium text-blue-700 hover:underline"
                             title={sub ? "Type in the price they gave you another way" : "See the lines, or type in prices the vendor gave you another way"}
                           >
-                            <Pencil className="h-3.5 w-3.5" /> {sub ? "Price" : "Prices"}
+                            {sub ? "Price" : "Prices"}
                           </Link>
                           <ConfirmForm
                             action={deleteBid}
                             hidden={{ projectId: project.id, bidId: b.id }}
                             message={`Delete bid #${b.number} (${b.vendorName})? A file they sent back stays in Files → Bids; prices you already took from it stay.`}
                             variant="ghost"
+                            size="xs"
                           >
-                            <span className="text-xs text-rose-600">Delete</span>
+                            <span className="text-rose-600">Delete…</span>
                           </ConfirmForm>
                         </div>
                       </td>
@@ -448,27 +448,27 @@ export default async function BidsPage({
             </table>
           </div>
         )}
-      </Card>
+      </section>
 
-      <Card>
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div id="compare" className="scroll-mt-40" />
-        <CardHeader
+        <CardTop
           title="Compare and take"
-          description="Each bid's total for a cost code at today's quantities. Pick the one to use for each cost code, choose where its prices go, and take them."
+          note="Each bid's total for a cost code at today's quantities. Pick the one to use for each cost code, choose where its prices go, and take them."
         />
         {cmp.columns.length === 0 ? (
-          <CardBody>
+          <div className="px-4 py-3">
             <p className="text-sm text-slate-500">Bids show up here once they&apos;re back.</p>
-          </CardBody>
+          </div>
         ) : (
           <form action={takeBids}>
             <input type="hidden" name="projectId" value={project.id} />
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
                   <tr>
-                    <th className="px-4 py-2 font-medium uppercase tracking-wide">Cost code</th>
-                    <th className="px-4 py-2 text-right font-medium uppercase tracking-wide">This job now</th>
+                    <th className="px-4 py-2 font-normal">Cost code</th>
+                    <th className="px-4 py-2 text-right font-normal">This job now</th>
                     {cmp.columns.map((c) => (
                       <th key={c.id} className="px-4 py-2 text-right font-medium">
                         <span className="block font-semibold text-slate-700">{c.vendorName}</span>#{c.number}
@@ -557,15 +557,17 @@ export default async function BidsPage({
                 </tbody>
               </table>
             </div>
-            <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-4 py-3">
-              <label className="text-sm text-slate-700" htmlFor="take-scope">
+            <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-4 py-2.5">
+              <label className="text-xs text-slate-700" htmlFor="take-scope">
                 Put the prices on
               </label>
-              <select id="take-scope" name="scope" className="input !w-auto" defaultValue="JOB">
+              <select id="take-scope" name="scope" className="input !h-7 !w-auto !py-0 text-xs" defaultValue="JOB">
                 <option value="JOB">This job only</option>
                 <option value="COMPANY">The Item List — every job</option>
               </select>
-              <SubmitButton pendingText="Taking…">Take the picked bids</SubmitButton>
+              <SubmitButton size="xs" pendingText="Taking…">
+                Take the picked bids
+              </SubmitButton>
               <span className="text-xs text-slate-500">
                 {locked
                   ? "Prices are locked: “This job only” changes this job's prices; “Item List” updates the company prices and leaves this job as it is."
@@ -575,27 +577,27 @@ export default async function BidsPage({
             </div>
           </form>
         )}
-      </Card>
+      </section>
 
       {subCmp.rows.length ? (
-        <Card>
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div id="subcompare" className="scroll-mt-40" />
-          <CardHeader
+          <CardTop
             title="Compare subs"
-            description="Each sub's price for each trade. Pick one per trade and take it — and put its price in the budget if you want."
+            note="Each sub's price for each trade. Pick one per trade and take it — and put its price in the budget if you want."
           />
           {subCmp.columns.length === 0 ? (
-            <CardBody>
+            <div className="px-4 py-3">
               <p className="text-sm text-slate-500">Subs&apos; bids show up here once they&apos;re back.</p>
-            </CardBody>
+            </div>
           ) : (
             <form action={takeSubBids}>
               <input type="hidden" name="projectId" value={project.id} />
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
-                  <thead className="bg-slate-50 text-left text-xs text-slate-500">
+                  <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
                     <tr>
-                      <th className="px-4 py-2 font-medium uppercase tracking-wide">Trade</th>
+                      <th className="px-4 py-2 font-normal">Trade</th>
                       {subCmp.columns.map((c) => (
                         <th key={c.id} className="px-4 py-2 text-right font-medium">
                           <span className="block font-semibold text-slate-700">{c.vendorName}</span>#{c.number}
@@ -663,11 +665,13 @@ export default async function BidsPage({
                   </tbody>
                 </table>
               </div>
-              <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-4 py-3">
-                <label className="inline-flex items-center gap-1.5 text-sm text-slate-700">
+              <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 px-4 py-2.5">
+                <label className="inline-flex items-center gap-1.5 text-xs text-slate-700">
                   <input type="checkbox" name="budget" value="1" defaultChecked className="h-4 w-4 rounded border-slate-300" /> Put the price in the budget
                 </label>
-                <SubmitButton pendingText="Taking…">Take the picked bids</SubmitButton>
+                <SubmitButton size="xs" pendingText="Taking…">
+                Take the picked bids
+              </SubmitButton>
                 <span className="text-xs text-slate-500">
                   The budget: the price goes on that cost code&apos;s line in the draft estimate (one line — the takeoff stops changing it). A sent or approved
                   estimate isn&apos;t changed. Green = lowest. Taking a bid closes its online page; Purchasing can make the PO from it.
@@ -675,8 +679,21 @@ export default async function BidsPage({
               </div>
             </form>
           )}
-        </Card>
+        </section>
       ) : null}
     </div>
+  );
+}
+
+/** A card's top: its name (and buttons), then what it's for as one gray line. */
+function CardTop({ title, note, actions }: { title: string; note: React.ReactNode; actions?: React.ReactNode }) {
+  return (
+    <>
+      <header className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+        <span className="text-sm font-semibold text-slate-900">{title}</span>
+        {actions ? <span className="ml-auto flex flex-wrap items-center gap-3">{actions}</span> : null}
+      </header>
+      <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">{note}</p>
+    </>
   );
 }

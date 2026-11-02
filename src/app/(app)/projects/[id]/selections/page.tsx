@@ -4,8 +4,8 @@ import { requireView } from "@/lib/auth";
 import { getProject } from "@/lib/projects";
 import { boardForViewer, scheduleOptions } from "@/lib/selections";
 import { deadlineState } from "@/lib/deadlines";
-import { money } from "@/lib/utils";
-import { Badge, ButtonLink, EmptyState, Stat } from "@/components/ui";
+import { cn, money } from "@/lib/utils";
+import { Badge, ButtonLink, EmptyState } from "@/components/ui";
 import { SelectionsBoard } from "./_components/selections-board";
 import { HelpLink } from "@/components/help/help-link";
 import { ConfirmForm } from "@/components/ui";
@@ -48,17 +48,28 @@ export default async function SelectionsPage({ params, searchParams }: { params:
   }
 
   return (
-    <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Stat label="Selections" value={String(cards.length)} hint={`From estimate v${estimate.version} (${estimate.status.toLowerCase()})`} />
-        <Stat label="Still to choose" value={String(cards.length - made.length)} tone={overdue ? "bad" : undefined} hint={overdue ? `${overdue} overdue` : undefined} />
-        <Stat label="Allowances" value={money(allowances)} />
-        <Stat
-          label="Over / under"
-          value={`${diff > 0.004 ? "+" : ""}${money(diff)}`}
-          tone={diff > 0.004 ? "bad" : diff < -0.004 ? "good" : undefined}
-          hint="Choices made vs. their allowances"
-        />
+    <div className="space-y-3">
+      {/* Where the job's selections stand: the counts, and the money big on the right. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <p className="flex flex-wrap items-center gap-x-1 text-xs text-slate-500">
+          <span>
+            {cards.length} selection{cards.length === 1 ? "" : "s"} from estimate v{estimate.version} ({estimate.status.toLowerCase()}) ·
+          </span>
+          <span className="font-medium text-slate-800">{cards.length - made.length} still to choose</span>
+          {overdue ? <span className="font-medium text-rose-700">· {overdue} overdue</span> : null}
+        </p>
+        <div className="flex items-end gap-6">
+          <div>
+            <span className="block text-xs text-slate-500">Allowances</span>
+            <span className="text-xl font-semibold tabular-nums text-slate-900">{money(allowances)}</span>
+          </div>
+          <div title="Choices made vs. their allowances">
+            <span className="block text-xs text-slate-500">Over / under</span>
+            <span className={cn("text-xl font-semibold tabular-nums", diff > 0.004 ? "text-rose-700" : diff < -0.004 ? "text-emerald-700" : "text-slate-900")}>
+              {`${diff > 0.004 ? "+" : ""}${money(diff)}`}
+            </span>
+          </div>
+        </div>
       </div>
 
       {cards.length === 0 ? (
@@ -80,29 +91,30 @@ export default async function SelectionsPage({ params, searchParams }: { params:
         />
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <h3 className="flex items-center gap-1 text-sm font-semibold text-slate-900">
-              Other selections <HelpLink slug="selections" section="Other selections" />
-            </h3>
-            <p className="text-xs text-slate-600">
-              Things the client picks that aren&apos;t on your estimate, like house numbers or a mailbox. Add one with <strong>New selection</strong>. (A selection taken off the
-              estimate after choices were made lands here too, so its choices aren&apos;t lost.)
-            </p>
-          </div>
-          <ButtonLink href={`/projects/${project.id}/selections/new`} variant="secondary" size="sm">
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-4 py-2.5">
+          <h3 className="flex items-center gap-1 text-sm font-semibold text-slate-900">
+            Other selections <HelpLink slug="selections" section="Other selections" />
+          </h3>
+          <Link
+            href={`/projects/${project.id}/selections/new`}
+            className="ml-auto inline-flex h-7 items-center gap-1 rounded-md bg-blue-700 px-2.5 text-xs font-medium text-white hover:bg-blue-800"
+          >
             <Plus className="h-3.5 w-3.5" /> New selection
-          </ButtonLink>
-        </div>
+          </Link>
+        </header>
+        <p className="px-4 py-2 text-xs text-slate-500">
+          Things the client picks that aren&apos;t on your estimate, like house numbers or a mailbox. (A selection taken off the estimate after choices were made lands here
+          too, so its choices aren&apos;t lost.)
+        </p>
         {others.length ? (
-          <ul className="mt-3 divide-y divide-slate-100 text-sm">
+          <ul className="border-t border-slate-100 text-sm">
             {others.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-3 py-2">
-                <Link href={`/projects/${project.id}/selections/${s.id}`} className="font-medium text-slate-800 hover:text-blue-700 hover:underline">
+              <li key={s.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 px-4 py-2 first:border-t-0">
+                <Link href={`/projects/${project.id}/selections/${s.id}`} className="font-medium text-blue-700 hover:underline">
                   {s.title}
                 </Link>
-                <span className="flex items-center gap-2 text-xs text-slate-500">
+                <span className="ml-auto flex items-center gap-3 text-xs text-slate-500">
                   {s.allowance ? `Allowance ${money(s.allowance)}` : null}
                   <Badge status={s.status} />
                   {s.options.length === 0 && s.status === "PENDING" ? (
@@ -111,8 +123,9 @@ export default async function SelectionsPage({ params, searchParams }: { params:
                       hidden={{ projectId: project.id, id: s.id }}
                       message={`Remove "${s.title}"? It has no choices on it.`}
                       variant="ghost"
+                      size="xs"
                     >
-                      Remove
+                      <span className="text-rose-600">Remove…</span>
                     </ConfirmForm>
                   ) : null}
                 </span>

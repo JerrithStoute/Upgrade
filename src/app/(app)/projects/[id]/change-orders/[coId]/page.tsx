@@ -1,13 +1,13 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Printer } from "lucide-react";
+import { Printer } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { approvedEstimateTotal, getProject, activeCostCodes } from "@/lib/projects";
-import { fmtDate } from "@/lib/utils";
+import { fmtDate, money } from "@/lib/utils";
 import { changeOrderTotals, effectOnContract, parseApprovals, parseCoDefaults, parseIds } from "@/lib/change-orders";
 import { unaddedChoices } from "@/lib/change-orders-server";
-import { Badge, Card, CardBody, CardHeader, ConfirmForm, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
+import { Badge, ConfirmForm, SubmitButton, buttonClasses } from "@/components/ui";
 import { approveChangeOrder, declineChangeOrder, deleteChangeOrder, sendChangeOrder, voidChangeOrder } from "../actions";
 import { ChangeOrderEditor } from "./change-order-editor";
 import { ClientEmailNote } from "@/components/client-email-note";
@@ -44,89 +44,96 @@ export default async function ChangeOrderDetailPage({ params }: { params: Promis
   const clientName = project.client ? `${project.client.firstName} ${project.client.lastName}`.trim() : null;
 
   return (
-    <div className="space-y-6">
-      <Link href={`/projects/${project.id}/change-orders`} className="inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800">
-        <ArrowLeft className="h-3.5 w-3.5" /> All change orders
+    <div className="space-y-3">
+      <Link href={`/projects/${project.id}/change-orders`} className="text-xs text-slate-500 hover:text-slate-800">
+        ← Change orders
       </Link>
 
-      <Card>
-        <CardHeader
-          title={
-            <span className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-sm text-slate-500">CO #{co.number}</span>
-              {co.title}
-              <Badge status={co.status} />
+      {/* Which change order and where it stands, with the money big on the right. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-slate-500">CO #{co.number}</span>
+            <h1 className="text-xl font-semibold text-slate-900">{co.title}</h1>
+            <Badge status={co.status} />
+          </div>
+          <p className="text-xs text-slate-500">
+            Created {fmtDate(co.createdAt)}
+            {co.sentAt ? ` · Sent ${fmtDate(co.sentAt)}` : ""}
+            {co.clientApprovedAt ? ` · Client approved ${fmtDate(co.clientApprovedAt)}${co.decidedBy ? ` (${co.decidedBy})` : ""}` : ""}
+            {co.decidedAt ? ` · ${co.status === "DECLINED" ? "Declined" : "Approved"} ${fmtDate(co.decidedAt)}` : ""}
+            {co.status === "DRAFT" && co.clientApproval ? (
+              <>
+                {" · "}
+                <ClientEmailNote clientId={project.clientId} button="Send for approval" className="text-xs text-slate-500" />
+              </>
+            ) : null}
+          </p>
+        </div>
+        <div className="flex items-end gap-6">
+          <div>
+            <span className="block text-xs text-slate-500">This change order</span>
+            <span className="text-xl font-semibold tabular-nums text-slate-900">
+              {totals.total > 0.004 ? "+" : ""}
+              {money(totals.total)}
             </span>
-          }
-          description={
-            <>
-              Created {fmtDate(co.createdAt)}
-              {co.sentAt ? ` · Sent ${fmtDate(co.sentAt)}` : ""}
-              {co.clientApprovedAt ? ` · Client approved ${fmtDate(co.clientApprovedAt)}${co.decidedBy ? ` (${co.decidedBy})` : ""}` : ""}
-              {co.decidedAt ? ` · ${co.status === "DECLINED" ? "Declined" : "Approved"} ${fmtDate(co.decidedAt)}` : ""}
-              {co.status === "DRAFT" && co.clientApproval ? <ClientEmailNote clientId={project.clientId} button="Send for approval" /> : null}
-            </>
-          }
-          actions={
-            <div className="flex flex-wrap items-center gap-2">
-              <Link href={`/projects/${project.id}/change-orders/${co.id}/print`} className={buttonClasses("secondary", "sm")}>
-                <Printer className="h-3.5 w-3.5" /> Print / PDF
-              </Link>
-              {co.status === "DRAFT" ? (
-                <>
-                  <form action={sendChangeOrder}>
-                    <input type="hidden" name="projectId" value={project.id} />
-                    <input type="hidden" name="id" value={co.id} />
-                    <SubmitButton size="sm">Send for approval</SubmitButton>
-                  </form>
-                  <ConfirmForm action={deleteChangeOrder} hidden={ids} message={`Delete change order #${co.number}? This cannot be undone.`}>
-                    Delete
-                  </ConfirmForm>
-                </>
-              ) : null}
-              {co.status === "APPROVED" || co.status === "DECLINED" ? (
-                <ConfirmForm action={voidChangeOrder} hidden={ids} message={`Void change order #${co.number}? It will no longer count toward the contract.`} variant="secondary">
-                  Void
-                </ConfirmForm>
-              ) : null}
-            </div>
-          }
-        />
-        {co.decisionNote ? (
-          <CardBody>
-            <p className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-700">
-              <span className="font-medium">Decision note:</span> {co.decisionNote}
-            </p>
-          </CardBody>
-        ) : null}
-      </Card>
-
-      {co.status === "PENDING_APPROVAL" && co.clientApproval && !co.clientApprovedAt ? (
-        <Card>
-          <CardHeader title="Record the client's decision" description="If the client approved or declined outside the portal (signed on paper, by email…)." />
-          <CardBody>
-            <form className="space-y-4">
+          </div>
+          <div>
+            <span className="block text-xs text-slate-500">New contract total</span>
+            <span className="text-xl font-semibold tabular-nums text-slate-900">{money(effect.total)}</span>
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center justify-end gap-1.5">
+        <Link href={`/projects/${project.id}/change-orders/${co.id}/print`} className={buttonClasses("secondary", "xs")}>
+          <Printer className="h-3.5 w-3.5" /> Print / PDF
+        </Link>
+        {co.status === "DRAFT" ? (
+          <>
+            <form action={sendChangeOrder}>
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="id" value={co.id} />
-              <FormGrid>
-                <Field label="Decided by" htmlFor="co-decidedBy">
-                  <input id="co-decidedBy" name="decidedBy" className="input" defaultValue={clientName ?? user.name} />
-                </Field>
-                <Field label="Note" htmlFor="co-note">
-                  <input id="co-note" name="decisionNote" className="input" placeholder="Optional" />
-                </Field>
-              </FormGrid>
-              <div className="flex items-center gap-2">
-                <SubmitButton formAction={approveChangeOrder} variant="success" size="sm">
-                  Record approval
-                </SubmitButton>
-                <SubmitButton formAction={declineChangeOrder} variant="danger" size="sm">
-                  Record decline
-                </SubmitButton>
-              </div>
+              <SubmitButton size="xs">Send for approval</SubmitButton>
             </form>
-          </CardBody>
-        </Card>
+            <ConfirmForm action={deleteChangeOrder} hidden={ids} variant="ghost" size="xs" message={`Delete change order #${co.number}? This cannot be undone.`}>
+              <span className="text-rose-600">Delete…</span>
+            </ConfirmForm>
+          </>
+        ) : null}
+        {co.status === "APPROVED" || co.status === "DECLINED" ? (
+          <ConfirmForm
+            action={voidChangeOrder}
+            hidden={ids}
+            message={`Void change order #${co.number}? It will no longer count toward the contract.`}
+            variant="ghost"
+            size="xs"
+          >
+            <span className="text-rose-600">Void…</span>
+          </ConfirmForm>
+        ) : null}
+      </div>
+      {co.decisionNote ? (
+        <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+          <span className="font-medium">Decision note:</span> {co.decisionNote}
+        </p>
+      ) : null}
+
+      {co.status === "PENDING_APPROVAL" && co.clientApproval && !co.clientApprovedAt ? (
+        // Signed on paper or said yes by email: one line to record it.
+        <form className="flex flex-wrap items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 shadow-sm">
+          <input type="hidden" name="projectId" value={project.id} />
+          <input type="hidden" name="id" value={co.id} />
+          <span className="text-sm font-semibold text-slate-900">Record the client&apos;s decision</span>
+          <span className="text-xs text-slate-500">(decided outside the portal)</span>
+          <input name="decidedBy" aria-label="Decided by" className="input !h-7 !w-44 !py-0 text-xs" defaultValue={clientName ?? user.name} />
+          <input name="decisionNote" aria-label="Note" className="input !h-7 !w-auto min-w-0 flex-1 !py-0 text-xs" placeholder="Note (optional)" />
+          <SubmitButton formAction={approveChangeOrder} variant="success" size="xs">
+            Record approval
+          </SubmitButton>
+          <SubmitButton formAction={declineChangeOrder} variant="danger" size="xs">
+            Record decline
+          </SubmitButton>
+        </form>
       ) : null}
 
       <ChangeOrderEditor

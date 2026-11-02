@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Download, ExternalLink, Link2, Mail, MessageSquare, Printer, Send, Share2, X } from "lucide-react";
+import { Check, Copy, Download, ExternalLink, Link2, MessageSquare, Printer, Send, Share2, X } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
 import { actionMessage } from "@/lib/action-message";
 import { saveBidMessage, sendBidEmail } from "../actions";
@@ -103,14 +103,14 @@ export function EmailPreview({
     <>
       <button
         type="button"
-        className={buttonClasses(emailedTo ? "ghost" : "secondary", "sm")}
+        className="text-xs font-medium text-blue-700 hover:underline"
         onClick={() => {
           setResult(null);
           setOpen(true);
         }}
         title={emailedTo ? `Emailed to ${emailedTo} — open it to send again` : "See the email, then send it"}
       >
-        <Mail className="h-3.5 w-3.5" /> {emailedTo ? "Email again" : "Email"}
+        {emailedTo ? "Email again" : "Email"}
       </button>
       {open ? (
         <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 sm:items-center" onClick={() => setOpen(false)}>

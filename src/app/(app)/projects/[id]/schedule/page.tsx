@@ -1,5 +1,5 @@
 import Link from "@/components/link";
-import { GripVertical, Play, Plus, List, GanttChartSquare, ChevronRight, ChevronsRight, CheckCircle2, CloudRain, LayoutTemplate, Bell, Settings2 } from "lucide-react";
+import { GripVertical, Play, Plus, List, GanttChartSquare, ChevronRight, ChevronsRight, CheckCircle2, CloudRain, LayoutTemplate, Bell, Settings2, ChevronDown } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject, staffUsers } from "@/lib/projects";
@@ -11,11 +11,6 @@ import { scheduleTemplateOptions } from "@/lib/schedule-templates";
 import { Gantt, InsertLinks } from "@/components/schedule/gantt";
 import { EraseTaskButton } from "@/components/schedule/erase-task-button";
 import {
-  Stat,
-  Card,
-  CardHeader,
-  CardBody,
-  Collapsible,
   SubmitButton,
   ConfirmForm,
   Button,
@@ -23,14 +18,12 @@ import {
   Field,
   FormGrid,
   Table,
-  THead,
   TBody,
   Tr,
-  Th,
   Td,
   Progress,
-  EmptyState,
   Avatar,
+  buttonClasses,
 } from "@/components/ui";
 import { TaskFields } from "./_components/task-form";
 import { vendorChoices } from "@/lib/paperwork-server";
@@ -44,11 +37,11 @@ export default async function SchedulePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ task?: string; view?: string; delayed?: string; insert?: string; at?: string; add?: string }>;
+  searchParams: Promise<{ task?: string; view?: string; delayed?: string; insert?: string; at?: string; add?: string; delay?: string }>;
 }) {
   const user = await requireView("field");
   const { id } = await params;
-  const { task: taskId, view, delayed, insert, at, add } = await searchParams;
+  const { task: taskId, view, delayed, insert, at, add, delay } = await searchParams;
   const project = await getProject(id);
   const [tasks, staff, links, delays, reasons, templates, cal, vendors] = await Promise.all([
     db.scheduleTask.findMany({
@@ -91,50 +84,205 @@ export default async function SchedulePage({
   const addDates = lastEnd ? placeTask(cal, startAfter(cal, lastEnd, 0), 1) : placeTask(cal, today, 1);
   const nearDates = near ? (above ? placeTask(cal, near.startDate, 1) : placeTask(cal, startAfter(cal, near.endDate, 0), 1)) : null;
 
+  // Start from a template / Save as one: in the toolbar's Templates menu (open on the page with no schedule yet).
+  const templatesBody = (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      <form action={startFromTemplate} className="space-y-3">
+        <input type="hidden" name="projectId" value={project.id} />
+        <p className="text-sm font-medium text-slate-800">Start from a template</p>
+        {templates.length ? (
+          <>
+            <FormGrid>
+              <Field label="Template" htmlFor="tpl">
+                <select id="tpl" name="templateId" className="input">
+                  {templates.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name} ({t._count.tasks})
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Start" htmlFor="tpl-start" hint="On your workdays, holidays skipped">
+                <input id="tpl-start" name="start" type="date" required className="input" defaultValue={dateInput(today)} />
+              </Field>
+            </FormGrid>
+            <SubmitButton size="xs" variant={tasks.length ? "secondary" : "primary"}>
+              {tasks.length ? "Add its tasks" : "Build the schedule"}
+            </SubmitButton>
+          </>
+        ) : (
+          <p className="text-xs text-slate-500">No schedule templates yet — save this job&apos;s schedule as one, or build one in Catalog → Schedule templates.</p>
+        )}
+      </form>
+      {tasks.length ? (
+        <form action={saveAsScheduleTemplate} className="space-y-3">
+          <input type="hidden" name="projectId" value={project.id} />
+          <p className="text-sm font-medium text-slate-800">Save this schedule as a template</p>
+          <Field label="Name" htmlFor="tpl-name" hint="Lengths are kept in workdays, with what waits on what">
+            <input id="tpl-name" name="name" required className="input" placeholder="e.g. 2,400 sq ft one-story" />
+          </Field>
+          <SubmitButton size="xs" variant="secondary">
+            Save as template
+          </SubmitButton>
+        </form>
+      ) : null}
+    </div>
+  );
+  // Closing an open box: back to the chart, in the view you were in.
+  const closeHref = `${base}${isList ? "?view=list" : ""}`;
+
   return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <Stat label="Tasks" value={tasks.length} hint={`${tasks.filter((t) => t.percentComplete >= 100).length} complete`} />
-        <Stat label="Overall complete" value={`${pctOverall}%`} hint="Duration-weighted across all tasks" />
-        <Stat
-          label="Schedule ends"
-          value={fmtDate(scheduleEnd)}
-          hint={delays.length ? `${delays.reduce((n, d) => n + d.days, 0)} workday(s) of delays` : "Last task end date (internal only)"}
-        />
-        <Stat
-          label="Overdue tasks"
-          value={overdue.length}
-          tone={overdue.length ? "bad" : "good"}
-          hint={
-            overdue.length
-              ? overdue
-                  .map((t) => t.name)
-                  .slice(0, 2)
-                  .join(", ")
-              : "On track"
-          }
-        />
+    <div className="space-y-3">
+      {/* Where the job stands: the counts, and the two numbers that matter big on the right. */}
+      <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+        <p className="flex flex-wrap items-center gap-x-1 text-xs text-slate-500">
+          <span>
+            {tasks.length} task{tasks.length === 1 ? "" : "s"} · {tasks.filter((t) => t.percentComplete >= 100).length} complete
+          </span>
+          {overdue.length ? (
+            <span className="font-medium text-rose-700">
+              · {overdue.length} overdue:{" "}
+              {overdue
+                .map((t) => t.name)
+                .slice(0, 2)
+                .join(", ")}
+              {overdue.length > 2 ? "…" : ""}
+            </span>
+          ) : null}
+          {delays.length ? <span>· {delays.reduce((n, d) => n + d.days, 0)} workday(s) of delays</span> : null}
+        </p>
+        {tasks.length ? (
+          <div className="flex items-end gap-6">
+            <div title="Weighted by how long each task is">
+              <span className="block text-xs text-slate-500">Complete</span>
+              <span className="text-xl font-semibold tabular-nums text-slate-900">{pctOverall}%</span>
+            </div>
+            <div title="The last task's end date (only your team sees it)">
+              <span className="block text-xs text-slate-500">Schedule ends</span>
+              <span className="text-xl font-semibold tabular-nums text-slate-900">{fmtDate(scheduleEnd)}</span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {delayed !== undefined ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-900">
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
           Job delayed — {delayed} task{delayed === "1" ? "" : "s"} moved out. It&apos;s in the delay log below.
         </p>
       ) : null}
 
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <header className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-4 py-2.5">
+          <Link
+            href={`${base}?add=1${isList ? "&view=list" : ""}`}
+            className="inline-flex h-7 items-center gap-1 rounded-md bg-blue-700 px-2.5 text-xs font-medium text-white hover:bg-blue-800"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add task
+          </Link>
+          {mayDelay && tasks.length ? (
+            <Link href={`${base}?delay=1${isList ? "&view=list" : ""}`} className={buttonClasses("secondary", "xs")}>
+              <CloudRain className="h-3.5 w-3.5 text-amber-600" /> Delay this job…
+            </Link>
+          ) : null}
+          {tasks.length ? (
+            <details className="group relative">
+              <summary className={cn(buttonClasses("secondary", "xs"), "cursor-pointer list-none [&::-webkit-details-marker]:hidden")}>
+                <LayoutTemplate className="h-3.5 w-3.5" /> Templates <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="absolute left-0 z-30 mt-1 w-[36rem] max-w-[90vw] rounded-lg border border-slate-200 bg-white p-3 shadow-lg">{templatesBody}</div>
+            </details>
+          ) : null}
+          <span className="ml-auto flex flex-wrap items-center gap-3">
+            <Link href="/schedule/calendar" className="text-xs font-medium text-blue-700 hover:underline">
+              Calendar
+            </Link>
+            <span className="hidden items-center gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 text-xs md:flex">
+              <Link href={base} className={cn("flex items-center gap-1 rounded px-2 py-0.5 font-medium", !isList ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>
+                <GanttChartSquare className="h-3.5 w-3.5" /> Gantt
+              </Link>
+              <Link
+                href={`${base}?view=list`}
+                className={cn("flex items-center gap-1 rounded px-2 py-0.5 font-medium", isList ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}
+              >
+                <List className="h-3.5 w-3.5" /> List
+              </Link>
+            </span>
+            {tasks.length ? (
+              <ConfirmForm
+                action={deleteSchedule}
+                hidden={{ projectId: project.id }}
+                variant="ghost"
+                size="xs"
+                message={`Delete this job's whole schedule — all ${tasks.length} tasks, what waits on what, and the reminders tied to them? This can't be undone. (The delay log stays; selections keep their deadlines.)`}
+              >
+                <span className="text-rose-600">Delete schedule…</span>
+              </ConfirmForm>
+            ) : null}
+          </span>
+        </header>
+
+      {/* Delay the job: everything not finished moves out from that day. */}
+      {mayDelay && tasks.length && delay === "1" && !editing && !near && !adding ? (
+        <div className="border-b border-slate-100 bg-blue-50/40 px-4 py-3">
+          <BoxHead title="Delay this job" note="Everything not finished moves out; finished tasks stay. Tasks under way that day finish later." closeHref={closeHref} />
+          <form action={delayJob} className="space-y-2">
+            <input type="hidden" name="projectId" value={project.id} />
+            <FormGrid className="md:grid-cols-4">
+              <Field label="Reason" htmlFor="delay-reason">
+                <select id="delay-reason" name="reasonId" className="input" required={reasons.length > 0} defaultValue="">
+                  <option value="" disabled>
+                    Pick a reason…
+                  </option>
+                  {reasons.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Day" htmlFor="delay-date" hint="Usually today">
+                <input id="delay-date" name="date" type="date" className="input" defaultValue={dateInput(today)} />
+              </Field>
+              <Field label="Workdays" htmlFor="delay-days">
+                <input id="delay-days" name="days" type="number" min={1} max={60} defaultValue={1} className="input" />
+              </Field>
+              <Field label="Note (optional)" htmlFor="delay-notes">
+                <input id="delay-notes" name="notes" className="input" placeholder="e.g. 2 in. of rain overnight" />
+              </Field>
+            </FormGrid>
+            {reasons.length === 0 ? (
+              <p className="text-xs text-amber-700">
+                No delay reasons yet —{" "}
+                {user.role === "ADMIN" ? (
+                  <Link href="/settings/schedule" className="font-medium underline">
+                    add them in Settings → Schedule
+                  </Link>
+                ) : (
+                  "an admin can add them in Settings → Schedule"
+                )}
+                . Until then it&apos;s logged as &ldquo;Other&rdquo;.
+              </p>
+            ) : null}
+            <label className="flex items-center gap-2 text-xs text-slate-700">
+              <input type="checkbox" name="share" className="h-4 w-4 rounded border-slate-300" /> Show the reason to the client (they always see the new dates)
+            </label>
+            <div className="flex items-center gap-3">
+              <SubmitButton size="xs">Delay the job</SubmitButton>
+              {user.role === "ADMIN" ? (
+                <Link href="/settings/schedule" className="ml-auto inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
+                  <Settings2 className="h-3.5 w-3.5" /> Reasons
+                </Link>
+              ) : null}
+            </div>
+          </form>
+        </div>
+      ) : null}
+
       {adding ? (
-        <Card className="border-blue-200">
-          <CardHeader
-            title="Add a task"
-            description="It goes at the end of its phase. To put it somewhere else, hover over a task and use Insert above / below — or drag it after."
-            actions={
-              <ButtonLink href={`${base}${isList ? "?view=list" : ""}`} variant="ghost" size="sm">
-                Cancel
-              </ButtonLink>
-            }
-          />
-          <CardBody>
-            <form action={createTask} className="space-y-4">
+        <div className="border-b border-slate-100 bg-blue-50/40 px-4 py-3">
+          <BoxHead title={"Add a task"} note={"It goes at the end of its phase. To put it somewhere else, hover over a task and use Insert above / below — or drag it after."} closeHref={`${base}${isList ? "?view=list" : ""}`} />
+          <div>
+            <form action={createTask} className="space-y-3">
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="view" value={isList ? "list" : ""} />
               <TaskFields
@@ -145,29 +293,21 @@ export default async function SchedulePage({
                 idPrefix="new"
               />
               <div className="flex items-center gap-2">
-                <SubmitButton>Add task</SubmitButton>
+                <SubmitButton size="xs">Add task</SubmitButton>
                 <ButtonLink href={`${base}${isList ? "?view=list" : ""}`} variant="secondary">
                   Cancel
                 </ButtonLink>
               </div>
             </form>
-          </CardBody>
-        </Card>
+          </div>
+        </div>
       ) : null}
 
       {near && nearDates ? (
-        <Card className="border-blue-200">
-          <CardHeader
-            title={`Insert a task ${above ? "above" : "below"} "${near.name}"`}
-            description={above ? "It goes in just above it, starting when it does." : "It goes in just below it, starting the workday after it ends and waiting on it."}
-            actions={
-              <ButtonLink href={`${base}${isList ? "?view=list" : ""}`} variant="ghost" size="sm">
-                Cancel
-              </ButtonLink>
-            }
-          />
-          <CardBody>
-            <form action={createTask} className="space-y-4">
+        <div className="border-b border-slate-100 bg-blue-50/40 px-4 py-3">
+          <BoxHead title={`Insert a task ${above ? "above" : "below"} "${near.name}"`} note={above ? "It goes in just above it, starting when it does." : "It goes in just below it, starting the workday after it ends and waiting on it."} closeHref={`${base}${isList ? "?view=list" : ""}`} />
+          <div>
+            <form action={createTask} className="space-y-3">
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="insertNear" value={near.id} />
               <input type="hidden" name="insertAt" value={above ? "above" : "below"} />
@@ -182,29 +322,21 @@ export default async function SchedulePage({
                 idPrefix="ins"
               />
               <div className="flex items-center gap-2">
-                <SubmitButton>Insert task</SubmitButton>
+                <SubmitButton size="xs">Insert task</SubmitButton>
                 <ButtonLink href={`${base}${isList ? "?view=list" : ""}`} variant="secondary">
                   Cancel
                 </ButtonLink>
               </div>
             </form>
-          </CardBody>
-        </Card>
+          </div>
+        </div>
       ) : null}
 
       {editing ? (
-        <Card className="border-blue-200">
-          <CardHeader
-            title={`Edit task — ${editing.name}`}
-            description={`${fmtDate(editing.startDate)} – ${fmtDate(editing.endDate)} · ${taskWorkdays(cal, editing)} workday${taskWorkdays(cal, editing) === 1 ? "" : "s"} · ${editing.percentComplete}% complete`}
-            actions={
-              <ButtonLink href={base} variant="ghost" size="sm">
-                Close
-              </ButtonLink>
-            }
-          />
-          <CardBody className="space-y-4">
-            <form action={updateTask} className="space-y-4">
+        <div className="border-b border-slate-100 bg-blue-50/40 px-4 py-3">
+          <BoxHead title={`Edit task — ${editing.name}`} note={`${fmtDate(editing.startDate)} – ${fmtDate(editing.endDate)} · ${taskWorkdays(cal, editing)} workday${taskWorkdays(cal, editing) === 1 ? "" : "s"} · ${editing.percentComplete}% complete`} closeHref={base} />
+          <div className="space-y-3">
+            <form action={updateTask} className="space-y-3">
               <input type="hidden" name="projectId" value={project.id} />
               <input type="hidden" name="id" value={editing.id} />
               <TaskFields
@@ -216,19 +348,19 @@ export default async function SchedulePage({
                 idPrefix="edit"
               />
               <div className="flex flex-wrap items-center gap-2">
-                <SubmitButton>Save changes</SubmitButton>
-                <ButtonLink href={base} variant="secondary">
+                <SubmitButton size="xs">Save changes</SubmitButton>
+                <Link href={base} className="text-xs font-medium text-blue-700 hover:underline">
                   Cancel
-                </ButtonLink>
+                </Link>
               </div>
             </form>
-            <div className="flex flex-wrap items-center gap-2 border-t border-slate-100 pt-4">
-              <span className="text-xs font-medium uppercase tracking-wide text-slate-500">Quick actions</span>
+            <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-3">
+              <span className="text-xs text-slate-500">Quick actions</span>
               <form action={shiftTask}>
                 <input type="hidden" name="projectId" value={project.id} />
                 <input type="hidden" name="id" value={editing.id} />
                 <input type="hidden" name="days" value="1" />
-                <Button type="submit" variant="secondary" size="sm" title="Move this task one workday later — what waits on it moves too">
+                <Button type="submit" variant="secondary" size="xs" title="Move this task one workday later — what waits on it moves too">
                   <ChevronRight className="h-3.5 w-3.5" /> +1 workday
                 </Button>
               </form>
@@ -236,7 +368,7 @@ export default async function SchedulePage({
                 <input type="hidden" name="projectId" value={project.id} />
                 <input type="hidden" name="id" value={editing.id} />
                 <input type="hidden" name="days" value={workWeek} />
-                <Button type="submit" variant="secondary" size="sm" title={`Move this task a work week (${workWeek} workdays) later — what waits on it moves too`}>
+                <Button type="submit" variant="secondary" size="xs" title={`Move this task a work week (${workWeek} workdays) later — what waits on it moves too`}>
                   <ChevronsRight className="h-3.5 w-3.5" /> +1 week
                 </Button>
               </form>
@@ -244,7 +376,7 @@ export default async function SchedulePage({
                 <form action={startTask}>
                   <input type="hidden" name="projectId" value={project.id} />
                   <input type="hidden" name="id" value={editing.id} />
-                  <Button type="submit" variant="secondary" size="sm" title="It's under way — noted in today's daily log">
+                  <Button type="submit" variant="secondary" size="xs" title="It's under way — noted in today's daily log">
                     <Play className="h-3.5 w-3.5" /> Mark started
                   </Button>
                 </form>
@@ -253,20 +385,26 @@ export default async function SchedulePage({
                 <form action={completeTask}>
                   <input type="hidden" name="projectId" value={project.id} />
                   <input type="hidden" name="id" value={editing.id} />
-                  <Button type="submit" variant="success" size="sm">
+                  <Button type="submit" variant="success" size="xs">
                     <CheckCircle2 className="h-3.5 w-3.5" /> Mark complete
                   </Button>
                 </form>
               ) : null}
               <div className="ml-auto">
-                <ConfirmForm action={deleteTask} hidden={{ projectId: project.id, id: editing.id }} message={`Delete task "${editing.name}"? Tasks waiting on it stop waiting.`}>
-                  Delete task
+                <ConfirmForm
+                  action={deleteTask}
+                  hidden={{ projectId: project.id, id: editing.id }}
+                  variant="ghost"
+                  size="xs"
+                  message={`Delete task "${editing.name}"? Tasks waiting on it stop waiting.`}
+                >
+                  <span className="text-rose-600">Delete task…</span>
                 </ConfirmForm>
               </div>
             </div>
             {/* Reminders that move with the task. */}
-            <div className="space-y-2 border-t border-slate-100 pt-4">
-              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-slate-500">
+            <div className="space-y-2 border-t border-slate-100 pt-3">
+              <p className="flex items-center gap-1.5 text-xs text-slate-500">
                 <Bell className="h-3.5 w-3.5" /> Reminders
               </p>
               {editing.reminders.length ? (
@@ -312,122 +450,27 @@ export default async function SchedulePage({
                     </select>
                   </span>
                 </Field>
-                <SubmitButton size="sm" variant="secondary">
+                <SubmitButton size="xs" variant="secondary">
                   Add reminder
                 </SubmitButton>
               </form>
             </div>
-          </CardBody>
-        </Card>
-      ) : null}
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-base font-semibold text-slate-900">
-          Schedule <span className="ml-1 text-sm font-normal text-slate-500">{tasks.length} tasks</span>
-        </h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <ButtonLink href={`${base}?add=1${isList ? "&view=list" : ""}`} size="sm">
-            <Plus className="h-3.5 w-3.5" /> Add task
-          </ButtonLink>
-          {tasks.length ? (
-            <ConfirmForm
-              action={deleteSchedule}
-              hidden={{ projectId: project.id }}
-              variant="ghost"
-              message={`Delete this job's whole schedule — all ${tasks.length} tasks, what waits on what, and the reminders tied to them? This can't be undone. (The delay log stays; selections keep their deadlines.)`}
-            >
-              <span className="text-xs text-rose-600">Delete schedule</span>
-            </ConfirmForm>
-          ) : null}
-          <Link href="/schedule/calendar" className="text-xs font-medium text-blue-700 hover:underline">
-            Calendar
-          </Link>
-          <div className="hidden items-center gap-1 rounded-md border border-slate-200 bg-white p-0.5 text-xs md:flex">
-            <Link href={base} className={cn("flex items-center gap-1 rounded px-2.5 py-1 font-medium", !isList ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}>
-              <GanttChartSquare className="h-3.5 w-3.5" /> Gantt
-            </Link>
-            <Link
-              href={`${base}?view=list`}
-              className={cn("flex items-center gap-1 rounded px-2.5 py-1 font-medium", isList ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-100")}
-            >
-              <List className="h-3.5 w-3.5" /> List
-            </Link>
           </div>
         </div>
-      </div>
-
-      {/* Delay the job: everything not finished moves out from that day. */}
-      {mayDelay && tasks.length ? (
-        <Collapsible
-          summary={
-            <span className="flex items-center gap-2">
-              <CloudRain className="h-4 w-4 text-amber-600" /> Delay this job
-            </span>
-          }
-        >
-          <form action={delayJob} className="space-y-3">
-            <input type="hidden" name="projectId" value={project.id} />
-            <FormGrid className="md:grid-cols-4">
-              <Field label="Reason" htmlFor="delay-reason">
-                <select id="delay-reason" name="reasonId" className="input" required={reasons.length > 0} defaultValue="">
-                  <option value="" disabled>
-                    Pick a reason…
-                  </option>
-                  {reasons.map((r) => (
-                    <option key={r.id} value={r.id}>
-                      {r.name}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Day" htmlFor="delay-date" hint="Usually today">
-                <input id="delay-date" name="date" type="date" className="input" defaultValue={dateInput(today)} />
-              </Field>
-              <Field label="Workdays" htmlFor="delay-days">
-                <input id="delay-days" name="days" type="number" min={1} max={60} defaultValue={1} className="input" />
-              </Field>
-              <Field label="Note (optional)" htmlFor="delay-notes">
-                <input id="delay-notes" name="notes" className="input" placeholder="e.g. 2 in. of rain overnight" />
-              </Field>
-            </FormGrid>
-            {reasons.length === 0 ? (
-              <p className="text-xs text-amber-700">
-                No delay reasons yet —{" "}
-                {user.role === "ADMIN" ? (
-                  <Link href="/settings/schedule" className="font-medium underline">
-                    add them in Settings → Schedule
-                  </Link>
-                ) : (
-                  "an admin can add them in Settings → Schedule"
-                )}
-                . Until then it&apos;s logged as &ldquo;Other&rdquo;.
-              </p>
-            ) : null}
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="share" className="h-4 w-4 rounded border-slate-300" /> Show the reason to the client (they always see the new dates)
-            </label>
-            <div className="flex items-center gap-3">
-              <SubmitButton variant="secondary">Delay the job</SubmitButton>
-              <span className="text-xs text-slate-500">Everything not finished moves out; finished tasks stay. Tasks under way that day finish later.</span>
-              {user.role === "ADMIN" ? (
-                <Link href="/settings/schedule" className="ml-auto inline-flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
-                  <Settings2 className="h-3.5 w-3.5" /> Reasons
-                </Link>
-              ) : null}
-            </div>
-          </form>
-        </Collapsible>
       ) : null}
 
       {tasks.length === 0 ? (
-        <EmptyState icon={GanttChartSquare} title="No schedule yet" description="Start from a template below, or click + Add task above." />
+        <>
+          <div className="border-b border-slate-100 bg-blue-50/40 px-4 py-3">{templatesBody}</div>
+          <p className="px-4 py-8 text-center text-sm text-slate-500">No schedule yet. Start from a template above, or click + Add task.</p>
+        </>
       ) : (
         <>
           {/* Phones: the tasks by phase, each a tap away from its details (the Gantt and table need a bigger screen). */}
-          <div className="space-y-4 md:hidden">
+          <div className="divide-y divide-slate-100 md:hidden">
             {groupByPhase(tasks).map((g) => (
-              <section key={g.phase} className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-                <h3 className="border-b border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{g.phase}</h3>
+              <section key={g.phase}>
+                <h3 className="border-b border-slate-100 bg-slate-50 px-4 py-1.5 text-xs text-slate-500">{g.phase}</h3>
                 <ul className="divide-y divide-slate-100">
                   {g.tasks.map((t) => {
                     const od = isTaskOverdue(t, today);
@@ -459,19 +502,19 @@ export default async function SchedulePage({
           <div className="hidden md:block">
             {isList ? (
               <ScheduleReorder projectId={project.id} insertBase={`${base}?`} insertTail={listQ}>
-                <Table>
-                  <THead>
+                <Table className="rounded-none border-0 shadow-none">
+                  <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
                     <tr>
-                      <Th>Task</Th>
-                      <Th>Phase</Th>
-                      <Th>Start</Th>
-                      <Th>End</Th>
-                      <Th right>Workdays</Th>
-                      <Th>Assignee</Th>
-                      <Th>Progress</Th>
-                      <Th>Waits on</Th>
+                      <th className="px-4 py-2 font-normal">Task</th>
+                      <th className="px-4 py-2 font-normal">Phase</th>
+                      <th className="px-4 py-2 font-normal">Start</th>
+                      <th className="px-4 py-2 font-normal">End</th>
+                      <th className="px-4 py-2 text-right font-normal">Workdays</th>
+                      <th className="px-4 py-2 font-normal">Assignee</th>
+                      <th className="px-4 py-2 font-normal">Progress</th>
+                      <th className="px-4 py-2 font-normal">Waits on</th>
                     </tr>
-                  </THead>
+                  </thead>
                   <TBody>
                     {groupByPhase(tasks).flatMap((g) =>
                       g.tasks.map((t) => {
@@ -529,74 +572,33 @@ export default async function SchedulePage({
               </ScheduleReorder>
             ) : (
               <ScheduleReorder projectId={project.id} insertBase={`${base}?`} insertTail={listQ}>
-                <Gantt tasks={tasks} today={today} taskHref={(t) => `${base}?task=${t.id}`} selectedTaskId={editing?.id} draggable insertHref={insertHref} rowTools={eraseTool} />
+                <Gantt bare tasks={tasks} today={today} taskHref={(t) => `${base}?task=${t.id}`} selectedTaskId={editing?.id} draggable insertHref={insertHref} rowTools={eraseTool} />
               </ScheduleReorder>
             )}
           </div>
         </>
       )}
-
-      <Collapsible
-        defaultOpen={tasks.length === 0}
-        summary={
-          <span className="flex items-center gap-2">
-            <LayoutTemplate className="h-4 w-4" /> Schedule templates
-          </span>
-        }
-      >
-        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-          <form action={startFromTemplate} className="space-y-3">
-            <input type="hidden" name="projectId" value={project.id} />
-            <p className="text-sm font-medium text-slate-800">Start from a template</p>
-            {templates.length ? (
-              <>
-                <FormGrid>
-                  <Field label="Template" htmlFor="tpl">
-                    <select id="tpl" name="templateId" className="input">
-                      {templates.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.name} ({t._count.tasks})
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Start" htmlFor="tpl-start" hint="On your workdays, holidays skipped">
-                    <input id="tpl-start" name="start" type="date" required className="input" defaultValue={dateInput(today)} />
-                  </Field>
-                </FormGrid>
-                <SubmitButton variant="secondary">{tasks.length ? "Add its tasks" : "Build the schedule"}</SubmitButton>
-              </>
-            ) : (
-              <p className="text-xs text-slate-500">No schedule templates yet — save this job&apos;s schedule as one, or build one in Catalog → Schedule templates.</p>
-            )}
-          </form>
-          {tasks.length ? (
-            <form action={saveAsScheduleTemplate} className="space-y-3">
-              <input type="hidden" name="projectId" value={project.id} />
-              <p className="text-sm font-medium text-slate-800">Save this schedule as a template</p>
-              <Field label="Name" htmlFor="tpl-name" hint="Lengths are kept in workdays, with what waits on what">
-                <input id="tpl-name" name="name" required className="input" placeholder="e.g. 2,400 sq ft one-story" />
-              </Field>
-              <SubmitButton variant="secondary">Save as template</SubmitButton>
-            </form>
-          ) : null}
-        </div>
-      </Collapsible>
+      </section>
 
       {delays.length ? (
-        <Card>
-          <CardHeader title="Delays" description={`${delays.length} logged · ${delays.reduce((n, d) => n + d.days, 0)} workday(s) in all`} />
-          <Table className="rounded-t-none border-0 shadow-none">
-            <THead>
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <header className="flex flex-wrap items-baseline gap-2 border-b border-slate-100 px-4 py-2.5">
+            <span className="text-sm font-semibold text-slate-900">Delays</span>
+            <span className="text-xs text-slate-500">
+              {delays.length} logged · {delays.reduce((n, d) => n + d.days, 0)} workday(s) in all
+            </span>
+          </header>
+          <Table className="rounded-none border-0 shadow-none">
+            <thead className="border-b border-slate-100 text-left text-xs text-slate-500">
               <tr>
-                <Th>Day</Th>
-                <Th>Reason</Th>
-                <Th right>Workdays</Th>
-                <Th right>Tasks moved</Th>
-                <Th>By</Th>
-                <Th>Client sees</Th>
+                <th className="px-4 py-2 font-normal">Day</th>
+                <th className="px-4 py-2 font-normal">Reason</th>
+                <th className="px-4 py-2 text-right font-normal">Workdays</th>
+                <th className="px-4 py-2 text-right font-normal">Tasks moved</th>
+                <th className="px-4 py-2 font-normal">By</th>
+                <th className="px-4 py-2 font-normal">Client sees</th>
               </tr>
-            </THead>
+            </thead>
             <TBody>
               {delays.map((d) => (
                 <Tr key={d.id}>
@@ -613,8 +615,23 @@ export default async function SchedulePage({
               ))}
             </TBody>
           </Table>
-        </Card>
+        </section>
       ) : null}
+    </div>
+  );
+}
+
+/** The top of a box under the toolbar: what it is, a line about it, and the way out. */
+function BoxHead({ title, note, closeHref }: { title: string; note?: string; closeHref: string }) {
+  return (
+    <div className="mb-2 flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <span className="text-sm font-semibold text-slate-900">{title}</span>
+        {note ? <p className="text-xs text-slate-500">{note}</p> : null}
+      </div>
+      <Link href={closeHref} className="shrink-0 text-xs font-medium text-blue-700 hover:underline">
+        Cancel
+      </Link>
     </div>
   );
 }

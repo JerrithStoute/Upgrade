@@ -150,6 +150,18 @@ test("uploads a plan on the Plans tab, renames it from Edit and deletes it", asy
   await expect(page.getByRole("link", { name: "Flow permit set", exact: true })).toHaveCount(0);
 });
 
+test("opens Daily Logs: one card with New log and the Photos folder link", async () => {
+  await page.goto(`${job}/daily-logs`);
+  await expect(page.getByRole("link", { name: "New log" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Photos folder" })).toBeVisible();
+});
+
+test("opens the Bids tab with its sections in order", async () => {
+  await page.goto(`${job}/bids`);
+  for (const name of ["What to send, and who to", "Send to subs", "Sent", "Compare and take"])
+    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+});
+
 test("opens the Material list and switches prices off and on", async () => {
   await page.goto(`${job}/materials`);
   await expect(page.getByRole("link", { name: "Send to vendors" })).toBeVisible();
@@ -192,6 +204,13 @@ test("builds an estimate: a line, saved, adds up", async () => {
   await expect(page.getByText("Job prices follow the Item List")).toBeVisible();
 });
 
+test("opens Selections: its line at the top and Other selections", async () => {
+  await page.goto(`${job}/selections`);
+  await expect(page.getByText("still to choose")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Other selections" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "New selection" })).toBeVisible();
+});
+
 test("writes a change order", async () => {
   await page.goto(`${job}/change-orders/new`);
   await page.locator("[name=title]").fill("Upgrade the front door");
@@ -199,6 +218,17 @@ test("writes a change order", async () => {
   await page.getByRole("button", { name: "Create change order" }).click();
   await expect(page).toHaveURL(/\/change-orders\/c[a-z0-9]+/);
   await expect(page.getByText("Upgrade the front door").first()).toBeVisible();
+  // Its page: the money big at the top, and the way back.
+  await expect(page.getByText("New contract total", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Send for approval" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "← Change orders" })).toBeVisible();
+  // On the list: the money up top, and Find narrows it.
+  await page.goto(`${job}/change-orders`);
+  await expect(page.getByText("Pending approval", { exact: true })).toBeVisible();
+  await page.getByPlaceholder("Find a change order…").fill("front door");
+  await expect(page.getByRole("link", { name: "Upgrade the front door" })).toBeVisible();
+  await page.getByPlaceholder("Find a change order…").fill("zzz");
+  await expect(page.getByText("None match.")).toBeVisible();
 });
 
 test("invoices the client", async () => {
@@ -559,6 +589,26 @@ test("sets up doors in the Catalog: less detail, and a part for the odd door", a
   await page.reload();
   await expect(page.getByText("A usual door is named 2868 Int Prehung 2x4 Jamb")).toBeVisible();
   await expect(page.getByRole("button", { name: "Take Metal off Material" })).toBeVisible();
+});
+
+test("schedules a task, opens Delay this job and Templates from the toolbar, then deletes the schedule", async () => {
+  await page.goto(`${job}/schedule`);
+  // No schedule yet: starting from a template is right there.
+  await expect(page.getByText("Start from a template", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Add task" }).click();
+  await page.locator("[name=name]").fill("Flow pour footings");
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.locator(":text(\"Flow pour footings\"):visible").first()).toBeVisible();
+  await expect(page.getByText("Schedule ends", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Delay this job…" }).click();
+  await expect(page.getByRole("button", { name: "Delay the job" })).toBeVisible();
+  await page.getByRole("link", { name: "Cancel" }).click();
+  await expect(page.getByRole("button", { name: "Delay the job" })).toHaveCount(0);
+  await page.locator("summary", { hasText: "Templates" }).click();
+  await expect(page.getByRole("button", { name: "Save as template" })).toBeVisible();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete schedule…" }).click();
+  await expect(page.getByText("No schedule yet.", { exact: false })).toBeVisible();
 });
 
 test("adds a sub from a schedule task without leaving, and drops their W-9 on their page", async () => {

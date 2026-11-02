@@ -2,8 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Send } from "lucide-react";
-import { Button } from "@/components/ui";
 import { actionMessage } from "@/lib/action-message";
 import { sendAllBidEmails } from "../actions";
 import { useSendHow } from "./send-how";
@@ -16,9 +14,9 @@ export function EmailAllButton({ projectId, count }: { projectId: string; count:
   const [note, setNote] = useState<{ text: string; bad?: boolean } | null>(null);
   return (
     <span className="flex flex-wrap items-center gap-2">
-      <Button
+      <button
         type="button"
-        size="sm"
+        className="text-xs font-medium text-blue-700 hover:underline disabled:text-slate-400 disabled:no-underline"
         disabled={busy}
         onClick={async () => {
           const way = `${how.attach ? "with its Excel file and PDF attached" : "with its link to type prices online (Excel and PDF on that page)"}${how.copyMe ? ", and a copy to you" : ""}`;
@@ -44,8 +42,8 @@ export function EmailAllButton({ projectId, count }: { projectId: string; count:
           }
         }}
       >
-        <Send className="h-3.5 w-3.5" /> {busy ? "Sending…" : `Email all (${count})`}
-      </Button>
+        {busy ? "Sending…" : `Email all (${count})`}
+      </button>
       {note ? <span className={note.bad ? "text-xs text-amber-800" : "text-xs text-emerald-700"}>{note.text}</span> : null}
     </span>
   );

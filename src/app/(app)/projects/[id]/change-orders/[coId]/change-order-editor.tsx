@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { CheckCircle2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { CheckCircle2, Pencil, Trash2, X } from "lucide-react";
 import { cn, costCodeLabel, fmtDate, money, num } from "@/lib/utils";
 import { LINE_PROFIT_MODES, changeOrderTotals, type CoDefaults } from "@/lib/change-orders";
 import type { UnaddedChoice } from "@/lib/change-orders-server";
@@ -167,7 +167,7 @@ export function ChangeOrderEditor({
   const charges = items.filter((i) => i.kind === "CHARGE");
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {err ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</p> : null}
 
       <Section title="Details">
@@ -187,12 +187,12 @@ export function ChangeOrderEditor({
 
       <Section title="Line items">
         {draft && open.length ? (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-blue-700 px-4 py-3 text-sm text-white">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs text-blue-900">
             <span>
               There {open.length === 1 ? "is a client choice" : `are ${open.length} client choices`} that {open.length === 1 ? "hasn't" : "haven't"} been added to a change order
               yet.
             </span>
-            <button type="button" className="rounded-md bg-white px-3 py-1.5 text-xs font-semibold text-blue-800 hover:bg-blue-50" onClick={() => setPicking(true)}>
+            <button type="button" className="font-semibold text-blue-800 underline hover:text-blue-950" onClick={() => setPicking(true)}>
               Add items
             </button>
           </div>
@@ -200,17 +200,17 @@ export function ChangeOrderEditor({
 
         <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="border-b border-slate-100 text-xs text-slate-500">
               <tr>
-                <th className="px-3 py-2 font-medium" title="Yours — the budget uses it; the client never sees it">
+                <th className="px-3 py-2 font-normal" title="Yours — the budget uses it; the client never sees it">
                   Cost code
                 </th>
-                <th className="px-3 py-2 font-medium">{ch ? "Selection / item" : "Item"}</th>
-                {ch ? <th className="px-3 py-2 font-medium">Choice</th> : null}
-                <th className="px-3 py-2 text-right font-medium">{ch ? "Client price" : "Amount"}</th>
-                {ch ? <th className="px-3 py-2 text-right font-medium">Allowance</th> : null}
-                <th className="px-3 py-2 text-right font-medium">{ch ? "Difference" : "Price"}</th>
-                <th className="px-3 py-2 font-medium" title="This line's own profit — or the change order's">
+                <th className="px-3 py-2 font-normal">{ch ? "Selection / item" : "Item"}</th>
+                {ch ? <th className="px-3 py-2 font-normal">Choice</th> : null}
+                <th className="px-3 py-2 text-right font-normal">{ch ? "Client price" : "Amount"}</th>
+                {ch ? <th className="px-3 py-2 text-right font-normal">Allowance</th> : null}
+                <th className="px-3 py-2 text-right font-normal">{ch ? "Difference" : "Price"}</th>
+                <th className="px-3 py-2 font-normal" title="This line's own profit — or the change order's">
                   {taxOn ? "Profit · tax" : "Profit"}
                 </th>
                 <th className="w-10" />
@@ -347,12 +347,12 @@ export function ChangeOrderEditor({
           </table>
         </div>
         {draft ? (
-          <div className="flex flex-wrap gap-2">
-            <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => setAdding("LINE")} disabled={adding !== null}>
-              <Plus className="h-3.5 w-3.5" /> New item
+          <div className="flex flex-wrap gap-4">
+            <button type="button" className="text-xs font-medium text-blue-700 hover:underline disabled:text-slate-400" onClick={() => setAdding("LINE")} disabled={adding !== null}>
+              + New item
             </button>
-            <button type="button" className={buttonClasses("ghost", "sm")} onClick={() => setAdding("CHARGE")} disabled={adding !== null}>
-              <Plus className="h-3.5 w-3.5" /> Extra charge (e.g. change order fee)
+            <button type="button" className="text-xs font-medium text-blue-700 hover:underline disabled:text-slate-400" onClick={() => setAdding("CHARGE")} disabled={adding !== null}>
+              + Extra charge (e.g. change order fee)
             </button>
           </div>
         ) : null}
@@ -506,7 +506,7 @@ export function ChangeOrderEditor({
                   {t.name}
                   {on && at ? <CheckCircle2 className="h-4 w-4 text-emerald-600" aria-label={`Approved ${fmtDate(at)}`} /> : null}
                   {on && !at && co.status === "PENDING_APPROVAL" && t.id === me ? (
-                    <button type="button" className={buttonClasses("primary", "sm")} disabled={busy} onClick={() => run(() => teamApproveChangeOrder(projectId, co.id))}>
+                    <button type="button" className={buttonClasses("primary", "xs")} disabled={busy} onClick={() => run(() => teamApproveChangeOrder(projectId, co.id))}>
                       Approve
                     </button>
                   ) : null}
@@ -563,14 +563,13 @@ export function ChangeOrderEditor({
   );
 }
 
+/** A card: its small title, what it's for as one gray line, then its fields. */
 function Section({ title, note, children }: { title: string; note?: string; children: React.ReactNode }) {
   return (
-    <section className="space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div>
-        <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-        {note ? <p className="text-xs text-slate-500">{note}</p> : null}
-      </div>
-      {children}
+    <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+      <h2 className="border-b border-slate-100 px-4 py-2.5 text-sm font-semibold text-slate-900">{title}</h2>
+      {note ? <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">{note}</p> : null}
+      <div className="space-y-3 px-4 py-3">{children}</div>
     </section>
   );
 }
@@ -608,7 +607,7 @@ function Text({
       <span className={inline ? "text-slate-600" : "label"}>{label}</span>
       <input
         key={value}
-        className={cn("input", inline && "!h-8 !w-48 !py-0 text-xs")}
+        className={cn("input !h-8 !py-0 text-sm", inline && "!w-48 text-xs")}
         defaultValue={value}
         placeholder={placeholder}
         disabled={disabled}
@@ -638,7 +637,7 @@ function LongText({
     <div>
       <label className="block text-sm">
         <span className="label">{label}</span>
-        <textarea key={value} className="input" rows={3} defaultValue={value} disabled={disabled} onBlur={(e) => e.target.value.trim() !== value && onSave(e.target.value)} />
+        <textarea key={value} className="input text-sm" rows={3} defaultValue={value} disabled={disabled} onBlur={(e) => e.target.value.trim() !== value && onSave(e.target.value)} />
       </label>
       <DefaultBox checked={isDefault} disabled={!value} onClick={onDefault} />
     </div>
@@ -679,7 +678,7 @@ function DateInput({ label, value, disabled, onSave }: { label: string; value: s
   return (
     <label className="block text-sm">
       <span className="label">{label}</span>
-      <input key={value} type="date" className="input !w-48" defaultValue={value} disabled={disabled} onChange={(e) => e.target.value !== value && onSave(e.target.value)} />
+      <input key={value} type="date" className="input !h-8 !w-48 !py-0 text-sm" defaultValue={value} disabled={disabled} onChange={(e) => e.target.value !== value && onSave(e.target.value)} />
     </label>
   );
 }
@@ -749,13 +748,13 @@ function LineForm({
         <span className="inline-flex gap-1">
           <button
             type="button"
-            className={buttonClasses("primary", "sm")}
+            className={buttonClasses("primary", "xs")}
             disabled={busy || !d.trim() || !Number.isFinite(n)}
             onClick={() => onSave({ kind, description: d.trim(), amount: n, costCodeId: code })}
           >
             {initial ? "Save" : "Add"}
           </button>
-          <button type="button" className={buttonClasses("ghost", "sm")} onClick={onCancel}>
+          <button type="button" className={buttonClasses("ghost", "xs")} onClick={onCancel}>
             Cancel
           </button>
         </span>
@@ -908,10 +907,10 @@ function PickChoices({ open, busy, onAdd, onCancel }: { open: UnaddedChoice[]; b
           </table>
         </div>
         <footer className="flex justify-end gap-2 border-t border-slate-200 px-5 py-3">
-          <button type="button" className={buttonClasses("ghost", "sm")} onClick={onCancel}>
+          <button type="button" className={buttonClasses("ghost", "xs")} onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" className={buttonClasses("primary", "sm")} disabled={busy || !picked.size} onClick={() => onAdd(Array.from(picked))}>
+          <button type="button" className={buttonClasses("primary", "xs")} disabled={busy || !picked.size} onClick={() => onAdd(Array.from(picked))}>
             Add selected
           </button>
         </footer>

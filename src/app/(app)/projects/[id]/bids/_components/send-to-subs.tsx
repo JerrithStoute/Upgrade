@@ -158,17 +158,17 @@ export function SendToSubs({
           />
           <label className="block">
             <span className="label">Due by (optional)</span>
-            <input type="date" name="due" className="input !w-auto" />
+            <input type="date" name="due" className="input !h-7 !w-auto !py-0 text-xs" />
           </label>
           <label className="block">
             <span className="label">Note to the subs (optional)</span>
-            <textarea name="note" rows={2} className="input" placeholder="Bid per plans. Fixtures per allowance. Include permit." />
+            <textarea name="note" rows={2} className="input text-xs" placeholder="Bid per plans. Fixtures per allowance. Include permit." />
           </label>
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton pendingText="Making…" disabled={!picked.size || !chosen.size}>
-          <HardHat className="h-4 w-4" /> Send to {chosen.size || ""} sub{chosen.size === 1 ? "" : "s"}
+        <SubmitButton size="xs" pendingText="Making…" disabled={!picked.size || !chosen.size}>
+          <HardHat className="h-3.5 w-3.5" /> Send to {chosen.size || ""} sub{chosen.size === 1 ? "" : "s"}
         </SubmitButton>
         <span className={cn("text-xs", picked.size && chosen.size ? "text-slate-600" : "text-slate-400")}>
           {picked.size && chosen.size

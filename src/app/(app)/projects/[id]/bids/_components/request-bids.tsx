@@ -193,7 +193,7 @@ export function RequestBids({
             <textarea
               name="note"
               rows={2}
-              className="input"
+              className="input text-xs"
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Please quote by Friday. Deliver to the job site."
@@ -202,8 +202,8 @@ export function RequestBids({
         </div>
       </div>
       <div className="flex flex-wrap items-center gap-3">
-        <SubmitButton pendingText="Making…" disabled={!picked.size || !chosen.size}>
-          <FileSpreadsheet className="h-4 w-4" /> Send to {chosen.size || ""} vendor{chosen.size === 1 ? "" : "s"}
+        <SubmitButton size="xs" pendingText="Making…" disabled={!picked.size || !chosen.size}>
+          <FileSpreadsheet className="h-3.5 w-3.5" /> Send to {chosen.size || ""} vendor{chosen.size === 1 ? "" : "s"}
         </SubmitButton>
         <span className={cn("text-xs", picked.size && chosen.size ? "text-slate-600" : "text-slate-400")}>
           {picked.size && chosen.size

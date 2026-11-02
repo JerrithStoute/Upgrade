@@ -240,7 +240,7 @@ export const JOBS: HelpArticle[] = [
       {
         heading: "The top of the tab",
         items: [
-          { name: "Selections / Still to choose / Allowances / Over / under", what: "How many selections there are, how many are still waiting (and how many overdue), the allowance total, and how far the choices made are over (red) or under (green)." },
+          { name: "The top", what: "On the left, how many selections there are, how many are still waiting (and how many overdue), on the right, big, the allowance total and how far the choices made are over (red) or under (green)." },
           { name: "The list (left)", what: "Every selection, by division, with its cost codes, where it stands (amber dot: waiting, red: overdue, green: chosen) and when it's due. **NEW** means someone else changed it since you looked.", how: "Click one to open it on the right. Only one is open at a time, so a choice always goes on the selection you meant." },
           { name: "Deadlines", what: "Sets deadlines for many selections at once: tick them, set the deadline, **Apply to N ticked**, then **Save deadlines**." },
         ],
@@ -295,16 +295,18 @@ export const JOBS: HelpArticle[] = [
       {
         heading: "The tab",
         items: [
-          { name: "Approved / Pending approval / Schedule impact / Total", what: "Approved dollars, dollars waiting on a decision, days added by approved change orders, and how many there are." },
-          { name: "The table", what: "Each change order: title, reason, status (Draft, Pending Approval, Approved, Declined, Void), price, days, when it was sent and decided." },
+          { name: "The top", what: "On the left, how many change orders there are, how many are waiting on the client, and the days approved ones add. On the right, big: **Approved** dollars (green) and **Pending approval** dollars (amber)." },
+          { name: "Find / + New change order", what: "Find narrows the list as you type (number, title, description or reason). **+ New change order** starts one (only for people who see costs)." },
+          { name: "The table", what: "Each change order (click its name to open it): title, reason, status (Draft, Pending Approval, Approved, Declined, Void), price, days, when it was sent and decided." },
         ],
       },
       {
         heading: "A change order",
         items: [
+          { name: "The top", what: "**← Change orders** goes back. The CO number, title and status, its dates, and on the right, big: **This change order** and the **New contract total** with it." },
           { name: "Print / PDF", what: "The change order document with signature lines." },
           { name: "Send for approval", what: "Sends a draft: emails the client and shows it in their portal. If no one has to approve it, it's approved right away." },
-          { name: "Delete / Void", what: "Delete removes a draft. Void cancels an approved or declined one; it stops counting toward the contract." },
+          { name: "Delete… / Void…", what: "They ask first. Delete removes a draft. Void cancels an approved or declined one; it stops counting toward the contract." },
           { name: "Record the client's decision", what: "When the client approved or declined outside the portal (on paper, by email).", how: "Fill in who decided and a note, then **Record approval** or **Record decline**." },
           { name: "Details / Intro text", what: "The title, a description for you, and the text the client reads first. **Use as default** saves the text for new change orders." },
           { name: "Line items", what: "Each line: cost code (yours; the client never sees it), what's being added, the price, the allowance and difference for client choices, and its profit and tax.", how: "**Add items** brings in client choices not yet on a change order. **+ New item** adds a line. **+ Extra charge** adds a fee." },

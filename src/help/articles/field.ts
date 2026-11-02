@@ -10,7 +10,7 @@ export const FIELD: HelpArticle[] = [
     what: "A job's **Schedule** tab lays out the work as tasks, grouped by phase, on a Gantt chart: what happens when, who's on it, and what waits on what. Move one task and everything waiting on it moves too. Your client sees the schedule in their portal, and subs see the tasks assigned to them.",
     how: [
       "Open the job's **Schedule** tab.",
-      "Start fast: under **Schedule templates**, pick a template and a start date and click **Build the schedule**. Or click **+ Add task** to build it by hand.",
+      "Start fast: with no schedule yet, the **Start from a template** box is open: pick a template and a start date and click **Build the schedule**. Or click **+ Add task** to build it by hand.",
       "Click a task to change its dates, % complete, who's on it, or what it waits on.",
       "As work happens, use **Mark started** and **Mark complete**. They go in the day's daily log by themselves.",
       "When rain, an inspection or a late delivery holds you up, use **Delay this job**: everything not finished moves out, and it's logged.",
@@ -19,9 +19,10 @@ export const FIELD: HelpArticle[] = [
       {
         heading: "The top",
         items: [
-          { name: "Tasks / Overall complete / Schedule ends / Overdue tasks", what: "How many tasks and how many are done, how far along the job is (weighted by task length), the last end date with workdays lost to delays, and what's overdue." },
-          { name: "+ Add task", what: "Adds a task at the end of its phase." },
-          { name: "Delete schedule", what: "Deletes every task, link and reminder on the job's schedule. The delay log stays." },
+          { name: "The top", what: "On the left, how many tasks and how many are done, any overdue (in red, with their names) and workdays lost to delays. On the right, big: **Complete** (weighted by task length) and **Schedule ends** (the last end date; only your team sees it)." },
+          { name: "+ Add task", what: "In the chart's toolbar: opens a box under it to add a task at the end of its phase. **Cancel** closes it." },
+          { name: "Delay this job… / Templates", what: "Also in the toolbar. **Delay this job…** opens its box under the toolbar. **Templates** opens **Start from a template** and **Save as template**." },
+          { name: "Delete schedule…", what: "Asks, then deletes every task, link and reminder on the job's schedule. The delay log stays." },
           { name: "Calendar", what: "The company calendar." },
           { name: "Gantt / List", what: "Bars on a timeline, or a table with start, end, workdays, assignee, progress and what each waits on. Phones show a list of cards." },
         ],
@@ -145,6 +146,13 @@ export const FIELD: HelpArticle[] = [
       "Click **Save log**.",
     ],
     sections: [
+      {
+        heading: "The list",
+        items: [
+          { name: "Find", what: "Type part of a day (\"Monday\", \"Nov 2\"), the work done, an issue, a note or who wrote it to narrow the logs as you type." },
+          { name: "Each log", what: "The day, then weather, crew, hours, who wrote it and **Internal** on one line, with **Edit** on the right. Under it: the work done, issues in amber, notes and small photos (click one to see it full size)." },
+        ],
+      },
       {
         heading: "A log",
         items: [
