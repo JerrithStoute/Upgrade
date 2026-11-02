@@ -4204,6 +4204,21 @@ export function PlanViewer({
               const isActive = c.id === activeId;
               const isHidden = hidden.has(c.id);
               const info = infoOpen.has(c.id) ? totalsPanel.conditions.find((t) => t.id === c.id) : undefined;
+              const kind = [
+                CONDITION_TYPE_LABELS[c.type as ConditionType] ?? c.type,
+                // The span-table takeoff you draw with: its areas go to the takeoff of their size.
+                c.spanTable && !c.memberSize ? ` · draw with this — areas go to their size (${c.spanTable})` : "",
+                c.pitch > 0 ? ` · ${num(c.pitch, 2)}/12` : "",
+                c.type === "BEAM"
+                  ? (() => {
+                      const b = beamOptions(c.options);
+                      return `${c.memberSize ? ` · ${c.memberSize}` : ""}${b.plies > 1 ? ` ×${b.plies}` : ""} · ${num(b.bearingIn, 2)}" bearing`;
+                    })()
+                  : "",
+                c.type === "HIP_VALLEY" ? (!(c.pitch > 0) || c.pitch2 === 0 ? " · level" : c.pitch2 != null && c.pitch2 !== c.pitch ? ` & ${num(c.pitch2, 2)}/12` : "") : "",
+              ].join("");
+              // The ⌄ ✎ 👁 buttons: on the line you're over or measuring with (always on a touchscreen); a hidden one keeps its eye.
+              const quiet = isActive ? "" : "opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100 pointer-coarse:opacity-100";
               return (
                 <li
                   key={c.id}
@@ -4246,7 +4261,7 @@ export function PlanViewer({
                       setDragId(null);
                       setDropAt(null);
                     }}
-                    className="absolute left-0.5 top-2 z-10 flex h-6 w-3 cursor-grab items-center justify-center text-slate-400 opacity-0 transition-opacity hover:text-slate-700 active:cursor-grabbing [li:hover>&]:opacity-100"
+                    className="absolute left-0.5 top-0.5 z-10 flex h-6 w-3 cursor-grab items-center justify-center text-slate-400 opacity-0 transition-opacity hover:text-slate-700 active:cursor-grabbing [li:hover>&]:opacity-100"
                   >
                     <GripVertical className="h-3.5 w-3.5" />
                   </span>
@@ -4283,60 +4298,40 @@ export function PlanViewer({
                         showTakeoff(c.id);
                       }
                     }}
+                    title={`${c.name} — ${kind}\nThis sheet ${num(c.sheetTotal)} · Job ${num(c.total)} ${c.unit}`}
                     className={cn(
-                      "flex cursor-pointer items-start gap-2 border-l-4 px-3 py-2 hover:bg-slate-50",
+                      "group/row flex cursor-pointer items-center gap-2 border-l-4 py-1 pl-3 pr-1.5 hover:bg-slate-50",
                       isActive ? "bg-blue-50/60" : "border-transparent",
                     )}
                     style={isActive ? { borderLeftColor: c.color } : undefined}
                   >
                     <span
-                      className="mt-1 h-3 w-3 shrink-0 rounded-sm"
+                      className="h-3 w-3 shrink-0 rounded-sm"
                       style={{
                         background: c.color,
                         opacity: isHidden ? 0.3 : 1,
                       }}
                     />
-                    <span className="min-w-0 flex-1">
-                      <span className="flex min-w-0 items-center gap-1.5">
-                        <span className="truncate text-sm font-medium text-slate-900">{c.name}</span>
-                        {c.referenceOnly ? (
-                          <span
-                            className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200"
-                            title="Reference only — not on the estimate"
-                          >
-                            Reference
-                          </span>
-                        ) : null}
-                      </span>
-                      <span className="block text-xs text-slate-500">
-                        {CONDITION_TYPE_LABELS[c.type as ConditionType] ?? c.type}
-                        {/* The span-table takeoff you draw with: its areas go to the takeoff of their size. */}
-                        {c.spanTable && !c.memberSize ? ` · draw with this — areas go to their size (${c.spanTable})` : ""}
-                        {c.pitch > 0 ? ` · ${num(c.pitch, 2)}/12` : ""}
-                        {c.type === "BEAM"
-                          ? (() => {
-                              const b = beamOptions(c.options);
-                              return `${c.memberSize ? ` · ${c.memberSize}` : ""}${b.plies > 1 ? ` ×${b.plies}` : ""} · ${num(b.bearingIn, 2)}" bearing`;
-                            })()
-                          : null}
-                        {c.type === "HIP_VALLEY"
-                          ? !(c.pitch > 0) || c.pitch2 === 0
-                            ? " · level"
-                            : c.pitch2 != null && c.pitch2 !== c.pitch
-                              ? ` & ${num(c.pitch2, 2)}/12`
-                              : ""
-                          : ""}
-                      </span>
-                      <span className="block text-xs tabular-nums text-slate-700">
-                        Sheet {num(c.sheetTotal)} · All {num(c.total)} {c.unit}
-                      </span>
+                    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+                      <span className="truncate text-sm font-medium text-slate-900">{c.name}</span>
+                      {c.referenceOnly ? (
+                        <span
+                          className="shrink-0 rounded bg-slate-100 px-1 text-[10px] font-medium text-slate-600 ring-1 ring-inset ring-slate-200"
+                          title="Reference only — not on the estimate"
+                        >
+                          Ref
+                        </span>
+                      ) : null}
+                    </span>
+                    <span className="shrink-0 whitespace-nowrap text-xs tabular-nums text-slate-800">
+                      {num(c.sheetTotal)} <span className="text-slate-500">{c.unit}</span>
                     </span>
                     <button
                       type="button"
                       aria-label={infoOpen.has(c.id) ? `Hide details of ${c.name}` : `Show details of ${c.name}`}
                       aria-expanded={infoOpen.has(c.id)}
                       title="Details — totals, cost and what it orders"
-                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      className={cn("rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700", !infoOpen.has(c.id) && quiet)}
                       onClick={(e) => {
                         e.stopPropagation();
                         setInfoOpen((cur) => {
@@ -4355,14 +4350,14 @@ export function PlanViewer({
                       aria-label={`Edit ${c.name}`}
                       title="Edit takeoff"
                       onClick={(e) => e.stopPropagation()}
-                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      className={cn("rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700", quiet)}
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </Link>
                     <button
                       type="button"
                       aria-label={isHidden ? `Show ${c.name}` : `Hide ${c.name}`}
-                      className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                      className={cn("rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700", !isHidden && quiet)}
                       onClick={(e) => {
                         e.stopPropagation();
                         setHidden((h) => {
@@ -4378,6 +4373,7 @@ export function PlanViewer({
                   </div>
                   {info ? (
                     <div className="space-y-1.5 border-b border-slate-100 bg-slate-50/70 px-3 py-2 pl-8 text-xs text-slate-600">
+                      <p className="text-slate-500">{kind}</p>
                       <p>
                         This sheet{" "}
                         <strong className="tabular-nums text-slate-900">
