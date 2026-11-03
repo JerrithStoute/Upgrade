@@ -22,7 +22,7 @@ export type PlanListPlan = {
 const link = "text-xs font-medium text-blue-700 hover:underline";
 
 /**
- * The job's plan sets, one line each: Measure, then View / Print / Download / New revision / Edit as
+ * The job's plan sets, one line each: Measure, then View / Print / Download / Upload revision / Edit as
  * small links, with each sheet's scale and measurement count under it. **Edit** opens on the plan's
  * own line (its name, and Delete plan…). `here` is the page the list is on (links come back to it).
  */

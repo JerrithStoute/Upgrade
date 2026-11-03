@@ -8,7 +8,6 @@ import {
   CircleDot,
   DoorOpen,
   Grid2x2,
-  Library,
   PanelTop,
   Pentagon,
   Plus,
@@ -44,9 +43,9 @@ const ICONS: Record<ConditionType, LucideIcon> = {
 
 /**
  * New takeoff ▾ at the top of the takeoff list: pick its type and the New takeoff
- * panel opens set to it — or pull one from your Library.
+ * panel opens set to it. (Your Library has its own row under it.)
  */
-export function NewTakeoffMenu({ hrefFor, onLibrary, libraryCount }: { hrefFor: (type: ConditionType) => string; onLibrary: () => void; libraryCount: number }) {
+export function NewTakeoffMenu({ hrefFor }: { hrefFor: (type: ConditionType) => string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   // A click anywhere else, or Esc, closes it.
@@ -92,19 +91,6 @@ export function NewTakeoffMenu({ hrefFor, onLibrary, libraryCount }: { hrefFor: 
               })}
             </div>
           ))}
-          <div className="mt-1 border-t border-slate-100 pt-1">
-            <button
-              type="button"
-              role="menuitem"
-              className="flex w-full items-center gap-2 rounded px-2.5 py-1.5 text-left text-slate-800 hover:bg-blue-50 hover:text-blue-900"
-              onClick={() => {
-                setOpen(false);
-                onLibrary();
-              }}
-            >
-              <Library className="h-3.5 w-3.5 text-slate-400" /> From your Library…{libraryCount ? <span className="ml-auto text-slate-400">{libraryCount}</span> : null}
-            </button>
-          </div>
         </div>
       ) : null}
     </div>

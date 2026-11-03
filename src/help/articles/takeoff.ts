@@ -13,7 +13,7 @@ export const TAKEOFF: HelpArticle[] = [
     how: [
       "Open the job, click the **Takeoff** tab (or **Measure** on a plan in the **Plans** tab).",
       "Make sure the sheet has a scale: pick one in the scale box, or click **Calibrate** (see Scale and Calibrate).",
-      "On the left, click **New takeoff**, pick its type, type its name and press Enter. Or pick **From your Library…** in the same menu to pull ready-made takeoffs.",
+      "On the left, click **New takeoff**, pick its type, type its name and press Enter. Or click **Add from your Library** under it to pull ready-made takeoffs.",
       "With the takeoff picked, click on the plan to draw: corners for an area, points along a line, one click per item for a count.",
       "Finish a shape with a right-click, a double-click, or Enter. Watch the totals on the left update.",
       "Open **Totals** or **Material list** at the top right to see everything the takeoff orders.",
@@ -42,7 +42,6 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Undo / Redo", what: "Takes back or puts back your last changes on this sheet (up to 100). Ctrl+Z and Ctrl+Y." },
           { name: "Print", what: "Prints or saves this sheet with the takeoff drawn on it.", how: "See **Totals, Material list and printing**." },
           { name: "Totals / Material list", what: "Opens a side panel with each takeoff's quantities, or everything the takeoff orders. They update as you measure." },
-          { name: "⋯ Takeoff", what: "More: the full Material list, open the estimate, add takeoffs from a template, save this job's takeoffs as a template (admins), upload a new revision, and all plan sets." },
           { name: "Zoom − / % / + / Fit / Rotate", what: "Zoom out and in (or scroll the mouse wheel), click the % for 100%, **Fit** the sheet to the screen, and turn the plan 90° (only how it's shown; your takeoffs stay put)." },
           { name: "Saving… / Updating totals…", what: "A note at the bottom right while your changes save. Wait for it before leaving the page." },
         ],
@@ -52,7 +51,7 @@ export const TAKEOFF: HelpArticle[] = [
         items: [
           { name: "Find a takeoff", what: "Narrows the list as you type, to every takeoff on the job by that name.", how: "Click one to measure with it (or press Enter when only one is left). Esc clears it." },
           { name: "New takeoff ▾", what: "A menu of the types: Area, Linear, Count · Walls, Doors, Windows, Openings / Headers · Joists / Rafters, Hip / Valley, Beams.", how: "Pick one and the **New takeoff** panel opens set to it, ready for a name. Type the name and press Enter to add it and start measuring." },
-          { name: "From your Library…", what: "At the bottom of the **New takeoff** menu: pulls ready-made takeoffs from your takeoff templates onto this job.", how: "Search or pick a template on the left, click the ones you want — anywhere on the row adds it (it stays open so you can add several) — then **Done**." },
+          { name: "Add from your Library", what: "The row under Find and **New takeoff**, with how many takeoffs your Library holds: pulls ready-made takeoffs from your takeoff templates onto this job.", how: "Search or pick a template on the left, click the ones you want — anywhere on the row adds it (it stays open so you can add several) — or, with a template picked, **Add all N** for the rest of it. Then **Done**." },
           { name: "Just this page / Show all", what: "Lists only the takeoffs used on this sheet, or every takeoff on the job." },
           { name: "Eye (in the header)", what: "Hides every takeoff for a clean look at the plan, or shows them all again." },
           { name: "A takeoff's line", what: "One line each: its color, name and how much is measured on this sheet. Hold the mouse over it to see its type (wall, area, pitch, beam size…) and the whole job's total. **Ref** means it's measured for information only and isn't on the estimate. The ⌄, pencil and eye show on the line you're over or measuring with (always on a phone or tablet); a hidden takeoff keeps its crossed-out eye.", how: "Click the line to pick it and start measuring." },
@@ -93,7 +92,7 @@ export const TAKEOFF: HelpArticle[] = [
       "Open the job and click the **Plans** tab.",
       "Drag your PDF plans (or PNG/JPG pictures) onto the box at the top of the card, or click it to choose files. Several at once is fine, up to 100 MB each.",
       "Click **Measure** on a plan set to start the takeoff.",
-      "When the architect sends updated plans, click **New revision** on that set.",
+      "When the architect sends updated plans, click **Upload revision** on that set.",
     ],
     sections: [
       {
@@ -109,7 +108,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Rev N", what: "Which revision this set is. \"replaced\" means a newer one was uploaded; the old one is kept for comparing." },
           { name: "Client sees it / Staff only", what: "Whether the client sees this set in their portal.", how: "Click to switch." },
           { name: "Measure", what: "Opens the set on the takeoff screen. A replaced set shows **Open** instead." },
-          { name: "New revision", what: "Uploads the architect's updated plans as the next revision.", how: "Pick the file. The new revision opens, and you can compare it with the old one and bring your takeoffs forward. See **Revisions**." },
+          { name: "Upload revision", what: "Uploads the architect's updated plans as the next revision.", how: "Pick the file. The new revision opens, and you can compare it with the old one and bring your takeoffs forward. See **Revisions**." },
           { name: "View / Download", what: "Opens the original PDF in a new tab, or downloads it." },
           { name: "Print", what: "Prints the measured sheets with the takeoff drawn on them." },
           { name: "Edit", what: "Opens on the plan's own line: change its name and click **Save**, or **Delete plan…** (removes every measurement on it too). **Cancel** closes it." },
@@ -287,9 +286,9 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "Templates and the Library",
         items: [
-          { name: "Library", what: "On the left panel: adds takeoffs from your templates onto this job: click a row to add it." },
-          { name: "⋯ Takeoff → Add takeoffs from a template…", what: "Adds a whole template at once. Takeoffs already on the job are skipped." },
-          { name: "⋯ Takeoff → Save takeoffs as a template…", what: "Admins: saves this job's takeoffs into a template: add to one you have, make a new one, or replace one." },
+          { name: "Add from your Library", what: "On the left panel: adds takeoffs from your templates onto this job: click a row to add it." },
+          { name: "Add all N", what: "In the Library, once you pick a template on the left: adds the rest of that template at once. Takeoffs already on the job are skipped." },
+          { name: "Save this job's takeoffs to your Library…", what: "Admins, at the bottom of the Library: saves this job's takeoffs into a template: add to one you have, make a new one, or replace one." },
         ],
       },
     ],
@@ -567,7 +566,7 @@ export const TAKEOFF: HelpArticle[] = [
     pages: [VIEWER],
     what: "When the architect sends updated plans, upload them as a **new revision**. The program shows what changed between the old and new sheets, and moves your takeoffs onto the new set so you don't measure again.",
     how: [
-      "On the **Plans** tab, click **New revision** on the plan set and pick the new file.",
+      "On the **Plans** tab, click **Upload revision** on the plan set and pick the new file.",
       "On a sheet of the new revision, click **Compare with Rev X** in the bar at the top.",
       "Pick the **Old sheet** it replaces. Red is removed, blue is added, grey is the same.",
       "Click **Bring takeoffs forward…**, match each old sheet to its new sheet (or **Leave behind**), and click **Move N measurements**.",
@@ -855,7 +854,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Edit (takeoff or item)", what: "Opens it in place. **Remove takeoff…** or **Remove item…** is at the top, next to **Cancel**." },
           { name: "Delete template…", what: "Top right. Removes it; jobs that used it keep their takeoffs." },
         ],
-        text: ["The quickest way to make a template: set up the takeoffs on a real job, then **⋯ Takeoff → Save takeoffs as a template…** on the takeoff screen."],
+        text: ["The quickest way to make a template: set up the takeoffs on a real job, then on the takeoff screen open **Add from your Library** and click **Save this job's takeoffs to your Library…** at the bottom."],
       },
       {
         heading: "Span tables",

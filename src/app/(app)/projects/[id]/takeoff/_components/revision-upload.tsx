@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { putFile, startDirect } from "@/components/direct-upload";
 
 /**
- * "New revision": pick the updated plan file; it's saved as the next revision of
+ * "Upload revision" (Plans tab): pick the updated plan file; it's saved as the next revision of
  * this plan set and opened, where you compare and bring the takeoffs forward.
  */
 export function RevisionUpload({ projectId, planId, nextRevision }: { projectId: string; planId: string; nextRevision: number }) {
@@ -66,7 +66,7 @@ export function RevisionUpload({ projectId, planId, nextRevision }: { projectId:
         className="text-xs font-medium text-blue-700 hover:underline disabled:text-slate-400 disabled:no-underline"
         title={`Upload the updated plans as Rev ${nextRevision}, then compare and bring your takeoffs forward`}
       >
-        {busy ? "Uploading…" : "New revision"}
+        {busy ? "Uploading…" : "Upload revision"}
       </button>
       {error ? <span className="text-xs text-rose-600">{error}</span> : null}
     </>

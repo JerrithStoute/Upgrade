@@ -40,10 +40,11 @@ import {
   Scissors,
   Eraser,
   Search,
+  Library,
   X,
 } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
-import { LibraryPicker } from "./library-picker";
+import { LibraryPicker, type LibrarySaveData } from "./library-picker";
 import { recommendScale, type ScaleRecommendation } from "@/lib/scale-recommend";
 import { cn, money, num } from "@/lib/utils";
 import {
@@ -87,7 +88,6 @@ import { RoomFinder } from "./room-find";
 import { areaJoists, bayAt, bayOutline, breakAt, joistGroupText, memberAt, pieceLine, throughAt } from "./joist-labels";
 import type { MemberPiece } from "@/lib/joist-pieces";
 import { searchSheet } from "./symbol-search";
-import { TakeoffMenu, type TakeoffMenuData } from "./takeoff-menu";
 import { RevisionOverlay, type DiffMap } from "./revision-overlay";
 import { BringForwardPanel, ComparePanel, type RevisionInfo } from "./revision-panels";
 import { NO_ALIGN, alignAngle, alignFromPairs, alignScale, applyAlign, composeAlign, pairSheets, parseAlign, type Align } from "@/lib/revisions";
@@ -530,8 +530,8 @@ export function PlanViewer({
   revision: RevisionInfo;
   /** Every takeoff in your templates — pulled onto the job from the takeoff search. */
   library: LibraryTakeoff[];
-  /** The "⋯ Takeoff" menu: estimates, templates, admin or not. */
-  menu: TakeoffMenuData;
+  /** For saving the job's takeoffs into the Library (admins): its templates, how many takeoffs. */
+  menu: LibrarySaveData;
   /** A note to show on arrival (e.g. "Added 4 takeoffs from the template"). */
   notice?: string | null;
   /** When it was sent: the same note again (saved twice) shows again. */
@@ -1139,6 +1139,20 @@ export function PlanViewer({
       setError(err instanceof Error ? err.message : "Could not add the takeoff");
       return null;
     }
+  };
+  /** Library → Add all: one after another, then the page catches up once. */
+  const addAllFromLibrary = async (ls: LibraryTakeoff[]) => {
+    const ids: string[] = [];
+    for (const l of ls) {
+      try {
+        ids.push((await pullFromLibrary({ projectId, templateConditionId: l.id })).id);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not add the takeoff");
+        break;
+      }
+    }
+    router.refresh();
+    return ids;
   };
   const jobNames = useMemo(() => new Set(conditions.map((c) => c.name.trim().toLowerCase())), [conditions]);
   const picked = multi.length ? multi : selectedId ? [selectedId] : [];
@@ -3856,12 +3870,6 @@ export function PlanViewer({
           >
             <ClipboardList className="h-3.5 w-3.5" /> Material list
           </ToolButton>
-          <TakeoffMenu
-            projectId={projectId}
-            plan={{ id: plan.id, name: plan.name, revision: revision.revision, canRevise: !revision.replacedBy && !revision.newer }}
-            here={`${base}/${plan.id}?page=${pageNumber}`}
-            data={menu}
-          />
         </div>
 
         <div className="ml-auto flex items-center gap-1">
@@ -4000,8 +4008,9 @@ export function PlanViewer({
       <div className="flex min-h-0 flex-1">
         {/* Conditions panel ------------------------------------------------------------------- */}
         <aside className="flex w-72 shrink-0 flex-col border-r border-slate-200">
-          {/* Find a takeoff (narrows the list as you type) and New takeoff ▾ (pick its type, or one from the Library). */}
-          <div className="flex items-center gap-2 border-b border-slate-200 bg-slate-50/60 p-3">
+          {/* Find a takeoff (narrows the list as you type) and New takeoff ▾ (pick its type); under them, your Library. */}
+          <div className="space-y-2 border-b border-slate-200 bg-slate-50/60 p-3">
+          <div className="flex items-center gap-2">
             <div className="relative min-w-0 flex-1">
               <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
               <input
@@ -4019,13 +4028,26 @@ export function PlanViewer({
                 className="input !h-8 !py-1 !pl-7 text-xs"
               />
             </div>
-            <NewTakeoffMenu hrefFor={(t) => `${editHref("new")}&ctype=${t}`} onLibrary={() => setLibraryOpen(true)} libraryCount={library.length} />
+            <NewTakeoffMenu hrefFor={(t) => `${editHref("new")}&ctype=${t}`} />
+          </div>
+          <button
+            type="button"
+            onClick={() => setLibraryOpen(true)}
+            className="flex w-full items-center gap-2 rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-left text-xs text-slate-800 hover:border-blue-300 hover:bg-blue-50"
+            title="The takeoffs saved in your templates: add the ones this job needs, items and all"
+          >
+            <Library className="h-3.5 w-3.5 text-blue-700" />
+            <span className="flex-1">Add from your Library</span>
+            {library.length ? <span className="text-slate-400">{library.length}</span> : null}
+          </button>
           </div>
           {libraryOpen ? (
             <LibraryPicker
               library={library}
               jobNames={jobNames}
               onAdd={addFromLibrary}
+              onAddAll={addAllFromLibrary}
+              save={{ ...menu, projectId, here: `${base}/${plan.id}?page=${pageNumber}` }}
               onDone={(lastId) => {
                 setLibraryOpen(false);
                 if (lastId) pickTakeoff(lastId);

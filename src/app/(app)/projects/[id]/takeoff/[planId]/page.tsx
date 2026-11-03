@@ -63,7 +63,7 @@ export default async function PlanViewerPage({
     activeCostCodes(),
     loadCodeRules(),
     itemsNeedingCodes(project.id),
-    // For the "⋯ Takeoff" menu: takeoff templates.
+    // Saving the job's takeoffs into the Library (admins): the templates to save into.
     templateOptions(),
     // The Library: every template's takeoffs, to pull one onto the job from the plan.
     libraryTakeoffs(),
