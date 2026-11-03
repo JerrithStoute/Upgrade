@@ -16,10 +16,12 @@ import { estimateValues, saveEstimateValues, templateValues } from "@/lib/estima
 import { saveCover } from "@/lib/project-cover";
 import { deleteUpload } from "@/lib/uploads";
 import { proposalOptionsSchema } from "@/lib/proposal-options";
+import { priceSheetSchema } from "@/lib/price-sheet";
 import { markupTableSchema } from "@/lib/markup";
-import { lockJobPrices } from "@/lib/job-prices";
+import { takeBidSnapshot } from "@/lib/bid-snapshots";
 import { clearJobNumbers } from "@/lib/template-numbers";
-import { fillFromTakeoff, lockAfterAutoChanges } from "@/lib/takeoff-data";
+import { fillFromTakeoff, heldKey, lockAfterAutoChanges } from "@/lib/takeoff-data";
+import { parseSnapshot } from "@/lib/takeoff-changes";
 import { loadProposal } from "@/lib/proposal-data";
 import { buildProposal } from "@/lib/proposal-options";
 import { emailProposalToClient } from "@/lib/notify-client";
@@ -164,8 +166,8 @@ export const markEstimateSent = friendly(async function markEstimateSent(formDat
   const est = await loadEstimate(projectId, id);
   if (est.status !== "DRAFT") throw new Error("Only draft estimates can be sent");
   await db.estimate.update({ where: { id }, data: { status: "SENT", sentAt: new Date(), sentById: user.id } });
-  // The client has a number now: the job's prices stop following the Item List.
-  await lockJobPrices(projectId);
+  // The client has a number now: the Material list as priced today is kept (escalation is measured from it).
+  await takeBidSnapshot(projectId, id, "SENT", { userId: user.id }).catch((e) => console.error("Sent snapshot failed", e));
   const project = await loadProject(projectId);
   if (project.status === "LEAD" || project.status === "ESTIMATING") {
     await db.project.update({ where: { id: projectId }, data: { status: "PROPOSAL_SENT" } });
@@ -185,7 +187,7 @@ export const markEstimateSent = friendly(async function markEstimateSent(formDat
 
 /**
  * A spec house has no client to approve it: its estimate is locked in as the budget in one
- * step — the Budget follows it and the job's prices lock. The job goes to In progress.
+ * step — the Budget follows it. The job goes to In progress.
  */
 export const estimateAsBudget = friendly(async function estimateAsBudget(formData: FormData) {
   const user = await requireEdit("estimates", { costs: true });
@@ -198,7 +200,6 @@ export const estimateAsBudget = friendly(async function estimateAsBudget(formDat
   const other = await db.estimate.findFirst({ where: { projectId, status: "APPROVED", id: { not: id } }, select: { name: true, version: true } });
   if (other) throw new Error(`"${other.name}" v${other.version} is already the budget — that one stays unless you change it back first`);
   await db.estimate.update({ where: { id }, data: { status: "APPROVED", approvedAt: new Date(), sentAt: est.sentAt ?? new Date() } });
-  await lockJobPrices(projectId);
   if (["LEAD", "ESTIMATING", "PROPOSAL_SENT"].includes(project.status)) await db.project.update({ where: { id: projectId }, data: { status: "IN_PROGRESS" } });
   const totals = lineTotals(est.items);
   await logActivity({
@@ -220,6 +221,8 @@ export const markEstimateApproved = friendly(async function markEstimateApproved
   const est = await loadEstimate(projectId, id);
   if (est.status !== "SENT") throw new Error("Only sent estimates can be approved");
   await db.estimate.update({ where: { id }, data: { status: "APPROVED", approvedAt: new Date() } });
+  // The Material list as priced the day it was signed.
+  await takeBidSnapshot(projectId, id, "SIGNED", { userId: user.id }).catch((e) => console.error("Signed snapshot failed", e));
   const project = await loadProject(projectId);
   if (["LEAD", "ESTIMATING", "PROPOSAL_SENT"].includes(project.status)) {
     await db.project.update({ where: { id: projectId }, data: { status: "CONTRACTED" } });
@@ -247,12 +250,23 @@ export const markEstimateDeclined = friendly(async function markEstimateDeclined
   redirect(estimatePath(projectId, id));
 });
 
+/**
+ * The next version, a copy of this one. "today" (Copy with today's prices): lines tied to the
+ * Item List take its price now, and the takeoff's lines follow the takeoff as usual (items kept
+ * at "This job only" keep theirs). "exact": every price stays as it was — the takeoff's lines
+ * keep this version's prices while their quantities still follow the takeoff. Typed lines
+ * keep their prices either way.
+ */
 export const createEstimateVersion = friendly(async function createEstimateVersion(formData: FormData) {
   const user = await requireEdit("estimates", { costs: true });
   const projectId = str(formData, "projectId");
   const id = str(formData, "id");
+  const exact = str(formData, "prices") === "exact";
   const source = await loadEstimate(projectId, id);
   const version = await nextVersion(projectId);
+  // The takeoff prices this version was priced at: what its takeoff lines were made of.
+  const held: Record<string, number> = {};
+  if (exact) for (const i of source.items) for (const r of parseSnapshot(i.takeoffSnapshot) ?? []) held[heldKey(r.d, r.u)] = r.c;
   const est = await db.$transaction(async (tx) => {
     const created = await tx.estimate.create({
       data: {
@@ -266,16 +280,47 @@ export const createEstimateVersion = friendly(async function createEstimateVersi
         basePrice: source.basePrice,
         markupTable: source.markupTable,
         totalSqFt: source.totalSqFt,
+        // (Nothing to keep when that version has no takeoff lines.)
+        heldPrices: exact && Object.keys(held).length ? JSON.stringify(held) : null,
+        heldFrom: exact && Object.keys(held).length ? source.version : null,
       },
     });
     await copyIntoEstimate(tx, created.id, source, { keepSelectionLinks: true });
     // A copy of a version carries that version's parameter values.
     await saveEstimateValues(tx, created.id, await estimateValues(source.id, tx));
+    if (!exact) {
+      // Lines picked from the Item List (not the takeoff's, which follow it by themselves) take its price today.
+      const tied = await tx.estimateItem.findMany({
+        where: { estimateId: created.id, materialItemId: { not: null }, takeoffRollup: null, takeoffConditionId: null },
+        select: { id: true, unitCost: true, materialItem: { select: { unitCost: true } } },
+      });
+      for (const i of tied) {
+        const list = i.materialItem?.unitCost ?? 0;
+        if (list > 0 && Math.abs(list - i.unitCost) > 0.0001) await tx.estimateItem.update({ where: { id: i.id }, data: { unitCost: list } });
+      }
+    }
     return created;
   });
-  await logActivity({ projectId, userId: user.id, type: "estimate.version", description: `Estimate v${version} created from v${source.version}` });
+  await logActivity({
+    projectId,
+    userId: user.id,
+    type: "estimate.version",
+    description: `Estimate v${version} created from v${source.version} (${exact ? `v${source.version}'s prices` : "today's prices"})`,
+  });
   revalidate(projectId);
   redirect(estimatePath(projectId, est.id));
+});
+
+/** A draft copied "exactly" lets go of the old prices: its takeoff lines take today's the next time it opens. */
+export const takeTodaysPrices = friendly(async function takeTodaysPrices(formData: FormData) {
+  const user = await requireEdit("estimates", { costs: true });
+  const projectId = str(formData, "projectId");
+  const id = str(formData, "id");
+  const est = await loadDraftEstimate(projectId, id);
+  await db.estimate.update({ where: { id }, data: { heldPrices: null, heldFrom: null } });
+  await logActivity({ projectId, userId: user.id, type: "estimate.prices", description: `Estimate v${est.version} now uses today's prices` });
+  revalidate(projectId);
+  redirect(estimatePath(projectId, id));
 });
 
 export const deleteEstimate = friendly(async function deleteEstimate(formData: FormData) {
@@ -391,6 +436,34 @@ export async function saveProposalOptions(
     }
   }
   revalidatePath(`/projects/${projectId}/estimate/${estimateId}/proposal`);
+  return { ok: true };
+}
+
+/** The client's price change sheet: for this estimate, as the company default (admins), or back to the default. */
+export async function savePriceSheet(
+  projectId: string,
+  estimateId: string,
+  raw: unknown,
+  scope: "estimate" | "default" | "reset",
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireEdit("estimates", { costs: true });
+  const est = await db.estimate.findFirst({ where: { id: estimateId, projectId }, select: { id: true } });
+  if (!est) return { ok: false, error: "Estimate not found" };
+  if (scope === "reset") await db.estimate.update({ where: { id: est.id }, data: { priceSheetOptions: null } });
+  else {
+    const parsed = priceSheetSchema.safeParse(raw);
+    if (!parsed.success) return { ok: false, error: "Those settings couldn't be saved." };
+    // (A category left off one job means nothing on the next: the default never keeps them.)
+    const json = JSON.stringify(scope === "default" ? { ...parsed.data, leaveOut: [] } : parsed.data);
+    if (scope === "estimate") await db.estimate.update({ where: { id: est.id }, data: { priceSheetOptions: json } });
+    else {
+      if (user.role !== "ADMIN") return { ok: false, error: "Only an admin can change the default for every price change sheet." };
+      await db.company.updateMany({ data: { priceSheetOptions: json } });
+      // This sheet keeps what's left off it.
+      await db.estimate.update({ where: { id: est.id }, data: { priceSheetOptions: parsed.data.leaveOut.length ? JSON.stringify({ ...parsed.data }) : null } });
+    }
+  }
+  revalidatePath(`/projects/${projectId}/estimate/${estimateId}/price-change`);
   return { ok: true };
 }
 

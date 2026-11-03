@@ -2,7 +2,10 @@ import "server-only";
 import { db } from "./db";
 import { logActivity } from "./activity";
 import { lineTotals } from "./finance";
-import { money } from "./utils";
+import { fmtDate, money } from "./utils";
+import { companyClock } from "./company-zone";
+import { goodThroughDay, parseProposalOptions, proposalExpired } from "./proposal-options";
+import { takeBidSnapshot } from "./bid-snapshots";
 
 /**
  * The client's answer to a proposal, from their portal. Approving does what "Mark approved"
@@ -17,11 +20,26 @@ async function sentEstimate(clientId: string, id: string) {
   return est;
 }
 
+/** Past its "good through" day (the company's today): the client can't approve it — they ask for an updated one. */
+export async function proposalExpiredOn(est: { sentAt: Date | null; updatedAt: Date; proposalOptions: string | null }) {
+  const [company, clock] = await Promise.all([db.company.findFirst({ select: { proposalOptions: true } }), companyClock()]);
+  const validDays = parseProposalOptions(est.proposalOptions ?? company?.proposalOptions).validDays;
+  const pricedOn = fmtDate(est.sentAt ?? est.updatedAt, "yyyy-MM-dd");
+  return proposalExpired(pricedOn, validDays, fmtDate(clock.now, "yyyy-MM-dd")) ? goodThroughDay(pricedOn, validDays) : null;
+}
+
 export async function clientApprovesProposal(client: { id: string; clientId: string }, id: string, signature: string) {
   const est = await sentEstimate(client.clientId, id);
+  const expired = await proposalExpiredOn(est);
+  if (expired) {
+    const company = await db.company.findFirst({ select: { name: true } });
+    throw new Error(`This proposal's pricing expired ${fmtDate(new Date(`${expired}T12:00:00`), "MMM d, yyyy")} — ask ${company?.name ?? "your builder"} for an updated one.`);
+  }
   const now = new Date();
   await db.estimate.update({ where: { id: est.id }, data: { status: "APPROVED", approvedAt: now, decidedAt: now, signedBy: signature.slice(0, 120), decisionNote: null } });
   if (["LEAD", "ESTIMATING", "PROPOSAL_SENT"].includes(est.project.status)) await db.project.update({ where: { id: est.projectId }, data: { status: "CONTRACTED" } });
+  // The Material list as priced the day it was signed (escalation can be measured from it). Never stops a signature.
+  await takeBidSnapshot(est.projectId, est.id, "SIGNED").catch((e) => console.error("Signed snapshot failed", e));
   await logActivity({
     projectId: est.projectId,
     userId: client.id,

@@ -1,9 +1,9 @@
 import Link from "@/components/link";
-import { AlertTriangle, Check, Download, Eye, FileSpreadsheet, FileText, Lock, Printer, Replace } from "lucide-react";
+import { AlertTriangle, Check, Download, Eye, FileSpreadsheet, FileText, Printer, Replace } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { activeCostCodes, getProject } from "@/lib/projects";
-import { bidComparison, codeGroups, isLadderLine, overWarnings, OVER_WARNING, priceLadders } from "@/lib/bids";
+import { bidComparison, codeGroups, isLadderLine, overWarnings, OVER_WARNING, priceLadders, proposalOut } from "@/lib/bids";
 import { vendorCodes } from "@/lib/vendors";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { substituteLength } from "@/lib/takeoff";
@@ -93,7 +93,8 @@ export default async function BidsPage({
     ) : null;
   };
   const ladders = await priceLadders(project.id, cmp.lines);
-  const locked = !!project.pricesLockedAt;
+  // A proposal has gone out: new bids are re-bids, for comparing.
+  const rebid = await proposalOut(project.id);
   const base = `/projects/${project.id}/bids`;
   const openNow = new Set((q.open ?? "").split(",").filter(Boolean));
   const importedBid = q.imported ? cmp.bids.find((b) => b.id === q.imported) : null;
@@ -216,11 +217,7 @@ export default async function BidsPage({
       {q.taken ? (
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs text-emerald-900">
           Took {q.taken} bid{q.taken === "1" ? "" : "s"} — {q.items} price{q.items === "1" ? "" : "s"}{" "}
-          {q.scope === "COMPANY"
-            ? locked
-              ? "into the Item List (this job's prices are locked — Price review brings them in)"
-              : "into the Item List for every job"
-            : "on this job only"}
+          {q.scope === "COMPANY" ? "into the Item List for every job" : "on this job only"}
           .{Number(q.subbed) > 0 ? ` ${q.subbed} substitute${q.subbed === "1" ? "" : "s"} used — see Substitutions on the Material list.` : ""}
           {Number(q.kept) > 0 ? ` ${q.kept} substitute${q.kept === "1" ? "" : "s"} turned down (kept your item's price).` : ""}
           {Number(q.skipped) > 0
@@ -243,13 +240,10 @@ export default async function BidsPage({
         </div>
       ) : null}
 
-      {locked ? (
-        <p className="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
-          <Lock className="h-4 w-4 shrink-0" />
-          <span>
-            Prices locked {fmtDate(project.pricesLockedAt!)} (proposal sent). New bids are re-bids, for seeing if you&apos;re over or under — you get a warning
-            when one comes back {Math.round(OVER_WARNING * 100)}%+ over the bid you took.
-          </span>
+      {rebid ? (
+        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs text-amber-900">
+          A proposal has gone out, so new bids are re-bids, for seeing if you&apos;re over or under — you get a warning when one comes back{" "}
+          {Math.round(OVER_WARNING * 100)}%+ over the bid you took. What you bid is kept in Files → Bid snapshots.
         </p>
       ) : null}
 
@@ -268,7 +262,7 @@ export default async function BidsPage({
               groups={groups}
               ladders={ladders}
               vendors={vendors.map((v) => ({ id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) }))}
-              locked={locked}
+              rebid={rebid}
             />
           ) : (
             <EmptyState
@@ -569,9 +563,7 @@ export default async function BidsPage({
                 Take the picked bids
               </SubmitButton>
               <span className="text-xs text-slate-500">
-                {locked
-                  ? "Prices are locked: “This job only” changes this job's prices; “Item List” updates the company prices and leaves this job as it is."
-                  : "“This job only” keeps them on this job (pinned). “Item List” updates the company prices and the item's vendor — every unlocked job follows."}{" "}
+                “This job only” keeps them on this job (pinned). “Item List” updates the company prices and the item&apos;s vendor — every job follows.{" "}
                 Green = lowest complete bid. The estimate updates the next time it&apos;s opened.
               </span>
             </div>

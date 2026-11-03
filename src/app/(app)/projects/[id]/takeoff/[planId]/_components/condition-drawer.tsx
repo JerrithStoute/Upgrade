@@ -36,7 +36,6 @@ export function ConditionDrawer({
   codeRules,
   memberSizes,
   items,
-  pricesLocked,
   nextColor,
   toolbox,
   spanTables,
@@ -50,8 +49,6 @@ export function ConditionDrawer({
   codeRules: CodeRules;
   memberSizes: MemberSizeOption[];
   items: ItemOption[];
-  /** This job's prices are locked. */
-  pricesLocked?: boolean;
   nextColor: string;
   toolbox?: { id: string; name: string }[];
   spanTables?: { id: string; name: string; use: string }[];
@@ -162,7 +159,6 @@ export function ConditionDrawer({
                             costCodes={costCodes}
                             items={items}
                             values={item}
-                            pricesLocked={pricesLocked}
                             onCancel={() => setEditItem(null)}
                           />
                         </div>
@@ -179,7 +175,6 @@ export function ConditionDrawer({
                 condition={{ id: condition.id, type: condition.type, metric: condition.metric }}
                 costCodes={costCodes}
                 items={items}
-                pricesLocked={pricesLocked}
                 onCancel={() => setAdding(false)}
               />
             ) : (

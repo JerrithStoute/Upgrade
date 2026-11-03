@@ -354,7 +354,11 @@ test("builds an estimate: a line, saved, adds up", async () => {
   await page.getByLabel("Estimate name").fill("Flow estimate");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Flow estimate" })).toBeVisible();
-  await expect(page.getByText("Job prices follow the Item List")).toBeVisible();
+  // A new version: a copy at today's prices, or exactly as it was.
+  await page.getByText("New version").click();
+  await expect(page.getByRole("button", { name: /Copy v1 — today's prices/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Copy v1 exactly/ })).toBeVisible();
+  await page.getByText("New version").click();
 });
 
 test("opens Selections: its line at the top and Other selections", async () => {

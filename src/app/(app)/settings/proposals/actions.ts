@@ -33,7 +33,14 @@ export const saveProposalDefaults = friendly(async function saveProposalDefaults
     signer: str(fd, "signer"),
     clientSignature: on("clientSignature"),
   });
-  await db.company.updateMany({ data: { proposalOptions: JSON.stringify(options) } });
+  const pct = Number(str(fd, "escalationPct"));
+  await db.company.updateMany({
+    data: {
+      proposalOptions: JSON.stringify(options),
+      ...(fd.has("escalationPct") && Number.isFinite(pct) ? { escalationPct: Math.max(0, Math.min(100, Math.round(pct * 10) / 10)) } : {}),
+      ...(fd.has("escalationFrom") ? { escalationFrom: str(fd, "escalationFrom") === "SIGNED" ? "SIGNED" : "SENT" } : {}),
+    },
+  });
   await logActivity({ userId: admin.id, type: "company.updated", description: "Changed the proposal defaults" });
   revalidatePath("/settings/proposals");
   redirect("/settings/proposals?saved=1");

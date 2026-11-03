@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { Pin } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
@@ -16,22 +17,23 @@ import { answerInventory } from "./inventory/actions";
 import { stalePrices } from "@/lib/stale-prices";
 
 /** The job's material list: its own project tab, printable with or without prices. */
-export default async function MaterialListPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ plan?: string; prices?: string }> }) {
+export default async function MaterialListPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ plan?: string; prices?: string; from?: string }> }) {
   await requireView("takeoffs");
   const { id } = await params;
-  const { plan: planParam, prices } = await searchParams;
+  const { plan: planParam, prices, from } = await searchParams;
+  // Opened from the takeoff: a way back to the sheet you were on (the Takeoff tab remembers it).
+  const fromTakeoff = from === "takeoff";
   const project = await getProject(id);
   const plans = await db.takeoffPlan.findMany({ where: { projectId: project.id }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } });
   const planId = plans.some((p) => p.id === planParam) ? planParam! : null;
   const showPrices = prices !== "0";
   const [{ lines, cutLists, total }, substitutions] = await Promise.all([buildMaterialList(project.id, planId), jobSubstitutions(project.id)]);
   const [brand, pulls, stocked] = await Promise.all([getBrand(), jobPulls(project.id), db.inventoryItem.count({ where: { onHand: { gt: 0 } } })]);
-  // In contract (sold, or prices locked) and not asked yet: offer the company's inventory before anything's ordered.
-  const inContract = !!project.pricesLockedAt || ["CONTRACTED", "IN_PROGRESS", "ON_HOLD"].includes(project.status);
+  // In contract (proposal out, or sold) and not asked yet: offer the company's inventory before anything's ordered.
+  const inContract = ["PROPOSAL_SENT", "CONTRACTED", "IN_PROGRESS", "ON_HOLD"].includes(project.status);
   const askInventory = inContract && !project.inventoryAnswer && stocked > 0;
   const pulledFor = planId ? undefined : Object.fromEntries(pulls);
-  // A locked job keeps its own prices, so the Item List's age doesn't reach it.
-  const stale = project.pricesLockedAt ? undefined : Object.fromEntries(await stalePrices(lines.map((l) => l.materialItemId)));
+  const stale = Object.fromEntries(await stalePrices(lines.map((l) => l.materialItemId)));
 
   const base = `/projects/${project.id}/materials`;
   const href = (o: { plan?: string | null; prices?: boolean }) => {
@@ -39,6 +41,7 @@ export default async function MaterialListPage({ params, searchParams }: { param
     const plan = o.plan === undefined ? planId : o.plan;
     if (plan) q.set("plan", plan);
     if (!(o.prices ?? showPrices)) q.set("prices", "0");
+    if (fromTakeoff) q.set("from", "takeoff");
     const s = q.toString();
     return s ? `${base}?${s}` : base;
   };
@@ -54,6 +57,11 @@ export default async function MaterialListPage({ params, searchParams }: { param
 
   return (
     <div className="space-y-4">
+      {fromTakeoff ? (
+        <Link href={`/projects/${project.id}/takeoff`} className="no-print inline-block text-sm font-medium text-blue-700 hover:underline">
+          ← Takeoff
+        </Link>
+      ) : null}
       {/* On paper: the logo, then what this list is, for whom, and when. */}
       <div className="hidden print:block">
         <PrintLogo logoUrl={brand.logoUrl} />
@@ -107,15 +115,18 @@ export default async function MaterialListPage({ params, searchParams }: { param
         ) : null}
         <p className="no-print border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
           Everything your takeoffs order, waste included; an item used by several takeoffs is combined and rounded up once. Prices are this job&apos;s costs, before markup.{" "}
-          {project.pricesLockedAt ? (
-            <span className="font-medium text-amber-800">Prices locked {fmtDate(project.pricesLockedAt)}: a price you change here stays on this job.</span>
-          ) : (
-            <>Click a price to change it in the Item List (and every job that isn&apos;t locked); the pin keeps a price for this job only.</>
-          )}{" "}
-          <Link href={`/projects/${project.id}/takeoff/rebid`} className="font-medium text-blue-700 hover:underline">
-            {project.pricesLockedAt ? "Price review / unlock" : "Price review / lock"}
-          </Link>
+          Click a price to change it in the Item List (and every job). What you bid is kept when a proposal is sent (Files → Bid snapshots).
         </p>
+        {/* Typed without the pin, a price goes into the Item List — say so before anyone types one. */}
+        {showPrices ? (
+          <p className="no-print flex items-center gap-1.5 border-b border-slate-100 bg-violet-50/60 px-4 py-2 text-xs text-slate-700">
+            <Pin className="h-3.5 w-3.5 shrink-0 text-violet-700" />
+            <span>
+              <strong className="font-semibold text-slate-900">To change a price for this job only, click its pin first.</strong> Without the pin, a new price goes into your Item List and every
+              job.
+            </span>
+          </p>
+        ) : null}
 
         {askInventory ? (
           <form action={answerInventory} className="no-print flex flex-wrap items-center gap-x-4 gap-y-1 border-b border-slate-100 bg-blue-50 px-4 py-2 text-xs text-blue-900">
@@ -161,7 +172,7 @@ export default async function MaterialListPage({ params, searchParams }: { param
             showPrices={showPrices}
             pulled={pulledFor}
             stale={showPrices ? stale : undefined}
-            edit={{ projectId: project.id, locked: !!project.pricesLockedAt, substitutions: substitutions.map((s) => ({ fromName: s.fromName, toName: s.toName })) }}
+            edit={{ projectId: project.id, substitutions: substitutions.map((s) => ({ fromName: s.fromName, toName: s.toName })) }}
           />
         </div>
       </section>

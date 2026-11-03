@@ -20,7 +20,7 @@ export function MaterialTable({
   total: number;
   showPrices: boolean;
   /** The job's Material list: prices of Item List items can be changed right here, and items substituted. */
-  edit?: { projectId: string; locked: boolean; substitutions?: { fromName: string; toName: string }[] };
+  edit?: { projectId: string; substitutions?: { fromName: string; toName: string }[] };
   /** Pulled from the company's inventory, by line key: shown under the quantity with what's left to order. */
   pulled?: Record<string, number>;
   /** Item List prices past their cost code's recheck time, by item id: why. */
@@ -98,7 +98,6 @@ export function MaterialTable({
                           unit={l.unit}
                           price={l.unitCost}
                           pinned={l.pinned}
-                          locked={edit.locked}
                         />
                       ) : l.extended > 0 ? (
                         money(l.unitCost)

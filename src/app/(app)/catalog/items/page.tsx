@@ -306,7 +306,8 @@ export default async function ItemListPage({
           </div>
         ) : null}
         <p className="border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
-          A price changed here goes to every job whose prices aren&apos;t locked. Jobs with an estimate sent keep theirs; bring new ones in with <strong>Price review</strong> on the job.
+          A price changed here goes to every job (items kept at &ldquo;This job only&rdquo; keep theirs). Sent and approved estimates don&apos;t change, and what each job
+          was bid at is kept in its Files → Bid snapshots.
           Items typed into a takeoff that aren&apos;t here yet are added by themselves.
         </p>
 

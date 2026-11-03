@@ -58,7 +58,6 @@ describe("help manual", () => {
   it("Help opens to the page's own article", () => {
     const first = (p: string) => articlesForPath(ARTICLES, p)[0]?.slug;
     assert.equal(first("/projects/abc/takeoff/def"), "takeoff-screen");
-    assert.equal(first("/projects/abc/takeoff/rebid"), "price-review");
     assert.equal(first("/projects/abc/estimate"), "estimate");
     assert.equal(first("/projects/new"), "projects");
     assert.equal(first("/projects/abc"), "project-page");

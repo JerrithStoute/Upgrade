@@ -192,7 +192,7 @@ export const FINANCIALS: HelpArticle[] = [
         ],
       },
     ],
-    tips: ["Once the proposal has been sent, the job's prices are locked. You'll see a **Prices locked** note; bring new prices in with **Price review** instead."],
+    tips: ["Once a proposal has gone out, new bids are re-bids: for seeing if you're over or under. What you bid is kept in the job's Files → Bid snapshots."],
     related: ["purchasing", "material-list", "item-list"],
   },
   {

@@ -18,6 +18,11 @@ import { bidLineFor } from "./bid-file";
 /** A re-bid this much over the bid you took (same items, today's quantities) gets a warning. */
 export const OVER_WARNING = 0.1;
 
+/** A proposal has gone out on this job: bids asked for from now on are re-bids (for comparing). */
+export async function proposalOut(projectId: string) {
+  return (await db.estimate.count({ where: { projectId, status: { in: ["SENT", "APPROVED"] } } })) > 0;
+}
+
 // Price list lines (other lengths, priced per board) — kept apart so pages and emails can use them too.
 import { LADDER_PREFIX, isLadderLine } from "./bid-ladder";
 export { LADDER_PREFIX, isLadderLine };

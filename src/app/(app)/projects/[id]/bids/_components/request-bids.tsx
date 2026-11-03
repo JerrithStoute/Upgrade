@@ -22,7 +22,7 @@ export function RequestBids({
   projectId,
   groups,
   vendors: initialVendors,
-  locked,
+  rebid,
   ladders,
 }: {
   action: (fd: FormData) => Promise<void>;
@@ -31,7 +31,7 @@ export function RequestBids({
   projectId: string;
   groups: Group[];
   vendors: SendVendor[];
-  locked: boolean;
+  rebid: boolean;
   /** Lumber sizes on the job and every length they come in (the price ladder). */
   ladders: { size: string; lengths: number[]; itemKeys: string[] }[];
 }) {
@@ -214,7 +214,7 @@ export function RequestBids({
                   .reduce((s, i) => s + i.extended, 0),
               )} now). Each vendor gets an Excel file and a Print / PDF sheet below — send whichever they like.`
             : "Pick what to send and who to send it to."}
-          {locked ? " Prices are locked, so these are re-bids: they're for comparing and won't change the job unless you take one." : ""}
+          {rebid ? " A proposal has gone out, so these are re-bids: they're for comparing and won't change the job unless you take one." : ""}
         </span>
       </div>
     </form>

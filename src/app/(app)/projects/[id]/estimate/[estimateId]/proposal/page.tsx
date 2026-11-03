@@ -34,7 +34,7 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
         </Link>
         <PrintButton label="Print / Save PDF" />
       </div>
-      <PriceWarnings unpriced={check?.unpriced} zeroLines={zeroLines} materialsHref={`/projects/${project.id}/materials`} rebidHref={`/projects/${project.id}/takeoff/rebid`} />
+      <PriceWarnings unpriced={check?.unpriced} zeroLines={zeroLines} materialsHref={`/projects/${project.id}/materials`} />
 
       <ProposalView
         projectId={project.id}

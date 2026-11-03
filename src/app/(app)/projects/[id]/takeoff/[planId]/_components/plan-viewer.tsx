@@ -559,7 +559,6 @@ export function PlanViewer({
     codeRules: CodeRules;
     memberSizes: MemberSizeOption[];
     items: ItemOption[];
-    pricesLocked: boolean;
     nextColor: string;
     /** Admins: takeoff templates a new takeoff can also go into. */
     toolbox?: { id: string; name: string }[];
@@ -4899,7 +4898,6 @@ export function PlanViewer({
               codeRules={editor.codeRules}
               memberSizes={editor.memberSizes}
               items={editor.items}
-              pricesLocked={editor.pricesLocked}
               nextColor={editor.nextColor}
               toolbox={editor.toolbox}
               spanTables={editor.spanTables}
@@ -5262,7 +5260,7 @@ export function PlanViewer({
               view={panel}
               onView={(v) => writePanel(v)}
               onClose={() => writePanel("")}
-              materialsHref={`/projects/${projectId}/materials`}
+              materialsHref={`/projects/${projectId}/materials?from=takeoff`}
             />
           ) : null}
 

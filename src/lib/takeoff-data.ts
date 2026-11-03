@@ -422,6 +422,31 @@ function withSize(c: LoadedCondition) {
   return size && !c.name.toLowerCase().includes(size.toLowerCase()) ? `${c.name} (${size})` : c.name;
 }
 
+/** "Copy exactly": a takeoff line's price key — its description and unit, as an estimate's takeoff snapshot keeps them. */
+export const heldKey = (description: string, unit: string) => `${description}|${unit}`;
+
+export function parseHeldPrices(json: string | null | undefined) {
+  if (!json) return new Map<string, number>();
+  try {
+    const v = JSON.parse(json) as Record<string, number>;
+    return new Map(Object.entries(v).filter(([, n]) => typeof n === "number"));
+  } catch {
+    return new Map<string, number>();
+  }
+}
+
+/** The job's takeoffs with a draft's held prices on their items (anything it doesn't hold keeps today's price). */
+export function withHeldPrices(conditions: LoadedCondition[], held: Map<string, number>): LoadedCondition[] {
+  if (!held.size) return conditions;
+  return conditions.map((c) => ({
+    ...c,
+    items: c.items.map((i) => {
+      const price = held.get(heldKey(`${withSize(c)} — ${i.description}`, i.unit));
+      return price === undefined ? i : { ...i, unitCost: price };
+    }),
+  }));
+}
+
 export type EstimateLine = {
   conditionId: string;
   itemId: string | null;
@@ -472,9 +497,9 @@ export function conditionEstimateLines(c: LoadedCondition, totals: ConditionTota
 export type TakeoffDetailRow = { description: string; quantity: number; unit: string; unitCost: number };
 
 /** The takeoff items behind each takeoff total on the estimate, by its key ("code:<id>"): only that cost code's items. */
-export async function takeoffDetail(projectId: string) {
+export async function takeoffDetail(projectId: string, heldPrices?: string | null) {
   const out: Record<string, TakeoffDetailRow[]> = {};
-  for (const l of jobEstimateLines(await loadConditions(projectId))) {
+  for (const l of jobEstimateLines(withHeldPrices(await loadConditions(projectId), parseHeldPrices(heldPrices)))) {
     if (!(l.quantity > 0)) continue;
     const key = l.costCodeId ? `code:${l.costCodeId}` : `group:${l.group.trim().toLowerCase()}`;
     (out[key] ??= []).push({ description: l.description, quantity: l.quantity, unit: l.unit, unitCost: l.unitCost });
@@ -505,7 +530,8 @@ export async function syncTakeoffToEstimate(projectId: string, estimateId: strin
   if (est.lockedAt) throw new Error("This estimate is locked — unlock it to update it from the takeoff");
 
   const [conditions, codes, filing] = await Promise.all([
-    loadConditions(projectId),
+    // A draft copied "exactly" keeps the takeoff prices of the version it came from.
+    loadConditions(projectId).then((c) => withHeldPrices(c, parseHeldPrices(est.heldPrices))),
     db.costCode.findMany({ select: { id: true, code: true, name: true, division: true } }),
     divisionCategories(),
   ]);
@@ -780,43 +806,25 @@ export async function lockAfterAutoChanges(projectId: string, estimateId: string
 
 export type PriceCheck = {
   unpriced: { name: string; quantity: number; unit: string }[];
-  changed: { count: number; change: number };
   /** Item List prices on this job past their cost code's recheck time: name and when it was checked. */
   stale: string[];
 };
 
-/**
- * Before a proposal goes out: takeoff items with no price (they'd go in at $0), and
- * Item List prices that moved since a locked job was locked (Price review brings them in).
- */
+/** Before a proposal goes out: takeoff items with no price (they'd go in at $0), and prices due for a recheck. */
 export async function takeoffPriceCheck(projectId: string): Promise<PriceCheck> {
   const unpriced: PriceCheck["unpriced"] = [];
-  let count = 0;
-  let change = 0;
-  // An unlocked job follows the Item List by itself — only a locked one falls behind it.
-  const locked = !!(await db.project.findUnique({ where: { id: projectId }, select: { pricesLockedAt: true } }))?.pricesLockedAt;
-  // Lines that follow the Item List's price (not locked, not "this job only"): the ones a stale list price reaches.
+  // Lines that follow the Item List's price (not "this job only"): the ones a stale list price reaches.
   const following = new Map<string, string>();
   for (const c of await loadConditions(projectId)) {
     const totals = conditionTotals(c);
     for (const l of conditionEstimateLines(c, totals)) if (l.quantity > 0 && !(l.unitCost > 0)) unpriced.push({ name: l.description, quantity: l.quantity, unit: l.unit });
-    for (const i of c.items) {
-      if (!locked && !i.pricePinned && i.materialItem && !following.has(i.materialItem.id) && assemblyQuantity(i, totals.metrics, totals.cutList, totals.wall) > 0)
+    for (const i of c.items)
+      if (!i.pricePinned && i.materialItem && !following.has(i.materialItem.id) && assemblyQuantity(i, totals.metrics, totals.cutList, totals.wall) > 0)
         following.set(i.materialItem.id, i.materialItem.name);
-      const list = i.materialItem?.unitCost;
-      // An Item List price of $0 isn't a price change — it's unpriced there too.
-      if (!locked || i.pricePinned || list === undefined || list === null || !(list > 0) || Math.abs(list - i.unitCost) <= 0.0001) continue;
-      const qty = assemblyQuantity(i, totals.metrics, totals.cutList, totals.wall);
-      if (qty > 0) {
-        count++;
-        change += qty * (list - i.unitCost);
-      }
-    }
   }
   const stale = await stalePrices([...following.keys()]);
   return {
     unpriced,
-    changed: { count, change: Math.round(change * 100) / 100 },
     stale: [...stale].map(([id, note]) => `${following.get(id)} — ${note}`),
   };
 }

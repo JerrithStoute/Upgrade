@@ -40,7 +40,7 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 export default async function ProposalDefaultsPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   await requireAdmin();
   const { saved } = await searchParams;
-  const company = await db.company.findFirst({ select: { proposalOptions: true, name: true } });
+  const company = await db.company.findFirst({ select: { proposalOptions: true, name: true, escalationPct: true, escalationFrom: true } });
   const o = parseProposalOptions(company?.proposalOptions);
 
   return (
@@ -109,6 +109,20 @@ export default async function ProposalDefaultsPage({ searchParams }: { searchPar
             <input id="p-signer" name="signer" className="input" defaultValue={o.signer} placeholder={company?.name ?? ""} />
           </Field>
           <Check name="clientSignature" label="Client signs too" checked={o.clientSignature} />
+        </Group>
+
+        <Group title="Material price escalation">
+          <p className="text-xs text-slate-500">
+            When material prices rise more than this after a proposal, the estimate turns the price change red: past it, your contract lets you charge the increase.
+            Each proposal&apos;s Material list is saved the day it&apos;s sent and the day it&apos;s signed (Files → Bid snapshots).
+          </p>
+          <Field label="Escalation trigger (%)" htmlFor="p-escalation">
+            <input id="p-escalation" name="escalationPct" type="number" min={0} max={100} step="0.5" className="input !w-28" defaultValue={company?.escalationPct ?? 10} />
+          </Field>
+          <p className="text-sm font-medium text-slate-700">Measure price increases from</p>
+          <Radio name="escalationFrom" value="SENT" label="The day the proposal was sent" checked={company?.escalationFrom !== "SIGNED"} />
+          <Radio name="escalationFrom" value="SIGNED" label="The day the contract was signed" checked={company?.escalationFrom === "SIGNED"} />
+          <p className="text-xs text-slate-500">Use what your contract says. Before it&apos;s signed, the estimate measures from the day it was sent either way.</p>
         </Group>
       </div>
       <SubmitButton>Save</SubmitButton>

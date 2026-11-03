@@ -73,7 +73,7 @@ export const createMaterialItem = friendly(async function createMaterialItem(fd:
   redirect(back(fd, `#item-${item.id}`));
 });
 
-/** Changes the master entry: unlocked jobs follow its price (job-prices.ts); locked jobs and pinned items keep theirs. */
+/** Changes the master entry: jobs follow its price (job-prices.ts); pinned items keep theirs. */
 export const updateMaterialItem = friendly(async function updateMaterialItem(fd: FormData) {
   await requireEdit("lists");
   const id = str(fd, "id");

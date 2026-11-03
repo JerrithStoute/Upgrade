@@ -19,7 +19,7 @@ const RULE = rgb(0.8, 0.83, 0.87);
 const qty = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""));
 
 /** Text the PDF's built-in fonts can draw: look-alikes for marks they don't have, "?" for the rest. */
-function drawable(font: PDFFont, s: string) {
+export function drawable(font: PDFFont, s: string) {
   const swapped = s
     .replace(/[″“”]/g, '"')
     .replace(/[′‘’]/g, "'")
@@ -41,7 +41,7 @@ function drawable(font: PDFFont, s: string) {
 }
 
 /** `s` cut to fit `width` (with "…"). */
-function fit(font: PDFFont, s: string, size: number, width: number) {
+export function fit(font: PDFFont, s: string, size: number, width: number) {
   if (font.widthOfTextAtSize(s, size) <= width) return s;
   let t = s;
   while (t.length > 1 && font.widthOfTextAtSize(`${t}…`, size) > width) t = t.slice(0, -1);

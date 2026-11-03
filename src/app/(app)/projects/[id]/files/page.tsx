@@ -5,7 +5,7 @@ import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { cn, fmtDate } from "@/lib/utils";
-import { FILE_FOLDERS } from "@/lib/constants";
+import { FILE_FOLDERS, PROGRAM_FOLDERS } from "@/lib/constants";
 import { Badge, ConfirmForm, EmptyState } from "@/components/ui";
 import { ListFind } from "@/components/list-find";
 import { uploadFiles, finishFileUploads, toggleFileVisibility, deleteFile } from "./actions";
@@ -56,7 +56,12 @@ export default async function FilesPage({
   // Photos stay a grid of pictures; every other folder is one line per file.
   const photoGrid = activeFolder === "Photos";
 
-  const visibility = (f: Row) => (
+  const visibility = (f: Row) =>
+    PROGRAM_FOLDERS.includes(f.folder) ? (
+      <span title="Bid snapshots are only for your team — the client never sees them." className="inline-flex items-center gap-1 text-xs font-medium text-slate-500">
+        <EyeOff className="h-3.5 w-3.5" /> Internal
+      </span>
+    ) : (
     <form action={toggleFileVisibility}>
       <input type="hidden" name="projectId" value={project.id} />
       <input type="hidden" name="id" value={f.id} />
@@ -78,7 +83,7 @@ export default async function FilesPage({
   );
   const facts = (f: Row) => (
     <>
-      {fileSize(f.size)} · {f.uploadedBy?.name ?? "Unknown"} · {fmtDate(f.createdAt)}
+      {fileSize(f.size)} · {f.uploadedBy?.name ?? (PROGRAM_FOLDERS.includes(f.folder) ? "Saved automatically" : "Unknown")} · {fmtDate(f.createdAt)}
       {f.dailyLog ? (
         <>
           {" · "}
@@ -131,8 +136,8 @@ export default async function FilesPage({
           <FilesUpload
             projectId={project.id}
             returnTo={returnTo}
-            folders={FILE_FOLDERS}
-            defaultFolder={activeFolder ?? "Documents"}
+            folders={FILE_FOLDERS.filter((f) => !PROGRAM_FOLDERS.includes(f))}
+            defaultFolder={activeFolder && !PROGRAM_FOLDERS.includes(activeFolder) ? activeFolder : "Documents"}
             action={uploadFiles}
             finish={finishFileUploads}
             typesNote={<FileTypesNote />}

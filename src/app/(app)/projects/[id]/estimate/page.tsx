@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "@/components/link";
 import { FileText, Plus, ExternalLink, Copy, FileStack, Lock, LockOpen, ChevronDown } from "lucide-react";
 import { requireView } from "@/lib/auth";
+import { allows } from "@/lib/access";
 import { db } from "@/lib/db";
 import { getProject, activeCostCodes } from "@/lib/projects";
 import { loadEstimateSheet, templateOptions } from "@/lib/estimate-lines";
@@ -27,16 +28,19 @@ import {
   lockEstimate,
   dismissAutoNote,
   lockFromAutoNote,
+  takeTodaysPrices,
 } from "./actions";
+import { estimateEscalation, releaseOldPriceLock } from "@/lib/bid-snapshots";
+import { EscalationLine } from "@/components/estimate/escalation-line";
+import { companyClock } from "@/lib/company-zone";
 import { refreshDraftFromTakeoff } from "@/lib/takeoff-data";
 import { parseAutoNote } from "@/lib/takeoff-changes";
 import { AutoChanges } from "@/components/estimate/auto-changes";
 import { parseMarkupTable } from "@/lib/markup";
 import { takeoffDetail, takeoffPriceCheck } from "@/lib/takeoff-data";
-import { parseProposalOptions } from "@/lib/proposal-options";
+import { goodThroughDay, parseProposalOptions, proposalExpired } from "@/lib/proposal-options";
 import { PriceWarnings, zeroLineNames } from "@/components/estimate/price-warnings";
 import { bidComparison, overWarnings } from "@/lib/bids";
-import { addDays } from "date-fns";
 import { ClientEmailNote } from "@/components/client-email-note";
 import { AddFromTemplate } from "./add-from-template";
 
@@ -90,6 +94,8 @@ export default async function EstimatePage({ params, searchParams }: { params: P
   }
 
   const selectedId = estimates.some((e) => e.id === estimateParam) ? estimateParam! : estimates[0].id;
+  // A job still on the old price lock: what it was bid at becomes its bid snapshot, and it follows the Item List.
+  await releaseOldPriceLock(project.id);
   // The sheet first: it files any loose lines (older estimates) into spec items.
   // A draft with the takeoff on it updates itself: new prices and quantities ("what changed" shows how).
   // That also brings the job's lumber lines up to date — once; what follows reuses them.
@@ -113,7 +119,7 @@ export default async function EstimatePage({ params, searchParams }: { params: P
   ]);
   if (!estimate) return null;
   // The rest looked up together, not one after another.
-  const [changeOrders, check, bidOver, detail] = await Promise.all([
+  const [changeOrders, check, bidOver, detail, escalation, clock] = await Promise.all([
     // Approved, with change orders against it: the Markup, Margin & Tax table stays as the contract was priced.
     estimate.status === "APPROVED" ? db.changeOrder.count({ where: { projectId: project.id } }) : 0,
     // Before it goes out: unpriced takeoff items, $0 lines, Item List prices that moved, pricing past its date.
@@ -123,17 +129,21 @@ export default async function EstimatePage({ params, searchParams }: { params: P
       .count({ where: { projectId: project.id } })
       .then(async (n) => (n ? overWarnings(await bidComparison(project.id, { synced: refreshed !== null })) : [])),
     // The takeoff items behind each takeoff line (its dropdown).
-    sheet.some((sp) => sp.lines.some((l) => l.takeoffKey || l.takeoffStopped)) ? takeoffDetail(project.id) : undefined,
+    sheet.some((sp) => sp.lines.some((l) => l.takeoffKey || l.takeoffStopped)) ? takeoffDetail(project.id, estimate.heldPrices) : undefined,
+    // Sent or approved: material prices today against its bid snapshot.
+    estimate.status === "SENT" || estimate.status === "APPROVED" ? estimateEscalation(project.id, estimate.id) : null,
+    companyClock(),
   ]);
 
   const isDraft = estimate.status === "DRAFT";
   const locked = !!estimate.lockedAt;
   const autoNote = isDraft ? parseAutoNote(estimate.autoNote) : null;
-  const jobLocked = !!project.pricesLockedAt;
-  const reviewHref = `/projects/${project.id}/takeoff/rebid`;
   const zeroLines = isDraft ? zeroLineNames(estimate.items) : [];
   const validDays = parseProposalOptions(estimate.proposalOptions ?? company?.proposalOptions).validDays;
-  const expiresOn = estimate.status === "SENT" && estimate.sentAt && validDays > 0 ? addDays(estimate.sentAt, validDays) : null;
+  // Sent and past its good-through day (the same rule as the client's portal, where it can't be approved now).
+  const pricedOn = estimate.sentAt ? fmtDate(estimate.sentAt, "yyyy-MM-dd") : "";
+  const expiredThrough =
+    estimate.status === "SENT" && proposalExpired(pricedOn, validDays, fmtDate(clock.now, "yyyy-MM-dd")) ? goodThroughDay(pricedOn, validDays) : null;
   const blanks = (isDraft ? (check?.unpriced.length ?? 0) : 0) + zeroLines.length;
   const nextVersion = Math.max(...estimates.map((e) => e.version)) + 1;
   const itemPrices = Object.fromEntries(estimate.items.flatMap((i) => (i.materialItem ? [[i.materialItem.id, i.materialItem.unitCost]] : [])));
@@ -188,7 +198,7 @@ export default async function EstimatePage({ params, searchParams }: { params: P
               hidden={{ projectId: project.id, id: estimate.id }}
               variant="success"
               size="xs"
-              message={`Use "${estimate.name}" as this spec house's budget? The Budget follows it and the job's prices lock.${
+              message={`Use "${estimate.name}" as this spec house's budget? The Budget follows it.${
                 blanks
                   ? `
 
@@ -260,14 +270,28 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
               <Plus className="h-3.5 w-3.5" /> New version <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
             </summary>
             <div className="absolute right-0 z-30 mt-1 w-80 space-y-3 rounded-lg border border-slate-200 bg-white p-3 text-left shadow-lg">
-              <form action={createEstimateVersion} className="space-y-1">
-                <input type="hidden" name="projectId" value={project.id} />
-                <input type="hidden" name="id" value={estimate.id} />
-                <SubmitButton size="xs" variant="secondary" className="w-full">
-                  <Copy className="h-3.5 w-3.5" /> Copy v{estimate.version}
-                </SubmitButton>
-                <p className="text-xs text-slate-500">Same plans, a revision: every line, price and parameter value of v{estimate.version}.</p>
-              </form>
+              <div className="space-y-1.5">
+                <form action={createEstimateVersion}>
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <input type="hidden" name="id" value={estimate.id} />
+                  <input type="hidden" name="prices" value="today" />
+                  <SubmitButton size="xs" variant="secondary" className="w-full">
+                    <Copy className="h-3.5 w-3.5" /> Copy v{estimate.version} — today&apos;s prices
+                  </SubmitButton>
+                </form>
+                <form action={createEstimateVersion}>
+                  <input type="hidden" name="projectId" value={project.id} />
+                  <input type="hidden" name="id" value={estimate.id} />
+                  <input type="hidden" name="prices" value="exact" />
+                  <SubmitButton size="xs" variant="secondary" className="w-full">
+                    <Copy className="h-3.5 w-3.5" /> Copy v{estimate.version} exactly — v{estimate.version}&apos;s prices
+                  </SubmitButton>
+                </form>
+                <p className="text-xs text-slate-500">
+                  Same plans, a revision: every line and parameter value of v{estimate.version}. Today&apos;s prices: Item List and takeoff prices as they are now (typed
+                  prices and &ldquo;This job only&rdquo; items stay). Exactly: every price as v{estimate.version} had it.
+                </p>
+              </div>
               <form action={createEstimate} className="space-y-1.5 border-t border-slate-100 pt-3">
                 <input type="hidden" name="projectId" value={project.id} />
                 <select name="templateId" aria-label="Start fresh from" className="input !h-7 !py-0 text-xs" defaultValue="">
@@ -310,7 +334,7 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
         </div>
       </div>
 
-      {/* Line 2: its dates and details, and where the job's prices stand. */}
+      {/* Line 2: its dates and details. */}
       <p className="flex flex-wrap items-center gap-x-1 text-xs text-slate-500">
         <span>
           Created {fmtDate(estimate.createdAt)}
@@ -320,21 +344,8 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
             ? ` · Declined by ${estimate.signedBy ?? "the client"} ${fmtDate(estimate.decidedAt)}${estimate.decisionNote ? `: “${estimate.decisionNote}”` : ""}`
             : ""}
           {` · New lines start at ${pct(estimate.defaultMarkup, 1)} markup`}
-          {isDraft ? "" : " · Changes save as a new version"} ·{" "}
+          {isDraft ? "" : " · Changes save as a new version"}
         </span>
-        {jobLocked ? (
-          <span className="inline-flex items-center gap-1 font-medium text-amber-800">
-            <Lock className="h-3 w-3" /> Job prices locked {fmtDate(project.pricesLockedAt)}
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-1">
-            <LockOpen className="h-3 w-3" /> Job prices follow the Item List
-          </span>
-        )}
-        <span>·</span>
-        <Link href={reviewHref} className="font-medium text-blue-700 hover:underline">
-          {jobLocked ? "Price review / unlock" : "Price review / lock"}
-        </Link>
         {locked ? (
           <span className="inline-flex items-center gap-1 font-medium text-slate-700">
             · <Lock className="h-3 w-3" /> This estimate is locked: no automatic updates or edits until you unlock it
@@ -361,13 +372,30 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
         unpriced={isDraft ? check?.unpriced : undefined}
         zeroLines={zeroLines}
         stale={isDraft ? check?.stale : undefined}
-        changed={check?.changed}
-        expired={expiresOn && expiresOn < new Date() ? { on: expiresOn, days: validDays } : undefined}
+        expired={expiredThrough ? { on: new Date(`${expiredThrough}T12:00:00`), days: validDays, proposalHref: `/projects/${project.id}/estimate/${estimate.id}/proposal` } : undefined}
         materialsHref={`/projects/${project.id}/materials`}
-        rebidHref={reviewHref}
         bidOver={bidOver}
         bidsHref={`/projects/${project.id}/bids`}
       />
+
+      {escalation ? <EscalationLine
+          e={{ ...escalation, takenAt: clock.wall(escalation.takenAt) }}
+          sheetHref={`/projects/${project.id}/estimate/${estimate.id}/price-change`}
+          makeCo={isAdmin || allows(user.access, "selections", 2) ? { projectId: project.id, estimateId: estimate.id } : undefined}
+          settingsHref={isAdmin ? "/settings/proposals" : undefined} /> : null}
+
+      {isDraft && estimate.heldPrices ? (
+        <form action={takeTodaysPrices} className="no-print flex flex-wrap items-center gap-x-2 gap-y-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-700">
+          <input type="hidden" name="projectId" value={project.id} />
+          <input type="hidden" name="id" value={estimate.id} />
+          <span>
+            <b className="font-semibold">Takeoff prices kept from v{estimate.heldFrom ?? "?"}</b> — quantities still follow the takeoff; anything new takes today&apos;s price.
+          </span>
+          <SubmitButton size="xs" variant="secondary">
+            Use today&apos;s prices
+          </SubmitButton>
+        </form>
+      ) : null}
 
       <EstimateSheet
         locked={locked}

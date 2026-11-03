@@ -121,7 +121,10 @@ export const SALES: HelpArticle[] = [
         ],
       },
     ],
-    tips: ["When you send a proposal, change order or invoice to a client with no sign-in yet, the email includes a link to set one up."],
+    tips: [
+      "When you send a proposal, change order or invoice to a client with no sign-in yet, the email includes a link to set one up.",
+      "A proposal past its **Pricing good for** date can't be approved in the portal: the client sees it expired and can ask for an updated one.",
+    ],
     related: ["leads", "projects"],
   },
 ];

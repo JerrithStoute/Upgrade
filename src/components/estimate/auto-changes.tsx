@@ -53,7 +53,7 @@ export function AutoChanges({
             Updated from the takeoff since you last saved: {note.lines.length} line{note.lines.length === 1 ? "" : "s"}, {signed(total)} in cost
           </button>
           <p className="ml-5 text-xs text-blue-800">
-            Since {fmtDateTime(note.since)}. Prices follow the Item List until the job&apos;s prices are locked; quantities follow the takeoff.
+            Since {fmtDateTime(note.since)}. A draft follows the Item List&apos;s prices and the takeoff&apos;s quantities.
           </p>
           <div className="ml-5 mt-2 flex flex-wrap items-center gap-2">
             <span className="text-xs text-blue-900">Already gave this bid?</span>

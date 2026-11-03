@@ -7,9 +7,8 @@ import { cn, money } from "@/lib/utils";
 import { pinItemPrice, setMaterialPrice } from "../actions";
 
 /**
- * A Material list price you can change. On an unlocked job it's the Item List price
- * (every unlocked job gets it) unless pinned to "this job only"; on a locked job it's
- * this job's price. Saves when you leave the box (Enter too); Esc puts it back.
+ * A Material list price you can change: the Item List price (every job gets it) unless
+ * pinned to "this job only". Saves when you leave the box (Enter too); Esc puts it back.
  */
 export function PriceCell({
   projectId,
@@ -18,7 +17,6 @@ export function PriceCell({
   unit,
   price,
   pinned,
-  locked,
 }: {
   projectId: string;
   materialItemId: string;
@@ -26,7 +24,6 @@ export function PriceCell({
   unit: string;
   price: number;
   pinned: boolean;
-  locked: boolean;
 }) {
   const router = useRouter();
   const [text, setText] = useState<string | null>(null);
@@ -44,7 +41,7 @@ export function PriceCell({
       router.refresh();
     });
   };
-  const where = locked ? "this job" : pinned ? "this job only" : "the Item List — every job that isn't locked";
+  const where = pinned ? "this job only" : "the Item List — every job";
   return (
     <span className="inline-flex items-center justify-end gap-1">
       {/* The printout shows the price, not the box. */}
@@ -76,10 +73,7 @@ export function PriceCell({
           }
         }}
       />
-      {locked ? (
-        <span className="w-6 print:hidden" />
-      ) : (
-        <button
+      <button
           type="button"
           disabled={busy}
           onClick={() =>
@@ -94,7 +88,6 @@ export function PriceCell({
         >
           {pinned ? <Pin className="h-3.5 w-3.5" /> : <PinOff className="h-3.5 w-3.5" />}
         </button>
-      )}
     </span>
   );
 }

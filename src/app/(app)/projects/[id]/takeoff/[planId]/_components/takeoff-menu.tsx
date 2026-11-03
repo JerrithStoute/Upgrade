@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "@/components/link";
-import { Calculator, ClipboardList, FolderOpen, LayoutTemplate, MoreHorizontal, RefreshCw, Save, X } from "lucide-react";
+import { Calculator, ClipboardList, FolderOpen, LayoutTemplate, MoreHorizontal, Save, X } from "lucide-react";
 import { SubmitButton } from "@/components/ui";
 import { cn } from "@/lib/utils";
 import { applyTakeoffTemplate, saveTakeoffAsTemplate } from "../../actions";
@@ -103,9 +103,6 @@ export function TakeoffMenu({
               <Save className="h-3.5 w-3.5 text-slate-400" /> Save takeoffs as a template…
             </button>
           ) : null}
-          <Link href={`${base}/takeoff/rebid`} className={item}>
-            <RefreshCw className="h-3.5 w-3.5 text-slate-400" /> Price review / lock prices
-          </Link>
           <div className="my-1 border-t border-slate-100" />
           <p className="px-2.5 pb-0.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">
             {plan.name}

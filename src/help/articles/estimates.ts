@@ -20,13 +20,13 @@ export const ESTIMATES: HelpArticle[] = [
         heading: "The top of the estimate",
         items: [
           { name: "Name / v1 v2… / Rename", what: "The estimate's name, its versions (click one to open it), and its status: Draft, Sent, Approved, Declined. **Rename** changes the name in place." },
-          { name: "The gray line under it", what: "When it was made, sent and approved, the markup new lines start with, whether the job follows the Item List or is locked (with the review link), and who **Mark sent** emails." },
-          { name: "Mark sent", what: "Sends the proposal: emails the client, puts it in their portal, locks the job's prices, and moves the job to Proposal Sent. If some items are $0, it asks first." },
-          { name: "Mark approved / Mark declined", what: "Records the client's answer when they give it outside the portal. Approved moves the job to Contracted." },
-          { name: "Use as the budget", what: "Spec homes only (no client): makes this estimate the house's budget and locks its prices." },
+          { name: "The gray line under it", what: "When it was made, sent and approved, the markup new lines start with, and who **Mark sent** emails." },
+          { name: "Mark sent", what: "Sends the proposal: emails the client, puts it in their portal, saves a bid snapshot of the Material list (Files → Bid snapshots), and moves the job to Proposal Sent. If some items are $0, it asks first." },
+          { name: "Mark approved / Mark declined", what: "Records the client's answer when they give it outside the portal. Approved moves the job to Contracted and saves a signed bid snapshot (so does the client approving in their portal)." },
+          { name: "Use as the budget", what: "Spec homes only (no client): makes this estimate the house's budget." },
           { name: "View proposal", what: "The proposal as the client sees it, with the settings for what it shows." },
           { name: "Lock / Unlock", what: "Drafts only: a locked estimate gets no automatic updates (from the takeoff or the Item List) and no edits until you unlock it." },
-          { name: "New version", what: "**Copy vN**: every line, price and parameter of this version, for a revision on the same plans. **Start fresh**: blank or from a template, for other plans. **Save as template** (admins): a template from this estimate; it keeps your lines, formulas and typed unit costs, and this job's quantities, allowances and parameter values start blank for the next job." },
+          { name: "New version", what: "**Copy vN — today's prices**: every line and parameter of this version, for a revision on the same plans; Item List and takeoff lines take today's price, typed prices and **This job only** items stay. **Copy vN exactly**: every price as vN had it; the takeoff's lines keep vN's prices while their quantities still follow the takeoff (a gray note says so, with **Use today's prices**). **Start fresh**: blank or from a template, for other plans. **Save as template** (admins): a template from this estimate; it keeps your lines, formulas and typed unit costs, and this job's quantities, allowances and parameter values start blank for the next job." },
           { name: "Delete", what: "Deletes a draft version." },
           { name: "Add from template", what: "In the sheet's toolbar, on a draft: pick a template and click **Add its lines** to add its categories and items." },
           { name: "Proposal introduction, terms & starting markup %", what: "The thank-you at the top of the proposal, the terms at the end, and the markup new lines start with." },
@@ -37,7 +37,8 @@ export const ESTIMATES: HelpArticle[] = [
         items: [
           { name: "N takeoff items have no price", what: "They count as $0. Give them a price on the Material list or in the Item List." },
           { name: "N items are $0 on this estimate", what: "Give them a cost, delete them, or make them optional." },
-          { name: "Item List prices changed for N items", what: "Since the job's prices were locked. Open **Price review** to bring them in." },
+          { name: "Materials since your proposal: up N%", what: "On a sent or approved estimate: its materials at today's prices against its bid snapshot (bid quantities, materials only). Red past your escalation trigger: the whole increase can be charged. Gray under it, or when prices went down. **Price change sheet** shows it item by item, for you or for the client; past the trigger, **Make escalation change order** makes the change order to charge it.", how: "See **Bid snapshots and price escalation** and **Price change sheet**." },
+          { name: "The pricing on this proposal expired", what: "Past its **Pricing good for** days, so your client can't approve it in their portal. Make a new version with **Copy with today's prices**, or give it more days on **View proposal**. You can still **Mark approved** yourself." },
           { name: "Updated from the takeoff since you last saved", what: "Lines the takeoff changed, with the change in cost. If you already gave this price, **Put back what I bid & lock** undoes them; **Keep these & lock** keeps them." },
         ],
       },
@@ -136,7 +137,7 @@ export const ESTIMATES: HelpArticle[] = [
           { name: "Totals", what: "**Final total only** hides every other price. **Allowance Summary page** lists the allowances at the end." },
           { name: "Profit", what: "**Built into the prices**, or a **Separate fee line** with prices at cost (an open-book look), named as you like, with or without the %." },
           { name: "Sales tax", what: "The tax you pay is in the total either way: built into the prices, or its own line." },
-          { name: "Pricing good for N days", what: "Prints how long the price holds. Leave it blank to leave it off." },
+          { name: "Pricing good for N days", what: "Prints how long the price holds, counted from the day it's sent. Past that day the client can't approve it in their portal: they see that it expired, with **Ask for an updated proposal** (and can still decline). Leave it blank to leave it off.", how: "To let them approve an expired one as it is, give it more days here and click **Save for this estimate**. Or make a new version with **Copy with today's prices** and send that." },
           { name: "Signatures", what: "How the builder signs, and whether the client signs too." },
           { name: "Save for this estimate / Save as my default / Use my default instead", what: "Keep these settings for this estimate only, make them everyone's default (admins), or go back to the default." },
         ],
@@ -210,6 +211,13 @@ export const ESTIMATES: HelpArticle[] = [
         text: ["The same choices as the panel beside a proposal: page, divisions, categories, items, totals, profit, sales tax, pricing and signatures. Proposals follow these unless an estimate has its own."],
       },
       {
+        heading: "Material price escalation",
+        items: [
+          { name: "Escalation trigger (%)", what: "How much material prices must rise before your contract lets you charge it (10% to start). Past it, the estimate's price change line turns red." },
+          { name: "Measure price increases from", what: "The day the proposal was sent, or the day the contract was signed — use what your contract says. Before it's signed, the estimate measures from the day it was sent either way." },
+        ],
+      },
+      {
         heading: "Markup",
         items: [
           { name: "Markup, margin & tax table", what: "The table new estimates and templates start with. Each estimate can change its own with **Markup & tax**." },
@@ -217,6 +225,6 @@ export const ESTIMATES: HelpArticle[] = [
         ],
       },
     ],
-    related: ["estimate", "proposal"],
+    related: ["estimate", "proposal", "bid-snapshots"],
   },
 ];

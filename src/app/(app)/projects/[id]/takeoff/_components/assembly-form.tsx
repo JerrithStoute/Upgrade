@@ -52,11 +52,8 @@ export function AssemblyForm({
   values,
   cancelHref,
   onCancel,
-  pricesLocked,
   removeAction,
 }: {
-  /** Job takeoffs: this job's prices are locked (a price typed here stays on this job). Leave out on templates. */
-  pricesLocked?: boolean;
   action: (fd: FormData) => Promise<void>;
   /** Hidden fields identifying where the item lives (projectId, or templateId). */
   hidden: Record<string, string>;
@@ -155,17 +152,13 @@ export function AssemblyForm({
       </Line>
       <Line>
         {hidden.projectId ? (
-          pricesLocked ? (
-            <span title="A price you save here goes on every takeoff in this job that uses this item, and nowhere else.">Prices locked on this job</span>
-          ) : (
-            <label
-              className="flex items-center gap-1 text-slate-700"
-              title="Keeps this price on this job when the Item List changes. Not ticked: the price is the Item List's, so saving it here changes it on every job that isn't locked."
-            >
-              <input type="checkbox" name="pinPrice" defaultChecked={values?.pricePinned ?? false} className="h-3.5 w-3.5 rounded border-slate-300" />
-              This job only
-            </label>
-          )
+          <label
+            className="flex items-center gap-1 text-slate-700"
+            title="Keeps this price on this job when the Item List changes. Not ticked: the price is the Item List's, so saving it here changes it on every job."
+          >
+            <input type="checkbox" name="pinPrice" defaultChecked={values?.pricePinned ?? false} className="h-3.5 w-3.5 rounded border-slate-300" />
+            This job only
+          </label>
         ) : null}
         <select
           id={p("costCodeId")}

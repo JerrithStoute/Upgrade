@@ -49,7 +49,7 @@ export function CopyJobForm({ builders }: { builders: Builder[] }) {
           <input type="checkbox" name="contract" defaultChecked className="mt-0.5 h-4 w-4 rounded border-slate-300" />
           <span>
             Put the copy under contract
-            <span className="block text-xs text-slate-500">Its estimate approved — the budget follows it — prices locked, the job Contracted.</span>
+            <span className="block text-xs text-slate-500">Its estimate approved — the budget follows it — and the job Contracted.</span>
           </span>
         </label>
         <label className="flex items-start gap-2">

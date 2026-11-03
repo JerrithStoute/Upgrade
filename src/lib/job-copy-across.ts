@@ -21,7 +21,7 @@ import { itemNameKey } from "./takeoff";
  * change orders, selections, daily logs, time, messages, photos or other files.
  *
  * Then, if asked: the copy put under contract (its estimate approved — the budget follows it —
- * prices locked, the job Contracted), and a few made-up change orders on it.
+ * the job Contracted), and a few made-up change orders on it.
  */
 
 export type CopyAcross = { fromCompanyId: string; projectId: string; toCompanyId: string; contract: boolean; changeOrders: boolean };
@@ -324,11 +324,11 @@ export async function copyJobAcross(opts: CopyAcross) {
         });
       }
 
-      // Under contract: the estimate approved (the budget follows it), prices locked, the job Contracted.
+      // Under contract: the estimate approved (the budget follows it), the job Contracted.
       if (opts.contract && estimateId) {
         const now = new Date();
         await db.estimate.update({ where: { id: estimateId }, data: { status: "APPROVED", sentAt: now, approvedAt: now } });
-        await db.project.update({ where: { id: project.id }, data: { status: "CONTRACTED", pricesLockedAt: now } });
+        await db.project.update({ where: { id: project.id }, data: { status: "CONTRACTED" } });
       }
 
       if (opts.changeOrders) await sampleChangeOrders(project.id, client ? `${client.firstName} ${client.lastName}`.trim() : "Client", [...new Set(codeMap.values())]);

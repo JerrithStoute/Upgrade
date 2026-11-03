@@ -10,7 +10,8 @@ import { getProject } from "@/lib/projects";
 import { logActivity } from "@/lib/activity";
 import { bidWorkbook, biddableLines, isLadderLine, ladderLines, parsePrice, priceLadders, readBidWorkbook, returnedPrice } from "@/lib/bids";
 import { beamLength, toPerLf } from "@/lib/bid-beams";
-import { isJobLocked, setItemPrice } from "@/lib/job-prices";
+import { setItemPrice } from "@/lib/job-prices";
+import { proposalOut } from "@/lib/bids";
 import { saveUpload } from "@/lib/uploads";
 import { fmtDate, money, str } from "@/lib/utils";
 import { itemNameKey, substituteLength } from "@/lib/takeoff";
@@ -56,7 +57,7 @@ export const requestBids = friendly(async function requestBids(fd: FormData) {
   const ladder = fd.get("ladder") === "1" ? await ladderLines(await priceLadders(project.id, lines), picked) : [];
   if (!vendors.length)
     redirect(`${bidsPath(project.id)}?error=${encodeURIComponent("That vendor isn't on your vendor list any more — reload the page and pick again")}`);
-  const afterLock = await isJobLocked(project.id);
+  const afterLock = await proposalOut(project.id);
   const made: string[] = [];
   for (const v of vendors) {
     const last = await db.bid.findFirst({ where: { projectId: project.id }, orderBy: { number: "desc" }, select: { number: true } });
@@ -261,8 +262,7 @@ async function lumberItemFor(name: string) {
 
 /**
  * The bids you picked, one per cost code: their prices go on this job only (JOB), or into
- * the Item List for every job (COMPANY) — with the vendor's name on the items. A locked job
- * keeps its prices on COMPANY (Price review brings them in); JOB changes it, as asked.
+ * the Item List for every job (COMPANY) — with the vendor's name on the items.
  *
  * A line the vendor quoted a substitute for is never priced as the item you asked for: you
  * choose first (the page asks) — "use theirs" substitutes it on this job at their price
@@ -272,7 +272,6 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
   const user = await requireEdit("estimates", { costs: true });
   const project = await getProject(str(fd, "projectId"));
   const scope = str(fd, "scope") === "COMPANY" ? "COMPANY" : "JOB";
-  const locked = await isJobLocked(project.id);
   const picks = Array.from(fd.entries())
     .filter(([k, v]) => k.startsWith("pick:") && typeof v === "string" && v)
     .map(([k, v]) => ({ codeKey: k.slice(5), bidId: String(v) }));
@@ -354,11 +353,10 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
       if (scope === "JOB") await setItemPrice({ projectId: project.id, materialItemId, unitCost, pin: true });
       else {
         await db.materialItem.update({ where: { id: materialItemId }, data: { unitCost, vendor: bid.vendorName, ...PRICE_CHECKED() } }).catch(() => null);
-        if (!locked)
-          await db.takeoffAssemblyItem.updateMany({
-            where: { materialItemId, condition: { projectId: project.id } },
-            data: { unitCost, pricePinned: false },
-          });
+        await db.takeoffAssemblyItem.updateMany({
+          where: { materialItemId, condition: { projectId: project.id } },
+          data: { unitCost, pricePinned: false },
+        });
       }
       items++;
     }
@@ -373,7 +371,7 @@ export const takeBids = friendly(async function takeBids(fd: FormData) {
     projectId: project.id,
     userId: user.id,
     type: "bid.taken",
-    description: `Took ${done.join("; ")} — ${items} prices ${scope === "JOB" ? "on this job only" : locked ? "into the Item List (job prices locked)" : "into the Item List for every job"}${subbed ? `, ${subbed} substitute${subbed === 1 ? "" : "s"} used` : ""}${keptOut ? `, ${keptOut} substitute${keptOut === 1 ? "" : "s"} turned down` : ""}`,
+    description: `Took ${done.join("; ")} — ${items} prices ${scope === "JOB" ? "on this job only" : "into the Item List for every job"}${subbed ? `, ${subbed} substitute${subbed === 1 ? "" : "s"} used` : ""}${keptOut ? `, ${keptOut} substitute${keptOut === 1 ? "" : "s"} turned down` : ""}`,
   });
   if (scope === "COMPANY") revalidatePath("/catalog/items");
   revalidateBids(project.id);
@@ -405,7 +403,7 @@ export const requestSubBids = friendly(async function requestSubBids(fd: FormDat
   // (Midday: the same date in every US time zone.)
   const due = /^\d{4}-\d{2}-\d{2}$/.test(str(fd, "due")) ? new Date(`${str(fd, "due")}T12:00:00Z`) : null;
   const note = str(fd, "note").slice(0, 2000) || null;
-  const afterLock = await isJobLocked(project.id);
+  const afterLock = await proposalOut(project.id);
   const made: string[] = [];
   const madeIds: string[] = [];
   for (const v of vendors) {

@@ -5,7 +5,8 @@ import { requireClient } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { portalContext } from "@/lib/portal";
 import { loadProposal } from "@/lib/proposal-data";
-import { buildProposal } from "@/lib/proposal-options";
+import { buildProposal, proposalExpired } from "@/lib/proposal-options";
+import { companyClock } from "@/lib/company-zone";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { EmptyState } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
@@ -32,10 +33,16 @@ export default async function PortalProposalsPage({ searchParams }: { searchPara
     orderBy: { version: "desc" },
     select: { id: true, name: true, version: true, status: true, sentAt: true, decidedAt: true, approvedAt: true, basePrice: true },
   });
+  const today = fmtDate((await companyClock()).now, "yyyy-MM-dd");
   const rows = await Promise.all(
     sent.map(async (e) => {
       const p = await loadProposal(project.id, e.id);
-      return { ...e, total: p ? buildProposal(p.specs, p.options, e.basePrice, p.extras).total : 0 };
+      return {
+        ...e,
+        total: p ? buildProposal(p.specs, p.options, e.basePrice, p.extras).total : 0,
+        // Past its good-through day: it can't be approved, only asked about.
+        expired: !!p && e.status === "SENT" && proposalExpired(p.pricedOn, p.options.validDays, today),
+      };
     }),
   );
 
@@ -51,8 +58,8 @@ export default async function PortalProposalsPage({ searchParams }: { searchPara
       ) : (
         <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           {ordered.map((e) => {
-            const waiting = e.status === "SENT";
-            const when = waiting ? `Sent ${fmtDate(e.sentAt, "MMM d")}` : e.status === "APPROVED" ? `Approved ${fmtDate(e.decidedAt ?? e.approvedAt, "MMM d")}` : `Declined ${fmtDate(e.decidedAt, "MMM d")}`;
+            const waiting = e.status === "SENT" && !e.expired;
+            const when = e.expired ? `Sent ${fmtDate(e.sentAt, "MMM d")} · pricing expired` : waiting ? `Sent ${fmtDate(e.sentAt, "MMM d")}` : e.status === "APPROVED" ? `Approved ${fmtDate(e.decidedAt ?? e.approvedAt, "MMM d")}` : `Declined ${fmtDate(e.decidedAt, "MMM d")}`;
             return (
               <li key={e.id}>
                 <Link
@@ -69,7 +76,7 @@ export default async function PortalProposalsPage({ searchParams }: { searchPara
                   <span className="flex shrink-0 items-center gap-2.5">
                     <span className="text-right">
                       <span className={cn("block text-sm tabular-nums", waiting ? "font-semibold text-amber-900" : "text-slate-900")}>{money(e.total)}</span>
-                      {waiting ? null : <span className={cn("block text-xs", e.status === "APPROVED" ? "text-emerald-700" : "text-slate-500")}>{e.status === "APPROVED" ? "Approved" : "Declined"}</span>}
+                      {waiting ? null : <span className={cn("block text-xs", e.status === "APPROVED" ? "text-emerald-700" : "text-slate-500")}>{e.expired ? "Expired" : e.status === "APPROVED" ? "Approved" : "Declined"}</span>}
                     </span>
                     {waiting ? <span className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">Review</span> : null}
                   </span>

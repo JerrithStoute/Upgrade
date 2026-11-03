@@ -14,6 +14,7 @@ import { newChangeOrder } from "@/lib/billing-flow";
 import { noteChange } from "@/lib/selection-activity";
 import { deleteUpload, saveUpload } from "@/lib/uploads";
 import { emailChangeOrderToClient } from "@/lib/notify-client";
+import { escalationChangeOrder } from "@/lib/escalation-co";
 
 type Result = { ok: true } | { ok: false; error: string };
 
@@ -62,6 +63,25 @@ export const createChangeOrder = friendly(async function createChangeOrder(formD
   revalidate(projectId, co.id);
   redirect(coPath(projectId, co.id));
 });
+
+/** Material price escalation: a draft change order for the increase on the client's price change sheet, the sheet attached. */
+export async function makeEscalationChangeOrder(projectId: string, estimateId: string): Promise<{ ok: true; href: string } | { ok: false; error: string }> {
+  const user = await requireEdit("selections", { costs: true });
+  try {
+    const { co, updated, amount } = await escalationChangeOrder(projectId, estimateId, user.id);
+    await logActivity({
+      projectId,
+      userId: user.id,
+      type: updated ? "change_order.updated" : "change_order.created",
+      description: `Change Order #${co.number} "${co.title}" ${updated ? "brought up to today's prices" : "created"} (${money(amount)}, price change sheet attached)`,
+    });
+    revalidate(projectId, co.id);
+    revalidatePath(`/projects/${projectId}/files`);
+    return { ok: true, href: coPath(projectId, co.id) };
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+}
 
 const fields = z
   .object({

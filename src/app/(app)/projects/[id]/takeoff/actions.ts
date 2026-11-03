@@ -34,7 +34,7 @@ async function followUp(projectId: string, rows: { type: string; sheetId: string
 async function supportsChanged(projectId: string, rows: { type: string; sheetId: string }[]) {
   for (const sheetId of new Set(rows.filter((r) => r.type === "WALL" || r.type === "BEAM").map((r) => r.sheetId))) await resizeSheet(projectId, sheetId);
 }
-import { applyListPrices, lockJobPrices, setItemPin, setItemPrice, unlockJobPrices } from "@/lib/job-prices";
+import { setItemPin, setItemPrice } from "@/lib/job-prices";
 import { NO_ALIGN, alignAngle, alignScale, applyAlign, isNoAlign, parseAlign, type Align } from "@/lib/revisions";
 import { upperFloorSchema } from "@/lib/upper-floor";
 import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
@@ -541,51 +541,6 @@ function backTo(fd: FormData, projectId: string, fallback: string) {
   const b = str(fd, "back");
   return b.startsWith(`/projects/${projectId}/`) ? b : fallback;
 }
-const reviewPath = (projectId: string) => `/projects/${projectId}/takeoff/rebid`;
-
-/** Locks this job's prices: the Item List no longer changes it. */
-export const lockPrices = friendly(async function lockPrices(fd: FormData) {
-  const user = await requireEdit("takeoffs");
-  const project = await getProject(str(fd, "projectId"));
-  await syncAutoItems(project.id);
-  await lockJobPrices(project.id);
-  await logActivity({ projectId: project.id, userId: user.id, type: "takeoff.prices_locked", description: "Prices locked" });
-  revalidatePrices(project.id);
-  redirect(backTo(fd, project.id, reviewPath(project.id)));
-});
-
-/** Unlocks: the job follows the Item List again and takes today's prices (pinned items keep theirs). */
-export const unlockPrices = friendly(async function unlockPrices(fd: FormData) {
-  const user = await requireEdit("takeoffs");
-  const project = await getProject(str(fd, "projectId"));
-  const n = await unlockJobPrices(project.id);
-  await logActivity({
-    projectId: project.id,
-    userId: user.id,
-    type: "takeoff.prices_unlocked",
-    description: `Prices unlocked — ${n} takeoff line${n === 1 ? "" : "s"} took today's Item List price`,
-  });
-  revalidatePrices(project.id);
-  redirect(backTo(fd, project.id, reviewPath(project.id)));
-});
-
-/** Price review: the ticked items (or groups) take today's Item List price on this job. */
-export const updateSelectedPrices = friendly(async function updateSelectedPrices(fd: FormData) {
-  const user = await requireEdit("takeoffs");
-  const project = await getProject(str(fd, "projectId"));
-  const ids = fd.getAll("item").filter((v): v is string => typeof v === "string" && v.length > 0);
-  const n = await applyListPrices(project.id, ids);
-  if (n)
-    await logActivity({
-      projectId: project.id,
-      userId: user.id,
-      type: "takeoff.prices_updated",
-      description: `${ids.length} item${ids.length === 1 ? "" : "s"} updated to today's Item List price (${n} takeoff line${n === 1 ? "" : "s"})`,
-    });
-  revalidatePrices(project.id);
-  redirect(`${reviewPath(project.id)}?updated=${ids.length}`);
-});
-
 /** "This job only": pin (keep this job's price) or unpin (follow the Item List) an item. */
 export async function pinItemPrice(projectId: string, materialItemId: string, pinned: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
   await requireEdit("takeoffs");

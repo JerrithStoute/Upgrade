@@ -215,7 +215,6 @@ export default async function PlanViewerPage({
       memberSizes,
       spanTables,
       items,
-      pricesLocked: !!project.pricesLockedAt,
       nextColor: CONDITION_COLORS[conditions.length % CONDITION_COLORS.length],
       toolbox: user.role === "ADMIN" ? templates.map((t) => ({ id: t.id, name: t.name })) : undefined,
       // New takeoff ▾: the type picked.

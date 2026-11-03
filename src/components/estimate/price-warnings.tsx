@@ -1,6 +1,6 @@
 import Link from "@/components/link";
-import { AlertTriangle, ChevronDown, Clock, RefreshCw } from "lucide-react";
-import { cn, fmtDate, money, num } from "@/lib/utils";
+import { AlertTriangle, ChevronDown, Clock } from "lucide-react";
+import { cn, fmtDate, num } from "@/lib/utils";
 
 /** Every name — they only show once you open the list. */
 function Names({ names }: { names: string[] }) {
@@ -53,33 +53,28 @@ function Box({ tone, icon, title, note, children }: { tone: keyof typeof TONE; i
 const link = "font-medium underline underline-offset-2 hover:no-underline";
 
 /**
- * Before a proposal goes out: takeoff items with no price, estimate items at $0,
- * Item List prices that moved since the job was priced, and pricing past its
- * "good for" date. Shows nothing when all is well.
+ * Before a proposal goes out: takeoff items with no price, estimate items at $0, prices
+ * due for a recheck, and pricing past its "good for" date. Shows nothing when all is well.
  */
 export function PriceWarnings({
   unpriced = [],
   zeroLines = [],
   stale = [],
-  changed,
   expired,
   bidOver = [],
   bidsHref,
   materialsHref,
-  rebidHref,
   className,
 }: {
   unpriced?: { name: string; quantity: number; unit: string }[];
   zeroLines?: string[];
   /** Takeoff prices past their cost code's recheck time. */
   stale?: string[];
-  changed?: { count: number; change: number };
-  expired?: { on: Date; days: number };
+  expired?: { on: Date; days: number; proposalHref?: string };
   /** Re-bids 10%+ over the bid taken for a cost code. */
   bidOver?: { codeLabel: string; vendorName: string; bidNumber: number; pct: number }[];
   bidsHref?: string;
   materialsHref: string;
-  rebidHref: string;
   className?: string;
 }) {
   const parts: React.ReactNode[] = [];
@@ -131,24 +126,6 @@ export function PriceWarnings({
         <Names names={zeroLines} />
       </Box>,
     );
-  if (changed && changed.count)
-    parts.push(
-      <Box
-        key="changed"
-        tone="blue"
-        icon={<RefreshCw className="h-4 w-4" />}
-        title={`Item List prices changed for ${changed.count} item${changed.count === 1 ? "" : "s"} since this job's prices were locked`}
-        note={
-          <>
-            {changed.change >= 0 ? "+" : "−"}
-            {money(Math.abs(changed.change))} in cost; the job keeps its locked prices.{" "}
-            <Link href={rebidHref} className={link}>
-              Price review
-            </Link>
-          </>
-        }
-      />,
-    );
   if (expired)
     parts.push(
       <Box
@@ -158,11 +135,16 @@ export function PriceWarnings({
         title={`The pricing on this proposal expired ${fmtDate(expired.on)}`}
         note={
           <>
-            it was good for {expired.days} days. Make a new version to send again, with{" "}
-            <Link href={rebidHref} className={link}>
-              Price review
-            </Link>{" "}
-            for today&apos;s prices.
+            it was good through then ({expired.days} days), so your client can&apos;t approve it in their portal. Make a new version (<b>New version → Copy with today&apos;s
+            prices</b>), or give it more days in{" "}
+            {expired.proposalHref ? (
+              <Link href={expired.proposalHref} className={link}>
+                View proposal
+              </Link>
+            ) : (
+              "View proposal"
+            )}{" "}
+            → Pricing good for.
           </>
         }
       />,

@@ -10,7 +10,9 @@ export const INVOICE_STATUSES = ["DRAFT", "SENT", "PARTIAL", "PAID", "VOID"] as 
 export const EXPENSE_CATEGORIES = ["MATERIAL", "LABOR", "SUBCONTRACTOR", "EQUIPMENT", "PERMIT", "OTHER"] as const;
 export const PAYMENT_METHODS = ["CHECK", "ACH", "CARD", "CASH", "OTHER"] as const;
 export const TODO_PRIORITIES = ["LOW", "NORMAL", "HIGH"] as const;
-export const FILE_FOLDERS = ["Photos", "Plans", "Documents", "Contracts", "Permits", "Bids"] as const;
+export const FILE_FOLDERS = ["Photos", "Plans", "Documents", "Contracts", "Permits", "Bids", "Bid snapshots"] as const;
+/** Folders only the program files into (never uploaded to, never the client's): bid snapshots (bid-snapshots.ts). */
+export const PROGRAM_FOLDERS: readonly string[] = ["Bid snapshots"];
 export const UNITS = ["ea", "sf", "lf", "sy", "cy", "sq", "bf", "hr", "day", "ls", "ton", "gal"] as const;
 export const WEATHER = ["Sunny", "Partly Cloudy", "Cloudy", "Rain", "Snow", "Windy", "Storm"] as const;
 export const USER_ROLES = ["ADMIN", "STAFF", "CLIENT", "SUB"] as const;

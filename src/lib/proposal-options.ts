@@ -278,3 +278,21 @@ export function clientCopy(doc: ProposalDoc): ProposalDoc {
     optional: doc.optional.map((i) => ({ ...i, amount: doc.totalOnly ? 0 : i.amount })),
   };
 }
+
+/**
+ * The last day a proposal's pricing holds — "yyyy-mm-dd", `validDays` after the day it was priced
+ * (sent) — or null when it has no "good for" days. Past it, the client can't approve it in their
+ * portal (the builder can still mark it approved, or give it more days).
+ */
+export function goodThroughDay(pricedOn: string, validDays: number) {
+  if (!(validDays > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(pricedOn)) return null;
+  const [y, m, d] = pricedOn.split("-").map(Number);
+  const end = new Date(Date.UTC(y, m - 1, d + validDays));
+  return end.toISOString().slice(0, 10);
+}
+
+/** `today` ("yyyy-mm-dd", the company's day) is past the proposal's good-through day. */
+export function proposalExpired(pricedOn: string, validDays: number, today: string) {
+  const end = goodThroughDay(pricedOn, validDays);
+  return !!end && today > end;
+}

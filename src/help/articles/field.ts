@@ -267,7 +267,7 @@ export const FIELD: HelpArticle[] = [
     group: "Jobs",
     area: "files",
     pages: ["/projects/*/files"],
-    what: "A job's **Files** tab keeps its documents and photos in folders (Photos, Plans, Documents, Contracts, Permits, Bids) and lets you choose which ones the client sees in their portal.",
+    what: "A job's **Files** tab keeps its documents and photos in folders (Photos, Plans, Documents, Contracts, Permits, Bids, Bid snapshots) and lets you choose which ones the client sees in their portal.",
     how: [
       "Open the job's **Files** tab. The drop zone is always at the top of the list.",
       "Under it, pick the folder (**Into**) and decide **Client sees them**.",
@@ -280,10 +280,10 @@ export const FIELD: HelpArticle[] = [
         items: [
           { name: "The top", what: "How many files, how big they are all together, and how many the client sees." },
           { name: "Find", what: "Type to narrow the list by file name, folder or who added it." },
-          { name: "All / folders", what: "Shows all files, or one folder, with how many are in each." },
+          { name: "All / folders", what: "Shows all files, or one folder, with how many are in each. **Bid snapshots** holds the Material list PDFs saved when a proposal is sent and signed; you can't upload into it." },
           { name: "The list", what: "One line per file, with a small picture. **Photos** shows a grid of bigger pictures instead." },
           { name: "File name", what: "Opens the file in a new tab. PDFs and pictures open in the browser; the rest download." },
-          { name: "Client / Internal", what: "Whether the client sees a file.", how: "Click to switch." },
+          { name: "Client / Internal", what: "Whether the client sees a file. Bid snapshots are always Internal.", how: "Click to switch." },
           { name: "Download", what: "Saves the file to your computer." },
           { name: "Mark up / pencil", what: "Opens the photo to draw on, add arrows, circles and notes, crop or turn. **Save** puts the marked-up photo in its place everywhere it shows (its daily log, selection…); the original is kept." },
           { name: "Marked up · Original · Undo markup…", what: "On a marked-up photo: **Original** opens it as it was uploaded; **Undo markup…** asks, then puts the original back." },

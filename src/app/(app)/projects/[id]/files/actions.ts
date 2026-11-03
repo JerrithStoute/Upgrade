@@ -10,7 +10,7 @@ import { logActivity } from "@/lib/activity";
 import { saveUpload, deleteUpload } from "@/lib/uploads";
 import { finishUpload } from "@/lib/direct-upload";
 import { boolField, str } from "@/lib/utils";
-import { FILE_FOLDERS } from "@/lib/constants";
+import { FILE_FOLDERS, PROGRAM_FOLDERS } from "@/lib/constants";
 
 function filesPath(projectId: string) {
   return `/projects/${projectId}/files`;
@@ -29,7 +29,7 @@ export const uploadFiles = friendly(async function uploadFiles(fd: FormData) {
   const user = await requireEdit("files");
   const project = await getProject(str(fd, "projectId"));
   const folderRaw = str(fd, "folder");
-  const folder = (FILE_FOLDERS as readonly string[]).includes(folderRaw) ? folderRaw : "Documents";
+  const folder = (FILE_FOLDERS as readonly string[]).includes(folderRaw) && !PROGRAM_FOLDERS.includes(folderRaw) ? folderRaw : "Documents";
   const clientVisible = boolField(fd, "clientVisible");
   const files = fd.getAll("files").filter((f): f is File => f instanceof File && f.size > 0);
   if (files.length === 0) redirect(returnTo(fd, project.id));
@@ -54,7 +54,7 @@ export const uploadFiles = friendly(async function uploadFiles(fd: FormData) {
 export async function finishFileUploads(input: { projectId: string; folder: string; clientVisible: boolean; tickets: string[] }) {
   const user = await requireEdit("files");
   const project = await getProject(String(input.projectId));
-  const folder = (FILE_FOLDERS as readonly string[]).includes(String(input.folder)) ? String(input.folder) : "Documents";
+  const folder = (FILE_FOLDERS as readonly string[]).includes(String(input.folder)) && !PROGRAM_FOLDERS.includes(String(input.folder)) ? String(input.folder) : "Documents";
   const added: string[] = [];
   const failed: string[] = [];
   for (const ticket of (input.tickets ?? []).map(String).slice(0, 50)) {
@@ -83,6 +83,7 @@ export const toggleFileVisibility = friendly(async function toggleFileVisibility
   const id = str(fd, "id");
   const file = await db.fileAsset.findFirst({ where: { id, projectId: project.id } });
   if (!file) throw new Error("File not found");
+  if (PROGRAM_FOLDERS.includes(file.folder)) throw new Error("Bid snapshots are only for your team — the client never sees them");
   await db.fileAsset.update({ where: { id }, data: { clientVisible: !file.clientVisible } });
   revalidate(project.id);
   redirect(returnTo(fd, project.id));

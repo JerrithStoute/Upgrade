@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_PROPOSAL_OPTIONS, NO_VIEW, buildProposal, parseProposalOptions, type ProposalOptions, type ProposalSpec } from "./proposal-options";
+import { DEFAULT_PROPOSAL_OPTIONS, NO_VIEW, buildProposal, goodThroughDay, parseProposalOptions, proposalExpired, type ProposalOptions, type ProposalSpec } from "./proposal-options";
 
 const line = (id: string, qty: number, cost: number, markup: number, costType = "MATERIAL", isOptional = false) => ({
   id,
@@ -181,5 +181,18 @@ describe("proposal", () => {
     assert.equal(o.tax.label, "Sales tax");
     assert.equal(o.divisions.show, true);
     assert.deepEqual(parseProposalOptions("not json"), DEFAULT_PROPOSAL_OPTIONS);
+  });
+});
+
+describe("proposal good through", () => {
+  it("counts the days from the day it was sent, and holds through that day", () => {
+    assert.equal(goodThroughDay("2026-08-01", 30), "2026-08-31");
+    assert.equal(goodThroughDay("2026-12-20", 30), "2027-01-19");
+    assert.equal(proposalExpired("2026-08-01", 30, "2026-08-31"), false);
+    assert.equal(proposalExpired("2026-08-01", 30, "2026-09-01"), true);
+  });
+  it("no good-for days: it never expires", () => {
+    assert.equal(goodThroughDay("2026-08-01", 0), null);
+    assert.equal(proposalExpired("2026-08-01", 0, "2030-01-01"), false);
   });
 });

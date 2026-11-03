@@ -1,13 +1,13 @@
 import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { addDays } from "date-fns";
-import { Check, X } from "lucide-react";
+import { Check, MessageSquare, X } from "lucide-react";
 import { requireClient } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { companyClock } from "@/lib/company-zone";
 import { portalHref } from "@/lib/portal";
 import { loadProposal } from "@/lib/proposal-data";
-import { buildProposal, clientCopy } from "@/lib/proposal-options";
+import { buildProposal, clientCopy, proposalExpired } from "@/lib/proposal-options";
 import { cn, fmtDate, money } from "@/lib/utils";
 import { SubmitButton } from "@/components/ui";
 import { PrintButton } from "@/app/(app)/projects/[id]/_components/print-button";
@@ -30,14 +30,18 @@ export default async function PortalProposalPage({ params }: { params: Promise<{
   if (!p) notFound();
   // The finished numbers only — the cost lines behind them stay on the server.
   const doc = clientCopy(buildProposal(p.specs, p.options, p.estimate.basePrice, p.extras));
-  const { dateTime } = await companyClock();
+  const { dateTime, now } = await companyClock();
   const waiting = est.status === "SENT" || (user.preview && est.status === "DRAFT");
+  // Past its "good through" day: no Approve — they ask for an updated one.
+  const expired = waiting && proposalExpired(p.pricedOn, p.options.validDays, fmtDate(now, "yyyy-MM-dd"));
   const o = { cover: p.options.cover, intro: p.options.intro, heading: p.options.heading, validDays: p.options.validDays, signer: p.options.signer, clientSignature: p.options.clientSignature };
 
   const versions = await db.estimate.count({ where: { projectId: est.projectId, status: { in: ["SENT", "APPROVED", "DECLINED"] } } });
   const [y, m, d] = p.pricedOn.split("-").map(Number);
   const goodThrough = o.validDays > 0 ? addDays(new Date(y, m - 1, d), o.validDays) : null;
-  const pill = waiting
+  const pill = expired
+    ? { label: "Expired", tone: "bg-slate-100 text-slate-600" }
+    : waiting
     ? { label: "Waiting on you", tone: "bg-amber-50 text-amber-800" }
     : est.status === "APPROVED"
       ? { label: "Approved", tone: "bg-emerald-50 text-emerald-800" }
@@ -75,9 +79,31 @@ export default async function PortalProposalPage({ params }: { params: Promise<{
           <h1 className="mt-0.5 text-lg font-semibold text-slate-900">{p.cover.projectName}</h1>
           <p className="mt-2 text-xs text-slate-500">Total</p>
           <p className="text-2xl font-semibold tabular-nums text-slate-900">{money(doc.total)}</p>
-          {goodThrough && waiting ? <p className="text-xs text-slate-500">Good through {fmtDate(goodThrough, "MMM d")}</p> : null}
+          {goodThrough && waiting && !expired ? <p className="text-xs text-slate-500">Good through {fmtDate(goodThrough, "MMM d")}</p> : null}
 
-          {waiting ? (
+          {expired ? (
+            <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+              <p className="text-sm text-slate-800">
+                The pricing in this proposal was good through {fmtDate(goodThrough, "MMMM d, yyyy")}, so it can&apos;t be approved now. Ask {p.companyName} for an updated one.
+              </p>
+              <Link
+                href={`${portalHref("/portal/messages", est.projectId)}&new=1`}
+                className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              >
+                <MessageSquare className="h-4 w-4" /> Ask for an updated proposal
+              </Link>
+              <details className="text-sm">
+                <summary className="cursor-pointer font-medium text-rose-700">Decline instead…</summary>
+                <form action={declineProposal} className="mt-2 space-y-2">
+                  <input type="hidden" name="id" value={est.id} />
+                  <textarea name="note" className="input" rows={3} placeholder="Let your builder know why (optional)" aria-label="Reason" />
+                  <SubmitButton variant="danger" size="sm" pendingText="Declining…">
+                    <X className="h-4 w-4" /> Decline proposal
+                  </SubmitButton>
+                </form>
+              </details>
+            </div>
+          ) : waiting ? (
             <div className="mt-3 border-t border-slate-100 pt-3">
               <form action={approveProposal} className="space-y-2">
                 <input type="hidden" name="id" value={est.id} />

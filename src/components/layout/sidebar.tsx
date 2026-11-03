@@ -55,7 +55,7 @@ const isOnItem = (item: (typeof NAV)[number], pathname: string) => [item.href, .
 /** The takeoff drawing screen (/projects/<id>/takeoff/<planId>), where the menu tucks away to give the plan room. */
 export function isPlanViewer(pathname: string) {
   const m = pathname.match(/^\/projects\/[^/]+\/takeoff\/([^/]+)$/);
-  return !!m && m[1] !== "materials" && m[1] !== "rebid";
+  return !!m && m[1] !== "materials";
 }
 
 // "Keep the menu open on the drawing screen", remembered per browser.

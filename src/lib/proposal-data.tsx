@@ -71,8 +71,6 @@ export async function loadProposal(projectId: string, estimateId: string) {
   const tableAmounts = tableExtras(markup, estimate.items);
   const client = project.client;
   const companyName = company?.name ?? "Your Company";
-  const cityLine = (c: { city: string | null; state: string | null; zip: string | null } | null | undefined) =>
-    c ? [[c.city, c.state].filter(Boolean).join(", "), c.zip].filter(Boolean).join(" ") : "";
   const clientName = client ? `${client.firstName} ${client.lastName}`.trim() : null;
   const date = fmtDate(estimate.sentAt ?? estimate.updatedAt);
 
@@ -95,38 +93,7 @@ export async function loadProposal(projectId: string, estimateId: string) {
       logoUrl: brand.logoUrl,
     },
     intro: estimate.notes,
-    header: (
-      // Your logo big on the left; your address on the right with the RE: block under it.
-      <header className="flex flex-wrap items-start justify-between gap-8 break-inside-avoid">
-        <div className="min-w-0">
-          {brand.logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={brand.logoUrl} alt={companyName} className="max-h-44 max-w-[22rem] object-contain" />
-          ) : (
-            <h1 className="text-3xl font-bold tracking-tight">{companyName}</h1>
-          )}
-        </div>
-        <div className="text-right text-sm leading-relaxed text-slate-700">
-          {brand.logoUrl ? null : <p className="font-medium text-slate-900">{companyName}</p>}
-          {company?.address ? <p>{company.address}</p> : null}
-          {cityLine(company) ? <p>{cityLine(company)}</p> : null}
-          {company?.phone ? <p>{company.phone}</p> : null}
-          {company?.email ? <p>{company.email}</p> : null}
-          {company?.licenseNumber ? <p>License {company.licenseNumber}</p> : null}
-          <div className="mt-6 inline-grid grid-cols-[auto_auto] gap-x-4 text-left">
-            <span className="font-semibold text-slate-500">RE:</span>
-            <div>
-              {clientName ? <p>{clientName}</p> : null}
-              <p>{project.address || project.name}</p>
-              {cityLine(project) ? <p>{cityLine(project)}</p> : null}
-            </div>
-          </div>
-          <p className="mt-4 text-xs text-slate-500">
-            {date} · {estimate.name} v{estimate.version}
-          </p>
-        </div>
-      </header>
-    ),
+    header: letterheadFrom({ brand, company, companyName, clientName, project, line: `${date} · ${estimate.name} v${estimate.version}` }),
     footer: (
       <div>
         {estimate.terms ? (
@@ -138,4 +105,64 @@ export async function loadProposal(projectId: string, estimateId: string) {
       </div>
     ),
   };
+}
+
+const cityLine = (c: { city: string | null; state: string | null; zip: string | null } | null | undefined) =>
+  c ? [[c.city, c.state].filter(Boolean).join(", "), c.zip].filter(Boolean).join(" ") : "";
+
+type Place = { address: string | null; city: string | null; state: string | null; zip: string | null };
+
+/**
+ * The top of what the client gets (a proposal, a price change sheet): your logo big on the left,
+ * your address on the right with the RE: block under it, and `line` (date, what it is) last.
+ */
+export function letterheadFrom(o: {
+  brand: { logoUrl: string | null };
+  company: (Place & { phone: string | null; email: string | null; licenseNumber: string | null }) | null;
+  companyName: string;
+  clientName: string | null;
+  project: Place & { name: string };
+  line: string;
+}) {
+  const { brand, company, companyName, clientName, project } = o;
+  return (
+    <header className="flex flex-wrap items-start justify-between gap-8 break-inside-avoid">
+      <div className="min-w-0">
+        {brand.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={brand.logoUrl} alt={companyName} className="max-h-44 max-w-[22rem] object-contain" />
+        ) : (
+          <h1 className="text-3xl font-bold tracking-tight">{companyName}</h1>
+        )}
+      </div>
+      <div className="text-right text-sm leading-relaxed text-slate-700">
+        {brand.logoUrl ? null : <p className="font-medium text-slate-900">{companyName}</p>}
+        {company?.address ? <p>{company.address}</p> : null}
+        {cityLine(company) ? <p>{cityLine(company)}</p> : null}
+        {company?.phone ? <p>{company.phone}</p> : null}
+        {company?.email ? <p>{company.email}</p> : null}
+        {company?.licenseNumber ? <p>License {company.licenseNumber}</p> : null}
+        <div className="mt-6 inline-grid grid-cols-[auto_auto] gap-x-4 text-left">
+          <span className="font-semibold text-slate-500">RE:</span>
+          <div>
+            {clientName ? <p>{clientName}</p> : null}
+            <p>{project.address || project.name}</p>
+            {cityLine(project) ? <p>{cityLine(project)}</p> : null}
+          </div>
+        </div>
+        <p className="mt-4 text-xs text-slate-500">{o.line}</p>
+      </div>
+    </header>
+  );
+}
+
+/** The letterhead for one of a job's documents, looked up. */
+export async function jobLetterhead(projectId: string, line: string) {
+  const [project, company, brand] = await Promise.all([
+    db.project.findUniqueOrThrow({ where: { id: projectId }, include: { client: true } }),
+    db.company.findFirst(),
+    getBrand(),
+  ]);
+  const clientName = project.client ? `${project.client.firstName} ${project.client.lastName}`.trim() : null;
+  return { clientName, header: letterheadFrom({ brand, company, companyName: company?.name ?? "Your Company", clientName, project, line }) };
 }

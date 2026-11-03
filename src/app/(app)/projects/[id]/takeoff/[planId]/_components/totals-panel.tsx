@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "@/components/link";
-import { ChevronRight, ExternalLink, X } from "lucide-react";
+import { ArrowRight, ChevronRight, X } from "lucide-react";
 import { boardPatternText, feetInches, type BoardPattern } from "@/lib/takeoff";
 import { cn, money, num } from "@/lib/utils";
 
@@ -133,13 +133,12 @@ export function TotalsPanel({
           )
         ) : (
           <div className="pb-4">
-            {/* The quick list here; the full one (prices on/off, print, CSV) is its own tab. */}
+            {/* The quick list here; the full one (prices on/off, print, CSV) is its own page, with a way back. */}
             <Link
               href={materialsHref}
-              target="_blank"
               className="flex items-center gap-1.5 border-b border-slate-100 bg-blue-50/60 px-4 py-2 text-xs font-semibold text-blue-800 hover:bg-blue-50"
             >
-              <ExternalLink className="h-3.5 w-3.5" /> Full list — print, show / hide prices, CSV
+              <ArrowRight className="h-3.5 w-3.5" /> Full list — print, show / hide prices, CSV
             </Link>
             {data.materials.lines.length === 0 ? (
               <p className="px-4 py-6 text-sm text-slate-500">Nothing to list yet — measure takeoffs with items on them.</p>
@@ -195,8 +194,8 @@ export function TotalsPanel({
               </div>
             ) : null}
             <div className="px-4 pt-3">
-              <Link href={materialsHref} target="_blank" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline">
-                <ExternalLink className="h-3.5 w-3.5" /> Full Material List — prices, by plan, print, CSV
+              <Link href={materialsHref} className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline">
+                <ArrowRight className="h-3.5 w-3.5" /> Full Material List — prices, by plan, print, CSV
               </Link>
             </div>
           </div>

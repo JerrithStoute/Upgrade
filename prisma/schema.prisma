@@ -94,6 +94,12 @@ model Company {
   backupDir           String?
   // Warranty: how long after a job is finished (its actual end date) its warranty runs, in months.
   warrantyMonths      Int             @default(12)
+  // Material price escalation: the % rise in material prices that lets you charge it, and
+  // what it's measured from — "SENT" (the proposal went out) or "SIGNED" (the contract).
+  escalationPct       Float           @default(10)
+  escalationFrom      String          @default("SENT")
+  // What the client's price change sheet shows by default (JSON, see src/lib/price-sheet.ts); null = built-in.
+  priceSheetOptions   String?
   createdAt           DateTime        @default(now())
   updatedAt           DateTime        @updatedAt
   // (The Builder Station's own record of this company — its status, the Station's notes. Never shown here.)
@@ -393,13 +399,40 @@ model Estimate {
   autoNote        String?
   // The lines and spec items as last saved, kept when the takeoff first changes them (JSON) — "Put back what I bid".
   autoBase        String?
+  // "Copy exactly": the takeoff prices this draft keeps from the version it was copied from,
+  // JSON { "<takeoff line>|<unit>": price }; null = today's prices. See takeoff-data.ts.
+  heldPrices      String?
+  heldFrom        Int?
+  // This version's own price change sheet for the client (JSON, see src/lib/price-sheet.ts); null = the company default.
+  priceSheetOptions String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
   items           EstimateItem[]
+  priceSnapshots  PriceSnapshot[]
   specs           EstimateSpec[]
   parameterValues EstimateParameterValue[]
 
+  @@index([companyId])
+}
+
+/// The job's Material list as it was priced when this estimate version was sent ("SENT") or
+/// signed ("SIGNED") — what material price escalation is measured from (src/lib/bid-snapshots.ts).
+model PriceSnapshot {
+  id         String   @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId  String   @default(dbgenerated("current_setting('app.company_id'::text)"))
+  estimateId String
+  estimate   Estimate @relation(fields: [estimateId], references: [id], onDelete: Cascade)
+  kind       String // SENT | SIGNED
+  takenAt    DateTime @default(now())
+  // JSON [{ key, materialItemId, name, category, unit, qty, price, pinned, vendor }]
+  lines      String
+  total      Float
+  // Its PDF in the job's Files (folder "Bid snapshots", never the client's).
+  fileId     String?
+
+  @@unique([estimateId, kind])
   @@index([companyId])
 }
 

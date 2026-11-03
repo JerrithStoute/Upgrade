@@ -16,7 +16,7 @@ import { autoMetricPrefix, itemNameKey, pieceLengthFromName } from "./takeoff";
  *
  * Prices are the job's (like other takeoff items): a new line copies the Item
  * List price, a line still at $0 picks it up once it's set; anything else changes
- * only through the Item List (unlocked jobs) or Price review. Materials the walls no longer need are removed.
+ * only through the Item List. Materials the walls no longer need are removed.
  */
 export async function syncWallItems(projectId: string, conditionId?: string) {
   const conditions = (await loadConditions(projectId)).filter(
@@ -142,12 +142,15 @@ export async function syncAutoItems(projectId: string, conditionId?: string) {
 
 /**
  * Pages that show the lines (estimate, material list, bids): worked out again only when something
- * they come from changed since they last were (lumber-state.ts). Returns whether it ran.
+ * they come from changed since they last were (lumber-state.ts). Returns whether it ran. Item List
+ * prices are pulled in either way (a price changed there changes nothing on the job until then).
  */
 export async function syncAutoItemsIfChanged(projectId: string) {
   const p = await systemDb.project.findUnique({ where: { id: projectId }, select: { lumberChangedAt: true, lumberSyncedAt: true } });
   if (p && lumberUpToDate(p.lumberChangedAt, p.lumberSyncedAt)) {
     await running.get(projectId)?.catch(() => {}); // one already on its way: let it finish
+    const { pullListPrices } = await import("./job-prices");
+    await pullListPrices(projectId);
     return false;
   }
   await syncAutoItems(projectId);
@@ -161,7 +164,7 @@ async function syncAutoItemsNow(projectId: string, conditionId?: string) {
   // Items substituted on this job: the lines order the substitute.
   const { applySubstitutions } = await import("./substitutions");
   await applySubstitutions(projectId);
-  // An unlocked job follows the Item List's prices.
+  // A job follows the Item List's prices.
   const { pullListPrices } = await import("./job-prices");
   await pullListPrices(projectId);
 }
