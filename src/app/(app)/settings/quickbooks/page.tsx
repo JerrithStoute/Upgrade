@@ -173,8 +173,8 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
               title="Invoices"
               description={
                 online.invoiceItemId
-                  ? "Invoices go to QuickBooks when you send them, every line on this item. Payments received in QuickBooks come back to them."
-                  : "Pick the QuickBooks item invoice lines go on — invoices can't go to QuickBooks until you do."
+                  ? "Invoices go to QuickBooks when you send them, each line on its cost code's item — a line without a cost code (or one not linked to an item) goes on this item. Payments received in QuickBooks come back to them."
+                  : "Invoices go to QuickBooks when you send them, each line on its cost code's item. Pick the item a line goes on when it has no cost code."
               }
             />
             <CardBody>
@@ -183,7 +183,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
                   action={setInvoiceItem}
                   hidden={{}}
                   value={online.invoiceItemId ?? ""}
-                  label="QuickBooks item for invoice lines"
+                  label="QuickBooks item for lines without a cost code"
                   empty="— Pick an item —"
                   options={items.map((i) => ({ value: i.listId, label: [qbName(i.fullName), i.detail.description].filter(Boolean).join(" — ") }))}
                 />

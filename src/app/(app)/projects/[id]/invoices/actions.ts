@@ -10,8 +10,7 @@ import { contractValue, nextInvoiceNumber } from "@/lib/projects";
 import { PAYMENT_METHODS } from "@/lib/constants";
 import { money, numField, parseDateInput, str, strOrNull } from "@/lib/utils";
 import { deriveInvoiceStatus, invoiceTotal, paymentsTotal } from "@/lib/finance";
-import { changeOrderTotals } from "@/lib/change-orders";
-import { billedChangeOrderIds, syncInvoiceTax } from "@/lib/billing-flow";
+import { billedChangeOrderIds, changeOrderInvoiceItems, invoiceFallbackCodes, syncInvoiceTax } from "@/lib/billing-flow";
 import { emailInvoiceToClient } from "@/lib/notify-client";
 import { paymentsFromQuickBooks, pushInvoice } from "@/lib/qbo/invoices";
 
@@ -46,7 +45,13 @@ async function syncStatus(invoiceId: string) {
 function itemData(fd: FormData) {
   const description = str(fd, "description");
   if (!description) throw new Error("Description is required");
-  return { description, quantity: numField(fd, "quantity", 1), unitPrice: numField(fd, "unitPrice", 0) };
+  return { description, quantity: numField(fd, "quantity", 1), unitPrice: numField(fd, "unitPrice", 0), costCodeId: strOrNull(fd, "costCodeId") };
+}
+
+/** A cost code picked on a line: one of yours, or none. */
+async function checkCode<T extends { costCodeId: string | null }>(data: T): Promise<T> {
+  if (data.costCodeId && !(await db.costCode.findFirst({ where: { id: data.costCodeId }, select: { id: true } }))) return { ...data, costCodeId: null };
+  return data;
 }
 
 export const createInvoice = friendly(async function createInvoice(formData: FormData) {
@@ -60,7 +65,8 @@ export const createInvoice = friendly(async function createInvoice(formData: For
   const dueDate = parseDateInput(formData.get("dueDate"));
   const notes = strOrNull(formData, "notes");
 
-  const items: { description: string; quantity: number; unitPrice: number; sortOrder: number; changeOrderId?: string }[] = [];
+  const items: { description: string; quantity: number; unitPrice: number; sortOrder: number; changeOrderId?: string; costCodeId?: string | null }[] = [];
+  const fallback = await invoiceFallbackCodes();
   const number = await invoiceNumberFrom(formData);
 
   // Approved change orders selected for billing (never one that's already on an invoice).
@@ -68,15 +74,8 @@ export const createInvoice = friendly(async function createInvoice(formData: For
   if (coIds.length) {
     const billed = await billedChangeOrderIds(projectId);
     const cos = await db.changeOrder.findMany({ where: { id: { in: coIds }, projectId, status: "APPROVED" }, include: { items: true }, orderBy: { number: "asc" } });
-    for (const co of cos.filter((c) => !billed.has(c.id))) {
-      items.push({
-        description: `Change Order #${co.number} — ${co.title}`,
-        quantity: 1,
-        unitPrice: changeOrderTotals(co, co.items).total,
-        sortOrder: items.length,
-        changeOrderId: co.id,
-      });
-    }
+    // One line per cost code.
+    for (const co of cos.filter((c) => !billed.has(c.id))) items.push(...(await changeOrderInvoiceItems(co, items.length)));
   }
 
   // Percent-of-contract progress draw.
@@ -84,7 +83,7 @@ export const createInvoice = friendly(async function createInvoice(formData: For
   if (pctOfContract > 0) {
     const contract = await contractValue(projectId, project.contractAmount);
     const amount = Math.round(contract * pctOfContract) / 100;
-    items.push({ description: `Progress draw (${pctOfContract}%)`, quantity: 1, unitPrice: amount, sortOrder: items.length });
+    items.push({ description: `Progress draw (${pctOfContract}%)`, quantity: 1, unitPrice: amount, sortOrder: items.length, costCodeId: fallback.draw });
   }
 
   // Blank rows.
@@ -202,7 +201,7 @@ export const createInvoiceItem = friendly(async function createInvoiceItem(formD
   const inv = await loadInvoice(projectId, invoiceId);
   if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
   const sortOrder = inv.items.reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1;
-  await db.invoiceItem.create({ data: { invoiceId, sortOrder, ...itemData(formData) } });
+  await db.invoiceItem.create({ data: { invoiceId, sortOrder, ...(await checkCode(itemData(formData))) } });
   await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));
@@ -216,7 +215,7 @@ export const updateInvoiceItem = friendly(async function updateInvoiceItem(formD
   const inv = await loadInvoice(projectId, invoiceId);
   if (inv.status !== "DRAFT") throw new Error("Invoice is not editable");
   if (!inv.items.some((i) => i.id === id && !i.isTax)) throw new Error("Item not found");
-  await db.invoiceItem.update({ where: { id }, data: itemData(formData) });
+  await db.invoiceItem.update({ where: { id }, data: await checkCode(itemData(formData)) });
   await syncInvoiceTax(invoiceId);
   revalidate(projectId, invoiceId);
   redirect(invoicePath(projectId, invoiceId));

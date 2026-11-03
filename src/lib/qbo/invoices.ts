@@ -13,7 +13,7 @@ import { invoiceBody, taxProblem } from "./shape";
 export async function pushInvoice(invoiceId: string): Promise<string | null> {
   const conn = await db.qboConnection.findFirst();
   if (!conn) return null;
-  const inv = await db.invoice.findUnique({ where: { id: invoiceId }, include: { items: { orderBy: { sortOrder: "asc" } }, project: { select: { qbListId: true, name: true, isSample: true } } } });
+  const inv = await db.invoice.findUnique({ where: { id: invoiceId }, include: { items: { orderBy: { sortOrder: "asc" }, include: { costCode: { select: { qbListId: true } } } }, project: { select: { qbListId: true, name: true, isSample: true } } } });
   // (The sample job never goes to QuickBooks.)
   if (!inv || inv.status === "DRAFT" || inv.project.isSample) return null;
   const fail = async (why: string) => {
@@ -29,10 +29,13 @@ export async function pushInvoice(invoiceId: string): Promise<string | null> {
       return null;
     }
     if (!inv.project.qbListId) return fail(`${inv.project.name} isn't linked to a QuickBooks customer yet — link it in Settings → QuickBooks, then send it again.`);
-    if (!conn.invoiceItemId) return fail("Pick the QuickBooks item invoice lines go on (Settings → QuickBooks), then send it again.");
-    const tax = taxProblem(inv);
+    // Each line on its cost code's item; a line without one on the item you picked.
+    const out = { ...inv, items: inv.items.map((i) => ({ ...i, itemId: i.costCode?.qbListId ?? null })) };
+    if (!conn.invoiceItemId && out.items.some((i) => !i.isTax && !i.itemId))
+      return fail("A line has no cost code linked to a QuickBooks item. Pick its cost code on the invoice, or pick the QuickBooks item lines without one go on (Settings → QuickBooks), then send it again.");
+    const tax = taxProblem(out);
     if (tax) return fail(tax);
-    const body = invoiceBody(inv, inv.project.qbListId, conn.invoiceItemId);
+    const body = invoiceBody(out, inv.project.qbListId, conn.invoiceItemId);
     // Already there: only its number, dates and notes (its lines can't change here once sent — and
     // anything added in QuickBooks, like a class on each line, stays).
     const header = { DocNumber: body.DocNumber, TxnDate: body.TxnDate, DueDate: body.DueDate, CustomerMemo: body.CustomerMemo, PrivateNote: body.PrivateNote };

@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { changeOrderTotals, parseCoDefaults } from "./change-orders";
+import { coInvoiceLines, parseCoDefaults, parseDocOptions } from "./change-orders";
 import { parseMarkupTable, tableTaxLabel, tableTaxRate } from "./markup";
 import { invoiceTotal } from "./finance";
 import { nextChangeOrderNumber, nextInvoiceNumber } from "./projects";
@@ -169,6 +169,29 @@ export async function billedChangeOrderIds(projectId: string) {
   return new Set(items.map((i) => i.changeOrderId!));
 }
 
+/**
+ * The cost codes an invoice line gets when it has none of its own (Settings → Invoices): draws
+ * and deposits, and change orders. A code since deleted counts as none.
+ */
+export async function invoiceFallbackCodes() {
+  const c = await db.company.findFirst({ select: { invoiceDrawCodeId: true, invoiceCoCodeId: true } });
+  const ids = [c?.invoiceDrawCodeId, c?.invoiceCoCodeId].filter((x): x is string => !!x);
+  const there = new Set((ids.length ? await db.costCode.findMany({ where: { id: { in: ids } }, select: { id: true } }) : []).map((x) => x.id));
+  const ok = (id: string | null | undefined) => (id && there.has(id) ? id : null);
+  return { draw: ok(c?.invoiceDrawCodeId), co: ok(c?.invoiceCoCodeId) };
+}
+
+type BillableCo = Parameters<typeof coInvoiceLines>[0] & { id: string; docOptions: string | null; items: Parameters<typeof coInvoiceLines>[1] };
+
+/** A change order's invoice lines (one per cost code — see coInvoiceLines), ready to save from `sortOrder` on. */
+export async function changeOrderInvoiceItems(co: BillableCo, sortOrder: number) {
+  const fallback = await invoiceFallbackCodes();
+  const ids = [...new Set([...co.items.map((i) => i.costCodeId), fallback.co].filter((x): x is string => !!x))];
+  const codes = await db.costCode.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
+  const lines = coInvoiceLines({ ...co, feePct: parseDocOptions(co.docOptions).feePct }, co.items, new Map(codes.map((c) => [c.id, c.name])), fallback.co);
+  return lines.map((l, k) => ({ description: l.description, quantity: 1, unitPrice: l.amount, costCodeId: l.costCodeId, changeOrderId: co.id, sortOrder: sortOrder + k }));
+}
+
 /** An approved change order onto the job's next draft invoice (started if needed) — once. */
 export async function billApprovedChangeOrder(coId: string, who: Who) {
   if (!(await settings()).autoInvoiceCO) return null;
@@ -177,16 +200,8 @@ export async function billApprovedChangeOrder(coId: string, who: Who) {
   const inv =
     (await db.invoice.findFirst({ where: { projectId: co.projectId, status: "DRAFT" }, orderBy: { number: "desc" }, include: { items: true } })) ??
     (await db.invoice.create({ data: { projectId: co.projectId, number: await nextInvoiceNumber(), title: "Invoice" }, include: { items: true } }));
-  await db.invoiceItem.create({
-    data: {
-      invoiceId: inv.id,
-      changeOrderId: co.id,
-      description: `Change Order #${co.number} — ${co.title}`,
-      quantity: 1,
-      unitPrice: changeOrderTotals(co, co.items).total,
-      sortOrder: inv.items.filter((i) => !i.isTax).reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1,
-    },
-  });
+  const from = inv.items.filter((i) => !i.isTax).reduce((m, i) => Math.max(m, i.sortOrder), -1) + 1;
+  await db.invoiceItem.createMany({ data: (await changeOrderInvoiceItems(co, from)).map((i) => ({ ...i, invoiceId: inv.id })) });
   await syncInvoiceTax(inv.id);
   await logActivity({ projectId: co.projectId, userId: who.id, type: "invoice.updated", description: `Change order #${co.number} added to invoice #${inv.number}` });
   return inv;

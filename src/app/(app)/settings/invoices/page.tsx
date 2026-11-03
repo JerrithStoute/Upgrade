@@ -2,6 +2,9 @@ import { CheckCircle2 } from "lucide-react";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { nextInvoiceNumber } from "@/lib/projects";
+import { costCodeLabel } from "@/lib/utils";
+import { invoiceFallbackCodes } from "@/lib/billing-flow";
+import { CodePick } from "./code-pick";
 import { Card, CardBody, CardHeader, SubmitButton } from "@/components/ui";
 import { saveBilling } from "./actions";
 
@@ -11,11 +14,14 @@ export const metadata = { title: "Invoices" };
 export default async function InvoiceSettingsPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   await requireAdmin();
   const { saved } = await searchParams;
-  const [company, next, highest] = await Promise.all([
+  const [company, next, highest, fallback, codes] = await Promise.all([
     db.company.findFirst({ select: { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: true, invoiceNextNumber: true } }),
     nextInvoiceNumber(),
     db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } }),
+    invoiceFallbackCodes(),
+    db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true } }),
   ]);
+  const codeList = codes.map((x) => ({ id: x.id, label: costCodeLabel(x, " ") }));
   const c = company ?? { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: "AUTO", invoiceNextNumber: null };
   const box = "flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-800 has-[:checked]:border-blue-300 has-[:checked]:bg-blue-50/50";
 
@@ -49,6 +55,29 @@ export default async function InvoiceSettingsPage({ searchParams }: { searchPara
               </span>
             </span>
           </label>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader
+          title="Cost codes on invoice lines"
+          description="For you and QuickBooks (each line goes on the item named for its code) — the client's invoice doesn't show them. A change order goes on an invoice one line per cost code. These fill in a line that has no code of its own; any line's code can be changed on the invoice."
+        />
+        <CardBody className="space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-800">
+            <span>
+              <span className="block font-medium">Draws and deposits</span>
+              <span className="block text-xs text-slate-500">A progress draw (percent of contract) — e.g. &ldquo;Contract&rdquo; or &ldquo;Building sale&rdquo;.</span>
+            </span>
+            <CodePick name="invoiceDrawCodeId" label="Cost code for draws and deposits" codes={codeList} value={fallback.draw} />
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5 text-sm text-slate-800">
+            <span>
+              <span className="block font-medium">Change orders</span>
+              <span className="block text-xs text-slate-500">Change order lines without a cost code, and the builder&apos;s fee or sales tax when shown as their own line.</span>
+            </span>
+            <CodePick name="invoiceCoCodeId" label="Cost code for change orders" codes={codeList} value={fallback.co} />
+          </div>
         </CardBody>
       </Card>
 

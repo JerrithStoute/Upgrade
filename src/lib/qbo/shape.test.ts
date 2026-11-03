@@ -114,6 +114,9 @@ test("an invoice goes out on the job's customer, every line on the item picked",
     Description: "Change Order #4 — Extra outlets",
     SalesItemLineDetail: { ItemRef: { value: "40" }, Qty: 2, UnitPrice: 150.5 },
   });
+  // A line with a cost code linked to an item goes on that item.
+  const coded = invoiceBody({ ...inv, items: [{ ...inv.items[0], itemId: "77" }, inv.items[1]] }, "8", "40");
+  assert.deepEqual(coded.Line.map((l) => l.SalesItemLineDetail.ItemRef.value), ["77", "40"]);
   assert.equal(taxProblem(inv), null);
   // Sales tax isn't sent — QuickBooks works out its own.
   assert.match(taxProblem({ ...inv, items: [...inv.items, { description: "Sales tax", quantity: 1, unitPrice: 12, isTax: true }] })!, /sales tax/);

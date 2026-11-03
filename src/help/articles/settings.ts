@@ -257,14 +257,17 @@ export const SETTINGS: HelpArticle[] = [
     group: "Settings",
     area: "admin",
     pages: ["/settings/invoices"],
-    what: "Admins choose what moves onto change orders and invoices by itself, and how invoices are numbered.",
-    how: ["Go to **Settings → Invoices**.", "Tick what should happen by itself, choose how invoices are numbered, and click **Save**."],
+    what: "Admins choose what moves onto change orders and invoices by itself, which cost codes invoice lines get when they have none of their own, and how invoices are numbered.",
+    how: ["Go to **Settings → Invoices**.", "Tick what should happen by itself, pick the cost codes, choose how invoices are numbered, and click **Save**."],
     sections: [
       {
         heading: "On the page",
         items: [
           { name: "Selection overages and credits go on a change order", what: "When a client's choice is over or under its allowance, the difference goes on the job's draft \"Selections\" change order (started if needed)." },
-          { name: "Approved change orders go on the next invoice", what: "An approved change order is added to the job's draft invoice (started if needed). It's never billed twice." },
+          { name: "Approved change orders go on the next invoice", what: "An approved change order is added to the job's draft invoice (started if needed), one line per cost code. It's never billed twice." },
+          { name: "Cost codes on invoice lines → Draws and deposits", what: "The cost code a progress draw (percent of contract) gets — for example \"Contract\" or \"Building sale\"." },
+          { name: "Cost codes on invoice lines → Change orders", what: "The cost code for change order lines that have none of their own, and for the builder's fee or sales tax when the change order showed them as their own line — for example \"Change order\"." },
+          { name: "+ New cost code…", what: "The last choice in either list: type the new code's number (optional) and name, and it's added to your cost codes when you click **Save**." },
           { name: "Number them for me / Start at", what: "The program numbers invoices across all jobs. To carry on from QuickBooks, type its next number." },
           { name: "I'll type them", what: "Each new invoice asks for its number, with the next unused one filled in." },
         ],
@@ -281,7 +284,7 @@ export const SETTINGS: HelpArticle[] = [
     what: "Links the program to your books in **QuickBooks Online** or **QuickBooks Desktop** (one or the other). Either way, vendors come into your vendor list, jobs link to the QuickBooks customer or job with the same name, and cost codes link to the item named with their code. With QuickBooks Online, bills entered in QuickBooks also come in on their jobs, invoices go to QuickBooks when you send them, and payments received there show up on them. QuickBooks Desktop only reads QuickBooks for now.",
     how: [
       "**QuickBooks Online:** go to **Settings → QuickBooks** and click **Connect QuickBooks Online**. Sign in to Intuit, pick your company and click **Connect**. You come back here, and the first update runs on its own.",
-      "Pick the **QuickBooks item invoice lines go on** under Invoices. Invoices can't go to QuickBooks until you do.",
+      "Each invoice line goes to QuickBooks on the item named for its cost code. Under Invoices, pick the **QuickBooks item for lines without a cost code** (or with a code that isn't linked to an item).",
       "Link any job or cost code that didn't match by name. Bills on QuickBooks customers that aren't linked yet wait under **Bills waiting for a job**; pick the job and they come in.",
       "**QuickBooks Desktop:** click **Set up QuickBooks Desktop**, then **Connection file**, and save it on the computer that runs QuickBooks.",
       "Open QuickBooks with your company, signed in as Admin, in single-user mode. Choose **File → Update Web Services → Add an application**, pick the file, and allow access even when QuickBooks isn't running.",
@@ -293,7 +296,7 @@ export const SETTINGS: HelpArticle[] = [
         items: [
           { name: "Update now", what: "Brings in what changed in QuickBooks right away. It also updates on its own every 15 minutes." },
           { name: "Bills", what: "Each bill entered in QuickBooks with lines on a linked job comes in on that job, already approved, so its cost shows on the Budget. A bill with lines on two jobs comes in as one bill on each. Paid in QuickBooks means paid here. Bills from QuickBooks are changed, paid or deleted in QuickBooks; this follows on the next update. Lines with no customer (the office's own costs) don't come in." },
-          { name: "Invoices", what: "An invoice goes to QuickBooks when you mark it sent, on the job's QuickBooks customer, every line on the item you picked. If something stops it, the invoice says why, with **Send to QuickBooks again**. An invoice with sales tax on it isn't sent, because QuickBooks works out its own tax." },
+          { name: "Invoices", what: "An invoice goes to QuickBooks when you mark it sent, on the job's QuickBooks customer, each line on its cost code's item (a line without one goes on the item you picked). If something stops it, the invoice says why, with **Send to QuickBooks again**. An invoice with sales tax on it isn't sent, because QuickBooks works out its own tax." },
           { name: "Payments", what: "Payments received in QuickBooks on those invoices show up on them, and the invoice turns Partly paid or Paid. Record payments for those invoices in QuickBooks, not here." },
           { name: "The first update", what: "Brings in bills and payments from the last 12 months. After that, only what changed." },
           { name: "Disconnect", what: "Stops the updates and clears every link. Bills and payments already brought in stay, as ordinary ones you can change here. Your QuickBooks books aren't touched." },

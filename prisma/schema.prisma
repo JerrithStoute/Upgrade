@@ -64,6 +64,10 @@ model Company {
   // Invoice numbers: AUTO (counted up from invoiceNextNumber) or MANUAL (you type them).
   invoiceNumbering    String          @default("AUTO")
   invoiceNextNumber   Int?
+  // The cost code an invoice line gets when it has none of its own: draws and deposits, and
+  // change orders (their lines without a code, the builder's fee, a sales tax line).
+  invoiceDrawCodeId   String?
+  invoiceCoCodeId     String?
   // Insurance every sub/vendor must carry (COI tracking): "GL,WC" (GL, WC, AUTO, UMBRELLA).
   // Spec houses: usual selling costs (JSON { listPct, buyerPct, closingPct, closingFlat, concessions }); null = built-in.
   specDefaults        String?
@@ -342,6 +346,7 @@ model CostCode {
   itemCodeRules             ItemCodeRule[]
   poLines                   PurchaseOrderLine[]
   billLines                 VendorBillLine[]
+  invoiceItems              InvoiceItem[]
   carryingCosts             CarryingCost[]
   timeEntries               TimeEntry[]
 
@@ -976,6 +981,9 @@ model InvoiceItem {
   // The change order this line bills (so it's never billed twice).
   changeOrderId String?
   changeOrder   ChangeOrder? @relation(fields: [changeOrderId], references: [id], onDelete: SetNull)
+  // For you and QuickBooks (each line goes on the item named for its code); not on the client's copy.
+  costCodeId    String?
+  costCode      CostCode?    @relation(fields: [costCodeId], references: [id], onDelete: SetNull)
 
   @@index([companyId])
 }

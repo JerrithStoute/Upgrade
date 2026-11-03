@@ -169,17 +169,19 @@ export type InvoiceOut = {
   issueDate: Date;
   dueDate: Date | null;
   notes: string | null;
-  items: { description: string; quantity: number; unitPrice: number; isTax: boolean }[];
+  /** itemId: the QuickBooks item for the line's cost code (the item named for it), when it has one. */
+  items: { description: string; quantity: number; unitPrice: number; isTax: boolean; itemId?: string | null }[];
 };
 
 /** A date as QuickBooks wants it (the day as it reads here). */
 export const qbDate = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
- * The invoice as QuickBooks Online takes it: on the job's customer, each line on the one item you
- * picked for invoice lines. Tax isn't sent — QuickBooks works out its own (see `taxProblem`).
+ * The invoice as QuickBooks Online takes it: on the job's customer, each line on its cost code's
+ * item — or, without one, the item you picked for invoice lines. Tax isn't sent — QuickBooks works
+ * out its own (see `taxProblem`).
  */
-export function invoiceBody(inv: InvoiceOut, customerId: string, itemId: string) {
+export function invoiceBody(inv: InvoiceOut, customerId: string, itemId: string | null) {
   return {
     CustomerRef: { value: customerId },
     DocNumber: String(inv.number),
@@ -193,7 +195,7 @@ export function invoiceBody(inv: InvoiceOut, customerId: string, itemId: string)
         DetailType: "SalesItemLineDetail",
         Amount: cents(i.quantity * i.unitPrice),
         Description: i.description.slice(0, 4000),
-        SalesItemLineDetail: { ItemRef: { value: itemId }, Qty: i.quantity, UnitPrice: i.unitPrice },
+        SalesItemLineDetail: { ItemRef: { value: i.itemId || itemId }, Qty: i.quantity, UnitPrice: i.unitPrice },
       })),
   };
 }

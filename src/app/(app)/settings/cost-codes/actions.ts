@@ -44,10 +44,10 @@ export const deleteCostCode = friendly(async function deleteCostCode(formData: F
   const id = str(formData, "id");
   const current = await db.costCode.findUnique({
     where: { id },
-    include: { _count: { select: { estimateItems: true, changeOrderItems: true, expenses: true, selections: true } } },
+    include: { _count: { select: { estimateItems: true, changeOrderItems: true, expenses: true, selections: true, invoiceItems: true } } },
   });
   if (!current) throw new Error("Cost code not found");
-  const refs = current._count.estimateItems + current._count.changeOrderItems + current._count.expenses + current._count.selections;
+  const refs = current._count.estimateItems + current._count.changeOrderItems + current._count.expenses + current._count.selections + current._count.invoiceItems;
 
   if (refs > 0) {
     await db.costCode.update({ where: { id }, data: { active: false } });

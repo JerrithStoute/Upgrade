@@ -192,3 +192,47 @@ export function isFullyApproved(co: { clientApproval: boolean; clientApprovedAt:
   const done = parseApprovals(co.teamApprovals);
   return (!co.clientApproval || !!co.clientApprovedAt) && parseIds(co.approverIds).every((id) => !!done[id]);
 }
+
+/** One invoice line billing (part of) a change order. */
+export type CoInvoiceLine = { description: string; amount: number; costCodeId: string | null };
+
+/**
+ * An approved change order as invoice lines: one per cost code (its lines with that code put
+ * together), so QuickBooks gets each code's amount. Shown the way the change order was: profit
+ * built into each code's amount, or the fee as its own line; sales tax the same. A line without
+ * a code, the fee and a tax line go on `fallbackCodeId` (Settings → Invoices). The amounts add up
+ * to the change order's total exactly.
+ */
+export function coInvoiceLines(
+  co: CoProfit & { number: number; title: string; profitLabel?: string | null; taxLabel?: string | null; feePct?: boolean },
+  lines: (CoLine & { costCodeId?: string | null; sortOrder?: number })[],
+  codeNames: Map<string, string>,
+  fallbackCodeId: string | null,
+): CoInvoiceLine[] {
+  const t = changeOrderTotals(co, lines);
+  const head = `Change Order #${co.number} — ${co.title}`;
+  const groups = new Map<string | null, number>();
+  for (const l of [...lines].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))) {
+    const code = l.costCodeId ?? fallbackCodeId;
+    groups.set(code, (groups.get(code) ?? 0) + t.shown(l));
+  }
+  const several = groups.size > 1;
+  const out: CoInvoiceLine[] = [...groups].map(([code, amount]) => ({
+    description: several ? `${head} — ${(code && codeNames.get(code)) || "Other"}` : head,
+    amount: cents(amount),
+    costCodeId: code,
+  }));
+  if (t.profitLine) {
+    const pct = co.feePct !== false && t.feePct !== null ? ` (${t.feePct}%)` : "";
+    out.push({ description: `${head} — ${co.profitLabel || "Builder's fee"}${pct}`, amount: t.profit, costCodeId: fallbackCodeId });
+  }
+  if (t.tax) out.push({ description: `${head} — ${co.taxLabel || "Sales tax"}`, amount: t.tax, costCodeId: fallbackCodeId });
+  if (out.length === 0) out.push({ description: head, amount: 0, costCodeId: fallbackCodeId });
+  // Pennies from rounding go on the biggest line, so the lines add up to the total.
+  const off = cents(t.total - out.reduce((n, l) => n + l.amount, 0));
+  if (off) {
+    const big = out.reduce((m, l) => (Math.abs(l.amount) > Math.abs(m.amount) ? l : m), out[0]);
+    big.amount = cents(big.amount + off);
+  }
+  return out;
+}

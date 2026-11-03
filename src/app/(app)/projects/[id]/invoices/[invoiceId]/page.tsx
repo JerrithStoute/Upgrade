@@ -7,7 +7,7 @@ import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { PAYMENT_METHODS } from "@/lib/constants";
-import { cn, dateInput, fmtDate, money, num } from "@/lib/utils";
+import { cn, costCodeLabel, dateInput, fmtDate, money, num } from "@/lib/utils";
 import { invoiceLineTotal, invoiceTotal, isOverdue, paymentsTotal } from "@/lib/finance";
 import { Badge, ConfirmForm, SubmitButton } from "@/components/ui";
 import { Tile } from "@/components/ui/tile";
@@ -63,9 +63,10 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
   const project = await getProject(id);
   const inv = await db.invoice.findFirst({
     where: { id: invoiceId, projectId: project.id },
-    include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }] }, payments: { orderBy: { date: "desc" } } },
+    include: { items: { orderBy: [{ sortOrder: "asc" }, { id: "asc" }], include: { costCode: { select: { code: true, name: true } } } }, payments: { orderBy: { date: "desc" } } },
   });
   if (!inv) notFound();
+  const codes = inv.status === "DRAFT" ? await db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true } }) : [];
   const qbo = await db.qboConnection.findFirst({ select: { id: true } });
   // Payments for an invoice in QuickBooks Online come from there (recorded there, they show up here).
   const qbPayments = !!qbo && !!inv.qbTxnId;
@@ -92,8 +93,8 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
       </Link>
     </div>
   );
-  // A line's three boxes, for adding one or changing one.
-  const lineBoxes = (item?: { id: string; description: string; quantity: number; unitPrice: number }) => (
+  // A line's boxes, for adding one or changing one.
+  const lineBoxes = (item?: { id: string; description: string; quantity: number; unitPrice: number; costCodeId: string | null; costCode: { code: string | null; name: string } | null }) => (
     <>
       <input type="hidden" name="projectId" value={project.id} />
       <input type="hidden" name="invoiceId" value={inv.id} />
@@ -101,6 +102,16 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
       <input name="description" required autoFocus className={cn(box, "min-w-[12rem] flex-1")} defaultValue={item?.description} placeholder="Description" aria-label="Description" />
       <input name="quantity" type="number" step="any" min="0" required className={cn(box, "w-16 text-right")} defaultValue={item?.quantity ?? 1} aria-label="Qty" />
       <input name="unitPrice" type="number" step="0.01" required className={cn(box, "w-28 text-right")} defaultValue={item?.unitPrice} placeholder="Price" aria-label="Unit price" />
+      <select name="costCodeId" className={cn(box, "w-48")} defaultValue={item?.costCodeId ?? ""} aria-label="Cost code">
+        <option value="">No cost code</option>
+        {/* An inactive code a line already has stays pickable. */}
+        {item?.costCodeId && item.costCode && !codes.some((c) => c.id === item.costCodeId) ? <option value={item.costCodeId}>{costCodeLabel(item.costCode, " ")}</option> : null}
+        {codes.map((c) => (
+          <option key={c.id} value={c.id}>
+            {costCodeLabel(c, " ")}
+          </option>
+        ))}
+      </select>
     </>
   );
 
@@ -198,10 +209,13 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
             </div>
           ) : null}
           <div className="@container overflow-x-auto">
-            <table className="w-full min-w-[30rem] text-sm">
+            <table className="w-full min-w-[38rem] text-sm">
               <thead>
                 <tr className="border-b border-slate-100 text-left text-xs text-slate-500">
                   <th className="px-4 py-2 font-normal">Description</th>
+                  <th className="px-3 py-2 font-normal" title="For you and QuickBooks — not on the client's invoice">
+                    Cost code
+                  </th>
                   <th className="px-3 py-2 text-right font-normal">Qty</th>
                   <th className="px-3 py-2 text-right font-normal">Price</th>
                   <th className="px-3 py-2 text-right font-normal">Amount</th>
@@ -211,7 +225,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
               <tbody>
                 {inv.items.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-4 py-6 text-center text-sm text-slate-500">
+                    <td colSpan={6} className="px-4 py-6 text-center text-sm text-slate-500">
                       No lines yet.{" "}
                       {isDraft && edit !== "new" ? (
                         <Link href={`${base}?edit=new`} scroll={false} className="font-medium text-blue-700 hover:underline">
@@ -224,7 +238,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
                 {inv.items.map((item) =>
                   isDraft && edit === item.id && !item.isTax ? (
                     <tr key={item.id} className="border-b border-slate-100 bg-slate-50">
-                      <td colSpan={5} className="p-0">
+                      <td colSpan={6} className="p-0">
                         <div className="sticky left-0 w-[100cqw] max-w-full px-4 py-2.5">
                           {formHead("Change this line")}
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -247,6 +261,17 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
                         {item.description}
                         {item.isTax ? <span className="ml-2 text-xs text-slate-400">follows the lines above</span> : null}
                       </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs">
+                        {item.isTax ? null : item.costCode ? (
+                          <span className="text-slate-600">{costCodeLabel(item.costCode, " ")}</span>
+                        ) : isDraft ? (
+                          <Link href={`${base}?edit=${item.id}`} scroll={false} className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800 hover:bg-amber-100">
+                            Pick a cost code
+                          </Link>
+                        ) : (
+                          <span className="text-slate-400">None</span>
+                        )}
+                      </td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{num(item.quantity)}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(item.unitPrice)}</td>
                       <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{money(invoiceLineTotal(item))}</td>
@@ -268,7 +293,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
                 )}
                 {isDraft && edit === "tax" ? (
                   <tr className="border-b border-slate-100 bg-slate-50">
-                    <td colSpan={5} className="p-0">
+                    <td colSpan={6} className="p-0">
                       <div className="sticky left-0 w-[100cqw] max-w-full px-4 py-2.5">
                         {formHead("Tax")}
                         <form action={setInvoiceTax} className="flex flex-wrap items-center gap-1.5">
@@ -297,7 +322,7 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
               </tbody>
               <tfoot>
                 <tr className="text-sm font-medium text-slate-900">
-                  <td className="px-4 py-2" colSpan={3}>
+                  <td className="px-4 py-2" colSpan={4}>
                     Total
                     {isDraft && !taxLine && edit !== "tax" ? (
                       <span className="font-normal text-slate-500">

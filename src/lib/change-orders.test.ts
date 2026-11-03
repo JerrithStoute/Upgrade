@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { changeOrderTotals, effectOnContract, isFullyApproved } from "./change-orders";
+import { changeOrderTotals, coInvoiceLines, effectOnContract, isFullyApproved } from "./change-orders";
 
 // A $4,500 flooring overage (client choice), a $250 change order fee and a $1,000 item with 20% markup.
 const lines = [
@@ -75,5 +75,49 @@ describe("change order totals", () => {
     assert.equal(isFullyApproved({ ...base, clientApprovedAt: new Date() }), false);
     assert.equal(isFullyApproved({ ...base, clientApprovedAt: new Date(), teamApprovals: JSON.stringify({ jess: "2026-10-01" }) }), true);
     assert.equal(isFullyApproved({ ...base, clientApproval: false, teamApprovals: JSON.stringify({ jess: "x" }) }), true);
+  });
+});
+
+describe("a change order on an invoice", () => {
+  // Concrete and framing (two framing lines put together) and one line with no code.
+  const coded = [
+    { quantity: 1, unitCost: 1000, markupPct: 0, costCodeId: "conc", sortOrder: 0 },
+    { quantity: 1, unitCost: 2000, markupPct: 0, costCodeId: "frm", sortOrder: 1 },
+    { quantity: 1, unitCost: 500, markupPct: 0, costCodeId: "frm", sortOrder: 2 },
+    { quantity: 1, unitCost: 333.33, markupPct: 0, costCodeId: null, sortOrder: 3 },
+  ];
+  const names = new Map([
+    ["conc", "Concrete"],
+    ["frm", "Framing"],
+    ["co", "Change order"],
+  ]);
+  const head = { number: 3, title: "Covered patio", profitLabel: "Builder's fee", taxLabel: "Sales tax" };
+
+  it("is one line per cost code, profit built in, adding up to the total", () => {
+    const c = { ...co({ profitMode: "PCT", profitValue: 10, profitShown: "FOLDED" }), ...head };
+    const out = coInvoiceLines(c, coded, names, "co");
+    assert.deepEqual(
+      out.map((l) => [l.description, l.amount, l.costCodeId]),
+      [
+        ["Change Order #3 — Covered patio — Concrete", 1100, "conc"],
+        ["Change Order #3 — Covered patio — Framing", 2750, "frm"],
+        ["Change Order #3 — Covered patio — Change order", 366.66, "co"],
+      ],
+    );
+    assert.equal(Math.round(out.reduce((n, l) => n + l.amount, 0) * 100) / 100, changeOrderTotals(c, coded).total);
+  });
+
+  it("keeps the fee as its own line when the change order showed it that way", () => {
+    const c = { ...co({ profitMode: "PCT", profitValue: 10 }), ...head };
+    const out = coInvoiceLines(c, coded, names, "co");
+    assert.deepEqual(out.at(-1), { description: "Change Order #3 — Covered patio — Builder's fee (10%)", amount: 383.33, costCodeId: "co" });
+    assert.deepEqual(out.slice(0, 2).map((l) => l.amount), [1000, 2500]);
+    // Without the %, when the change order didn't show it.
+    assert.equal(coInvoiceLines({ ...c, feePct: false }, coded, names, "co").at(-1)!.description, "Change Order #3 — Covered patio — Builder's fee");
+  });
+
+  it("is one plain line when every line has the same code", () => {
+    const out = coInvoiceLines({ ...co({}), ...head }, coded.slice(1, 3), names, null);
+    assert.deepEqual(out, [{ description: "Change Order #3 — Covered patio", amount: 2500, costCodeId: "frm" }]);
   });
 });
