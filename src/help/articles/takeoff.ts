@@ -330,6 +330,7 @@ export const TAKEOFF: HelpArticle[] = [
           "**Doors and windows:** a gap drawn as a door or window is bridged. A column standing on its own, or the back of a niche, is not.",
           "**Brick and stone** veneer are not counted as walls; the wall behind them is.",
           "**Plans that fill walls with hatching:** some plans hatch the stud space itself, not just the brick. Find walls tells them apart: the wall's faces carry drywall and sheathing lines, the brick's outside face is a single line.",
+          "**Plans that fill walls with dots:** only the dotted bands count as walls, so a dimension line, a beam, a brick ladder or a table drawn the same width is left out. On these plans an outside wall is one with open air past it, including walls facing a porch the house wraps around. A garage with its door open to the outside counts its wall to the house as outside.",
         ],
       },
     ],

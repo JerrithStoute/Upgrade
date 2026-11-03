@@ -412,3 +412,62 @@ describe("wall finder", () => {
     assert.deepEqual(findWalls(house(), [100, 0], { ...opts, unitsPerFoot: 0 }), { ok: false, reason: "no-scale" });
   });
 });
+
+/**
+ * A 40' × 30' house drawn the way some plans stipple their walls (1 unit = 1 inch): 4" walls, each a band
+ * of dots between two face lines — the outside walls, and one inside wall up the middle. Outside, a brick
+ * ladder along the left wall (two lines 4" apart, rungs across) and a dimension's two lines 4" apart: two
+ * lines a wall's thickness apart with nothing between them — not walls.
+ */
+function stippledHouse() {
+  const segs: number[] = [];
+  const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+  const dots = (x0: number, y0: number, x1: number, y1: number) => {
+    for (let x = x0 + 0.5; x < x1; x += 0.8) for (let y = y0 + 0.5; y < y1; y += 0.8) segs.push(x, y, x, y);
+  };
+  // Outside walls: faces on 0…480 × 0…360 and 4" in.
+  line(0, 0, 480, 0);
+  line(480, 0, 480, 360);
+  line(480, 360, 0, 360);
+  line(0, 360, 0, 0);
+  line(4, 4, 476, 4);
+  line(476, 4, 476, 356);
+  line(476, 356, 4, 356);
+  line(4, 356, 4, 4);
+  dots(0, 0, 480, 4);
+  dots(0, 356, 480, 360);
+  dots(0, 4, 4, 356);
+  dots(476, 4, 480, 356);
+  // An inside wall up the middle.
+  line(238, 4, 238, 356);
+  line(242, 4, 242, 356);
+  dots(238, 4, 242, 356);
+  // A brick ladder off the left wall.
+  line(-4, 0, -4, 360);
+  for (let y = 6; y < 360; y += 6) line(-4, y, 0, y);
+  // A dimension 3' below the house, drawn with two lines 4" apart.
+  line(0, 396, 480, 396);
+  line(0, 400, 480, 400);
+  return segs;
+}
+
+describe("findWalls on a plan that stipples its walls", () => {
+  const segs = stippledHouse();
+  const near = (runs: Pt[][], y: number) => runs.some(([a, b]) => Math.abs(a[1] - y) < 3 && Math.abs(b[1] - y) < 3);
+
+  it("an outside wall clicked: the outside walls around, not the dimension or the brick ladder", () => {
+    const r = findWalls(segs, [2, 180], opts);
+    assert.ok(r.ok);
+    assert.equal(r.kind, "exterior");
+    assert.equal(r.runs.length, 4);
+    assert.ok(!near(r.runs, 398), "the dimension's lines aren't a wall");
+    assert.ok(r.runs.every(([a, b]) => a[0] >= 0 && b[0] >= 0), "the brick ladder isn't a wall");
+  });
+
+  it("the inside wall clicked: just it", () => {
+    const r = findWalls(segs, [240, 180], opts);
+    assert.ok(r.ok);
+    assert.equal(r.kind, "interior");
+    assert.equal(r.runs.length, 1);
+  });
+});

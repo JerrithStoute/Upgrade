@@ -52,6 +52,8 @@ const DEG = Math.PI / 180;
 /** A band thinner than this (inches) beside a wall-wide gap is a veneer (stone drawn as an outline), not a wall — real walls are drawn 2¾" and up (Stoute's thinnest). */
 const VENEER_MAX = 2.5;
 const PARALLEL = 1.5 * DEG;
+/** Dots per foot between a wall's faces on a plan that stipples its walls (Kelly North has ~70; a curve's ends are a stray few). */
+const STIPPLE_PER_FOOT = 10;
 
 function toLine(x1: number, y1: number, x2: number, y2: number): Line | null {
   const dx = x2 - x1;
@@ -172,6 +174,51 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   }
   const buckets = index(lines);
   const strokesNear = grid(lines, upf);
+  // Dots (a line no longer than a point — how a plan draws a stipple): some plans fill their walls with them.
+  const dotLines: Line[] = [];
+  for (let i = 0; i + 3 < segments.length; i += 4)
+    if (segments[i] === segments[i + 2] && segments[i + 1] === segments[i + 3]) dotLines.push({ x1: segments[i], y1: segments[i + 1], x2: segments[i], y2: segments[i + 1] } as Line);
+  const dotsNear = grid(dotLines, upf);
+  /** Dots between a piece's faces, per foot along it, foot by foot (from s0 to s1). */
+  const dotFeet = (p: Piece, half: number) => {
+    const n = Math.max(1, Math.round(lengthOf(p) / upf));
+    const feet = new Array<number>(n).fill(0);
+    const a = at(p, p.s0);
+    const b = at(p, p.s1);
+    const seen = new Set<string>();
+    for (const d of dotsNear(a[0], a[1], b[0], b[1])) {
+      const o = d.x1 * p.nx + d.y1 * p.ny - p.rho;
+      const s = d.x1 * p.ux + d.y1 * p.uy;
+      if (Math.abs(o) >= half - 0.2 * inch || s < p.s0 || s > p.s1) continue;
+      // (A dot drawn twice over is one.)
+      const k = `${Math.round(d.x1 * 10)},${Math.round(d.y1 * 10)}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      feet[Math.min(n - 1, Math.floor(((s - p.s0) / lengthOf(p)) * n))]++;
+    }
+    return feet;
+  };
+  /** The dots between a piece's faces sit in a regular pattern (a stipple — not a curve's ends, text drawn in curves): most are the same distance from their nearest neighbor. */
+  const evenDots = (p: Piece, half: number) => {
+    const a = at(p, p.s0);
+    const b = at(p, p.s1);
+    const pts = new Map<string, [number, number]>();
+    for (const d of dotsNear(a[0], a[1], b[0], b[1])) {
+      const o = d.x1 * p.nx + d.y1 * p.ny - p.rho;
+      const s = d.x1 * p.ux + d.y1 * p.uy;
+      if (Math.abs(o) < half - 0.2 * inch && s >= p.s0 && s <= p.s1) pts.set(`${Math.round(d.x1 * 10)},${Math.round(d.y1 * 10)}`, [d.x1, d.y1]);
+    }
+    const list = [...pts.values()].slice(0, 400);
+    if (list.length < 20) return false;
+    const nn = list.map(([x, y]) => Math.min(...list.map(([u, v]) => (u === x && v === y ? Infinity : Math.hypot(u - x, v - y)))));
+    const m = median(nn);
+    return m > 0 && nn.filter((d) => Math.abs(d - m) <= 0.15 * m).length >= 0.7 * nn.length;
+  };
+  /** Most of a piece's length is stippled between its faces. */
+  const stippledAlong = (p: Piece, half: number) => {
+    const feet = dotFeet(p, half);
+    return feet.filter((c) => c >= STIPPLE_PER_FOOT).length * 2 >= feet.length;
+  };
 
   // Hatching: short slanted strokes from face to face across a band — brick (or stone) veneer.
   const hatched = (p: Piece, half: number) => {
@@ -509,9 +556,23 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     return said > 0 && yes * 4 >= said;
   };
   const merged = merge(pieces, (w, p) => gapOf(w, p) <= inch);
+  // A plan that stipples its walls: the band clicked is dotted. Then only dotted bands are walls — two lines
+  // a wall's thickness apart with nothing between are a brick ladder, a dimension's lines, a beam overhead.
+  const stipple = merged.some((p) => distToSeg(click[0], click[1], segOf(p)) <= half + opts.clickRadius && stippledAlong(p, half) && evenDots(p, half));
+  // There, a wall's faces break where another wall meets it (a T); the dots carry on across the joint: one wall.
+  const dottedGap = (w: Piece, p: Piece) => {
+    const gap = gapOf(w, p);
+    if (gap > 2 * thickness) return false;
+    const [from, to] = w.s1 <= p.s0 ? [w.s1, p.s0] : [p.s1, w.s0];
+    const span = { ...w, rho: (w.rho + p.rho) / 2, s0: from, s1: to };
+    const n = dotFeet(span, half).reduce((a, b) => a + b, 0);
+    return n >= Math.max(3, (STIPPLE_PER_FOOT * gap) / upf);
+  };
+  const solid = stipple ? merge(merged, (w, p) => gapOf(w, p) <= inch || dottedGap(w, p)) : merged;
   const veneer: Piece[] = [];
   let walls: Piece[] = [];
-  for (const p of merged) {
+  for (const p of solid) {
+    if (stipple && !stippledAlong(p, half)) continue;
     // Lines run between its faces all along: it's not a wall this thick (two faces of a
     // thinner wall's layers).
     if (p.open < Math.min(upf, lengthOf(p) / 2)) continue;
@@ -648,7 +709,71 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
       return new Set(row.map((g) => Math.round(g.along / inch))).size >= 4;
     });
   };
+  // On a plan that stipples its walls, outside is where nothing's in the way: look out from each face, straight
+  // and on a slant both ways (a porch the house wraps around is open on its far side). On a grid of 3" cells, a
+  // wall (dotted cells) or a window (its glass: lines a window wide, from wall to wall — a porch's beam lines
+  // run from the house to a post, a dimension's past the house) stops the look. Out 100' with nothing in the way: open air.
+  let grid3: { wall: Uint8Array; cols: number; rows: number; x0: number; y0: number; cell: number } | null = null;
+  const wallCells = () => {
+    if (grid3) return grid3;
+    const cell = 3 * inch;
+    let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = 0; i + 3 < segments.length; i += 4) {
+      x0 = Math.min(x0, segments[i], segments[i + 2]);
+      x1 = Math.max(x1, segments[i], segments[i + 2]);
+      y0 = Math.min(y0, segments[i + 1], segments[i + 3]);
+      y1 = Math.max(y1, segments[i + 1], segments[i + 3]);
+    }
+    const cols = Math.ceil((x1 - x0) / cell) + 1;
+    const rows = Math.ceil((y1 - y0) / cell) + 1;
+    const idx = (x: number, y: number) => Math.floor((y - y0) / cell) * cols + Math.floor((x - x0) / cell);
+    // Dotted cells (3 dots or more, a dot drawn twice over once — a curve's ends are a stray one or two).
+    const dotsIn = new Uint16Array(cols * rows);
+    const seen = new Set<string>();
+    for (const d of dotLines) {
+      const k = `${Math.round(d.x1 * 10)},${Math.round(d.y1 * 10)}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      dotsIn[idx(d.x1, d.y1)]++;
+    }
+    const wall = new Uint8Array(cols * rows);
+    for (let i = 0; i < wall.length; i++) if (dotsIn[i] >= 3) wall[i] = 1;
+    const dottedNear = (x: number, y: number) => {
+      const r = Math.ceil((6 * inch) / cell);
+      const [cx, cy] = [Math.floor((x - x0) / cell), Math.floor((y - y0) / cell)];
+      for (let j = cy - r; j <= cy + r; j++) for (let i = cx - r; i <= cx + r; i++) if (i >= 0 && j >= 0 && i < cols && j < rows && dotsIn[j * cols + i] >= 3) return true;
+      return false;
+    };
+    for (const l of lines) {
+      const len = l.s1 - l.s0;
+      if (len < 1.5 * upf || len > 20 * upf || !dottedNear(l.x1, l.y1) || !dottedNear(l.x2, l.y2)) continue;
+      const n = Math.ceil(len / (cell / 2));
+      for (let k = 0; k <= n; k++) wall[idx(l.x1 + ((l.x2 - l.x1) * k) / n, l.y1 + ((l.y2 - l.y1) * k) / n)] = 1;
+    }
+    grid3 = { wall, cols, rows, x0, y0, cell };
+    return grid3;
+  };
+  const SLANTS = [0, 30, -30, 60, -60, 75, -75].map((a) => a * DEG);
+  /** Open air off one face of a wall here. */
+  const airOff = (w: Piece, s: number, side: number) => {
+    const g = wallCells();
+    const o = w.rho + side * (half + 8 * inch);
+    const [sx, sy] = [w.ux * s + w.nx * o, w.uy * s + w.ny * o];
+    return SLANTS.some((a) => {
+      // Out from the face (n·side), turned a.
+      const [ox, oy] = [w.nx * side, w.ny * side];
+      const [dx, dy] = [ox * Math.cos(a) - w.ux * Math.sin(a), oy * Math.cos(a) - w.uy * Math.sin(a)];
+      for (let t = 0; t <= 100 * upf; t += g.cell / 2) {
+        const [i, j] = [Math.floor((sx + dx * t - g.x0) / g.cell), Math.floor((sy + dy * t - g.y0) / g.cell)];
+        if (i < 0 || j < 0 || i >= g.cols || j >= g.rows) return true;
+        if (g.wall[j * g.cols + i]) return false;
+      }
+      return true;
+    });
+  };
+  const lookOut = (w: Piece, s: number): Look => ({ kind: airOff(w, s, -1) || airOff(w, s, 1) ? "exterior" : "interior", layers: 2 });
   const lookAcross = (w: Piece, s: number): Look | null => {
+    if (stipple) return lookOut(w, s);
     const offs: number[] = [];
     for (const l of parallelIn(buckets, w.ang, w.rho - half - 8 * inch, w.rho + half + 8 * inch)) if (l.s0 <= s && l.s1 >= s) offs.push(l.rho - w.rho);
     offs.sort((a, b) => a - b);
@@ -871,7 +996,9 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     for (let j = 0; j < walls.length; j++) {
       // A stone-wrapped wall clicked (a stone porch wall): its returns carry the stone on their outer face only — they go with it.
       if (!found.has(j) && wrappedWall[start] && stoneWall[j] && touches(i, j)) kinds[j] = kind;
-      if (found.has(j) || (kind === "exterior" && kinds[j] !== kind) || !touches(i, j)) continue;
+      // (On a plan that stipples its walls, outside walls are known for sure: follow every wall to them — a short
+      // jog between two outside walls can read as inside.)
+      if (found.has(j) || (kind === "exterior" && kinds[j] !== kind && !stipple) || !touches(i, j)) continue;
       found.add(j);
       queue.push(j);
     }
