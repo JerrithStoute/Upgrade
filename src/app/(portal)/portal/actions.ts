@@ -358,7 +358,7 @@ export const reportWarranty = friendly(async function reportWarranty(fd: FormDat
   await emailWarrantyReported(row.id, user.name);
   revalidatePortal(project.id);
   revalidatePath("/warranty");
-  redirect(`/portal/warranty?project=${project.id}`);
+  redirect(`/portal/warranty?project=${project.id}&open=${row.id}`);
 });
 
 /** A note or photo from the client on one of their open requests: the team hears. */

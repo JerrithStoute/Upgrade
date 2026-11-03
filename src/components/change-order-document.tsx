@@ -14,16 +14,9 @@ const STATUS: Record<string, [string, string]> = {
  * A change order as one document, top to bottom: the title and its status, the dates,
  * your company and the job, the intro text, the line items (their total in the table),
  * the effect on the contract, terms and dates, the closing text and the approvals —
- * a signature line for each, where the client's Approve / Decline sits on theirs.
- * The client's portal page and both printouts.
+ * a signature line for each. The client's portal page and both printouts.
  */
-export function ChangeOrderDocument({
-  d,
-  clientAction,
-}: {
-  d: ChangeOrderDoc;
-  /** The client's Approve / Decline, on their signature line (portal). */ clientAction?: React.ReactNode;
-}) {
+export function ChangeOrderDocument({ d }: { d: ChangeOrderDoc }) {
   const { co, totals, doc } = d;
   const hasSelections = d.lines.some((l) => l.kind === "SELECTION");
   const prices = co.showPrices;
@@ -217,7 +210,6 @@ export function ChangeOrderDocument({
         <div className="mt-4 space-y-8">
           {signers.map((s, i) => (
             <div key={i}>
-              {s.role === "Client" && clientAction && !s.approvedAt ? <div className="no-print mb-3">{clientAction}</div> : null}
               <div className="grid grid-cols-[1fr_8rem] gap-4 sm:grid-cols-[1fr_12rem] sm:gap-6">
                 <div>
                   <div className="flex h-10 items-end border-b border-slate-400 pb-1 text-sm">

@@ -1,12 +1,12 @@
 import Link from "@/components/link";
+import { redirect } from "next/navigation";
 import { ListChecks } from "lucide-react";
 import { requireClient } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { portalContext } from "@/lib/portal";
 import { boardForViewer } from "@/lib/selections";
-import { deadlineState } from "@/lib/deadlines";
 import { money } from "@/lib/utils";
-import { Badge, EmptyState, Stat } from "@/components/ui";
+import { Badge, EmptyState } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
 import { PortalSelectionCards, type PortalCard } from "@/components/portal/selection-cards";
 
@@ -17,9 +17,9 @@ export const metadata = { title: "Selections" };
  * the allowance, the choices (with pictures) and "I do not want this selection",
  * Make Choice, files and comments. Never the budget, your costs or team-only notes.
  */
-export default async function PortalSelectionsPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+export default async function PortalSelectionsPage({ searchParams }: { searchParams: Promise<{ project?: string; open?: string }> }) {
   const user = await requireClient();
-  const { project: projectParam } = await searchParams;
+  const { project: projectParam, open } = await searchParams;
   const { projects, project } = await portalContext(user.clientId, projectParam);
 
   if (!project) {
@@ -59,29 +59,24 @@ export default async function PortalSelectionsPage({ searchParams }: { searchPar
     comments: c.comments.filter((m) => !m.internal),
     files: c.files,
   }));
-  const waiting = safe.filter((c) => c.status === "PENDING").length;
-  const overdue = safe.filter((c) => deadlineState(c.deadline, c.status) === "overdue").length;
+  // From Home: a selection that isn't on this list (an older one) has its own page.
+  if (open && !safe.some((c) => c.selectionId === open) && others.some((o) => o.id === open)) redirect(`/portal/selections/${open}`);
   const otherList = others.length ? await db.selection.findMany({ where: { id: { in: others.map((o) => o.id) } }, orderBy: [{ category: "asc" }, { title: "asc" }] }) : [];
 
   return (
     <>
       <PortalPageHeader
         title="Selections"
-        description="Choose the finishes and fixtures for your home. Allowances are included in your contract; a choice over or under its allowance is adjusted on a change order."
+        description="Choose the finishes for your home. A choice over or under its allowance is adjusted on a change order."
         projects={projects}
         project={project}
       />
       <div className="space-y-6">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Stat label="Needs your choice" value={waiting} tone={waiting ? "warn" : "default"} />
-          <Stat label="Past the deadline" value={overdue} tone={overdue ? "bad" : "default"} />
-          <Stat label="Chosen" value={safe.length - waiting} tone="good" />
-        </div>
 
         {safe.length === 0 && otherList.length === 0 ? (
           <EmptyState icon={ListChecks} title="No selections yet" description="Your builder hasn't added any selections for this project yet." />
         ) : (
-          <PortalSelectionCards cards={safe} />
+          <PortalSelectionCards cards={safe} open={open ?? null} />
         )}
 
         {otherList.length ? (

@@ -283,9 +283,12 @@ export function ChoicePicture({
   onUpload,
   seen,
   track,
+  small,
 }: {
   pictureId: string | null;
   onUpload?: (fd: FormData) => Promise<Result>;
+  /** A smaller thumbnail (the client's compact list). */
+  small?: boolean;
   /** See CardFile.seen; leave out to show nothing. */
   seen?: string | null;
   /** The client's view: opening it full size records it. */
@@ -308,7 +311,7 @@ export function ChoicePicture({
           }}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={`/api/files/${pictureId}`} alt="" className="h-16 w-16 rounded-md object-cover ring-1 ring-slate-200" />
+          <img src={`/api/files/${pictureId}`} alt="" className={cn("rounded-md object-cover ring-1 ring-slate-200", small ? "h-10 w-10" : "h-16 w-16")} />
         </a>
       ) : (
         <button

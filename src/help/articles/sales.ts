@@ -114,6 +114,12 @@ export const SALES: HelpArticle[] = [
           { name: "Delete", what: "Top right. Only a client with no jobs can be deleted." },
         ],
       },
+      {
+        heading: "What your client sees first",
+        text: [
+          "Their portal opens on **Home**: **Needs you** first — change orders to **Review**, selections to **Choose**, invoices to **View** — then **Your home** (how far along it's built, the start date, the schedule, and their project manager with one-tap **call**, **text** and **email**), then **Latest** (daily logs you share and messages, newest first). **Choose** opens that selection on their **Selections** page: one row per selection, filtered by **Needs your choice / Chosen / All**; a row opens to pick a choice (or \"I do not want this selection\") and **Make choice**, with **Files** and **Comments** under it. Only selections with choices to pick from show on Home. Their **Invoices** page shows the balance due and one row per invoice (still owed first, amber); an invoice opens with its balance, due date and your notes on top, then what it's for and payments. **Print / PDF** prints the full invoice as before. Their **Change orders** page works the same way: approved changes and days added on top, then one row per change order, the ones waiting on them first with **Review**. A **proposal** opens with its total, \"good through\" date and the **Approve proposal** box on top (beside the proposal on a computer); with only one proposal, their **Proposals** tab opens it straight away. Their **Photos & files** page shows the files you share split into **Photos** (a grid; tap to open full size) and **Documents** (a list to open or download), with folder pills on top and the daily logs you share below. Their **Messages** page lists their conversations (newest first, with the last line of each); on a phone a conversation opens on its own screen (**← Messages** goes back), on a computer it shows beside the list. They reply in the box at the bottom, or start one with **New message**. To see it as they do, use **Client view** on the job.",
+        ],
+      },
     ],
     tips: ["When you send a proposal, change order or invoice to a client with no sign-in yet, the email includes a link to set one up."],
     related: ["leads", "projects"],

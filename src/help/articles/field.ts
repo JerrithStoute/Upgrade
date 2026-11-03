@@ -240,7 +240,7 @@ export const FIELD: HelpArticle[] = [
       {
         heading: "What the client and the sub see",
         items: [
-          { name: "The client's Warranty tab", what: "Shows up once their home is finished. They report something (what, where, details, photos, urgent), see its status and the day someone's coming, read your notes and add their own." },
+          { name: "The client's Warranty tab", what: "Shows up once their home is finished. On top: how long they're covered, how many requests are open, a **Report something to fix** button (what, where, details, photos, urgent) and an emergency **Call** link to their project manager. Below, one row per request (open ones first, a scheduled one showing the day someone comes); a row opens in place with your notes and photos, and they add a note or photos at the bottom. Emails and phone notifications about a request open it straight away." },
           { name: "The sub's Warranty page", what: "Each request they're sent to: the address with directions, the homeowner's name and phone, the photos and notes. They set the day they'll be there, send you a note, or mark it done with after photos. Who's emailed each time is up to you (Settings → Email notifications)." },
           { name: "A sub with no portal sign-in", what: "They get the email with everything in it and reply to you with the day." },
         ],

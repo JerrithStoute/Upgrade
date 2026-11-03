@@ -215,7 +215,9 @@ export const FINANCIALS: HelpArticle[] = [
         heading: "The job's Invoices tab",
         items: [
           { name: "Contract value", what: "The approved estimate plus approved change orders: what you're billing against." },
-          { name: "Invoiced / Paid / Balance due / Remaining to invoice", what: "What's been billed (void invoices don't count), paid, still owed, and how much of the contract is left to bill (red if you've billed more than the contract)." },
+          { name: "What you can bill", what: "A running total at the top, folded to one line — **Total**, **Billed**, **Left** and **Due**, with an amber \"not counted yet\" when change orders are waiting. **Show breakdown** opens the full table (**Hide breakdown** folds it; it stays the way you leave it on that computer): the **Contract** (the approved estimate) and each **approved change order** (Selections ones too), with **Amount**, **Billed** and **Left** for each, and a **Total**. Draws, deposits and lines you type bill the contract; change order lines bill their change order. Billed counts invoices that have gone out — a row only on a draft invoice so far shows **on draft #…**, and void invoices never count. Left turns red if you've billed more than its amount." },
+          { name: "Not counted yet", what: "Under the total: change orders waiting on the client, and a Selections change order still a draft. They join the total once approved." },
+          { name: "Paid / Balance due", what: "What the client has paid on invoices that have gone out, and what they still owe." },
           { name: "New invoice", what: "Starts an invoice for this job." },
         ],
       },

@@ -185,7 +185,7 @@ export async function emailWarrantyToClient(id: string, sender: Person | null, w
     heading: `${warrantyNo(w.number)}: ${w.title}`,
     lines,
     label: "See your requests",
-    path: `/portal/warranty?project=${w.projectId}`,
+    path: `/portal/warranty?project=${w.projectId}&open=${w.id}`,
     where: "Warranty",
     push: "WARRANTY",
   });

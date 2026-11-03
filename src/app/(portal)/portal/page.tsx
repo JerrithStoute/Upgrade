@@ -1,11 +1,11 @@
 import Link from "@/components/link";
-import { ArrowRight, CalendarDays, FolderKanban, MapPin, Phone, Mail, ClipboardCheck } from "lucide-react";
+import { FolderKanban, Phone, Mail, MessageSquare, ClipboardCheck } from "lucide-react";
 import { requireClient } from "@/lib/auth";
 import { changeOrderTotals } from "@/lib/change-orders";
 import { db } from "@/lib/db";
 import { portalContext, portalHref, scheduleProgress, invoiceTotals } from "@/lib/portal";
-import { fmtDate, money, timeAgo } from "@/lib/utils";
-import { Badge, Card, CardHeader, CardBody, EmptyState, Progress } from "@/components/ui";
+import { cn, fmtDate, money, timeAgo } from "@/lib/utils";
+import { EmptyState, Progress } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
 
 export const metadata = { title: "Home" };
@@ -28,7 +28,8 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
   const [tasks, selections, changeOrders, invoices, logs, messages] = await Promise.all([
     db.scheduleTask.findMany({ where: { projectId: project.id }, select: { startDate: true, endDate: true, percentComplete: true } }),
     db.selection.findMany({
-      where: { projectId: project.id, status: { in: ["PENDING", "CHOSEN"] } },
+      // Waiting on their pick, with something to pick from (a pick is made final by the builder).
+      where: { projectId: project.id, status: "PENDING", options: { some: {} } },
       orderBy: [{ dueDate: "asc" }, { title: "asc" }],
       select: { id: true, title: true, status: true, dueDate: true, category: true },
     }),
@@ -57,176 +58,162 @@ export default async function PortalHomePage({ searchParams }: { searchParams: P
   ]);
 
   const progress = scheduleProgress(tasks);
-  const address = [project.address, [project.city, project.state].filter(Boolean).join(", "), project.zip].filter(Boolean).join(" · ");
+  const address = [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", ");
   const openInvoices = invoices.map((inv) => ({ ...inv, totals: invoiceTotals(inv) })).filter((i) => i.totals.balance > 0.005);
 
-  type ActionItem = { href: string; label: string; detail: string; status: string };
+  type ActionItem = { href: string; label: string; detail: string; button: string; strong: boolean };
   const actions: ActionItem[] = [
-    ...selections.map((s) => ({
-      href: `/portal/selections/${s.id}`,
-      label: s.title,
-      detail: s.status === "PENDING" ? `Selection needed${s.dueDate ? ` · due ${fmtDate(s.dueDate)}` : ""}` : "Your choice is waiting for your approval",
-      status: s.status,
-    })),
     ...changeOrders.map((co) => ({
       href: `/portal/change-orders/${co.id}`,
-      label: `Change order #${co.number}: ${co.title}`,
-      detail: `${money(changeOrderTotals(co, co.items).total)} · awaiting your approval`,
-      status: co.status,
+      label: co.title,
+      detail: `Change order #${co.number} · ${money(changeOrderTotals(co, co.items).total)}`,
+      button: "Review",
+      strong: true,
+    })),
+    ...selections.map((s) => ({
+      // Opened on the Selections list, where they choose.
+      href: `/portal/selections?project=${project.id}&open=${s.id}`,
+      label: s.title,
+      detail: `Selection${s.dueDate ? ` · due ${fmtDate(s.dueDate, "MMM d")}` : ""}`,
+      button: "Choose",
+      strong: true,
     })),
     ...openInvoices.map((inv) => ({
       href: `/portal/invoices/${inv.id}`,
-      label: `Invoice #${inv.number}: ${inv.title}`,
-      detail: `${money(inv.totals.balance)} due${inv.dueDate ? ` by ${fmtDate(inv.dueDate)}` : ""}`,
-      status: inv.status,
+      label: `Invoice #${inv.number}`,
+      detail: `${money(inv.totals.balance)} due${inv.dueDate ? ` ${fmtDate(inv.dueDate, "MMM d")}` : ""} · ${inv.title}`,
+      button: "View",
+      strong: false,
     })),
   ];
+  const pm = project.manager;
+  const contact = "grid h-9 w-9 place-items-center rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50";
+  const card = "rounded-xl border border-slate-200 bg-white shadow-sm";
+  const head = "flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5";
+  // Daily logs and messages together, newest first.
+  const updates = [
+    ...logs.map((l) => ({ key: l.id, at: l.date, who: "Daily log", text: l.workCompleted ?? "—", href: null as string | null })),
+    ...messages.map((m) => ({ key: m.id, at: m.createdAt, who: m.author?.name ?? "Team", text: m.body, href: `/portal/messages?project=${project.id}&thread=${m.thread.id}` })),
+  ]
+    .sort((a, b) => b.at.getTime() - a.at.getTime())
+    .slice(0, 6);
 
   return (
     <>
-      <PortalPageHeader title={`Welcome, ${firstName}`} description="Here's where your project stands and what we need from you." projects={projects} project={project} />
+      <PortalPageHeader title={`Hi, ${firstName}`} description={[`#${project.number} ${project.name}`, address].filter(Boolean).join(" · ")} projects={projects} project={project} />
 
-      <div className="space-y-6">
-        <Card>
-          <CardHeader
-            title={
-              <span className="flex flex-wrap items-center gap-2">
-                #{project.number} · {project.name} <Badge status={project.status} />
-              </span>
-            }
-            description={
-              address ? (
-                <span className="inline-flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5" /> {address}
-                </span>
-              ) : undefined
-            }
-          />
-          <CardBody>
-            <div className="grid grid-cols-1 gap-5 md:grid-cols-3">
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Project manager</p>
-                {project.manager ? (
-                  <div className="mt-1 text-sm text-slate-800">
-                    <p className="font-medium">{project.manager.name}</p>
-                    {project.manager.phone ? (
-                      <a href={`tel:${project.manager.phone}`} className="mt-0.5 flex items-center gap-1.5 text-slate-600 hover:text-blue-700">
-                        <Phone className="h-3.5 w-3.5" /> {project.manager.phone}
-                      </a>
-                    ) : null}
-                    <a href={`mailto:${project.manager.email}`} className="mt-0.5 flex items-center gap-1.5 text-slate-600 hover:text-blue-700">
-                      <Mail className="h-3.5 w-3.5" /> {project.manager.email}
-                    </a>
-                  </div>
-                ) : (
-                  <p className="mt-1 text-sm text-slate-500">Not assigned yet</p>
-                )}
-              </div>
-              <div>
-                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Dates</p>
-                <div className="mt-1 space-y-0.5 text-sm text-slate-800">
-                  <p className="flex items-center gap-1.5">
-                    <CalendarDays className="h-3.5 w-3.5 text-slate-400" /> Start: {fmtDate(project.startDate)}
-                  </p>
-                  {project.actualEndDate ? <p className="text-emerald-700">Completed {fmtDate(project.actualEndDate)}</p> : null}
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Schedule progress</p>
-                  <span className="text-sm font-semibold tabular-nums text-slate-900">{progress}%</span>
-                </div>
-                <Progress value={progress} className="mt-2" />
-                <Link href={portalHref("/portal/schedule", project.id)} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline">
-                  View schedule <ArrowRight className="h-3 w-3" />
-                </Link>
-              </div>
-            </div>
-          </CardBody>
-        </Card>
-
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-          <Card>
-            <CardHeader
-              title="Action needed"
-              description={actions.length ? `${actions.length} item${actions.length === 1 ? "" : "s"} waiting on you` : "Nothing waiting on you right now"}
-            />
-            {actions.length ? (
-              <ul className="divide-y divide-slate-100">
-                {actions.map((a) => (
-                  <li key={a.href}>
-                    <Link href={a.href} className="flex items-center justify-between gap-3 px-5 py-3 hover:bg-slate-50">
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-900">{a.label}</p>
-                        <p className="text-xs text-slate-500">{a.detail}</p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        <Badge status={a.status} />
-                        <ArrowRight className="h-4 w-4 text-slate-400" />
-                      </div>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <CardBody>
-                <div className="flex items-center gap-3 text-sm text-slate-600">
-                  <span className="grid h-9 w-9 place-items-center rounded-full bg-emerald-50 text-emerald-700">
-                    <ClipboardCheck className="h-5 w-5" />
-                  </span>
-                  You&apos;re all caught up. We&apos;ll let you know when there&apos;s something to review.
-                </div>
-              </CardBody>
-            )}
-          </Card>
-
-          <Card>
-            <CardHeader title="Recent updates" description="Daily progress notes and messages from your team" />
-            {logs.length === 0 && messages.length === 0 ? (
-              <CardBody>
-                <p className="text-sm text-slate-500">No updates yet.</p>
-              </CardBody>
-            ) : (
-              <div className="divide-y divide-slate-100">
-                {logs.length ? (
-                  <ul className="divide-y divide-slate-100">
-                    {logs.map((log) => (
-                      <li key={log.id} className="px-5 py-3">
-                        <div className="flex items-center justify-between gap-2">
-                          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Daily log · {fmtDate(log.date, "EEE, MMM d")}</p>
-                          {log.weather ? <span className="text-xs text-slate-400">{log.weather}</span> : null}
-                        </div>
-                        <p className="mt-0.5 line-clamp-2 text-sm text-slate-800">{log.workCompleted ?? "—"}</p>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                {messages.length ? (
-                  <ul className="divide-y divide-slate-100">
-                    {messages.map((m) => (
-                      <li key={m.id}>
-                        <Link href={`/portal/messages?project=${project.id}&thread=${m.thread.id}`} className="block px-5 py-3 hover:bg-slate-50">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="truncate text-xs font-medium uppercase tracking-wide text-slate-500">Message · {m.thread.subject}</p>
-                            <span className="shrink-0 text-xs text-slate-400">{timeAgo(m.createdAt)}</span>
-                          </div>
-                          <p className="mt-0.5 line-clamp-2 text-sm text-slate-800">
-                            <span className="font-medium">{m.author?.name ?? "Team"}:</span> {m.body}
-                          </p>
-                        </Link>
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-                <div className="px-5 py-2.5 text-right">
-                  <Link href={portalHref("/portal/messages", project.id)} className="text-xs font-medium text-blue-700 hover:underline">
-                    All messages →
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        {/* What we need from them first: on a phone it's the top of the page. */}
+        <section className={card}>
+          <header className={head}>
+            <h2 className="text-sm font-semibold text-slate-900">Needs you</h2>
+            {actions.length ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs font-medium text-amber-800">{actions.length}</span> : null}
+          </header>
+          {actions.length ? (
+            <ul className="divide-y divide-slate-100">
+              {actions.map((a) => (
+                <li key={a.href}>
+                  <Link href={a.href} className="flex items-center justify-between gap-3 px-4 py-3 hover:bg-slate-50">
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-slate-900">{a.label}</span>
+                      <span className="block truncate text-xs text-slate-500">{a.detail}</span>
+                    </span>
+                    <span
+                      className={
+                        a.strong
+                          ? "shrink-0 rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white"
+                          : "shrink-0 rounded-lg border border-slate-300 px-3.5 py-2 text-sm font-medium text-slate-700"
+                      }
+                    >
+                      {a.button}
+                    </span>
                   </Link>
-                </div>
-              </div>
-            )}
-          </Card>
-        </div>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="flex items-center gap-2 px-4 py-3 text-sm text-slate-600">
+              <ClipboardCheck className="h-4 w-4 text-emerald-600" /> You&apos;re all caught up.
+            </p>
+          )}
+        </section>
+
+        {/* Never grows: across the top on a computer, under Needs you on a phone. */}
+        <section className={cn(card, "flex flex-col gap-3 px-4 py-3 lg:order-first lg:col-span-2 lg:flex-row lg:items-center lg:gap-6")}>
+          <div className="min-w-0 lg:flex-1">
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <span>Your home</span>
+              <span className="text-sm font-semibold tabular-nums text-slate-900">{project.actualEndDate ? "Finished" : `${progress}% built`}</span>
+            </div>
+            <Progress value={project.actualEndDate ? 100 : progress} className="mt-2" />
+            <p className="mt-2 text-xs text-slate-500">
+              {project.actualEndDate ? `Finished ${fmtDate(project.actualEndDate)}` : project.startDate ? `Started ${fmtDate(project.startDate)}` : "Not started yet"}
+              {" · "}
+              <Link href={portalHref("/portal/schedule", project.id)} className="font-medium text-blue-700 hover:underline">
+                See the schedule
+              </Link>
+            </p>
+          </div>
+          <div className="flex items-center justify-between gap-3 border-t border-slate-100 pt-3 lg:w-80 lg:border-l lg:border-t-0 lg:pl-6 lg:pt-0">
+            <span className="min-w-0">
+              <span className="block text-xs text-slate-500">Your project manager</span>
+              <span className="block truncate text-sm text-slate-900">{pm?.name ?? "Not assigned yet"}</span>
+            </span>
+            {pm ? (
+              <span className="flex shrink-0 gap-1.5">
+                {pm.phone ? (
+                  <>
+                    <a href={`tel:${pm.phone}`} className={contact} title={`Call ${pm.phone}`} aria-label={`Call ${pm.name}`}>
+                      <Phone className="h-4 w-4" />
+                    </a>
+                    <a href={`sms:${pm.phone}`} className={contact} title={`Text ${pm.phone}`} aria-label={`Text ${pm.name}`}>
+                      <MessageSquare className="h-4 w-4" />
+                    </a>
+                  </>
+                ) : null}
+                <a href={`mailto:${pm.email}`} className={contact} title={pm.email} aria-label={`Email ${pm.name}`}>
+                  <Mail className="h-4 w-4" />
+                </a>
+              </span>
+            ) : null}
+          </div>
+        </section>
+
+        <section className={card}>
+          <header className={head}>
+            <h2 className="text-sm font-semibold text-slate-900">Latest</h2>
+            <Link href={portalHref("/portal/messages", project.id)} className="text-xs font-medium text-blue-700 hover:underline">
+              All messages
+            </Link>
+          </header>
+          {updates.length ? (
+            <ul className="divide-y divide-slate-100">
+              {updates.map((u) => {
+                const body = (
+                  <>
+                    <span className="block text-xs text-slate-500">
+                      {timeAgo(u.at)} · {u.who}
+                    </span>
+                    <span className="mt-0.5 line-clamp-2 block text-sm text-slate-800">{u.text}</span>
+                  </>
+                );
+                return (
+                  <li key={u.key}>
+                    {u.href ? (
+                      <Link href={u.href} className="block px-4 py-2.5 hover:bg-slate-50">
+                        {body}
+                      </Link>
+                    ) : (
+                      <div className="px-4 py-2.5">{body}</div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="px-4 py-3 text-sm text-slate-500">No updates yet.</p>
+          )}
+        </section>
       </div>
     </>
   );

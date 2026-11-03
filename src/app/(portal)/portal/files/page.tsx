@@ -45,90 +45,83 @@ export default async function PortalFilesPage({ searchParams }: { searchParams: 
   const folders = [...new Set(files.map((f) => f.folder))].sort();
   const shown = folder ? files.filter((f) => f.folder === folder) : files;
   const base = `/portal/files?project=${project.id}`;
+  const photos = shown.filter((f) => f.mimeType.startsWith("image/"));
+  const docs = shown.filter((f) => !f.mimeType.startsWith("image/"));
 
   return (
     <>
       <PortalPageHeader title="Photos & Files" description="Progress photos, plans and documents your team has shared with you." projects={projects} project={project} />
-      <div className="space-y-6">
-        <Card>
-          <CardHeader
-            title="Files"
-            description={`${files.length} file${files.length === 1 ? "" : "s"} shared`}
-            actions={
-              folders.length ? (
-                <div className="flex flex-wrap gap-1.5">
-                  <Link
-                    href={base}
-                    className={cn(
-                      "rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
-                      !folder ? "bg-blue-700 text-white ring-blue-700" : "bg-white text-slate-600 ring-slate-300 hover:bg-slate-50",
-                    )}
-                  >
-                    All
-                  </Link>
-                  {folders.map((f) => (
-                    <Link
-                      key={f}
-                      href={`${base}&folder=${encodeURIComponent(f)}`}
-                      className={cn(
-                        "rounded-full px-3 py-1 text-xs font-medium ring-1 ring-inset",
-                        folder === f ? "bg-blue-700 text-white ring-blue-700" : "bg-white text-slate-600 ring-slate-300 hover:bg-slate-50",
-                      )}
-                    >
-                      {f} <span className="opacity-70">{files.filter((x) => x.folder === f).length}</span>
-                    </Link>
-                  ))}
-                </div>
-              ) : undefined
-            }
-          />
-          <CardBody>
-            <FileTypesNote viewOnly className="mb-3" />
-            {shown.length === 0 ? (
-              <EmptyState icon={Images} title="No files yet" description="Photos and documents will show up here as your team uploads them." />
-            ) : (
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-                {shown.map((f) => {
-                  const isImage = f.mimeType.startsWith("image/");
-                  const href = `/api/files/${f.id}`;
-                  return (
-                    <a
-                      key={f.id}
-                      href={href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="group overflow-hidden rounded-xl border border-slate-200 bg-white hover:border-blue-300 hover:shadow-sm"
-                    >
-                      {isImage ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={href} alt={f.name} className="aspect-[4/3] w-full object-cover" loading="lazy" />
-                      ) : (
-                        <div className="grid aspect-[4/3] w-full place-items-center bg-slate-50 text-slate-400">
-                          <FileText className="h-8 w-8" />
-                        </div>
-                      )}
-                      <div className="p-2.5">
-                        <p className="truncate text-sm font-medium text-slate-900" title={f.name}>
-                          {f.name}
-                        </p>
-                        <p className="flex items-center justify-between text-xs text-slate-500">
-                          <span>
-                            {f.folder} · {fmtSize(f.size)}
-                          </span>
-                          <Download className="h-3.5 w-3.5 opacity-0 transition-opacity group-hover:opacity-100" />
-                        </p>
-                        <p className="text-xs text-slate-400">{fmtDate(f.createdAt)}</p>
-                      </div>
-                    </a>
-                  );
-                })}
-              </div>
-            )}
-          </CardBody>
-        </Card>
+      <div className="space-y-4">
+        {folders.length ? (
+          <div className="flex flex-wrap gap-1.5">
+            <Link
+              href={base}
+              className={cn("rounded-full px-3 py-1 text-xs font-medium", !folder ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50")}
+            >
+              All · {files.length}
+            </Link>
+            {folders.map((f) => (
+              <Link
+                key={f}
+                href={`${base}&folder=${encodeURIComponent(f)}`}
+                className={cn("rounded-full px-3 py-1 text-xs font-medium", folder === f ? "bg-slate-900 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50")}
+              >
+                {f} · {files.filter((x) => x.folder === f).length}
+              </Link>
+            ))}
+          </div>
+        ) : null}
+
+        {shown.length === 0 ? (
+          <EmptyState icon={Images} title="No files yet" description="Photos and documents will show up here as your team uploads them." />
+        ) : null}
+
+        {photos.length ? (
+          <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+              <h2 className="text-sm font-semibold text-slate-900">Photos</h2>
+              <span className="text-xs text-slate-500">{photos.length}</span>
+            </header>
+            <div className="grid grid-cols-3 gap-1 p-2 sm:grid-cols-4 lg:grid-cols-6">
+              {photos.map((f) => (
+                <a key={f.id} href={`/api/files/${f.id}`} target="_blank" rel="noreferrer" title={`${f.name} · ${fmtDate(f.createdAt)}`} className="block overflow-hidden rounded-md hover:opacity-90">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={`/api/files/${f.id}`} alt={f.name} className="aspect-square w-full object-cover" loading="lazy" />
+                </a>
+              ))}
+            </div>
+            <p className="px-4 pb-2.5 text-xs text-slate-500">Newest first · tap a photo to open it full size</p>
+          </section>
+        ) : null}
+
+        {docs.length ? (
+          <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+            <header className="flex items-center justify-between border-b border-slate-100 px-4 py-2.5">
+              <h2 className="text-sm font-semibold text-slate-900">Documents</h2>
+              <span className="text-xs text-slate-500">{docs.length}</span>
+            </header>
+            <ul className="divide-y divide-slate-100">
+              {docs.map((f) => (
+                <li key={f.id}>
+                  <a href={`/api/files/${f.id}`} target="_blank" rel="noreferrer" className="flex items-center gap-3 px-4 py-2 hover:bg-slate-50">
+                    <FileText className="h-4 w-4 shrink-0 text-rose-600" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-slate-900">{f.name}</span>
+                      <span className="block text-xs text-slate-500">
+                        {f.folder} · {fmtSize(f.size)} · {fmtDate(f.createdAt, "MMM d")}
+                      </span>
+                    </span>
+                    <Download className="h-4 w-4 shrink-0 text-slate-400" />
+                  </a>
+                </li>
+              ))}
+            </ul>
+            <FileTypesNote viewOnly className="px-4 pb-2.5" />
+          </section>
+        ) : null}
 
         <Card>
-          <CardHeader title="Daily logs" description="Progress notes from the job site" />
+          <CardHeader title="Daily logs" />
           {logs.length === 0 ? (
             <CardBody>
               <p className="text-sm text-slate-500">No daily logs shared yet.</p>
@@ -136,9 +129,9 @@ export default async function PortalFilesPage({ searchParams }: { searchParams: 
           ) : (
             <ul className="divide-y divide-slate-100">
               {logs.map((log) => (
-                <li key={log.id} className="px-5 py-4">
+                <li key={log.id} className="px-4 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-900">{fmtDate(log.date, "EEEE, MMM d, yyyy")}</p>
+                    <p className="text-sm font-semibold text-slate-900">{fmtDate(log.date, "EEE, MMM d, yyyy")}</p>
                     <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
                       {log.weather ? (
                         <span className="inline-flex items-center gap-1">
@@ -168,12 +161,12 @@ export default async function PortalFilesPage({ searchParams }: { searchParams: 
                     </p>
                   ) : null}
                   {log.files.length ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
+                    <div className="mt-2 flex flex-wrap gap-1.5">
                       {log.files.map((f) =>
                         f.mimeType.startsWith("image/") ? (
                           <a key={f.id} href={`/api/files/${f.id}`} target="_blank" rel="noreferrer" title={f.name}>
                             {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img src={`/api/files/${f.id}`} alt={f.name} className="h-24 w-32 rounded-lg border border-slate-200 object-cover" loading="lazy" />
+                            <img src={`/api/files/${f.id}`} alt={f.name} className="h-16 w-20 rounded-md border border-slate-200 object-cover" loading="lazy" />
                           </a>
                         ) : (
                           <a

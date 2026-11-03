@@ -1,19 +1,20 @@
 import Link from "@/components/link";
+import { redirect } from "next/navigation";
 import { FileText } from "lucide-react";
 import { requireClient } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { portalContext } from "@/lib/portal";
 import { loadProposal } from "@/lib/proposal-data";
 import { buildProposal } from "@/lib/proposal-options";
-import { fmtDate, money } from "@/lib/utils";
-import { Badge, EmptyState, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
+import { cn, fmtDate, money } from "@/lib/utils";
+import { EmptyState } from "@/components/ui";
 import { PortalPageHeader } from "@/components/portal/page-header";
 
 export const metadata = { title: "Proposals" };
 
-export default async function PortalProposalsPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
+export default async function PortalProposalsPage({ searchParams }: { searchParams: Promise<{ project?: string; list?: string }> }) {
   const user = await requireClient();
-  const { project: projectParam } = await searchParams;
+  const { project: projectParam, list } = await searchParams;
   const { projects, project } = await portalContext(user.clientId, projectParam);
 
   if (!project) {
@@ -38,39 +39,45 @@ export default async function PortalProposalsPage({ searchParams }: { searchPara
     }),
   );
 
+  // Most jobs have one: the tab opens it.
+  if (rows.length === 1 && !list) redirect(`/portal/proposals/${rows[0].id}`);
+  const ordered = [...rows.filter((r) => r.status === "SENT"), ...rows.filter((r) => r.status !== "SENT")];
+
   return (
     <>
-      <PortalPageHeader title="Proposals" description="What your builder has proposed for this project. One waiting for your answer is highlighted." projects={projects} project={project} />
+      <PortalPageHeader title="Proposals" description="What your builder has proposed for this project." projects={projects} project={project} />
       {rows.length === 0 ? (
         <EmptyState icon={FileText} title="No proposal yet" description="Your proposal will appear here once your builder sends it." />
       ) : (
-        <Table>
-          <THead>
-            <tr>
-              <Th>Proposal</Th>
-              <Th>Status</Th>
-              <Th right>Total</Th>
-              <Th>Sent</Th>
-              <Th>Answered</Th>
-            </tr>
-          </THead>
-          <TBody>
-            {rows.map((e) => (
-              <Tr key={e.id} className={e.status === "SENT" ? "bg-amber-50/40" : undefined}>
-                <Td>
-                  <Link href={`/portal/proposals/${e.id}`} className="font-medium text-blue-700 hover:underline">
-                    {e.name}
-                    {rows.length > 1 ? ` (version ${e.version})` : ""}
-                  </Link>
-                </Td>
-                <Td>{e.status === "SENT" ? <Badge status="PENDING_APPROVAL">Waiting for your answer</Badge> : <Badge status={e.status} />}</Td>
-                <Td right>{money(e.total)}</Td>
-                <Td>{fmtDate(e.sentAt)}</Td>
-                <Td>{fmtDate(e.decidedAt ?? e.approvedAt)}</Td>
-              </Tr>
-            ))}
-          </TBody>
-        </Table>
+        <ul className="divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          {ordered.map((e) => {
+            const waiting = e.status === "SENT";
+            const when = waiting ? `Sent ${fmtDate(e.sentAt, "MMM d")}` : e.status === "APPROVED" ? `Approved ${fmtDate(e.decidedAt ?? e.approvedAt, "MMM d")}` : `Declined ${fmtDate(e.decidedAt, "MMM d")}`;
+            return (
+              <li key={e.id}>
+                <Link
+                  href={`/portal/proposals/${e.id}`}
+                  className={cn("flex items-center justify-between gap-3 px-4 py-2.5", waiting ? "bg-amber-50/70 hover:bg-amber-50" : "hover:bg-slate-50", e.status === "DECLINED" && "opacity-60")}
+                >
+                  <span className="min-w-0">
+                    <span className={cn("line-clamp-2 block text-sm", waiting ? "font-medium text-amber-900" : "text-slate-900")}>
+                      {e.name}
+                      {rows.length > 1 ? ` (version ${e.version})` : ""}
+                    </span>
+                    <span className={cn("block text-xs", waiting ? "text-amber-800" : "text-slate-500")}>{when}</span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2.5">
+                    <span className="text-right">
+                      <span className={cn("block text-sm tabular-nums", waiting ? "font-semibold text-amber-900" : "text-slate-900")}>{money(e.total)}</span>
+                      {waiting ? null : <span className={cn("block text-xs", e.status === "APPROVED" ? "text-emerald-700" : "text-slate-500")}>{e.status === "APPROVED" ? "Approved" : "Declined"}</span>}
+                    </span>
+                    {waiting ? <span className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white">Review</span> : null}
+                  </span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
       )}
     </>
   );
