@@ -244,7 +244,7 @@ export const deleteMaterialItem = friendly(async function deleteMaterialItem(fd:
 });
 
 /**
- * Possible duplicates: two doors (or windows) that are one — the one kept stays, with its name and price,
+ * Possible duplicates: two items that are one — the one kept stays, with its name and price,
  * and everything that used the other uses it (item-merge.ts).
  */
 export const mergeDuplicateItems = friendly(async function mergeDuplicateItems(fd: FormData) {
@@ -268,6 +268,8 @@ export const markNotSame = friendly(async function markNotSame(fd: FormData) {
   const [a, b] = [str(fd, "a"), str(fd, "b")].sort();
   const item = await db.materialItem.findUnique({ where: { id: a }, select: { kind: true } });
   if (!item || !b) throw new Error("That item isn't on the Item List any more — reload the page");
+  // Kept with the doors' (or windows') saved picks; the page reads both lists for every pair, so
+  // pairs of other items (trim, lumber…) are kept with the doors'.
   const kind = item.kind === "windows" ? "window" : "door";
   const current = await loadUnitParts(kind);
   const key = `${a}|${b}`;

@@ -15,6 +15,7 @@ import { loadCodeRules } from "@/lib/item-codes";
 import { requireView } from "@/lib/auth";
 import { isStale, recheckOf, staleNote } from "@/lib/price-recheck";
 import { duplicatePairs } from "@/lib/unit-parts";
+import { namePairs } from "@/lib/item-duplicates";
 import { loadUnitParts } from "@/lib/unit-parts-server";
 
 type ItemValues = {
@@ -195,8 +196,10 @@ export default async function ItemListPage({
     loadUnitParts("door"),
     loadUnitParts("window"),
   ]);
-  // Doors / windows that could be one item (from before doors and windows were picked from parts).
-  const duplicates = duplicatePairs(all, (k) => (k === "door" ? doorParts.parts : windowParts.parts), [...doorParts.notSame, ...windowParts.notSame]).length;
+  // Items that could be one thing under two names (misspellings, sizes written two ways…), and doors /
+  // windows from before they were picked from parts.
+  const notSame = [...doorParts.notSame, ...windowParts.notSame];
+  const duplicates = namePairs(all, notSame).length + duplicatePairs(all, (k) => (k === "door" ? doorParts.parts : windowParts.parts), notSame).length;
   const categories = Array.from(new Set(all.map((i) => i.category))).sort();
   const now = new Date();
   const staleById = new Map(
@@ -290,7 +293,7 @@ export default async function ItemListPage({
           {missing || noCode ? attention(listHref({ noCode: !noCode }), noCode, "No cost code", missing, "Items with no cost code") : null}
           {unpricedCount || noPrice ? attention(listHref({ noPrice: !noPrice }), noPrice, "Needs a price", unpricedCount, "Items still at $0 — give them your price") : null}
           {duplicates
-            ? attention("/catalog/items/duplicates", false, "Possible duplicates", duplicates, "Doors or windows that could be the same thing under two names — merge them, or mark them not the same")
+            ? attention("/catalog/items/duplicates", false, "Possible duplicates", duplicates, "Items that could be the same thing under two names — merge them, or mark them not the same")
             : null}
           {staleById.size || toRecheck
             ? attention(listHref({ recheck: !toRecheck }), toRecheck, "Price to recheck", staleById.size, "Prices past their cost code's recheck time — check them with your supplier")
