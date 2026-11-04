@@ -41,6 +41,12 @@ export async function register() {
     startLongShiftChecks();
   }
 
+  // The Station's Running checks: an email when one of the above stops running or keeps failing.
+  if (process.env.NEXT_RUNTIME === "nodejs") {
+    const { startCheckWatch } = await import("./lib/running-checks");
+    startCheckWatch();
+  }
+
   // QuickBooks Online: each connected company updated every 15 minutes (QBO_SYNC=off to disable).
   if (process.env.NEXT_RUNTIME === "nodejs" && process.env.QBO_SYNC !== "off") {
     const { startQboSync } = await import("./lib/qbo/sync");

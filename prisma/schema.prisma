@@ -2655,6 +2655,21 @@ model StationError {
   @@index([fixedAt, lastAt])
 }
 
+/// The program's running checks — the nightly backup, the morning email, the long-shift check — each
+/// one's last run, on the Station's Problems tab (src/lib/running-checks.ts). One that stops running
+/// or keeps failing emails the Station's owners once, and again when it's working.
+model StationCheck {
+  // "backup" | "morning" | "long-shift"
+  name         String    @id
+  lastRunAt    DateTime
+  lastOkAt     DateTime?
+  // What went wrong on the last run (which builders, what it said); null when it went fine.
+  problem      String?
+  failingSince DateTime?
+  // When the owners were emailed that it's late or failing; cleared (with a "working again" email) once it's fine.
+  alertedAt    DateTime?
+}
+
 // ---------------------------------------------------------------------------
 // Warranty (after move-in: the client reports it, you send someone, it's fixed)
 // ---------------------------------------------------------------------------

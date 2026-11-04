@@ -9,6 +9,7 @@ import { currentCompanyId, runAsCompany } from "./tenant";
 import { normalizeKey } from "./storage-key";
 import { cloud, NotFound } from "./cloud-storage";
 import { ifFirst } from "./job-lock";
+import { recordCheckRun } from "./running-checks";
 
 /**
  * Backups of one company's records — every one of its rows in every table — and the
@@ -334,8 +335,13 @@ export function startNightlyBackups() {
     console.log(`[backup] ${s.file} (${(s.bytes / 1024 / 1024).toFixed(1)} MB, ${s.uploadsCopied} new upload files) → ${s.dir}`);
   };
   const check = async () => {
-    for (const { id } of await systemDb.company.findMany({ select: { id: true } }).catch(() => []))
-      await ifFirst(`backup:${id}`, 3 * 60 * 60 * 1000, () => runAsCompany(id, checkOne)).catch((err) => console.error(`[backup] company ${id} failed:`, err));
+    const failed: string[] = [];
+    for (const { id, name } of await systemDb.company.findMany({ select: { id: true, name: true } }).catch(() => []))
+      await ifFirst(`backup:${id}`, 3 * 60 * 60 * 1000, () => runAsCompany(id, checkOne)).catch((err) => {
+        console.error(`[backup] company ${id} failed:`, err);
+        failed.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    await recordCheckRun("backup", failed); // the Station's Running checks (running-checks.ts)
   };
   setTimeout(check, 60_000); // let the server finish starting
   g.__backupTimer = setInterval(check, 60 * 60 * 1000);

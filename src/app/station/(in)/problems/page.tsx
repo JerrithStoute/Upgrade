@@ -1,10 +1,21 @@
+import { AlertTriangle, CheckCircle2, Clock, MinusCircle } from "lucide-react";
 import Link from "@/components/link";
 import { systemDb } from "@/lib/db";
 import { requireStation } from "@/lib/station-auth";
 import { Card, CardHeader, PageHeader, Stat } from "@/components/ui";
 import { SubmitButton } from "@/components/ui/submit-button";
 import { cn, fmtDateTime, timeAgo } from "@/lib/utils";
+import { runningChecks } from "@/lib/running-checks";
+import type { CheckState } from "@/lib/running-check-rules";
 import { setErrorFixed, setReportDone } from "./actions";
+
+const CHECK_LOOK: Record<CheckState, { icon: typeof CheckCircle2; className: string }> = {
+  ok: { icon: CheckCircle2, className: "text-emerald-600" },
+  late: { icon: AlertTriangle, className: "text-rose-600" },
+  failing: { icon: AlertTriangle, className: "text-rose-600" },
+  off: { icon: MinusCircle, className: "text-slate-400" },
+  waiting: { icon: Clock, className: "text-slate-400" },
+};
 
 export const metadata = { title: "Problems" };
 
@@ -15,7 +26,8 @@ export const metadata = { title: "Problems" };
 export default async function ProblemsPage({ searchParams }: { searchParams: Promise<{ all?: string }> }) {
   await requireStation();
   const all = (await searchParams).all === "1";
-  const [reports, errors, openReports, openErrors] = await Promise.all([
+  const [checks, reports, errors, openReports, openErrors] = await Promise.all([
+    runningChecks(),
     systemDb.stationProblem.findMany({
       where: all ? {} : { doneAt: null },
       orderBy: { createdAt: "desc" },
@@ -46,6 +58,38 @@ export default async function ProblemsPage({ searchParams }: { searchParams: Pro
         <Stat label="Reports open" value={openReports} tone={openReports ? "warn" : "default"} />
         <Stat label="Errors open" value={openErrors} tone={openErrors ? "warn" : "default"} />
       </div>
+
+      <Card>
+        <CardHeader title="Running checks" description="Late or failing checks email you once, then again when they're working." />
+        <ul className="divide-y divide-slate-100">
+          {checks.map((c) => {
+            const look = CHECK_LOOK[c.state];
+            const bad = c.state === "late" || c.state === "failing";
+            const text =
+              c.state === "off"
+                ? "Turned off on this server"
+                : c.state === "waiting"
+                  ? "Hasn't run yet since this was added"
+                  : c.state === "late"
+                    ? `Hasn't run since ${fmtDateTime(c.row!.lastRunAt)}`
+                    : c.state === "failing"
+                      ? `Failing since ${fmtDateTime(c.row!.failingSince ?? c.row!.lastRunAt)}`
+                      : `Last ran ${timeAgo(c.row!.lastRunAt)}`;
+            return (
+              <li key={c.name} className={cn("px-5 py-2.5 text-sm", bad && "bg-rose-50")}>
+                <div className="flex items-center gap-2.5">
+                  <look.icon className={cn("h-4 w-4 shrink-0", look.className)} />
+                  <span className={cn("flex-1 font-medium", bad ? "text-rose-800" : "text-slate-900")}>{c.label}</span>
+                  <span className={cn("text-xs", bad ? "text-rose-700" : "text-slate-500")} title={c.row ? fmtDateTime(c.row.lastRunAt) : undefined}>
+                    {text}
+                  </span>
+                </div>
+                {c.state === "failing" && c.row?.problem ? <p className="mt-1 whitespace-pre-wrap pl-6.5 text-xs text-rose-700">{c.row.problem}</p> : null}
+              </li>
+            );
+          })}
+        </ul>
+      </Card>
 
       <Card>
         <CardHeader title="Reported by builders" description="Reply by email — they'll get it from you." />

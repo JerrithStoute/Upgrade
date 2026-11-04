@@ -1,5 +1,6 @@
 import "server-only";
 import { ifFirst } from "./job-lock";
+import { recordCheckRun } from "./running-checks";
 import { db, systemDb } from "./db";
 import { runAsCompany } from "./tenant";
 import { appUrl, type MailSection } from "./mail";
@@ -170,7 +171,8 @@ export function startMorningEmails() {
   const g = globalThis as unknown as { __morningTimer?: ReturnType<typeof setInterval> };
   if (g.__morningTimer) return; // dev reloads re-run register()
   const check = async () => {
-    for (const { id } of await systemDb.company.findMany({ select: { id: true } }).catch(() => []))
+    const failed: string[] = [];
+    for (const { id, name } of await systemDb.company.findMany({ select: { id: true, name: true } }).catch(() => []))
       await ifFirst(`morning:${id}`, 30 * 60 * 1000, () =>
         runAsCompany(id, async () => {
           // Each company's own morning: its clock, its day.
@@ -182,7 +184,11 @@ export function startMorningEmails() {
           if (paperwork || team || clients)
             console.log(`[morning email] company ${id}: ${team} to the team, ${paperwork} about paperwork, ${clients} to clients about selections`);
         }),
-      ).catch((err) => console.error(`[morning email] company ${id} failed:`, err));
+      ).catch((err) => {
+        console.error(`[morning email] company ${id} failed:`, err);
+        failed.push(`${name}: ${err instanceof Error ? err.message : String(err)}`);
+      });
+    await recordCheckRun("morning", failed); // the Station's Running checks (running-checks.ts)
   };
   setTimeout(check, 90_000); // let the server finish starting
   g.__morningTimer = setInterval(check, 60 * 60 * 1000);

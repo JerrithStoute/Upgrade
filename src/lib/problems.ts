@@ -43,7 +43,7 @@ export function tokenFromCookieHeader(header: string | string[] | undefined) {
 }
 
 /** Emails to the Station's owners — at most 20 an hour, however much is breaking. */
-async function emailOwners(subject: string, heading: string, lines: string[]) {
+export async function emailOwners(subject: string, heading: string, lines: string[]) {
   if ((await failures("problems.email")) >= 20) return;
   const owners = await systemDb.stationUser.findMany({ where: { role: "OWNER", active: true }, select: { email: true } });
   if (!owners.length) return;
