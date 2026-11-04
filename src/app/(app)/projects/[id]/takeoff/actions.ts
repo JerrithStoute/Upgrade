@@ -286,17 +286,19 @@ export const copyCondition = friendly(async function copyCondition(fd: FormData)
 });
 
 /**
- * From a shape on the plan: "New takeoff like this…" — a copy of its takeoff (items and all)
- * under a new name, and the shape moved into it. E.g. one room → "Tile", one wall → "2x6 Walls".
+ * From a shape on the plan: "Change items" / "New takeoff like this…" — a copy of its takeoff
+ * (items and all), "<name> (copy)" unless named, and the shape moved into it. E.g. a porch's
+ * joists with a pine ceiling, or several shapes picked together → "2x6 Walls".
  */
-export async function copyConditionForShape(input: { projectId: string; measurementId?: string; measurementIds?: string[]; name: string }) {
+export async function copyConditionForShape(input: { projectId: string; measurementId?: string; measurementIds?: string[]; name?: string }) {
   const user = await requireEdit("takeoffs");
   const data = z
     .object({
       projectId: z.string(),
       measurementId: z.string().optional(),
       measurementIds: z.array(z.string()).max(2000).optional(),
-      name: z.string().trim().min(1).max(200),
+      // Blank: "<takeoff> (copy)", like copying a takeoff (Change items renames it on the next screen).
+      name: z.string().trim().max(200).optional(),
     })
     .parse(input);
   // One shape, or several picked together (drag a box): the new takeoff is copied from the first one's.
@@ -308,7 +310,7 @@ export async function copyConditionForShape(input: { projectId: string; measurem
   if (!shapes.length) throw new Error("Measurement not found");
   const first = shapes.find((m) => m.id === ids[0]) ?? shapes[0];
   if (shapes.some((m) => m.condition.type !== first.condition.type)) throw new Error("Pick shapes of one kind of takeoff (all walls, all areas…)");
-  const copy = await copyConditionRow(data.projectId, user.id, first.conditionId, data.name);
+  const copy = await copyConditionRow(data.projectId, user.id, first.conditionId, data.name || undefined);
   // Off a span table: you're picking this one by hand, so the new takeoff is one fixed size.
   if (first.condition.spanTableId) await db.takeoffCondition.update({ where: { id: copy.id }, data: { spanTableId: null, sizeGroup: null } });
   await db.takeoffMeasurement.updateMany({ where: { id: { in: shapes.map((m) => m.id) } }, data: { conditionId: copy.id, sizeLocked: false } });

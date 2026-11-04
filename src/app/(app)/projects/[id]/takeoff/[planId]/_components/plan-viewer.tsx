@@ -31,7 +31,6 @@ import {
   Sigma,
   Undo2,
   Redo2,
-  Copy,
   ScanSearch,
   ChevronDown,
   GripVertical,
@@ -41,6 +40,7 @@ import {
   Eraser,
   Search,
   Library,
+  ListChecks,
   X,
 } from "lucide-react";
 import { Button, buttonClasses } from "@/components/ui";
@@ -878,7 +878,6 @@ export function PlanViewer({
   const [auto, setAuto] = useState<AutoCount | null>(null);
   // Find walls: what one click found (on this sheet), to review before adding.
   // "+ New takeoff like this…" for the selected shape: the name being typed.
-  const [newLike, setNewLike] = useState<{ id: string; name: string } | null>(null);
   // …and for several shapes picked together: the name being typed (null = not asking).
   const [newLikeMany, setNewLikeMany] = useState<string | null>(null);
   // Sheets where you chose to draw without a scale (asked once per sheet per visit).
@@ -2035,6 +2034,21 @@ export function PlanViewer({
       points: c.points.map(([x, y]) => [x + dx, y + dy] as Pt),
     });
   };
+  /**
+   * "Change items": one part of a takeoff with other items (a porch ceiling in pine, not drywall).
+   * Like copying a takeoff — "2x6 joists (copy)", items and all — with only this shape moved to
+   * it; its panel opens next to rename it and change its items.
+   */
+  const changeItems = (measurementId: string) =>
+    startTransition(async () => {
+      try {
+        const r = await copyConditionForShape({ projectId, measurementId });
+        router.push(editHref(r.id), { scroll: false });
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Could not copy the takeoff");
+      }
+    });
+
   const duplicateSelected = () => {
     if (!selected || selected.pending) return;
     clipboard.current = shapeData(selected);
@@ -5616,10 +5630,7 @@ export function PlanViewer({
                   disabled={!!sel.m.pending}
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (v === "__new") {
-                      setNewLike({ id: sel.m.id, name: `${sel.c!.name} — ` });
-                      return;
-                    }
+                    if (v === "__new") return changeItems(sel.m.id);
                     if (v !== sel.c!.id) patchShape(sel.m.id, { conditionId: v });
                   }}
                 >
@@ -5636,58 +5647,6 @@ export function PlanViewer({
                   Close
                 </button>
               </div>
-              {/* One part of a takeoff with other items (a porch ceiling in pine, not drywall): a copy
-                  of the takeoff for just this shape, its items open next to change. */}
-              {newLike?.id !== sel.m.id && !sel.m.pending ? (
-                <button
-                  type="button"
-                  className="mt-1.5 rounded-md border border-blue-300 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
-                  onClick={() => setNewLike({ id: sel.m.id, name: `${sel.c!.name} — ` })}
-                >
-                  Different items here…
-                </button>
-              ) : null}
-              {newLike?.id === sel.m.id ? (
-                <form
-                  className="mt-2 flex items-center gap-1.5"
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    const name = newLike.name.trim();
-                    if (!name) return;
-                    startTransition(async () => {
-                      try {
-                        const r = await copyConditionForShape({ projectId, measurementId: sel.m.id, name });
-                        setNewLike(null);
-                        // Its items open next, to change (take the drywall off, add the pine).
-                        router.push(editHref(r.id), { scroll: false });
-                      } catch (err) {
-                        setError(err instanceof Error ? err.message : "Could not make the takeoff");
-                      }
-                    });
-                  }}
-                >
-                  <input
-                    autoFocus
-                    onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
-                    className="input min-w-0 flex-1 !py-1 text-xs"
-                    placeholder={`Name, e.g. ${sel.c.type === "WALL" ? "2x6 Ext Walls" : sel.c.type === "AREA" ? "Tile" : "New takeoff"}`}
-                    value={newLike.name}
-                    onChange={(e) => setNewLike({ id: sel.m.id, name: e.target.value })}
-                    onKeyDown={(e) => e.key === "Escape" && setNewLike(null)}
-                  />
-                  <Button type="submit" size="sm" disabled={!newLike.name.trim()}>
-                    Make it
-                  </Button>
-                  <Button type="button" size="sm" variant="ghost" onClick={() => setNewLike(null)}>
-                    Cancel
-                  </Button>
-                </form>
-              ) : null}
-              {newLike?.id === sel.m.id ? (
-                <p className="mt-1 text-[11px] text-slate-500">
-                  A copy of {sel.c.name} with all its items — they open next for you to change. Only this shape moves to it.
-                </p>
-              ) : null}
               {sel.q ? (
                 <p className="mt-1 tabular-nums text-slate-700">
                   {sel.m.isDeduction ? "Deduction: " : ""}
@@ -5759,13 +5718,22 @@ export function PlanViewer({
                     <Minus className="h-3.5 w-3.5" /> {sel.m.isDeduction ? "Make addition" : "Make deduction"}
                   </Button>
                 ) : null}
-                <Button type="button" size="sm" variant="secondary" onClick={duplicateSelected} disabled={!!sel.m.pending} title="Duplicate (Ctrl+D)">
-                  <Copy className="h-3.5 w-3.5" /> Duplicate
+                {/* Duplicate is Ctrl+D; this spot is for giving one part of a takeoff its own items. */}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  className="!border-blue-300 !text-blue-700 hover:!bg-blue-50"
+                  onClick={() => changeItems(sel.m.id)}
+                  disabled={!!sel.m.pending}
+                >
+                  <ListChecks className="h-3.5 w-3.5" /> Change items
                 </Button>
                 <Button type="button" size="sm" variant="danger" onClick={() => removeShape(sel.m.id)} disabled={!!sel.m.pending}>
                   <Trash2 className="h-3.5 w-3.5" /> Delete
                 </Button>
               </div>
+              <p className="mt-1 text-[11px] text-slate-500">Change items: gives just this shape its own items</p>
             </div>
           ) : null}
         </div>
