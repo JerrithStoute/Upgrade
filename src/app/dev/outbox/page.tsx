@@ -30,6 +30,7 @@ export default async function OutboxPage({ searchParams }: { searchParams: Promi
                   <Link href={`/dev/outbox?id=${m.id}${to ? `&to=${encodeURIComponent(to)}` : ""}`} className={`block px-3 py-2 text-sm ${m.id === open?.id ? "bg-blue-50" : "hover:bg-slate-50"}`}>
                     <span className="block truncate font-medium text-slate-900">{m.subject}</span>
                     <span className="block truncate text-xs text-slate-500">
+                      {m.from ? `from ${m.from} → ` : ""}
                       {m.to} · {new Date(m.at).toLocaleString()}
                     </span>
                   </Link>

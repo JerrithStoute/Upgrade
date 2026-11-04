@@ -12,10 +12,11 @@ import { companyClock } from "@/lib/company-zone";
 import { PhoneAppCard } from "@/components/phone-app";
 import { appIdentity } from "@/lib/app-identity";
 import { PUSH_KINDS, kindsFor, pushOffList, pushPublicKey } from "@/lib/push";
+import { MailboxCard } from "./mailbox-card";
 
 export const metadata = { title: "Your account" };
 
-export default async function AccountPage({ searchParams }: { searchParams: Promise<{ twostep?: string; setup?: string }> }) {
+export default async function AccountPage({ searchParams }: { searchParams: Promise<{ twostep?: string; setup?: string; mail?: string }> }) {
   const me = await requireUser();
   const { dateTime } = await companyClock();
   const sp = await searchParams;
@@ -108,6 +109,8 @@ export default async function AccountPage({ searchParams }: { searchParams: Prom
             </>
           )}
         </section>
+
+        {team ? <MailboxCard userId={me.id} email={user.email} company={company?.name ?? "your company"} said={sp.mail} /> : null}
 
         {team ? (
           <section className={card}>

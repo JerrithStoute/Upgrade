@@ -7,6 +7,8 @@ import { randomUUID } from "crypto";
  * Email. Where it goes depends on MAIL:
  *   outbox (default on this PC)  saved to ./.outbox — read them at /dev/outbox; nothing is sent
  *   resend (online)              sent through Resend (RESEND_API_KEY, from MAIL_FROM)
+ * An email someone sent with a button (`sendAs`) goes from their own mailbox instead, if they've
+ * connected one (mailbox.ts) — on this PC, into the test inbox as from their address.
  * Links in emails point at APP_URL (e.g. https://thebuilderstation.com).
  */
 
@@ -20,15 +22,20 @@ export function appUrl(pathname: string) {
   return new URL(pathname, process.env.APP_URL || "http://localhost:3000").toString();
 }
 
+async function toOutbox(mail: Mail, from?: string) {
+  await fs.mkdir(outboxDir(), { recursive: true });
+  const id = `${Date.now()}-${randomUUID().slice(0, 8)}`;
+  // (Attachments kept by name and size only — the test inbox doesn't need the files.)
+  const attachments = mail.attachments?.map((a) => ({ filename: a.filename, size: Math.round((a.content.length * 3) / 4) }));
+  await fs.writeFile(path.join(outboxDir(), `${id}.json`), JSON.stringify({ id, at: new Date().toISOString(), ...mail, ...(from ? { from } : {}), attachments }, null, 2));
+}
+
 export async function sendMail(mail: Mail) {
-  if (mode() === "outbox") {
-    await fs.mkdir(outboxDir(), { recursive: true });
-    const id = `${Date.now()}-${randomUUID().slice(0, 8)}`;
-    // (Attachments kept by name and size only — the test inbox doesn't need the files.)
-    const attachments = mail.attachments?.map((a) => ({ filename: a.filename, size: Math.round((a.content.length * 3) / 4) }));
-    await fs.writeFile(path.join(outboxDir(), `${id}.json`), JSON.stringify({ id, at: new Date().toISOString(), ...mail, attachments }, null, 2));
-    return;
+  if (mail.sendAs) {
+    const { sendFromMailbox } = await import("./mailbox");
+    if (await sendFromMailbox(mail.sendAs, mail, mode() === "outbox" ? (from) => toOutbox(mail, from) : undefined)) return;
   }
+  if (mode() === "outbox") return toOutbox(mail);
   if (mode() === "resend") {
     const key = process.env.RESEND_API_KEY;
     if (!key) throw new Error("Email isn't set up (RESEND_API_KEY)");
@@ -53,7 +60,7 @@ export async function sendMail(mail: Mail) {
 }
 
 /** The test inbox (this PC only). */
-export async function outbox(): Promise<(Mail & { id: string; at: string })[]> {
+export async function outbox(): Promise<(Mail & { id: string; at: string; from?: string })[]> {
   if (mode() !== "outbox") return [];
   let names: string[] = [];
   try {

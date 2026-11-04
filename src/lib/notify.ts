@@ -20,7 +20,7 @@ import { currentCompanyId } from "./tenant";
  * people's phones buzz too, if they've turned notifications on (push.ts).
  */
 
-type Person = { name: string; email: string };
+type Person = { id?: string; name: string; email: string };
 
 async function companyInfo() {
   const c = await db.company.findFirst({ select: { name: true, email: true } });
@@ -42,6 +42,8 @@ export async function sendCompanyMail(
     push?: PushKind;
     /** To a client or sub: the button carries their builder, so a phone that's never signed in shows the builder's own sign-in page. */
     customer?: boolean;
+    /** Someone sent it with a button: from their own mailbox, if connected (mailbox.ts). Their user id. */
+    sendAs?: string;
   },
 ) {
   // A reply goes to whoever sent it — else the company's own address, never our no-reply one.
@@ -50,7 +52,7 @@ export async function sendCompanyMail(
   const reached: string[] = [];
   for (const address of [...new Set(to.map((t) => t.trim().toLowerCase()).filter(Boolean))]) {
     try {
-      await sendMail(simpleEmail({ ...mail, to: address, brand, fromName: brand, replyTo: mail.replyTo ?? office }));
+      await sendMail({ ...simpleEmail({ ...mail, to: address, brand, fromName: brand, replyTo: mail.replyTo ?? office }), sendAs: mail.sendAs });
       reached.push(address);
     } catch (e) {
       console.error(`[email] "${mail.subject}" to ${address} failed:`, e instanceof Error ? e.message : e);
@@ -92,6 +94,7 @@ export async function emailPoToVendor(poId: string, sender: Person) {
         : `Reply to this email to accept it or with any questions — it goes to ${sender.name}.`,
     ],
     replyTo: sender.email,
+    sendAs: sender.id,
     push: "POS",
     customer: true,
   });

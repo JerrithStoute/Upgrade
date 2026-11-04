@@ -129,6 +129,7 @@ export async function emailWarrantyAssignee(id: string, sender: Person) {
     lines: [`${sender.name} put you on this warranty request at ${w.project.name}${w.location ? ` (${w.location})` : ""}.`, ...(w.description ? [w.description.slice(0, 600)] : [])],
     button: { label: "Open the request", url: appUrl(`/projects/${w.projectId}/warranty/${w.id}`) },
     replyTo: sender.email,
+    sendAs: sender.id,
     push: "WARRANTY",
   });
 }
@@ -155,6 +156,7 @@ export async function emailWarrantyToVendor(id: string, sender: Person) {
     button: portal ? { label: "Open it", url: appUrl("/vendor/warranty") } : undefined,
     after: [portal ? "Sign in to see the photos, set the day you'll be there, and mark it done." : `Reply to this email with the day you can be there — it goes to ${sender.name}.`],
     replyTo: sender.email,
+    sendAs: sender.id,
     push: "WARRANTY",
     customer: true,
   });

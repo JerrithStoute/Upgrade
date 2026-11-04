@@ -343,7 +343,7 @@ export const SETTINGS: HelpArticle[] = [
     group: "Getting started",
     area: null,
     pages: [],
-    what: "**Your account** (click your name at the top right) is where you put the app on your phone, turn on notifications, change your password, turn on two-step sign-in, choose the morning email, and sign out everywhere.",
+    what: "**Your account** (click your name at the top right) is where you put the app on your phone, turn on notifications, change your password, turn on two-step sign-in, connect your own email, choose the morning email, and sign out everywhere.",
     how: ["Click your name at the top right.", "Change what you need. Each part has its own button."],
     sections: [
       {
@@ -365,6 +365,11 @@ export const SETTINGS: HelpArticle[] = [
             what: "Signing in also asks for a 6-digit code from an app on your phone, so a stolen password alone can't get in.",
             how: "Click **Set up two-step sign-in**, scan the code with an authenticator app (Google Authenticator, Microsoft Authenticator…), type the code it shows, and save your backup codes somewhere safe. Each backup code works once, for when you don't have your phone.",
           },
+          {
+            name: "My email",
+            what: "Connect your own Gmail, and emails you send with a button (bids, POs, change orders, proposals, invoices and messages to clients, warranty work to subs) go out **from your own address**. They show in your Gmail **Sent** folder and replies come straight back to you. Emails the program sends by itself (the morning email, notices) still come from The Builder Station. The program can only send; it can never read your mail. Not connected: emails go from The Builder Station with your company's name on them, and replies come to you.",
+            how: "Click **Connect Gmail**, sign in to Google and allow it (leave **Send email on your behalf** ticked). Then click **Send a test**: it arrives in your own inbox. **Disconnect** goes back to sending from the program. Outlook and other email are coming.",
+          },
           { name: "Morning email", what: "One email each morning with what's yours that day: to-dos and reminders due, tasks starting, selections waiting on a choice. None on a day with nothing due. It only comes if your company turned it on for you (Settings → Email notifications); here you can turn yours off." },
           { name: "Sign out everywhere", what: "Signs you out on every phone and computer, including this one, for a lost phone or a shared computer." },
         ],
@@ -372,6 +377,8 @@ export const SETTINGS: HelpArticle[] = [
     ],
     tips: [
       "If your company requires two-step sign-in (Directory → Team), you can't turn it off.",
+      "If your Gmail stops working (you changed your Google password or took the permission back), your emails still go out, from The Builder Station, and a yellow note at the top of every page says **Reconnect**. Click it and allow it again.",
+      "Each person connects their own email, so a bid you send comes from you and one a coworker sends comes from them.",
       "Notifications are per phone: turn them on on each phone or computer you want them on.",
       "Blocked notifications by mistake? On iPhone: Settings → Notifications → the app. On Android: hold the app's icon → App info → Notifications.",
       "No signal on a job site? The app shows \"You're offline\" instead of an error, and loads the page by itself when the signal comes back. Anything you were typing isn't saved until you're back online.",

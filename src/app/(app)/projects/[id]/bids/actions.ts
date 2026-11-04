@@ -574,8 +574,10 @@ async function emailBid(
         ])
       : [null, null];
   try {
-    await sendMail(
-      bidEmail({
+    await sendMail({
+      // From their own mailbox, if they've connected one (Your account → My email).
+      sendAs: user.id,
+      ...bidEmail({
         to,
         ...text,
         companyName: company?.name ?? "Your builder",
@@ -592,7 +594,7 @@ async function emailBid(
         copyTo: how.copyMe ? user.email : null,
         plans,
       }),
-    );
+    });
   } catch (e) {
     console.error("Bid email not sent:", e);
     return { error: "The email didn't go out — try again in a minute, or use “Open in my email”." };

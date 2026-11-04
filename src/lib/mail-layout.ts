@@ -15,6 +15,8 @@ export type Mail = {
   fromLocal?: string;
   /** A copy to them too, unseen by the one it's to (the sender's own copy). */
   bcc?: string[];
+  /** Someone sent it with a button (a bid, a PO…): from their own mailbox if they've connected one (mailbox.ts). Their user id. */
+  sendAs?: string;
 };
 
 const DEFAULT_FROM = "The Builder Station <no-reply@thebuilderstation.com>";

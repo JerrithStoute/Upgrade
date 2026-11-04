@@ -74,6 +74,11 @@ services:
         sync: false
       - key: QBO_ENVIRONMENT
         value: production
+      # Connect Gmail (src/lib/mailbox.ts): the Google Cloud project's OAuth client; none = Gmail can't be connected.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
 
 databases:
   - name: builderstation-db

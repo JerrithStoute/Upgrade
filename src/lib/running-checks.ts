@@ -1,7 +1,5 @@
-import "server-only";
 import { systemDb } from "./db";
 import { ifFirst } from "./job-lock";
-import { emailOwners } from "./problems";
 import { CHECKS, alertNeeded, checkState, type CheckName } from "./running-check-rules";
 
 /**
@@ -10,7 +8,8 @@ import { CHECKS, alertNeeded, checkState, type CheckName } from "./running-check
  * owners once when one stops running or keeps failing, and once when it's working again. If the whole
  * program is down, nothing here can tell anyone — UptimeRobot does that.
  *
- * Through the system login: StationCheck is the Station's, no company's. Nothing here may throw.
+ * Through the system login: StationCheck is the Station's, no company's. Nothing here may throw. No
+ * "server-only" here (and problems.ts loaded only when emailing): `npm run backup` records its run too.
  */
 
 /** A run finished: `problems` is what failed ("JT&I Custom Homes: …"), empty when all went fine. */
@@ -43,6 +42,7 @@ const hoursSince = (d: Date, now: Date) => {
 /** Emails the owners about any check that just went late or failing, or just came back. */
 export async function watchRunningChecks(now = new Date()) {
   try {
+    const { emailOwners } = await import("./problems");
     for (const c of await runningChecks(now)) {
       const alert = alertNeeded(c, c.state, c.row, now);
       if (!alert || !c.row) continue;
