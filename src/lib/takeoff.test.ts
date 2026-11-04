@@ -6,6 +6,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  fractionText,
+  guessMemberKind,
+  memberSizeName,
+  sizeTypeOf,
   assemblyQuantity,
   feetInches,
   framingBoards,
@@ -901,5 +905,24 @@ describe("pieces from a name", () => {
     const o = { ...DEFAULT_WALL_OPTIONS, baseSides: 2, basePieceFt: 12 };
     const base = wallTakeoff({ studSize: "2x4", spacing: 16, heightFt: 8 }, o, [{ lengthFt: 40, closed: false, corners: 0 }]).lines.find((l) => l.key === "base");
     assert.deepEqual([base?.unit, base?.qty, base?.pieceFt], ["lf", 80, 12]);
+  });
+});
+
+describe("new member sizes from a takeoff", () => {
+  it("builds the name in one form", () => {
+    assert.equal(memberSizeName("LVL", 1.75, 24), "LVL 1-3/4x24");
+    assert.equal(memberSizeName(" GLB ", 5.125, 18), "GLB 5-1/8x18");
+    assert.equal(memberSizeName("TJI  210", 2.0625, 11.875), "TJI 210 2-1/16x11-7/8");
+    assert.equal(fractionText(0.75), "3/4");
+  });
+  it("reads the type from a size's name", () => {
+    assert.equal(sizeTypeOf("LVL 1-3/4x11-7/8"), "LVL");
+    assert.equal(sizeTypeOf("GLB 5-1/8x12"), "GLB");
+    assert.equal(sizeTypeOf("2x10"), null);
+    assert.equal(sizeTypeOf('TJI 210 11-7/8"'), null);
+  });
+  it("guesses a new type's kind", () => {
+    assert.equal(guessMemberKind("TJI 360"), "I_JOIST");
+    assert.equal(guessMemberKind("PSL"), "ENGINEERED");
   });
 });

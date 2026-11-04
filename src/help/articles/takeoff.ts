@@ -205,6 +205,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Curve a corner", what: "Double-click a point to make it a curve point (round and yellow); double-click again to make it straight." },
           { name: "Delete", what: "Press Delete with shapes picked, or click **Delete** in the panel. Ctrl+Z brings them back." },
           { name: "This is ▾", what: "In the panel for a picked shape: moves just this shape to another takeoff of the same type. **+ New takeoff like this…** makes a copy of the takeoff, with its items, and moves this shape to it, such as for a wall that's a different height." },
+          { name: "Different items here…", what: "In the panel for a picked shape: gives just this part of a takeoff its own items, such as a porch ceiling in tongue-and-groove pine where the house gets drywall.", how: "Click it, finish the name (it starts with the takeoff's name, such as **2x6 joists — Porch**) and click **Make it**. It's a copy of the takeoff with all its items, and only this shape moves to it. Its items open right away to change: take off the drywall, add the pine. The rest of the takeoff keeps its items. A joist area picked off a span table keeps its size from then on." },
           { name: "Make them all…", what: "With several shapes picked: moves them all to another takeoff of the same type, or into a new one." },
           { name: "Make deduction / Make addition", what: "Switches a picked area or line between adding and subtracting." },
           { name: "✂ Split", what: "Click an area: a **Split** button shows right where you clicked. It cuts the area in two, such as an open kitchen and living room that came as one.", how: "Click **Split**, then click on one side of the area and on the other, across where it should split. Delete the part you don't want, or move it to another takeoff. Ctrl+Z puts it back as one." },
@@ -487,7 +488,8 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Size", what: "**One size**: the member size you pick. **By span table**: each area gets the size its longest span calls for, and goes into that size's own takeoff (made for you)." },
           { name: "Packing", what: "How lengths are bought. **Least waste**, **Cheapest** (needs prices for every length), or **One length**. Once drawn, a table compares the three; click a row to use it." },
           { name: "Overhang / Stock lengths", what: "Extra length past the outline, and the lengths you can buy (like 8-24, or 12, 14, 16, 20)." },
-          { name: "Beams: Bearing each end / Plies", what: "Bearing added at each end, and how many plies (1 for a glulam, 2 or 3 for built-up LVL)." },
+          { name: "Beams: Plies / Bearing each end", what: "How many plies, on the line with the size (1 for a glulam, 2 or 3 for built-up LVL), and the bearing added at each end, on its own line under it." },
+          { name: "+ New size…", what: "At the bottom of the size list on a joist, rafter or beam takeoff: adds a size you don't have yet, such as a 24\" LVL, without leaving the takeoff.", how: "Pick or type the **Type** (LVL, GLB, PSL, TJI 210… — a type you type that isn't in the list is added), then the thickness × depth in inches (1.75 or 1-3/4 both work). The name is built for you in one form, such as **LVL 1-3/4x24**, so your list stays neat. If you already have that size it says so — click **Use it**. A new size takes the rest from your other sizes of that type; a brand-new type starts as engineered, made to order. It goes into Catalog → **Member sizes** for every job." },
         ],
       },
       {
@@ -871,6 +873,7 @@ export const TAKEOFF: HelpArticle[] = [
         items: [
           { name: "+ Add size", what: "Opens a small box at the top of the list for a member you can pick on a takeoff: name, kind (lumber, I-joist, truss, LVL) and how it's sold on the first line; actual width and depth, default stock lengths, board feet and its color on the second. **Cancel** closes it." },
           { name: "Find a size", what: "Narrows the list as you type." },
+          { name: "From a takeoff", what: "**+ New size…** at the bottom of a takeoff's size list adds one here too — see **Joists, rafters and beams**." },
           { name: "Edit", what: "Opens the same box right in the size's row. **Delete size…** is there too: takeoffs using it keep the name but lose its settings." },
           { name: "Sold as", what: "**Stock lengths**: pieces rounded up, priced each. **Made to order**: each member rounded up to the next even foot (10'-3\" → 12', 17' → 18') and priced per lf — glulams, LVLs, I-joists. **Lineal feet**: one lf total, priced per lf." },
           { name: "Board feet / Color", what: "Shows board feet on the list, and gives the size its own color on the plan." },

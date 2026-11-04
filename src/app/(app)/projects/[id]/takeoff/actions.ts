@@ -53,6 +53,10 @@ import {
   isMetricFor,
   isLumberMetric,
   itemNameKey,
+  guessMemberKind,
+  memberSizeName,
+  parseInches,
+  sizeTypeOf,
   pointsJson,
   parseArcs,
   parsePoints,
@@ -1639,4 +1643,44 @@ export async function removeJobUnitLine(input: { projectId: string; kind: UnitKi
   const list = readJobList(kind, project);
   list.lines = list.lines.filter((x) => x !== id);
   return { ...(await saveJobList(kind, project.id, list)), removed: gone.count };
+}
+
+/**
+ * "+ New size…" from a takeoff: a type (LVL, GLB, TJI 210…) and thickness × depth. The name is built
+ * in one form ("LVL 1-3/4x24") so the list stays neat; the rest comes from your other sizes of that
+ * type, or — a new type — engineered, made to order. Change any of it in Catalog → Member sizes.
+ */
+export async function quickAddMemberSize(input: { type: string; thickness: string; depth: string }): Promise<
+  { ok: true; size: { id: string; name: string; kind: string; soldAs: string; stockLengths: string | null } } | { ok: false; error: string }
+> {
+  await requireEdit("takeoffs");
+  const type = String(input.type ?? "").trim().replace(/\s+/g, " ");
+  if (!type) return { ok: false, error: "Pick or type a type, e.g. LVL" };
+  if (type.length > 60) return { ok: false, error: "That type is too long" };
+  const t = parseInches(String(input.thickness ?? "").replace(/["”″]/g, ""));
+  const d = parseInches(String(input.depth ?? "").replace(/["”″]/g, ""));
+  if (!t || !d || t > 48 || d > 96) return { ok: false, error: "Enter the thickness and depth in inches, e.g. 1-3/4 and 24" };
+  const name = memberSizeName(type, t, d);
+  const nameKey = itemNameKey(name);
+  const select = { id: true, name: true, kind: true, soldAs: true, stockLengths: true } as const;
+  const clash = await db.memberSize.findFirst({ where: { nameKey }, select });
+  if (clash) return { ok: true, size: clash };
+  const all = await db.memberSize.findMany({ orderBy: { sortOrder: "desc" }, select: { name: true, kind: true, soldAs: true, stockLengths: true, boardFeet: true, sortOrder: true } });
+  const sibling = all.find((m) => sizeTypeOf(m.name)?.toLowerCase() === type.toLowerCase());
+  const size = await db.memberSize.create({
+    data: {
+      name,
+      nameKey,
+      kind: sibling?.kind ?? guessMemberKind(type),
+      widthIn: t,
+      depthIn: d,
+      soldAs: sibling?.soldAs ?? "EXACT_LF",
+      stockLengths: sibling?.stockLengths ?? null,
+      boardFeet: sibling?.boardFeet ?? false,
+      sortOrder: (all[0]?.sortOrder ?? -1) + 1,
+    },
+    select,
+  });
+  revalidatePath("/catalog/member-sizes");
+  return { ok: true, size };
 }

@@ -5617,7 +5617,7 @@ export function PlanViewer({
                   onChange={(e) => {
                     const v = e.target.value;
                     if (v === "__new") {
-                      setNewLike({ id: sel.m.id, name: "" });
+                      setNewLike({ id: sel.m.id, name: `${sel.c!.name} — ` });
                       return;
                     }
                     if (v !== sel.c!.id) patchShape(sel.m.id, { conditionId: v });
@@ -5636,6 +5636,17 @@ export function PlanViewer({
                   Close
                 </button>
               </div>
+              {/* One part of a takeoff with other items (a porch ceiling in pine, not drywall): a copy
+                  of the takeoff for just this shape, its items open next to change. */}
+              {newLike?.id !== sel.m.id && !sel.m.pending ? (
+                <button
+                  type="button"
+                  className="mt-1.5 rounded-md border border-blue-300 px-2 py-0.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                  onClick={() => setNewLike({ id: sel.m.id, name: `${sel.c!.name} — ` })}
+                >
+                  Different items here…
+                </button>
+              ) : null}
               {newLike?.id === sel.m.id ? (
                 <form
                   className="mt-2 flex items-center gap-1.5"
@@ -5645,9 +5656,10 @@ export function PlanViewer({
                     if (!name) return;
                     startTransition(async () => {
                       try {
-                        await copyConditionForShape({ projectId, measurementId: sel.m.id, name });
+                        const r = await copyConditionForShape({ projectId, measurementId: sel.m.id, name });
                         setNewLike(null);
-                        router.refresh();
+                        // Its items open next, to change (take the drywall off, add the pine).
+                        router.push(editHref(r.id), { scroll: false });
                       } catch (err) {
                         setError(err instanceof Error ? err.message : "Could not make the takeoff");
                       }
@@ -5656,6 +5668,7 @@ export function PlanViewer({
                 >
                   <input
                     autoFocus
+                    onFocus={(e) => e.currentTarget.setSelectionRange(e.currentTarget.value.length, e.currentTarget.value.length)}
                     className="input min-w-0 flex-1 !py-1 text-xs"
                     placeholder={`Name, e.g. ${sel.c.type === "WALL" ? "2x6 Ext Walls" : sel.c.type === "AREA" ? "Tile" : "New takeoff"}`}
                     value={newLike.name}
@@ -5672,7 +5685,7 @@ export function PlanViewer({
               ) : null}
               {newLike?.id === sel.m.id ? (
                 <p className="mt-1 text-[11px] text-slate-500">
-                  A copy of {sel.c.name} with all its items — change its settings after. Only this shape moves to it.
+                  A copy of {sel.c.name} with all its items — they open next for you to change. Only this shape moves to it.
                 </p>
               ) : null}
               {sel.q ? (

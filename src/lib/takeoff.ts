@@ -382,7 +382,7 @@ export function stockPieces(feet: number, stock: number[] | null, soldAs?: strin
 }
 
 /** "1-3/4" → 1.75, "11 7/8" → 11.875, "3.5" → 3.5 */
-function parseInches(text: string): number | null {
+export function parseInches(text: string): number | null {
   const m = /^(\d+(?:\.\d+)?)(?:[-\s]+(\d+)\/(\d+))?$|^(\d+)\/(\d+)$/.exec(text.trim());
   if (!m) return null;
   if (m[4]) return Number(m[4]) / Number(m[5]);
@@ -397,6 +397,36 @@ export function parseMemberSize(size: string | null | undefined): { t: number; w
   const t = parseInches(m[1].trim());
   const w = parseInches(m[2].trim());
   return t && w ? { t, w } : null;
+}
+
+/** What comes before the size in a member size's name: "LVL 1-3/4x14" → "LVL", "2x10" → null. */
+export function sizeTypeOf(name: string): string | null {
+  const m = /([\d.\-\/ ]*\d)\s*[x×]\s*(\d[\d.\-\/ ]*)/i.exec(name);
+  const type = m ? name.slice(0, m.index).trim() : "";
+  return type || null;
+}
+
+/** 1.75 → "1-3/4", 24 → "24", 2.0625 → "2-1/16" (to the nearest 1/16"). */
+export function fractionText(inches: number) {
+  const sixteenths = Math.round(inches * 16);
+  const whole = Math.floor(sixteenths / 16);
+  let num = sixteenths % 16;
+  let den = 16;
+  while (num && num % 2 === 0) {
+    num /= 2;
+    den /= 2;
+  }
+  return num ? (whole ? `${whole}-${num}/${den}` : `${num}/${den}`) : String(whole);
+}
+
+/** A new member size's name, always in one form: "LVL" 1.75 × 24 → "LVL 1-3/4x24". */
+export function memberSizeName(type: string, thicknessIn: number, depthIn: number) {
+  return `${type.trim().replace(/\s+/g, " ")} ${fractionText(thicknessIn)}x${fractionText(depthIn)}`;
+}
+
+/** A brand-new type's kind: TJIs, BCIs and other I-joists, else engineered (LVL, GLB, PSL…). */
+export function guessMemberKind(type: string): (typeof MEMBER_KINDS)[number] {
+  return /\b(tji|bci|lpi|ni|i[- ]?joist)/i.test(type) ? "I_JOIST" : "ENGINEERED";
 }
 
 export const MEMBER_SIZES = ["2x4", "2x6", "2x8", "2x10", "2x12", "4x10", "4x12", "LVL 1-3/4x9-1/4", "LVL 1-3/4x11-7/8", "LVL 1-3/4x14"] as const;

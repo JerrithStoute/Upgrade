@@ -28,6 +28,7 @@ import {
   type PackMode,
 } from "@/lib/takeoff";
 import { CodeRuleFields } from "./code-rules";
+import { NewMemberSize } from "./new-member-size";
 import { PendingItems } from "./pending-items";
 import { Line, SMALL_BOXES, Section } from "./mini";
 import type { ItemOption } from "./assembly-form";
@@ -85,7 +86,7 @@ export function ConditionForm({
   action,
   hidden,
   costCodes,
-  memberSizes,
+  memberSizes: sizeList,
   itemOptions = [],
   values,
   hasMeasurements,
@@ -132,6 +133,10 @@ export function ConditionForm({
   const [pitch2Text, setPitch2Text] = useState(values?.pitch2 == null ? "" : String(values.pitch2));
   const pitch2 = pitch2Text.trim() === "" ? pitch : Math.max(0, Number(pitch2Text) || 0);
   const [sizeId, setSizeId] = useState(values?.memberSizeId ?? "");
+  // Sizes added here with "+ New size…" (the list from the page doesn't have them until it reloads).
+  const [added, setAdded] = useState<MemberSizeOption[]>([]);
+  const memberSizes = [...sizeList, ...added.filter((a) => !sizeList.some((m) => m.id === a.id))];
+  const [newSize, setNewSize] = useState(false);
   const [spanTableId, setSpanTableId] = useState(values?.spanTableId ?? "");
   const [stockText, setStockText] = useState(values?.stockLengths ?? "");
   const [pack, setPack] = useState<PackMode>((values?.packMode as PackMode) ?? "WASTE");
@@ -184,6 +189,7 @@ export function ConditionForm({
       className="input !w-auto"
       value={sizeId}
       onChange={(e) => {
+        if (e.target.value === "__new") return setNewSize(true);
         const next = memberSizes.find((m) => m.id === e.target.value) ?? null;
         // Take the new size's stock lengths unless you'd typed your own.
         if (!stockText.trim() || stockText === (size?.stockLengths ?? "")) setStockText(next?.stockLengths ?? "");
@@ -196,8 +202,16 @@ export function ConditionForm({
           {m.name}
         </option>
       ))}
+      {isHip ? null : <option value="__new">+ New size…</option>}
     </select>
   ) : null;
+  const pickSize = (m: MemberSizeOption) => {
+    setAdded((a) => (a.some((x) => x.id === m.id) ? a : [...a, m]));
+    if (!stockText.trim() || stockText === (size?.stockLengths ?? "")) setStockText(m.stockLengths ?? "");
+    setSizeId(m.id);
+    setNewSize(false);
+  };
+  const newSizeBox = newSize && isMember && !isHip ? <NewMemberSize sizes={memberSizes} onAdded={pickSize} onCancel={() => setNewSize(false)} /> : null;
   const wasteBox = (
     <input
       key={type}
@@ -380,6 +394,7 @@ export function ConditionForm({
             <input id={p("spacing")} name="spacing" inputMode="decimal" aria-label="Spacing (in o.c.)" className="input !w-11" defaultValue={values?.spacing ?? 16} />
             in o.c.
           </Line>
+          {newSizeBox}
           {spanTableId ? <Line>Each area gets the size its span calls for, in that size&apos;s takeoff (made for you).</Line> : null}
           <Line>
             Pitch {pitchBox} /12 ·
@@ -426,9 +441,12 @@ export function ConditionForm({
           <Line>
             {sizeBox}×
             <input id={p("plies")} name="opt_plies" type="number" min={1} max={6} step={1} aria-label="Plies" title="1 for a glulam; 2 or 3 for built-up LVLs" className="input !w-11" defaultValue={beam.plies} />
-            plies ·
+            plies
+          </Line>
+          {newSizeBox}
+          <Line>
             <input id={p("bearing")} name="opt_bearingIn" inputMode="decimal" aria-label="Bearing each end (in)" title="Added to both ends of every beam (3 = 6 in. longer)" className="input !w-11" defaultValue={beam.bearingIn} />
-            in bearing each end
+            in. bearing each end
           </Line>
         </Section>
       ) : null}
