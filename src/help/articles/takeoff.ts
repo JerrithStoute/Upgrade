@@ -401,7 +401,7 @@ export const TAKEOFF: HelpArticle[] = [
       "Pick a **Doors** or **Windows** takeoff on the left and click **Measure**.",
       "Windows: the card at the top left is this job's window list. Add each window once (its size like 3050, and a pick for each part your company asks for, such as type and color), then click a line, or press its number 1–9, and click the plan where each one goes. The number shows on every window placed.",
       "Doors: the same way. The card is this job's door list. Add each door once (size like 2868, Int or Ext, and a pick for each part your company asks for), then click a line, or press its number 1–9, and click the plan where each one goes. The number shows on every door placed.",
-      "A marker shown as a dashed red square still needs a door or window picked: click it and choose one in **Which door is this?** (or **Which window is this?**)",
+      "A red marker with a **?** still needs a door or window picked (you clicked the plan before picking one from the list): click it and choose one in **Which door is this?** (or **Which window is this?**)",
     ],
     sections: [
       {

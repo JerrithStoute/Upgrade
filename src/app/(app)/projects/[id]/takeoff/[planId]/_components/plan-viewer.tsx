@@ -3135,14 +3135,28 @@ export function PlanViewer({
             width={px(isSel ? 18 : 14)}
             height={px(isSel ? 18 : 14)}
             rx={px(2)}
-            fill={door && m.cased !== false ? color : "white"}
+            // None picked yet: solid red with a "?" (a white box on a white plan didn't show).
+            fill={!door ? "#dc2626" : m.cased !== false ? color : "white"}
             fillOpacity={0.9}
-            stroke={door ? (m.cased === false ? color : "white") : "#dc2626"}
+            stroke={door && m.cased === false ? color : "white"}
             strokeWidth={2}
-            strokeDasharray={door ? undefined : "3 2"}
             {...stroke}
           />
-          {(c.type === "WINDOW" ? winLineNo : doorLineNo).get(door?.id ?? "") ? (
+          {!door ? (
+            <text
+              x={x}
+              y={y}
+              dy={px(3.5)}
+              transform={rotation ? `rotate(${-rotation} ${x} ${y})` : undefined}
+              textAnchor="middle"
+              fontSize={px(isSel ? 11 : 9.5)}
+              fontWeight={700}
+              fill="white"
+              pointerEvents="none"
+            >
+              ?
+            </text>
+          ) : (c.type === "WINDOW" ? winLineNo : doorLineNo).get(door.id) ? (
             // Its number on the job's window / door list.
             <text
               x={x}
