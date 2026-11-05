@@ -14,6 +14,7 @@ import {
   linkJob,
   matchAgain,
   newQuickBooksPassword,
+  setInvoiceClass,
   setInvoiceItem,
   setUpQuickBooks,
   updateFromQuickBooksOnline,
@@ -260,7 +261,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
           </div>
         </CardBody>
       </Card>
-      {synced ? <InvoicesCard itemId={desktop.invoiceItemId} items={entries("ITEM").filter((i) => i.active && costableItem(i))} desktop /> : null}
+      {synced ? <InvoicesCard itemId={desktop.invoiceItemId} items={entries("ITEM").filter((i) => i.active && costableItem(i))} classFromBills={desktop.classFromBills} desktop /> : null}
       <BillsWaiting waiting={waiting} entries={entries} openJobs={openJobs} />
       {synced ? <LinkCards {...linking} /> : null}
     </div>
@@ -268,9 +269,9 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
 }
 
 /** Invoices out: the item a line goes on when its cost code isn't linked to one — the same for Online and Desktop. */
-function InvoicesCard({ itemId, items, desktop }: { itemId: string | null; items: QbEntry[]; desktop?: boolean }) {
-  // Desktop: they go on the Web Connector's next update, with the job's class — the one on its bills.
-  const when = desktop ? "on the next update after you send them, with the job's class from its bills," : "when you send them,";
+function InvoicesCard({ itemId, items, desktop, classFromBills }: { itemId: string | null; items: QbEntry[]; desktop?: boolean; classFromBills?: boolean }) {
+  // Desktop: they go on the Web Connector's next update.
+  const when = desktop ? "on the next update after you send them," : "when you send them,";
   return (
     <Card>
       <CardHeader
@@ -281,7 +282,7 @@ function InvoicesCard({ itemId, items, desktop }: { itemId: string | null; items
             : `Invoices go to QuickBooks ${when} each line on its cost code's item. Pick the item a line goes on when it has no cost code.`
         }
       />
-      <CardBody>
+      <CardBody className="flex flex-wrap gap-4">
         <div className="w-full sm:w-96">
           <LinkPicker
             action={setInvoiceItem}
@@ -292,6 +293,20 @@ function InvoicesCard({ itemId, items, desktop }: { itemId: string | null; items
             options={items.map((i) => ({ value: i.listId, label: [qbName(i.fullName), i.detail.description].filter(Boolean).join(" — ") }))}
           />
         </div>
+        {desktop ? (
+          <div className="w-full sm:w-72">
+            <p className="mb-1 text-xs font-medium text-slate-600">Class on invoices</p>
+            <LinkPicker
+              action={setInvoiceClass}
+              hidden={{}}
+              value={classFromBills ? "bills" : ""}
+              label="Class on invoices"
+              empty="None"
+              options={[{ value: "bills", label: "The job's class, from its bills" }]}
+            />
+            <p className="mt-1 text-xs text-slate-500">For classes named for each job.</p>
+          </div>
+        ) : null}
       </CardBody>
     </Card>
   );

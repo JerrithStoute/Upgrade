@@ -81,8 +81,10 @@ export async function invoiceRequest(job: InvoiceJob): Promise<string> {
   if (job.stage === "void") return invoiceVoidRequest(inv.qbTxnId!);
   if (job.stage === "find") return invoiceQueryRequest(inv.qbTxnId!);
   if (job.stage === "mod") return invoiceModRequest(out(inv), inv.qbTxnId!, job.editSequence ?? "");
-  const conn = await db.qbConnection.findFirst({ select: { invoiceItemId: true } });
-  return invoiceAddRequest(out(inv), { customerId: inv.project.qbListId!, itemId: conn?.invoiceItemId ?? null, classId: await jobClass(inv.project.qbListId!) });
+  const conn = await db.qbConnection.findFirst({ select: { invoiceItemId: true, classFromBills: true } });
+  // The job's class only when the builder's classes are their jobs (Settings → QuickBooks → Invoices).
+  const classId = conn?.classFromBills ? await jobClass(inv.project.qbListId!) : null;
+  return invoiceAddRequest(out(inv), { customerId: inv.project.qbListId!, itemId: conn?.invoiceItemId ?? null, classId });
 }
 
 /** QuickBooks' answer to a job: kept on the invoice. Returns the job's next step (find → change), if any. */

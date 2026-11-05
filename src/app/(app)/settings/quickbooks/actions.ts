@@ -101,6 +101,13 @@ export const setInvoiceItem = friendly(async function setInvoiceItem(fd: FormDat
   revalidatePath(PATH);
 });
 
+/** QuickBooks Desktop: whether invoices get the job's class, the one on its bills. */
+export const setInvoiceClass = friendly(async function setInvoiceClass(fd: FormData) {
+  await requireEdit("quickbooks");
+  await db.qbConnection.updateMany({ data: { classFromBills: str(fd, "listId") === "bills" } });
+  revalidatePath(PATH);
+});
+
 /** "Bills waiting for a job": the job here a QuickBooks customer's bills go on. */
 export const linkCustomerToJob = friendly(async function linkCustomerToJob(fd: FormData) {
   await requireEdit("quickbooks");

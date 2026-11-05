@@ -2377,6 +2377,8 @@ model QbConnection {
   billsSince   DateTime?
   // The QuickBooks item an invoice line goes on when its cost code isn't linked to one.
   invoiceItemId String?
+  // Invoices get the job's class — the one on its bills (off: no class, as QuickBooks does on its own).
+  classFromBills Boolean @default(false)
   // The Web Connector session in progress: its ticket and what's left to ask for (JSON).
   ticket       String?   @unique
   ticketState  String?
