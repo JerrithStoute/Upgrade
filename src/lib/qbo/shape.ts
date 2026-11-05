@@ -62,7 +62,8 @@ export function listRow(kind: QbListRow["kind"], e: Obj): QbListRow | null {
 
 // --- Bills -------------------------------------------------------------------------------------------
 
-export type BillLine = { description: string; itemId: string | null; customerId: string | null; customerName: string | null; amount: number };
+/** classId: the line's QuickBooks class (QuickBooks Desktop — it fills in the class on that job's invoices). */
+export type BillLine = { description: string; itemId: string | null; customerId: string | null; customerName: string | null; amount: number; classId?: string | null };
 export type BillData = {
   vendorId: string | null;
   vendorName: string;
@@ -210,6 +211,6 @@ export function invoiceBody(inv: InvoiceOut, customerId: string, itemId: string 
 export function taxProblem(inv: InvoiceOut) {
   const tax = inv.items.filter((i) => i.isTax).reduce((n, i) => n + i.quantity * i.unitPrice, 0);
   return Math.abs(tax) > 0.004
-    ? "This invoice has sales tax on it, and QuickBooks Online works out its own sales tax, so it wasn't sent there. Enter it in QuickBooks with its tax. (Next time, leave the tax off here and add it in QuickBooks.)"
+    ? "This invoice has sales tax on it, and QuickBooks works out its own sales tax, so it wasn't sent there. Enter it in QuickBooks with its tax. (Next time, leave the tax off here and add it in QuickBooks.)"
     : null;
 }

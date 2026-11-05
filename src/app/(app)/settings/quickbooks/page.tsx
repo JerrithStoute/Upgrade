@@ -26,6 +26,8 @@ export const metadata = { title: "QuickBooks" };
 
 /** QuickBooks shows "Customer:Job" — written out for people. */
 const qbName = (fullName: string) => fullName.split(":").join(" › ");
+/** "Up to date" → "up to date", keeping names like QuickBooks as they are. */
+const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
 /** What came back from Intuit's sign-in (/api/qbo/connect and /callback). */
 const BACK: Record<string, { good?: boolean; text: string }> = {
@@ -141,7 +143,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
               </p>
             ) : null}
             <p className="text-slate-600">
-              It updates on its own every 15 minutes.{online.lastSummary ? ` Last update: ${online.lastSummary.toLowerCase()}.` : ""}
+              It updates on its own every 15 minutes.{online.lastSummary ? ` Last update: ${lowerFirst(online.lastSummary)}.` : ""}
             </p>
             <div className="flex flex-wrap items-start gap-3">
               <UpdateButton action={updateFromQuickBooksOnline} />
@@ -168,30 +170,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
           </CardBody>
         </Card>
 
-        {synced ? (
-          <Card>
-            <CardHeader
-              title="Invoices"
-              description={
-                online.invoiceItemId
-                  ? "Invoices go to QuickBooks when you send them, each line on its cost code's item — a line without a cost code (or one not linked to an item) goes on this item. Payments received in QuickBooks come back to them."
-                  : "Invoices go to QuickBooks when you send them, each line on its cost code's item. Pick the item a line goes on when it has no cost code."
-              }
-            />
-            <CardBody>
-              <div className="w-full sm:w-96">
-                <LinkPicker
-                  action={setInvoiceItem}
-                  hidden={{}}
-                  value={online.invoiceItemId ?? ""}
-                  label="QuickBooks item for lines without a cost code"
-                  empty="— Pick an item —"
-                  options={items.map((i) => ({ value: i.listId, label: [qbName(i.fullName), i.detail.description].filter(Boolean).join(" — ") }))}
-                />
-              </div>
-            </CardBody>
-          </Card>
-        ) : null}
+        {synced ? <InvoicesCard itemId={online.invoiceItemId} items={items} /> : null}
 
         <BillsWaiting waiting={waiting} entries={entries} openJobs={openJobs} />
 
@@ -235,7 +214,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
           {synced ? (
             <p className="text-slate-600">
               The Web Connector updates every 15 minutes while it&apos;s running — or click <b>Update Selected</b> in it any time.
-              {desktop.lastSummary ? ` Last update: ${desktop.lastSummary.toLowerCase()}.` : ""}
+              {desktop.lastSummary ? ` Last update: ${lowerFirst(desktop.lastSummary)}.` : ""}
               {desktop.companyFile ? <span className="mt-1 block text-xs text-slate-500">Company file: {desktop.companyFile}</span> : null}
             </p>
           ) : (
@@ -273,7 +252,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
             ) : null}
             <ConfirmForm
               action={disconnectQuickBooks}
-              message="Disconnect QuickBooks? The Web Connector won't be able to sign in, and nothing here stays linked to QuickBooks. Bills already brought in stay. Your QuickBooks file isn't touched."
+              message="Disconnect QuickBooks? The Web Connector won't be able to sign in, and nothing here stays linked to QuickBooks. Bills and payments already brought in stay. Your QuickBooks file isn't touched."
               className="ml-auto"
             >
               Disconnect
@@ -281,9 +260,40 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
           </div>
         </CardBody>
       </Card>
+      {synced ? <InvoicesCard itemId={desktop.invoiceItemId} items={entries("ITEM").filter((i) => i.active && costableItem(i))} desktop /> : null}
       <BillsWaiting waiting={waiting} entries={entries} openJobs={openJobs} />
       {synced ? <LinkCards {...linking} /> : null}
     </div>
+  );
+}
+
+/** Invoices out: the item a line goes on when its cost code isn't linked to one — the same for Online and Desktop. */
+function InvoicesCard({ itemId, items, desktop }: { itemId: string | null; items: QbEntry[]; desktop?: boolean }) {
+  // Desktop: they go on the Web Connector's next update, with the job's class — the one on its bills.
+  const when = desktop ? "on the next update after you send them, with the job's class from its bills," : "when you send them,";
+  return (
+    <Card>
+      <CardHeader
+        title="Invoices"
+        description={
+          itemId
+            ? `Invoices go to QuickBooks ${when} each line on its cost code's item — a line without a cost code (or one not linked to an item) goes on this item. Payments received in QuickBooks come back to them.`
+            : `Invoices go to QuickBooks ${when} each line on its cost code's item. Pick the item a line goes on when it has no cost code.`
+        }
+      />
+      <CardBody>
+        <div className="w-full sm:w-96">
+          <LinkPicker
+            action={setInvoiceItem}
+            hidden={{}}
+            value={itemId ?? ""}
+            label="QuickBooks item for lines without a cost code"
+            empty="— Pick an item —"
+            options={items.map((i) => ({ value: i.listId, label: [qbName(i.fullName), i.detail.description].filter(Boolean).join(" — ") }))}
+          />
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 

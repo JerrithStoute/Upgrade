@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 import { QboError, qboApi } from "./client";
 import { invoiceBody, taxProblem } from "./shape";
+import { queueInvoice } from "@/lib/qb/invoices";
 
 /**
  * Invoices go to QuickBooks Online when they're sent (and follow when their dates or notes change,
@@ -9,10 +10,16 @@ import { invoiceBody, taxProblem } from "./shape";
  * and it shows why with a "Send to QuickBooks again" button.
  */
 
-/** Sends (or updates) an invoice in QuickBooks. Returns the problem, if there was one (also kept on the invoice). */
+/**
+ * Sends (or updates) an invoice in QuickBooks. Returns the problem, if there was one (also kept on the
+ * invoice). QuickBooks Desktop: it waits for the next Web Connector update (src/lib/qb/invoices.ts).
+ */
 export async function pushInvoice(invoiceId: string): Promise<string | null> {
   const conn = await db.qboConnection.findFirst();
-  if (!conn) return null;
+  if (!conn) {
+    if (await db.qbConnection.findFirst({ select: { id: true } })) await queueInvoice(invoiceId);
+    return null;
+  }
   const inv = await db.invoice.findUnique({ where: { id: invoiceId }, include: { items: { orderBy: { sortOrder: "asc" }, include: { costCode: { select: { qbListId: true } } } }, project: { select: { qbListId: true, name: true, isSample: true } } } });
   // (The sample job never goes to QuickBooks.)
   if (!inv || inv.status === "DRAFT" || inv.project.isSample) return null;
@@ -61,5 +68,5 @@ async function freshToken(api: ReturnType<typeof qboApi>, id: string) {
 
 /** Whether payments for this invoice come from QuickBooks (and so aren't recorded by hand here). */
 export async function paymentsFromQuickBooks(inv: { qbTxnId: string | null }) {
-  return !!inv.qbTxnId && !!(await db.qboConnection.findFirst({ select: { id: true } }));
+  return !!inv.qbTxnId && !!((await db.qboConnection.findFirst({ select: { id: true } })) ?? (await db.qbConnection.findFirst({ select: { id: true } })));
 }

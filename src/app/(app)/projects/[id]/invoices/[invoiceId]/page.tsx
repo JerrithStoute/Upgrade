@@ -2,7 +2,7 @@ import { ClientEmailNote } from "@/components/client-email-note";
 import Link from "@/components/link";
 import { BackToList } from "@/components/list-return";
 import { notFound } from "next/navigation";
-import { AlertTriangle, CheckCircle2, Printer } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clock, Printer } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
@@ -67,8 +67,10 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
   });
   if (!inv) notFound();
   const codes = inv.status === "DRAFT" ? await db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true } }) : [];
-  const qbo = await db.qboConnection.findFirst({ select: { id: true } });
-  // Payments for an invoice in QuickBooks Online come from there (recorded there, they show up here).
+  // QuickBooks Online or Desktop (Desktop: it goes on the Web Connector's next update).
+  const [online, desktop] = await Promise.all([db.qboConnection.findFirst({ select: { id: true } }), db.qbConnection.findFirst({ select: { id: true } })]);
+  const qbo = online ?? desktop;
+  // Payments for an invoice in QuickBooks come from there (recorded there, they show up here).
   const qbPayments = !!qbo && !!inv.qbTxnId;
 
   const isDraft = inv.status === "DRAFT";
@@ -391,12 +393,16 @@ export default async function InvoiceDetailPage({ params, searchParams }: { para
                 <Row label="Notes">{inv.notes ? <span className="whitespace-pre-line">{inv.notes}</span> : <span className="text-slate-400">Shown on the invoice — none</span>}</Row>
               </div>
             )}
-            {qbo && inv.qbTxnId && !inv.qbError ? (
+            {qbo && inv.qbPending && !inv.qbError ? (
+              <p className="flex items-center gap-1.5 border-t border-slate-100 px-4 py-2 text-xs text-slate-600">
+                <Clock className="h-3.5 w-3.5 shrink-0" /> Goes to QuickBooks on the next update — the Web Connector runs every 15 minutes.
+              </p>
+            ) : qbo && inv.qbTxnId && !inv.qbError ? (
               <p className="flex items-center gap-1.5 border-t border-slate-100 px-4 py-2 text-xs text-emerald-700">
                 <CheckCircle2 className="h-3.5 w-3.5 shrink-0" /> In QuickBooks{inv.qbSentAt ? ` since ${fmtDate(inv.qbSentAt)}` : ""} — payments received there show up here.
               </p>
             ) : qbo && isDraft ? (
-              <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Goes to QuickBooks when you mark it sent.</p>
+              <p className="border-t border-slate-100 px-4 py-2 text-xs text-slate-500">Goes to QuickBooks when you mark it sent{desktop ? " (on the next update)" : ""}.</p>
             ) : null}
           </section>
 

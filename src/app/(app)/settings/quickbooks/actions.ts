@@ -40,7 +40,7 @@ export async function newQuickBooksPassword(): Promise<PasswordState> {
 
 /**
  * Disconnect: the Web Connector can't sign in any more, and nothing here stays linked to QuickBooks.
- * Bills already brought in stay — as ordinary ones you can change here.
+ * Bills and payments already brought in stay — as ordinary ones you can change here.
  */
 export const disconnectQuickBooks = friendly(async function disconnectQuickBooks() {
   const me = await requireEdit("quickbooks");
@@ -48,6 +48,8 @@ export const disconnectQuickBooks = friendly(async function disconnectQuickBooks
   await db.qbListItem.deleteMany({});
   await db.qbTxn.deleteMany({});
   await db.vendorBill.updateMany({ where: { qbTxnId: { not: null } }, data: { qbTxnId: null } });
+  await db.payment.updateMany({ where: { qbTxnId: { not: null } }, data: { qbTxnId: null } });
+  await db.invoice.updateMany({ where: { OR: [{ qbTxnId: { not: null } }, { qbError: { not: null } }, { qbPending: true }] }, data: { qbTxnId: null, qbSyncToken: null, qbError: null, qbPending: false } });
   await db.vendor.updateMany({ where: { qbListId: { not: null } }, data: { qbListId: null } });
   await db.project.updateMany({ where: { qbListId: { not: null } }, data: { qbListId: null } });
   await db.costCode.updateMany({ where: { qbListId: { not: null } }, data: { qbListId: null } });
@@ -95,6 +97,7 @@ export const setInvoiceItem = friendly(async function setInvoiceItem(fd: FormDat
     if (!item || !item.active) throw new Error("That isn't an active QuickBooks item — update and try again");
   }
   await db.qboConnection.updateMany({ data: { invoiceItemId: listId } });
+  await db.qbConnection.updateMany({ data: { invoiceItemId: listId } });
   revalidatePath(PATH);
 });
 

@@ -985,11 +985,13 @@ model Invoice {
   // Tax on this invoice, your call each time (null = none). Kept as a tax line among the items.
   taxPct      Float?
   taxLabel    String    @default("Sales tax")
-  // QuickBooks Online: the invoice it is there (Id, SyncToken), when it went, and why it didn't.
+  // QuickBooks: the invoice it is there (Online: Id, SyncToken; Desktop: TxnID, EditSequence), when it went, and why it didn't.
   qbTxnId     String?
   qbSyncToken String?
   qbSentAt    DateTime?
   qbError     String?
+  // QuickBooks Desktop: waiting to go (or follow) on the next Web Connector update.
+  qbPending   Boolean   @default(false)
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
 
@@ -2371,8 +2373,10 @@ model QbConnection {
   lastSyncAt   DateTime?
   lastError    String?
   lastSummary  String? // what the last update brought in ("3 bills brought in or changed")
-  // Bills are read as changed since this (null: the last 12 months are read).
+  // Bills and payments are read as changed since this (null: the last 12 months are read).
   billsSince   DateTime?
+  // The QuickBooks item an invoice line goes on when its cost code isn't linked to one.
+  invoiceItemId String?
   // The Web Connector session in progress: its ticket and what's left to ask for (JSON).
   ticket       String?   @unique
   ticketState  String?

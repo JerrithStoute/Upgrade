@@ -5,30 +5,45 @@ import { db, systemDb } from "@/lib/db";
 import { runAsCompany } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { recordFailure, retryAfter } from "@/lib/rate-limit";
-import { LIST_STEPS, billRequest, deletedBillsRequest, listRequest, readBillReply, readDeletedReply, readListReply, type BillsFrom, type ListStep } from "./qbxml";
+import {
+  LIST_STEPS,
+  billRequest,
+  deletedRequest,
+  listRequest,
+  paymentRequest,
+  readBillReply,
+  readDeletedReply,
+  readListReply,
+  readPaymentReply,
+  type BillsFrom,
+  type ListStep,
+} from "./qbxml";
 import { planCostCodes, planJobs, planVendors, type QbEntry } from "./match";
 import { cleanVendorName } from "@/lib/vendors";
 import { renameVendorEverywhere } from "@/lib/vendor-list";
 import { fromQbDate } from "@/lib/qbo/shape";
+import { invoiceRequest, nextInvoiceJob, takeInvoiceReply, type InvoiceJob } from "./invoices";
 
 /**
  * One Web Connector session (the Web Connector on the QuickBooks computer calls /api/qbwc):
- *   authenticate → sendRequestXML / receiveResponseXML, once per list page → closeConnection.
+ *   authenticate → sendRequestXML / receiveResponseXML, once per request → closeConnection.
  * Each sync reads QuickBooks' lists (company, vendors, customers & jobs, items, classes), keeps
- * them (QbListItem), then links vendors, jobs and cost codes (match.ts). Then bills: the first
- * time, the last 12 months; after that, the ones added, changed or deleted since the last update.
- * They go on their jobs here the same way as from QuickBooks Online (qbo/sync.ts applyBills). It
- * only reads QuickBooks — nothing is written there.
+ * them (QbListItem), then links vendors, jobs and cost codes (match.ts). Invoices sent here since
+ * the last update go to QuickBooks (invoices.ts) — the only thing written there. Then bills and
+ * customer payments: the first time, the last 12 months; after that, the ones added, changed or
+ * deleted since the last update. They're put on their jobs and invoices here the same way as from
+ * QuickBooks Online (qbo/sync.ts applyBills, applyPayments).
  *
  * Where it's at between calls is kept on the connection (ticketState), not in memory, so a
  * restart in the middle doesn't lose the place.
  */
 
-/** What a sync asks for, in order: the lists, then bills, then (on a later update) bills deleted since. */
-const STEPS = [...LIST_STEPS, "bills", "deleted"] as const;
+/** What a sync asks for, in order: the lists, invoices out, bills, payments, then (on a later update) what was deleted since. */
+const STEPS = [...LIST_STEPS, "invoices", "bills", "payments", "deleted"] as const;
 type Step = (typeof STEPS)[number];
 
-type State = { step: number; iteratorId: string | null; startedAt: string; bills?: BillsFrom };
+/** `invoice`: the invoice going now; `tried`: invoices done this update (so one QuickBooks refuses isn't asked again). */
+type State = { step: number; iteratorId: string | null; startedAt: string; bills?: BillsFrom; invoice?: InvoiceJob | null; tried?: string[] };
 
 const TICKET_HOURS = 2;
 const FIRST_MONTHS = 12;
@@ -45,8 +60,33 @@ function billsFrom(since: Date | null, now: Date): BillsFrom {
   return { datedFrom: day(from) };
 }
 
-const request = (step: Step, s: State) =>
-  step === "bills" ? billRequest(s.bills!, s.iteratorId) : step === "deleted" ? deletedBillsRequest("changedSince" in s.bills! ? s.bills.changedSince : day(new Date())) : listRequest(step, s.iteratorId);
+async function request(step: Step, s: State) {
+  if (step === "invoices") return s.invoice ? invoiceRequest(s.invoice) : "";
+  if (step === "bills") return billRequest(s.bills!, s.iteratorId);
+  if (step === "payments") return paymentRequest(s.bills!, s.iteratorId);
+  if (step === "deleted") return deletedRequest("changedSince" in s.bills! ? s.bills.changedSince : day(new Date()));
+  return listRequest(step, s.iteratorId);
+}
+
+/**
+ * The step after this one — past the ones with nothing to ask: no invoices waiting, or (the first
+ * time, when 12 months are read in full) deletions, since what wasn't read is gone.
+ */
+async function advance(s: State, companyId: string): Promise<State> {
+  let next: State = { ...s, step: s.step + 1, iteratorId: null };
+  for (;;) {
+    const step = STEPS[next.step];
+    if (step === "invoices") {
+      const invoice = await runAsCompany(companyId, () => nextInvoiceJob(next.tried ?? []));
+      if (invoice) return { ...next, invoice };
+    } else if (!(step === "deleted" && !("changedSince" in s.bills!))) return next;
+    next = { ...next, step: next.step + 1, invoice: null };
+  }
+}
+
+/** Stored bills from before classes were kept: read the 12 months again once, to learn each job's class. */
+const billsWithoutClasses = (companyId: string) =>
+  runAsCompany(companyId, () => db.qbTxn.findFirst({ where: { kind: "BILL", AND: [{ data: { contains: '"lines":[{' } }, { NOT: { data: { contains: '"classId"' } } }] }, select: { id: true } }));
 
 const byTicket = async (ticket: string) => {
   if (!ticket) return null;
@@ -76,7 +116,8 @@ export async function qbAuthenticate(username: string, password: string): Promis
   }
   const ticket = randomBytes(24).toString("hex");
   const now = new Date();
-  const state: State = { step: 0, iteratorId: null, startedAt: now.toISOString(), bills: billsFrom(c.billsSince, now) };
+  const since = c.billsSince && !(await billsWithoutClasses(c.companyId)) ? c.billsSince : null;
+  const state: State = { step: 0, iteratorId: null, startedAt: now.toISOString(), bills: billsFrom(since, now) };
   await systemDb.qbConnection.update({ where: { id: c.id }, data: { ticket, ticketState: JSON.stringify(state), ticketAt: new Date() } });
   // Once tied to a company file, name it: the Web Connector opens that one (and no other).
   return [ticket, c.companyFile ?? ""];
@@ -97,7 +138,7 @@ export async function qbNextRequest(ticket: string, companyFile: string): Promis
   if (!c.companyFile && companyFile) await systemDb.qbConnection.update({ where: { id: c.id }, data: { companyFile } });
   const s = stateOf(c.ticketState);
   if (!s.bills) s.bills = billsFrom(c.billsSince, new Date());
-  return request(STEPS[Math.min(s.step, STEPS.length - 1)], s);
+  return runAsCompany(c.companyId, () => request(STEPS[Math.min(s.step, STEPS.length - 1)], s));
 }
 
 /** receiveResponseXML: QuickBooks' answer. Returns how far along (100 = done; below 0 = stopped). */
@@ -115,21 +156,30 @@ export async function qbTakeResponse(ticket: string, response: string, hresult: 
   if (!step) return 100;
   const seenAt = new Date();
   let iteratorId: string | undefined;
+  let following: InvoiceJob | null = null;
   try {
-    if (step === "bills") {
-      const reply = readBillReply(response);
+    if (step === "invoices") {
+      // (A refusal stays on that invoice — the rest of the update goes on.)
+      if (s.invoice) following = await runAsCompany(c.companyId, () => takeInvoiceReply(s.invoice!, response));
+    } else if (step === "bills" || step === "payments") {
+      const reply = step === "bills" ? readBillReply(response) : readPaymentReply(response);
       if (!reply.ok) return fail(`QuickBooks said: ${reply.error}`);
+      const kind = step === "bills" ? "BILL" : "PAYMENT";
+      const txns = "bills" in reply ? reply.bills : reply.payments;
       await runAsCompany(c.companyId, async () => {
-        for (const b of reply.bills) {
-          const row = { txnDate: fromQbDate(b.data.date), data: JSON.stringify(b.data), seenAt };
-          await db.qbTxn.upsert({ where: { companyId_kind_txnId: { companyId: c.companyId, kind: "BILL", txnId: b.txnId } }, create: { kind: "BILL", txnId: b.txnId, ...row }, update: row });
+        for (const t of txns) {
+          const row = { txnDate: fromQbDate(t.data.date), data: JSON.stringify(t.data), seenAt };
+          await db.qbTxn.upsert({ where: { companyId_kind_txnId: { companyId: c.companyId, kind, txnId: t.txnId } }, create: { kind, txnId: t.txnId, ...row }, update: row });
         }
       });
       iteratorId = reply.iteratorId;
     } else if (step === "deleted") {
       const reply = readDeletedReply(response);
       if (!reply.ok) return fail(`QuickBooks said: ${reply.error}`);
-      if (reply.txnIds.length) await runAsCompany(c.companyId, () => db.qbTxn.deleteMany({ where: { kind: "BILL", txnId: { in: reply.txnIds } } }));
+      for (const kind of ["BILL", "PAYMENT"] as const) {
+        const ids = reply.deleted.filter((d) => d.kind === kind).map((d) => d.txnId);
+        if (ids.length) await runAsCompany(c.companyId, () => db.qbTxn.deleteMany({ where: { kind, txnId: { in: ids } } }));
+      }
     } else {
       const reply = readListReply(step as ListStep, response);
       if (!reply.ok) return fail(`QuickBooks said: ${reply.error}`);
@@ -146,25 +196,40 @@ export async function qbTakeResponse(ticket: string, response: string, hresult: 
     return fail("QuickBooks' answer couldn't be read.");
   }
 
-  let next: State = iteratorId ? { ...s, iteratorId } : { ...s, step: s.step + 1, iteratorId: null };
-  // The first time (12 months read in full) there's nothing to ask about deletions: what wasn't read is gone.
-  if (STEPS[next.step] === "deleted" && !("changedSince" in s.bills)) next = { ...next, step: next.step + 1 };
+  let next: State;
+  if (iteratorId) next = { ...s, iteratorId };
+  else if (step === "invoices") {
+    // This invoice's next request (find → change), or the next waiting invoice, or on to bills.
+    const tried = following ? (s.tried ?? []) : [...(s.tried ?? []), s.invoice?.id ?? ""];
+    const invoice = following ?? (await runAsCompany(c.companyId, () => nextInvoiceJob(tried)));
+    next = invoice ? { ...s, invoice, tried } : await advance({ ...s, tried, invoice: null }, c.companyId);
+  } else next = await advance(s, c.companyId);
   if (next.step < STEPS.length) {
     await systemDb.qbConnection.update({ where: { id: c.id }, data: { ticketState: JSON.stringify(next) } });
     return Math.max(1, Math.min(99, Math.round((next.step / STEPS.length) * 100)));
   }
 
-  // All read: anything QuickBooks didn't list this time is gone from it. Then link things up and put bills on their jobs.
+  // All read: anything QuickBooks didn't list this time is gone from it. Then link things up and put
+  // bills on their jobs and payments on their invoices.
   const started = new Date(s.startedAt);
   let summary = "Up to date";
   await runAsCompany(c.companyId, async () => {
     await db.qbListItem.deleteMany({ where: { seenAt: { lt: started } } });
-    if ("datedFrom" in s.bills!) await db.qbTxn.deleteMany({ where: { kind: "BILL", txnDate: { gte: fromQbDate(s.bills!.datedFrom) }, seenAt: { lt: started } } });
+    if ("datedFrom" in s.bills!)
+      await db.qbTxn.deleteMany({ where: { kind: { in: ["BILL", "PAYMENT"] }, txnDate: { gte: fromQbDate(s.bills!.datedFrom) }, seenAt: { lt: started } } });
     await applyMatches();
-    const { applyBills } = await import("@/lib/qbo/sync");
+    const { applyBills, applyPayments } = await import("@/lib/qbo/sync");
     const bills = await applyBills();
-    if (bills.changed) {
-      summary = `${bills.changed} bill${bills.changed === 1 ? "" : "s"} brought in or changed`;
+    const payments = await applyPayments();
+    const tried = (s.tried ?? []).filter(Boolean);
+    const sent = tried.length ? await db.invoice.count({ where: { id: { in: tried }, qbError: null } }) : 0;
+    const said = [
+      sent && `${sent} invoice${sent === 1 ? "" : "s"} sent to QuickBooks`,
+      bills.changed && `${bills.changed} bill${bills.changed === 1 ? "" : "s"} brought in or changed`,
+      payments.changed && `${payments.changed} payment${payments.changed === 1 ? "" : "s"} brought in or changed`,
+    ].filter(Boolean);
+    if (said.length) {
+      summary = said.join(", ");
       await logActivity({ type: "quickbooks.synced", description: `QuickBooks: ${summary}` });
     }
   });

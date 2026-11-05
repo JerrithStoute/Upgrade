@@ -1,6 +1,22 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { billRequest, deletedBillsRequest, listRequest, qwcFile, readBillReply, readDeletedReply, readListReply, readSoapCall, soapResponse } from "./qbxml";
+import {
+  billRequest,
+  deletedRequest,
+  invoiceAddRequest,
+  invoiceModRequest,
+  invoiceVoidRequest,
+  listRequest,
+  paymentRequest,
+  qwcFile,
+  readBillReply,
+  readDeletedReply,
+  readInvoiceReply,
+  readListReply,
+  readPaymentReply,
+  readSoapCall,
+  soapResponse,
+} from "./qbxml";
 import { escapeXml, parseXml } from "./xml";
 
 const reply = (body: string) => `<?xml version="1.0" ?><QBXML><QBXMLMsgsRs>${body}</QBXMLMsgsRs></QBXML>`;
@@ -112,7 +128,7 @@ test("asks for bills: the last 12 months the first time, then what changed, then
   const next = billRequest({ changedSince: "2026-11-04" }, "{it-2}");
   assert.match(next, /iterator="Continue" iteratorID="\{it-2\}"/);
   assert.match(next, /<ModifiedDateRangeFilter><FromModifiedDate>2026-11-04T00:00:00<\/FromModifiedDate><\/ModifiedDateRangeFilter>/);
-  assert.match(deletedBillsRequest("2026-11-04"), /<TxnDeletedQueryRq requestID="1"><TxnDelType>Bill<\/TxnDelType><DeletedDateRangeFilter><FromDeletedDate>2026-11-04T00:00:00<\/FromDeletedDate>/);
+  assert.match(deletedRequest("2026-11-04"), /<TxnDeletedQueryRq requestID="1"><TxnDelType>Bill<\/TxnDelType><TxnDelType>ReceivePayment<\/TxnDelType><DeletedDateRangeFilter><FromDeletedDate>2026-11-04T00:00:00<\/FromDeletedDate>/);
   parseXml(first);
 });
 
@@ -121,7 +137,7 @@ test("reads a bill: item lines, expense lines and a group, each on its own job",
     reply(`<BillQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK" iteratorRemainingCount="0" iteratorID="{it-3}">
       <BillRet><TxnID>1A2-1730000000</TxnID><VendorRef><ListID>80000001-1</ListID><FullName>Parker Lumber</FullName></VendorRef><TxnDate>2026-11-02</TxnDate><DueDate>2026-12-02</DueDate><AmountDue>1500.50</AmountDue><Memo>Framing pkg</Memo><RefNumber>INV-88</RefNumber><IsPaid>false</IsPaid><OpenAmount>500.50</OpenAmount>
         <ExpenseLineRet><TxnLineID>1</TxnLineID><AccountRef><FullName>Permits</FullName></AccountRef><Amount>100.00</Amount><CustomerRef><ListID>C-1</ListID><FullName>Smith:Smith House</FullName></CustomerRef></ExpenseLineRet>
-        <ItemLineRet><TxnLineID>2</TxnLineID><ItemRef><ListID>I-2102</ListID><FullName>2102</FullName></ItemRef><Desc>2x6 studs</Desc><Amount>1200.50</Amount><CustomerRef><ListID>C-1</ListID><FullName>Smith:Smith House</FullName></CustomerRef></ItemLineRet>
+        <ItemLineRet><TxnLineID>2</TxnLineID><ItemRef><ListID>I-2102</ListID><FullName>2102</FullName></ItemRef><Desc>2x6 studs</Desc><Amount>1200.50</Amount><CustomerRef><ListID>C-1</ListID><FullName>Smith:Smith House</FullName></CustomerRef><ClassRef><ListID>K-1</ListID><FullName>2026 Construction:Smith</FullName></ClassRef></ItemLineRet>
         <ItemGroupLineRet><TxnLineID>3</TxnLineID><ItemGroupRef><FullName>Kit</FullName></ItemGroupRef>
           <ItemLineRet><TxnLineID>4</TxnLineID><ItemRef><ListID>I-2200</ListID><FullName>2200</FullName></ItemRef><Amount>200.00</Amount><CustomerRef><ListID>C-2</ListID><FullName>Jones</FullName></CustomerRef></ItemLineRet>
         </ItemGroupLineRet>
@@ -144,9 +160,9 @@ test("reads a bill: item lines, expense lines and a group, each on its own job",
       total: 1500.5,
       balance: 500.5,
       lines: [
-        { description: "Permits", itemId: null, customerId: "C-1", customerName: "Smith:Smith House", amount: 100 },
-        { description: "2x6 studs", itemId: "I-2102", customerId: "C-1", customerName: "Smith:Smith House", amount: 1200.5 },
-        { description: "2200", itemId: "I-2200", customerId: "C-2", customerName: "Jones", amount: 200 },
+        { description: "Permits", itemId: null, customerId: "C-1", customerName: "Smith:Smith House", amount: 100, classId: null },
+        { description: "2x6 studs", itemId: "I-2102", customerId: "C-1", customerName: "Smith:Smith House", amount: 1200.5, classId: "K-1" },
+        { description: "2200", itemId: "I-2200", customerId: "C-2", customerName: "Jones", amount: 200, classId: null },
       ],
     },
   });
@@ -158,9 +174,50 @@ test("reads deleted bills, and QuickBooks' refusals", () => {
   const d = readDeletedReply(
     reply(`<TxnDeletedQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK"><TxnDeletedRet><TxnDelType>Bill</TxnDelType><TxnID>1A2-1730000000</TxnID></TxnDeletedRet></TxnDeletedQueryRs>`),
   );
-  assert.deepEqual(d, { ok: true, txnIds: ["1A2-1730000000"] });
-  assert.deepEqual(readDeletedReply(reply(`<TxnDeletedQueryRs requestID="1" statusCode="1" statusSeverity="Info" statusMessage="No match"/>`)), { ok: true, txnIds: [] });
+  assert.deepEqual(d, { ok: true, deleted: [{ kind: "BILL", txnId: "1A2-1730000000" }] });
+  assert.deepEqual(readDeletedReply(reply(`<TxnDeletedQueryRs requestID="1" statusCode="1" statusSeverity="Info" statusMessage="No match"/>`)), { ok: true, deleted: [] });
   const bad = readBillReply(reply(`<BillQueryRs requestID="1" statusCode="3120" statusSeverity="Error" statusMessage="Object not found"/>`));
   assert.equal(bad.ok, false);
   assert.equal(bad.error, "Object not found");
+});
+
+test("reads customer payments: what each paid on which invoice", () => {
+  assert.match(paymentRequest({ changedSince: "2026-11-04" }), /<ReceivePaymentQueryRq requestID="1" iterator="Start"><MaxReturned>100<\/MaxReturned><ModifiedDateRangeFilter>.*<IncludeLineItems>true<\/IncludeLineItems><\/ReceivePaymentQueryRq>/);
+  const r = readPaymentReply(
+    reply(`<ReceivePaymentQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK" iteratorRemainingCount="0">
+      <ReceivePaymentRet><TxnID>P-1</TxnID><TxnDate>2026-11-04</TxnDate><RefNumber>1043</RefNumber><PaymentMethodRef><FullName>Check</FullName></PaymentMethodRef><TotalAmount>5000</TotalAmount>
+        <AppliedToTxnRet><TxnID>INV-9</TxnID><TxnType>Invoice</TxnType><PaymentAmount>5000.00</PaymentAmount></AppliedToTxnRet>
+      </ReceivePaymentRet>
+    </ReceivePaymentQueryRs>`),
+  );
+  assert.deepEqual(r, { ok: true, payments: [{ txnId: "P-1", data: { date: "2026-11-04", reference: "1043", method: "Check", links: [{ invoiceId: "INV-9", amount: 5000 }] } }] });
+});
+
+test("an invoice to QuickBooks Desktop: its job, each line on its item, the job's class; then changes and voids", () => {
+  const inv = {
+    number: 12,
+    title: "Draw 2",
+    issueDate: new Date("2026-11-05T12:00:00Z"),
+    dueDate: new Date("2026-11-20T12:00:00Z"),
+    notes: null,
+    items: [
+      { description: "Framing <draw>", quantity: 1, unitPrice: 25000, isTax: false, itemId: "I-2102" },
+      { description: "Allowance", quantity: 2.5, unitPrice: 100.123456, isTax: false, itemId: null },
+      { description: "Tax", quantity: 1, unitPrice: 0, isTax: true },
+    ],
+  };
+  const add = invoiceAddRequest(inv, { customerId: "C-1", itemId: "I-ANY", classId: "K-1" });
+  parseXml(add);
+  assert.match(add, /<InvoiceAdd><CustomerRef><ListID>C-1<\/ListID><\/CustomerRef><ClassRef><ListID>K-1<\/ListID><\/ClassRef><TxnDate>2026-11-05<\/TxnDate><RefNumber>12<\/RefNumber><DueDate>2026-11-20<\/DueDate><Memo>Draw 2 — from The Builder Station<\/Memo>/);
+  assert.match(add, /<InvoiceLineAdd><ItemRef><ListID>I-2102<\/ListID><\/ItemRef><Desc>Framing &lt;draw&gt;<\/Desc><Quantity>1<\/Quantity><Rate>25000<\/Rate><ClassRef><ListID>K-1<\/ListID><\/ClassRef><\/InvoiceLineAdd>/);
+  assert.match(add, /<ItemRef><ListID>I-ANY<\/ListID><\/ItemRef><Desc>Allowance<\/Desc><Quantity>2\.5<\/Quantity><Rate>100\.12346<\/Rate>/, "no cost code item: the picked one");
+  assert.doesNotMatch(add, /Tax/);
+  assert.doesNotMatch(invoiceAddRequest(inv, { customerId: "C-1", itemId: "I-ANY", classId: null }), /ClassRef/, "no class on its bills: none");
+  assert.match(invoiceModRequest(inv, "T-1", "1730"), /<InvoiceMod><TxnID>T-1<\/TxnID><EditSequence>1730<\/EditSequence><TxnDate>2026-11-05<\/TxnDate><RefNumber>12<\/RefNumber>/);
+  assert.match(invoiceVoidRequest("T-1"), /<TxnVoidRq requestID="1"><TxnVoidType>Invoice<\/TxnVoidType><TxnID>T-1<\/TxnID><\/TxnVoidRq>/);
+
+  assert.deepEqual(readInvoiceReply(reply(`<InvoiceAddRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK"><InvoiceRet><TxnID>T-1</TxnID><EditSequence>1730</EditSequence></InvoiceRet></InvoiceAddRs>`)), { ok: true, txnId: "T-1", editSequence: "1730" });
+  assert.deepEqual(readInvoiceReply(reply(`<InvoiceAddRs requestID="1" statusCode="3140" statusSeverity="Error" statusMessage="Invalid reference to Item"/>`)), { ok: false, error: "Invalid reference to Item" });
+  assert.equal(readInvoiceReply(reply(`<InvoiceQueryRs requestID="1" statusCode="1" statusSeverity="Info" statusMessage="No match"/>`)).ok, false, "gone from QuickBooks");
+  assert.equal(readInvoiceReply(reply(`<TxnVoidRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK"><TxnVoidType>Invoice</TxnVoidType><TxnID>T-1</TxnID></TxnVoidRs>`)).txnId, "T-1");
 });

@@ -1,5 +1,5 @@
 import { child, children, escapeXml, parseXml, text, type XmlNode } from "./xml";
-import type { BillData, BillLine } from "@/lib/qbo/shape";
+import { qbDate, type BillData, type BillLine, type InvoiceOut, type PaymentData } from "@/lib/qbo/shape";
 
 /**
  * qbXML: what we ask QuickBooks for, and what its answers say. Plain functions — no database —
@@ -122,21 +122,28 @@ const BILL_PAGE = 100; // bills come with their lines, so fewer to a page
  */
 export type BillsFrom = { changedSince: string } | { datedFrom: string };
 
+const fromFilter = (from: BillsFrom) =>
+  "changedSince" in from
+    ? `<ModifiedDateRangeFilter><FromModifiedDate>${escapeXml(from.changedSince)}T00:00:00</FromModifiedDate></ModifiedDateRangeFilter>`
+    : `<TxnDateRangeFilter><FromTxnDate>${escapeXml(from.datedFrom)}</FromTxnDate></TxnDateRangeFilter>`;
+
 /** Bills with their lines, a page at a time. (Going on, the whole query is asked again with the iterator.) */
 export function billRequest(from: BillsFrom, iteratorId?: string | null): string {
   const it = iteratorId ? `iterator="Continue" iteratorID="${escapeXml(iteratorId)}"` : `iterator="Start"`;
-  const filter =
-    "changedSince" in from
-      ? `<ModifiedDateRangeFilter><FromModifiedDate>${escapeXml(from.changedSince)}T00:00:00</FromModifiedDate></ModifiedDateRangeFilter>`
-      : `<TxnDateRangeFilter><FromTxnDate>${escapeXml(from.datedFrom)}</FromTxnDate></TxnDateRangeFilter>`;
-  return wrap(`<BillQueryRq requestID="1" ${it}><MaxReturned>${BILL_PAGE}</MaxReturned>${filter}<IncludeLineItems>true</IncludeLineItems></BillQueryRq>`);
+  return wrap(`<BillQueryRq requestID="1" ${it}><MaxReturned>${BILL_PAGE}</MaxReturned>${fromFilter(from)}<IncludeLineItems>true</IncludeLineItems></BillQueryRq>`);
 }
 
-/** Bills deleted in QuickBooks since that day. */
-export function deletedBillsRequest(since: string): string {
+/** Bills and customer payments deleted in QuickBooks since that day. */
+export function deletedRequest(since: string): string {
   return wrap(
-    `<TxnDeletedQueryRq requestID="1"><TxnDelType>Bill</TxnDelType><DeletedDateRangeFilter><FromDeletedDate>${escapeXml(since)}T00:00:00</FromDeletedDate></DeletedDateRangeFilter></TxnDeletedQueryRq>`,
+    `<TxnDeletedQueryRq requestID="1"><TxnDelType>Bill</TxnDelType><TxnDelType>ReceivePayment</TxnDelType><DeletedDateRangeFilter><FromDeletedDate>${escapeXml(since)}T00:00:00</FromDeletedDate></DeletedDateRangeFilter></TxnDeletedQueryRq>`,
   );
+}
+
+/** Customer payments with what they paid on each invoice, a page at a time (the same window as bills). */
+export function paymentRequest(from: BillsFrom, iteratorId?: string | null): string {
+  const it = iteratorId ? `iterator="Continue" iteratorID="${escapeXml(iteratorId)}"` : `iterator="Start"`;
+  return wrap(`<ReceivePaymentQueryRq requestID="1" ${it}><MaxReturned>${BILL_PAGE}</MaxReturned>${fromFilter(from)}<IncludeLineItems>true</IncludeLineItems></ReceivePaymentQueryRq>`);
 }
 
 const money = (s: string | undefined) => Math.round((Number(s) || 0) * 100) / 100;
@@ -153,6 +160,7 @@ export function billFromXml(r: XmlNode): { txnId: string; data: BillData } | nul
       customerId: text(l, "CustomerRef/ListID") || null,
       customerName: text(l, "CustomerRef/FullName") || null,
       amount: money(text(l, "Amount")),
+      classId: text(l, "ClassRef/ListID") || null,
     });
   for (const l of r.children) {
     if (l.name === "ExpenseLineRet") line(l, text(l, "Memo"), text(l, "AccountRef/FullName"), null);
@@ -192,13 +200,92 @@ export function readBillReply(xml: string): BillReply {
   return { ok: true, bills, remaining, ...(remaining > 0 && rs.attrs.iteratorID ? { iteratorId: rs.attrs.iteratorID } : {}) };
 }
 
-/** Reads QuickBooks' reply to "which bills were deleted": their ids. */
-export function readDeletedReply(xml: string): { ok: boolean; error?: string; txnIds: string[] } {
-  const rs = child(child(parseXml(xml), "QBXMLMsgsRs"), "TxnDeletedQueryRs");
-  if (!rs) return { ok: false, error: "QuickBooks' answer was missing", txnIds: [] };
+/** The reply's one answer (…Rs) and whether QuickBooks refused (1, "nothing matched", isn't a refusal). */
+function answerOf(xml: string, rsName: string) {
+  const rs = child(child(parseXml(xml), "QBXMLMsgsRs"), rsName);
+  if (!rs) return { rs, error: "QuickBooks' answer was missing" };
   const code = Number(rs.attrs.statusCode ?? 0);
-  if (code !== 0 && code !== 1 && rs.attrs.statusSeverity === "Error") return { ok: false, error: rs.attrs.statusMessage || `QuickBooks error ${code}`, txnIds: [] };
-  return { ok: true, txnIds: children(rs, "TxnDeletedRet").flatMap((d) => text(d, "TxnID") ?? []) };
+  return { rs, error: code !== 0 && code !== 1 && rs.attrs.statusSeverity === "Error" ? rs.attrs.statusMessage || `QuickBooks error ${code}` : undefined };
+}
+
+/** Reads QuickBooks' reply to "what was deleted": bills and payments, by id. */
+export function readDeletedReply(xml: string): { ok: boolean; error?: string; deleted: { kind: "BILL" | "PAYMENT"; txnId: string }[] } {
+  const { rs, error } = answerOf(xml, "TxnDeletedQueryRs");
+  if (error) return { ok: false, error, deleted: [] };
+  return {
+    ok: true,
+    deleted: children(rs, "TxnDeletedRet").flatMap((d) => {
+      const txnId = text(d, "TxnID");
+      const type = text(d, "TxnDelType");
+      return txnId && (type === "Bill" || type === "ReceivePayment") ? [{ kind: type === "Bill" ? ("BILL" as const) : ("PAYMENT" as const), txnId }] : [];
+    }),
+  };
+}
+
+/** One customer payment: what it paid on each invoice (kept like a QuickBooks Online one). */
+export function paymentFromXml(r: XmlNode): { txnId: string; data: PaymentData } | null {
+  const txnId = text(r, "TxnID");
+  if (!txnId) return null;
+  return {
+    txnId,
+    data: {
+      date: text(r, "TxnDate") ?? "",
+      reference: text(r, "RefNumber") || null,
+      method: text(r, "PaymentMethodRef/FullName") || null,
+      links: children(r, "AppliedToTxnRet").flatMap((t) => {
+        const invoiceId = text(t, "TxnID");
+        return invoiceId && text(t, "TxnType") === "Invoice" ? [{ invoiceId, amount: money(text(t, "PaymentAmount")) }] : [];
+      }),
+    },
+  };
+}
+
+/** Reads QuickBooks' reply to a payment request. */
+export function readPaymentReply(xml: string): { ok: boolean; error?: string; payments: { txnId: string; data: PaymentData }[]; iteratorId?: string } {
+  const { rs, error } = answerOf(xml, "ReceivePaymentQueryRs");
+  if (error || !rs) return { ok: false, error, payments: [] };
+  const remaining = Number(rs.attrs.iteratorRemainingCount ?? 0) || 0;
+  return { ok: true, payments: children(rs, "ReceivePaymentRet").flatMap((p) => paymentFromXml(p) ?? []), ...(remaining > 0 && rs.attrs.iteratorID ? { iteratorId: rs.attrs.iteratorID } : {}) };
+}
+
+// --- Invoices (here → QuickBooks) -------------------------------------------------------------
+
+const ref = (tag: string, listId: string | null | undefined) => (listId ? `<${tag}><ListID>${escapeXml(listId)}</ListID></${tag}>` : "");
+/** A number as QuickBooks takes it (up to 5 decimals, no trailing zeros). */
+const num = (n: number) => String(Math.round(n * 100000) / 100000);
+const memo = (inv: InvoiceOut) => `<Memo>${escapeXml(`${inv.title} — from The Builder Station`.slice(0, 4000))}</Memo>`;
+const header = (inv: InvoiceOut) => `<TxnDate>${qbDate(inv.issueDate)}</TxnDate><RefNumber>${escapeXml(String(inv.number).slice(0, 11))}</RefNumber>${inv.dueDate ? `<DueDate>${qbDate(inv.dueDate)}</DueDate>` : ""}`;
+
+/**
+ * A new invoice: on the job's Customer:Job, each line on its cost code's item (or, without one, the
+ * item picked for invoice lines), with the job's class — the one on its bills — on it and each line.
+ * Tax lines aren't sent (taxProblem stops an invoice with tax first).
+ */
+export function invoiceAddRequest(inv: InvoiceOut, o: { customerId: string; itemId: string | null; classId: string | null }): string {
+  const lines = inv.items
+    .filter((i) => !i.isTax)
+    .map((i) => `<InvoiceLineAdd>${ref("ItemRef", i.itemId || o.itemId)}<Desc>${escapeXml(i.description.slice(0, 4000))}</Desc><Quantity>${num(i.quantity)}</Quantity><Rate>${num(i.unitPrice)}</Rate>${ref("ClassRef", o.classId)}</InvoiceLineAdd>`)
+    .join("");
+  return wrap(`<InvoiceAddRq requestID="1"><InvoiceAdd>${ref("CustomerRef", o.customerId)}${ref("ClassRef", o.classId)}${header(inv)}${memo(inv)}${lines}</InvoiceAdd></InvoiceAddRq>`);
+}
+
+/** An invoice already there is asked for first: its EditSequence changes whenever anyone edits it there. */
+export const invoiceQueryRequest = (txnId: string) => wrap(`<InvoiceQueryRq requestID="1"><TxnID>${escapeXml(txnId)}</TxnID></InvoiceQueryRq>`);
+
+/** Its number, dates and memo follow (its lines can't change here once sent — and anything added in QuickBooks stays). */
+export const invoiceModRequest = (inv: InvoiceOut, txnId: string, editSequence: string) =>
+  wrap(`<InvoiceModRq requestID="1"><InvoiceMod><TxnID>${escapeXml(txnId)}</TxnID><EditSequence>${escapeXml(editSequence)}</EditSequence>${header(inv)}${memo(inv)}</InvoiceMod></InvoiceModRq>`);
+
+export const invoiceVoidRequest = (txnId: string) => wrap(`<TxnVoidRq requestID="1"><TxnVoidType>Invoice</TxnVoidType><TxnID>${escapeXml(txnId)}</TxnID></TxnVoidRq>`);
+
+/** QuickBooks' answer to any of those four: the invoice's id and EditSequence there, or why it refused. */
+export function readInvoiceReply(xml: string): { ok: boolean; error?: string; txnId?: string; editSequence?: string } {
+  const rs = child(parseXml(xml), "QBXMLMsgsRs")?.children[0];
+  if (!rs) return { ok: false, error: "QuickBooks' answer was missing" };
+  const { error } = answerOf(xml, rs.name);
+  if (error) return { ok: false, error };
+  if (rs.name === "InvoiceQueryRs" && !child(rs, "InvoiceRet")) return { ok: false, error: "It isn't in QuickBooks any more" };
+  return { ok: true, txnId: text(rs, "InvoiceRet/TxnID") ?? text(rs, "TxnID"), editSequence: text(rs, "InvoiceRet/EditSequence") };
 }
 
 // --- The Web Connector's side: SOAP ------------------------------------------------------
