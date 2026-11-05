@@ -186,7 +186,8 @@ test("reads customer payments: what each paid on which invoice", () => {
   const r = readPaymentReply(
     reply(`<ReceivePaymentQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK" iteratorRemainingCount="0">
       <ReceivePaymentRet><TxnID>P-1</TxnID><TxnDate>2026-11-04</TxnDate><RefNumber>1043</RefNumber><PaymentMethodRef><FullName>Check</FullName></PaymentMethodRef><TotalAmount>5000</TotalAmount>
-        <AppliedToTxnRet><TxnID>INV-9</TxnID><TxnType>Invoice</TxnType><PaymentAmount>5000.00</PaymentAmount></AppliedToTxnRet>
+        <AppliedToTxnRet><TxnID>INV-9</TxnID><TxnType>Invoice</TxnType><TxnDate>2026-11-01</TxnDate><RefNumber>12</RefNumber><BalanceRemaining>20000.00</BalanceRemaining><Amount>5000.00</Amount></AppliedToTxnRet>
+        <AppliedToTxnRet><TxnID>INV-10</TxnID><TxnType>Invoice</TxnType><BalanceRemaining>0.00</BalanceRemaining><Amount>0.00</Amount></AppliedToTxnRet>
       </ReceivePaymentRet>
     </ReceivePaymentQueryRs>`),
   );

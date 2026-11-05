@@ -237,7 +237,9 @@ export function paymentFromXml(r: XmlNode): { txnId: string; data: PaymentData }
       method: text(r, "PaymentMethodRef/FullName") || null,
       links: children(r, "AppliedToTxnRet").flatMap((t) => {
         const invoiceId = text(t, "TxnID");
-        return invoiceId && text(t, "TxnType") === "Invoice" ? [{ invoiceId, amount: money(text(t, "PaymentAmount")) }] : [];
+        // Amount: what this payment put on that invoice (BalanceRemaining is what's still owed on it).
+        const amount = money(text(t, "Amount"));
+        return invoiceId && text(t, "TxnType") === "Invoice" && amount ? [{ invoiceId, amount }] : [];
       }),
     },
   };
