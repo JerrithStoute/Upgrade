@@ -8,7 +8,7 @@ import type { QbListRow } from "@/lib/qb/qbxml";
 import { approveBill, markBillPaid } from "@/lib/purchasing";
 import { deriveInvoiceStatus, invoiceTotal, paymentsTotal } from "@/lib/finance";
 import { QboError, qboApi } from "./client";
-import { billData, billPaid, billParts, fingerprint, listRow, paymentData, paymentMethod, type BillData, type PaymentData } from "./shape";
+import { billData, billPaid, billParts, fingerprint, fromQbDate, listRow, paymentData, paymentMethod, type BillData, type PaymentData } from "./shape";
 
 /**
  * One update from QuickBooks Online, for the current company:
@@ -25,11 +25,6 @@ const FIRST_MONTHS = 12;
 /** Intuit's "what changed" goes back 30 days; past that, everything in the window is read again. */
 const CHANGES_DAYS = 29;
 
-/** A QuickBooks date ("2026-10-28") as a date here (midday, like a date typed in). */
-export function fromQbDate(d: string | null | undefined) {
-  const [y, m, day] = (d ?? "").split("-").map(Number);
-  return y && m && day ? new Date(y, m - 1, day, 12) : new Date();
-}
 
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 

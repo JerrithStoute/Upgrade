@@ -133,6 +133,12 @@ export function billParts(b: BillData, jobOf: (customerId: string) => string | n
   return { parts: [...parts.values()], waiting: [...waiting.values()] };
 }
 
+/** A QuickBooks date ("2026-10-28") as a date here (midday, like a date typed in). */
+export function fromQbDate(d: string | null | undefined) {
+  const [y, m, day] = (d ?? "").split("-").map(Number);
+  return y && m && day ? new Date(y, m - 1, day, 12) : new Date();
+}
+
 /** Paid in full in QuickBooks. */
 export const billPaid = (b: BillData) => b.total > 0 && b.balance <= 0.004;
 

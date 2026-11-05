@@ -58,7 +58,7 @@ export default async function BillPage({ params, searchParams }: { params: Promi
   ]);
   const total = billTotal(bill.lines);
   const mayDecide = canApproveBills(user);
-  // From QuickBooks Online: kept there, followed here — nothing to approve, pay or change on this side.
+  // From QuickBooks (Online or Desktop): kept there, followed here — nothing to approve, pay or change on this side.
   const fromQb = !!bill.qbTxnId;
   const editable = !fromQb && (bill.status === "PENDING" || bill.status === "REJECTED");
   const decides = mayDecide && !fromQb;

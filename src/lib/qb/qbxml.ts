@@ -1,4 +1,5 @@
-import { child, escapeXml, parseXml, text, type XmlNode } from "./xml";
+import { child, children, escapeXml, parseXml, text, type XmlNode } from "./xml";
+import type { BillData, BillLine } from "@/lib/qbo/shape";
 
 /**
  * qbXML: what we ask QuickBooks for, and what its answers say. Plain functions — no database —
@@ -111,6 +112,95 @@ export function readListReply(step: ListStep, xml: string): ListReply {
   return { ok: true, rows, remaining, ...more };
 }
 
+// --- Bills (QuickBooks → here) ----------------------------------------------------------------
+
+const BILL_PAGE = 100; // bills come with their lines, so fewer to a page
+
+/**
+ * Where a bill read starts: `changedSince` (a later update — bills added or changed from that day on)
+ * or `datedFrom` (the first update — bills dated from that day on). Days as "2026-11-05".
+ */
+export type BillsFrom = { changedSince: string } | { datedFrom: string };
+
+/** Bills with their lines, a page at a time. (Going on, the whole query is asked again with the iterator.) */
+export function billRequest(from: BillsFrom, iteratorId?: string | null): string {
+  const it = iteratorId ? `iterator="Continue" iteratorID="${escapeXml(iteratorId)}"` : `iterator="Start"`;
+  const filter =
+    "changedSince" in from
+      ? `<ModifiedDateRangeFilter><FromModifiedDate>${escapeXml(from.changedSince)}T00:00:00</FromModifiedDate></ModifiedDateRangeFilter>`
+      : `<TxnDateRangeFilter><FromTxnDate>${escapeXml(from.datedFrom)}</FromTxnDate></TxnDateRangeFilter>`;
+  return wrap(`<BillQueryRq requestID="1" ${it}><MaxReturned>${BILL_PAGE}</MaxReturned>${filter}<IncludeLineItems>true</IncludeLineItems></BillQueryRq>`);
+}
+
+/** Bills deleted in QuickBooks since that day. */
+export function deletedBillsRequest(since: string): string {
+  return wrap(
+    `<TxnDeletedQueryRq requestID="1"><TxnDelType>Bill</TxnDelType><DeletedDateRangeFilter><FromDeletedDate>${escapeXml(since)}T00:00:00</FromDeletedDate></DeletedDateRangeFilter></TxnDeletedQueryRq>`,
+  );
+}
+
+const money = (s: string | undefined) => Math.round((Number(s) || 0) * 100) / 100;
+
+/** One QuickBooks Desktop bill, kept the same way as a QuickBooks Online one (qbo/shape.ts). */
+export function billFromXml(r: XmlNode): { txnId: string; data: BillData } | null {
+  const txnId = text(r, "TxnID");
+  if (!txnId) return null;
+  const lines: BillLine[] = [];
+  const line = (l: XmlNode, desc: string | undefined, fallback: string | undefined, itemId: string | null) =>
+    lines.push({
+      description: (desc || fallback || "Bill line").slice(0, 300),
+      itemId,
+      customerId: text(l, "CustomerRef/ListID") || null,
+      customerName: text(l, "CustomerRef/FullName") || null,
+      amount: money(text(l, "Amount")),
+    });
+  for (const l of r.children) {
+    if (l.name === "ExpenseLineRet") line(l, text(l, "Memo"), text(l, "AccountRef/FullName"), null);
+    else if (l.name === "ItemLineRet") line(l, text(l, "Desc"), text(l, "ItemRef/FullName"), text(l, "ItemRef/ListID") || null);
+    // A group of items: its lines, each on its own job and item.
+    else if (l.name === "ItemGroupLineRet") for (const g of children(l, "ItemLineRet")) line(g, text(g, "Desc"), text(g, "ItemRef/FullName"), text(g, "ItemRef/ListID") || null);
+  }
+  // AmountDue is the bill's total; OpenAmount what's left to pay on it.
+  const total = money(text(r, "AmountDue"));
+  const open = text(r, "OpenAmount");
+  return {
+    txnId,
+    data: {
+      vendorId: text(r, "VendorRef/ListID") || null,
+      vendorName: text(r, "VendorRef/FullName") || "QuickBooks vendor",
+      number: text(r, "RefNumber") || null,
+      date: text(r, "TxnDate") ?? "",
+      due: text(r, "DueDate") || null,
+      note: text(r, "Memo") || null,
+      total,
+      balance: text(r, "IsPaid") === "true" ? 0 : open !== undefined ? money(open) : total,
+      lines,
+    },
+  };
+}
+
+export type BillReply = { ok: boolean; error?: string; bills: { txnId: string; data: BillData }[]; iteratorId?: string; remaining: number };
+
+/** Reads QuickBooks' reply to a bill request. */
+export function readBillReply(xml: string): BillReply {
+  const rs = child(child(parseXml(xml), "QBXMLMsgsRs"), "BillQueryRs");
+  if (!rs) return { ok: false, error: "QuickBooks' answer was missing", bills: [], remaining: 0 };
+  const code = Number(rs.attrs.statusCode ?? 0);
+  if (code !== 0 && code !== 1 && rs.attrs.statusSeverity === "Error") return { ok: false, error: rs.attrs.statusMessage || `QuickBooks error ${code}`, bills: [], remaining: 0 };
+  const remaining = Number(rs.attrs.iteratorRemainingCount ?? 0) || 0;
+  const bills = children(rs, "BillRet").flatMap((b) => billFromXml(b) ?? []);
+  return { ok: true, bills, remaining, ...(remaining > 0 && rs.attrs.iteratorID ? { iteratorId: rs.attrs.iteratorID } : {}) };
+}
+
+/** Reads QuickBooks' reply to "which bills were deleted": their ids. */
+export function readDeletedReply(xml: string): { ok: boolean; error?: string; txnIds: string[] } {
+  const rs = child(child(parseXml(xml), "QBXMLMsgsRs"), "TxnDeletedQueryRs");
+  if (!rs) return { ok: false, error: "QuickBooks' answer was missing", txnIds: [] };
+  const code = Number(rs.attrs.statusCode ?? 0);
+  if (code !== 0 && code !== 1 && rs.attrs.statusSeverity === "Error") return { ok: false, error: rs.attrs.statusMessage || `QuickBooks error ${code}`, txnIds: [] };
+  return { ok: true, txnIds: children(rs, "TxnDeletedRet").flatMap((d) => text(d, "TxnID") ?? []) };
+}
+
 // --- The Web Connector's side: SOAP ------------------------------------------------------
 
 export type SoapCall = { method: string; args: Record<string, string> };
@@ -139,7 +229,7 @@ export function qwcFile(o: { appName: string; url: string; supportUrl: string; u
   <AppName>${escapeXml(o.appName)}</AppName>
   <AppID></AppID>
   <AppURL>${escapeXml(o.url)}</AppURL>
-  <AppDescription>Links your vendors, jobs and cost codes with The Builder Station.</AppDescription>
+  <AppDescription>Brings your QuickBooks bills into The Builder Station, and links vendors, jobs and cost codes.</AppDescription>
   <AppSupport>${escapeXml(o.supportUrl)}</AppSupport>
   <UserName>${escapeXml(o.username)}</UserName>
   <OwnerID>${escapeXml(o.ownerId)}</OwnerID>

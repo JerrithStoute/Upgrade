@@ -7,6 +7,7 @@ import { getBrand } from "@/lib/company-brand";
 import { navPages } from "@/lib/access";
 import { ViewOnly } from "@/components/layout/view-only";
 import { workScreenCss } from "@/lib/brand-style";
+import { providerOf } from "@/lib/mailbox";
 
 /** Today (a function, so the layout itself stays free of the clock). */
 const nowDate = () => new Date();
@@ -20,8 +21,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     getBrand(),
     // Where the company stands with The Builder Station — only its status and trial date, never the Station's notes.
     user.role === "ADMIN" ? systemDb.stationBuilder.findUnique({ where: { companyId: user.companyId }, select: { status: true, trialEndsAt: true } }) : null,
-    // Their own Gmail stopped working (mailbox.ts): said on every page until they reconnect, so nothing goes unnoticed.
-    db.mailbox.findUnique({ where: { userId: user.id }, select: { brokenAt: true } }).catch(() => null),
+    // Their own Gmail / Outlook stopped working (mailbox.ts): said on every page until they reconnect, so nothing goes unnoticed.
+    db.mailbox.findUnique({ where: { userId: user.id }, select: { brokenAt: true, provider: true } }).catch(() => null),
   ]);
   const trial = standing ? trialNote(readStatus(standing.status), standing.trialEndsAt, nowDate()) : null;
   const allowed = navPages(user.role, user.access, MENU);
@@ -37,8 +38,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {trial ? <div className="no-print mb-4 rounded-md bg-amber-50 px-4 py-2 text-sm text-amber-900 ring-1 ring-inset ring-amber-200">{trial}</div> : null}
           {mailbox?.brokenAt ? (
             <div className="no-print mb-4 flex flex-wrap items-center gap-2 rounded-md bg-amber-50 px-4 py-2 text-sm text-amber-900 ring-1 ring-inset ring-amber-200">
-              <span className="flex-1">Your Gmail needs reconnecting. Emails you send go from The Builder Station until then.</span>
-              <a href="/api/mailbox/google/connect" className="rounded-md bg-blue-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-800">
+              <span className="flex-1">Your {providerOf(mailbox.provider).label} needs reconnecting. Emails you send go from The Builder Station until then.</span>
+              <a href={`/api/mailbox/${providerOf(mailbox.provider).route}/connect`} className="rounded-md bg-blue-700 px-2.5 py-1 text-xs font-medium text-white hover:bg-blue-800">
                 Reconnect
               </a>
             </div>

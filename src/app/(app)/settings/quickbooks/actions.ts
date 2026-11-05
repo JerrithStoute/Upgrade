@@ -38,11 +38,16 @@ export async function newQuickBooksPassword(): Promise<PasswordState> {
   return { password };
 }
 
-/** Disconnect: the Web Connector can't sign in any more, and nothing here stays linked to QuickBooks. */
+/**
+ * Disconnect: the Web Connector can't sign in any more, and nothing here stays linked to QuickBooks.
+ * Bills already brought in stay — as ordinary ones you can change here.
+ */
 export const disconnectQuickBooks = friendly(async function disconnectQuickBooks() {
   const me = await requireEdit("quickbooks");
   await db.qbConnection.deleteMany({});
   await db.qbListItem.deleteMany({});
+  await db.qbTxn.deleteMany({});
+  await db.vendorBill.updateMany({ where: { qbTxnId: { not: null } }, data: { qbTxnId: null } });
   await db.vendor.updateMany({ where: { qbListId: { not: null } }, data: { qbListId: null } });
   await db.project.updateMany({ where: { qbListId: { not: null } }, data: { qbListId: null } });
   await db.costCode.updateMany({ where: { qbListId: { not: null } }, data: { qbListId: null } });
@@ -129,7 +134,7 @@ export const linkJob = friendly(async function linkJob(fd: FormData) {
     if (other) throw new Error(`“${pick.fullName}” is already linked to ${other.name}`);
   }
   await db.project.update({ where: { id: projectId }, data: { qbListId: listId } });
-  if (await db.qboConnection.findFirst({ select: { id: true } })) await applyBills();
+  await applyBills();
   revalidatePath(PATH);
 });
 
@@ -145,7 +150,7 @@ export const linkCostCode = friendly(async function linkCostCode(fd: FormData) {
     if (other) throw new Error(`“${item.fullName}” is already linked to ${[other.code, other.name].filter(Boolean).join(" ")}`);
   }
   await db.costCode.update({ where: { id: costCodeId }, data: { qbListId: listId } });
-  if (await db.qboConnection.findFirst({ select: { id: true } })) await applyBills();
+  await applyBills();
   revalidatePath(PATH);
 });
 
@@ -153,6 +158,6 @@ export const linkCostCode = friendly(async function linkCostCode(fd: FormData) {
 export const matchAgain = friendly(async function matchAgain() {
   await requireEdit("quickbooks");
   await applyMatches();
-  if (await db.qboConnection.findFirst({ select: { id: true } })) await applyBills();
+  await applyBills();
   revalidatePath(PATH);
 });

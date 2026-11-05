@@ -192,40 +192,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
           </Card>
         ) : null}
 
-        {waiting.length ? (
-          <Card>
-            <CardHeader
-              title="Bills waiting for a job"
-              description="Bills in QuickBooks on customers that aren't linked to a job here. Pick the job and they come in on it."
-            />
-            <ul className="divide-y divide-slate-100 text-sm">
-              {waiting.map((w) => (
-                <li key={w.customerId} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-slate-800">{qbName(entries("CUSTOMER").find((c) => c.listId === w.customerId)?.fullName ?? w.customerName)}</span>
-                    <span className="text-xs text-slate-500">
-                      {w.bills} bill{w.bills === 1 ? "" : "s"} · {money(w.amount)}
-                    </span>
-                  </span>
-                  <div className="w-full sm:w-96">
-                    {openJobs.length === 0 ? (
-                      <p className="text-xs text-slate-500">Every job here is linked already — add the job first, or change a link under Jobs.</p>
-                    ) : (
-                    <LinkPicker
-                      action={linkCustomerToJob}
-                      hidden={{ customerId: w.customerId }}
-                      value=""
-                      label={`Job for ${w.customerName}`}
-                      empty="— Pick the job —"
-                      options={openJobs.map((p) => ({ value: p.id, label: `#${p.number} ${p.name}` }))}
-                    />
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        ) : null}
+        <BillsWaiting waiting={waiting} entries={entries} openJobs={openJobs} />
 
         {synced ? <LinkCards {...linking} /> : null}
       </div>
@@ -235,6 +202,8 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
   // --- QuickBooks Desktop. ----------------------------------------------------------------------------
   const desktop = conn!;
   const synced = !!desktop.lastSyncAt;
+  const waiting = synced ? await billsWaiting() : [];
+  const openJobs = projects.filter((p) => !p.qbListId);
   return (
     <div className="space-y-6">
       {noticeBox}
@@ -265,6 +234,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
           {synced ? (
             <p className="text-slate-600">
               The Web Connector updates every 15 minutes while it&apos;s running — or click <b>Update Selected</b> in it any time.
+              {desktop.lastSummary ? ` Last update: ${desktop.lastSummary.toLowerCase()}.` : ""}
               {desktop.companyFile ? <span className="mt-1 block text-xs text-slate-500">Company file: {desktop.companyFile}</span> : null}
             </p>
           ) : (
@@ -302,7 +272,7 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
             ) : null}
             <ConfirmForm
               action={disconnectQuickBooks}
-              message="Disconnect QuickBooks? The Web Connector won't be able to sign in, and nothing here stays linked to QuickBooks. Your QuickBooks file isn't touched."
+              message="Disconnect QuickBooks? The Web Connector won't be able to sign in, and nothing here stays linked to QuickBooks. Bills already brought in stay. Your QuickBooks file isn't touched."
               className="ml-auto"
             >
               Disconnect
@@ -310,8 +280,56 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
           </div>
         </CardBody>
       </Card>
+      <BillsWaiting waiting={waiting} entries={entries} openJobs={openJobs} />
       {synced ? <LinkCards {...linking} /> : null}
     </div>
+  );
+}
+
+/** QuickBooks bills on customers not linked to a job here — the same for Online and Desktop. */
+function BillsWaiting({
+  waiting,
+  entries,
+  openJobs,
+}: {
+  waiting: Awaited<ReturnType<typeof billsWaiting>>;
+  entries: (kind: string) => QbEntry[];
+  openJobs: { id: string; number: number; name: string }[];
+}) {
+  if (!waiting.length) return null;
+  return (
+    <Card>
+      <CardHeader
+        title="Bills waiting for a job"
+        description="Bills in QuickBooks on customers that aren't linked to a job here. Pick the job and they come in on it."
+      />
+      <ul className="divide-y divide-slate-100 text-sm">
+        {waiting.map((w) => (
+          <li key={w.customerId} className="flex flex-wrap items-center gap-3 px-5 py-2.5">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-slate-800">{qbName(entries("CUSTOMER").find((c) => c.listId === w.customerId)?.fullName ?? w.customerName)}</span>
+              <span className="text-xs text-slate-500">
+                {w.bills} bill{w.bills === 1 ? "" : "s"} · {money(w.amount)}
+              </span>
+            </span>
+            <div className="w-full sm:w-96">
+              {openJobs.length === 0 ? (
+                <p className="text-xs text-slate-500">Every job here is linked already — add the job first, or change a link under Jobs.</p>
+              ) : (
+              <LinkPicker
+                action={linkCustomerToJob}
+                hidden={{ customerId: w.customerId }}
+                value=""
+                label={`Job for ${w.customerName}`}
+                empty="— Pick the job —"
+                options={openJobs.map((p) => ({ value: p.id, label: `#${p.number} ${p.name}` }))}
+              />
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 

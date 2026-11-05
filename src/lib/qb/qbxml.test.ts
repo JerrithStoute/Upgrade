@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { listRequest, qwcFile, readListReply, readSoapCall, soapResponse } from "./qbxml";
+import { billRequest, deletedBillsRequest, listRequest, qwcFile, readBillReply, readDeletedReply, readListReply, readSoapCall, soapResponse } from "./qbxml";
 import { escapeXml, parseXml } from "./xml";
 
 const reply = (body: string) => `<?xml version="1.0" ?><QBXML><QBXMLMsgsRs>${body}</QBXMLMsgsRs></QBXML>`;
@@ -104,4 +104,63 @@ test("the connection file has the address, the username and no password", () => 
   assert.equal(x.children.find((c) => c.name === "AppName")?.text, "The Builder Station (JT&I Custom Homes)");
   assert.equal(x.children.find((c) => c.name === "UserName")?.text, "tbs-1");
   assert.doesNotMatch(f, /password/i);
+});
+
+test("asks for bills: the last 12 months the first time, then what changed, then what was deleted", () => {
+  const first = billRequest({ datedFrom: "2025-11-05" });
+  assert.match(first, /<BillQueryRq requestID="1" iterator="Start"><MaxReturned>100<\/MaxReturned><TxnDateRangeFilter><FromTxnDate>2025-11-05<\/FromTxnDate><\/TxnDateRangeFilter><IncludeLineItems>true<\/IncludeLineItems><\/BillQueryRq>/);
+  const next = billRequest({ changedSince: "2026-11-04" }, "{it-2}");
+  assert.match(next, /iterator="Continue" iteratorID="\{it-2\}"/);
+  assert.match(next, /<ModifiedDateRangeFilter><FromModifiedDate>2026-11-04T00:00:00<\/FromModifiedDate><\/ModifiedDateRangeFilter>/);
+  assert.match(deletedBillsRequest("2026-11-04"), /<TxnDeletedQueryRq requestID="1"><TxnDelType>Bill<\/TxnDelType><DeletedDateRangeFilter><FromDeletedDate>2026-11-04T00:00:00<\/FromDeletedDate>/);
+  parseXml(first);
+});
+
+test("reads a bill: item lines, expense lines and a group, each on its own job", () => {
+  const r = readBillReply(
+    reply(`<BillQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK" iteratorRemainingCount="0" iteratorID="{it-3}">
+      <BillRet><TxnID>1A2-1730000000</TxnID><VendorRef><ListID>80000001-1</ListID><FullName>Parker Lumber</FullName></VendorRef><TxnDate>2026-11-02</TxnDate><DueDate>2026-12-02</DueDate><AmountDue>1500.50</AmountDue><Memo>Framing pkg</Memo><RefNumber>INV-88</RefNumber><IsPaid>false</IsPaid><OpenAmount>500.50</OpenAmount>
+        <ExpenseLineRet><TxnLineID>1</TxnLineID><AccountRef><FullName>Permits</FullName></AccountRef><Amount>100.00</Amount><CustomerRef><ListID>C-1</ListID><FullName>Smith:Smith House</FullName></CustomerRef></ExpenseLineRet>
+        <ItemLineRet><TxnLineID>2</TxnLineID><ItemRef><ListID>I-2102</ListID><FullName>2102</FullName></ItemRef><Desc>2x6 studs</Desc><Amount>1200.50</Amount><CustomerRef><ListID>C-1</ListID><FullName>Smith:Smith House</FullName></CustomerRef></ItemLineRet>
+        <ItemGroupLineRet><TxnLineID>3</TxnLineID><ItemGroupRef><FullName>Kit</FullName></ItemGroupRef>
+          <ItemLineRet><TxnLineID>4</TxnLineID><ItemRef><ListID>I-2200</ListID><FullName>2200</FullName></ItemRef><Amount>200.00</Amount><CustomerRef><ListID>C-2</ListID><FullName>Jones</FullName></CustomerRef></ItemLineRet>
+        </ItemGroupLineRet>
+      </BillRet>
+      <BillRet><TxnID>1A3-1730000001</TxnID><VendorRef><ListID>80000002-1</ListID><FullName>Emerson Electrical</FullName></VendorRef><TxnDate>2026-11-03</TxnDate><AmountDue>50</AmountDue><IsPaid>true</IsPaid><OpenAmount>0.00</OpenAmount></BillRet>
+    </BillQueryRs>`),
+  );
+  assert.ok(r.ok);
+  assert.equal(r.iteratorId, undefined, "nothing left: no next page");
+  assert.equal(r.bills.length, 2);
+  assert.deepEqual(r.bills[0], {
+    txnId: "1A2-1730000000",
+    data: {
+      vendorId: "80000001-1",
+      vendorName: "Parker Lumber",
+      number: "INV-88",
+      date: "2026-11-02",
+      due: "2026-12-02",
+      note: "Framing pkg",
+      total: 1500.5,
+      balance: 500.5,
+      lines: [
+        { description: "Permits", itemId: null, customerId: "C-1", customerName: "Smith:Smith House", amount: 100 },
+        { description: "2x6 studs", itemId: "I-2102", customerId: "C-1", customerName: "Smith:Smith House", amount: 1200.5 },
+        { description: "2200", itemId: "I-2200", customerId: "C-2", customerName: "Jones", amount: 200 },
+      ],
+    },
+  });
+  assert.equal(r.bills[1].data.balance, 0, "paid");
+  assert.deepEqual(r.bills[1].data.lines, []);
+});
+
+test("reads deleted bills, and QuickBooks' refusals", () => {
+  const d = readDeletedReply(
+    reply(`<TxnDeletedQueryRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK"><TxnDeletedRet><TxnDelType>Bill</TxnDelType><TxnID>1A2-1730000000</TxnID></TxnDeletedRet></TxnDeletedQueryRs>`),
+  );
+  assert.deepEqual(d, { ok: true, txnIds: ["1A2-1730000000"] });
+  assert.deepEqual(readDeletedReply(reply(`<TxnDeletedQueryRs requestID="1" statusCode="1" statusSeverity="Info" statusMessage="No match"/>`)), { ok: true, txnIds: [] });
+  const bad = readBillReply(reply(`<BillQueryRs requestID="1" statusCode="3120" statusSeverity="Error" statusMessage="Object not found"/>`));
+  assert.equal(bad.ok, false);
+  assert.equal(bad.error, "Object not found");
 });

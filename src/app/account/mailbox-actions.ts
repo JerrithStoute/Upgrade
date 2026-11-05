@@ -5,16 +5,16 @@ import { requireStaff } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { logActivity } from "@/lib/activity";
 import { simpleEmail } from "@/lib/mail";
-import { MailboxError, revokeGmail, sendViaGmail } from "@/lib/mailbox";
+import { MailboxError, providerOf, revokeMailbox, sendViaMailbox } from "@/lib/mailbox";
 
-/** Disconnect: emails go from the program again, and Google lets go of the permission too. */
+/** Disconnect: emails go from the program again (and Google lets go of the permission too). */
 export async function disconnectMailbox() {
   const me = await requireStaff();
   const box = await db.mailbox.findUnique({ where: { userId: me.id } });
   if (box) {
     await db.mailbox.delete({ where: { id: box.id } });
-    await revokeGmail(box.refreshToken);
-    await logActivity({ userId: me.id, type: "mailbox.disconnected", description: `${me.name} disconnected Gmail (${box.email})` });
+    await revokeMailbox(box);
+    await logActivity({ userId: me.id, type: "mailbox.disconnected", description: `${me.name} disconnected ${providerOf(box.provider).label} (${box.email})` });
   }
   redirect("/account?mail=disconnected#email");
 }
@@ -26,7 +26,7 @@ export async function sendMailboxTest() {
   if (!box) redirect("/account#email");
   const company = await db.company.findFirst({ select: { name: true } });
   try {
-    await sendViaGmail(box, {
+    await sendViaMailbox(box, {
       ...simpleEmail({
         to: box.email,
         subject: "Test from The Builder Station",

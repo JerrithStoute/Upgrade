@@ -79,6 +79,11 @@ services:
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
+      # Connect Outlook: the Microsoft Entra app's client ID and secret (the secret runs out — renew it before it does).
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_SECRET
+        sync: false
 
 databases:
   - name: builderstation-db

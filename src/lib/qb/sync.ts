@@ -5,25 +5,48 @@ import { db, systemDb } from "@/lib/db";
 import { runAsCompany } from "@/lib/tenant";
 import { logActivity } from "@/lib/activity";
 import { recordFailure, retryAfter } from "@/lib/rate-limit";
-import { LIST_STEPS, listRequest, readListReply } from "./qbxml";
+import { LIST_STEPS, billRequest, deletedBillsRequest, listRequest, readBillReply, readDeletedReply, readListReply, type BillsFrom, type ListStep } from "./qbxml";
 import { planCostCodes, planJobs, planVendors, type QbEntry } from "./match";
 import { cleanVendorName } from "@/lib/vendors";
 import { renameVendorEverywhere } from "@/lib/vendor-list";
+import { fromQbDate } from "@/lib/qbo/shape";
 
 /**
  * One Web Connector session (the Web Connector on the QuickBooks computer calls /api/qbwc):
  *   authenticate → sendRequestXML / receiveResponseXML, once per list page → closeConnection.
  * Each sync reads QuickBooks' lists (company, vendors, customers & jobs, items, classes), keeps
- * them (QbListItem), then links vendors, jobs and cost codes (match.ts). It only reads
- * QuickBooks — nothing is written there.
+ * them (QbListItem), then links vendors, jobs and cost codes (match.ts). Then bills: the first
+ * time, the last 12 months; after that, the ones added, changed or deleted since the last update.
+ * They go on their jobs here the same way as from QuickBooks Online (qbo/sync.ts applyBills). It
+ * only reads QuickBooks — nothing is written there.
  *
  * Where it's at between calls is kept on the connection (ticketState), not in memory, so a
  * restart in the middle doesn't lose the place.
  */
 
-type State = { step: number; iteratorId: string | null; startedAt: string };
+/** What a sync asks for, in order: the lists, then bills, then (on a later update) bills deleted since. */
+const STEPS = [...LIST_STEPS, "bills", "deleted"] as const;
+type Step = (typeof STEPS)[number];
+
+type State = { step: number; iteratorId: string | null; startedAt: string; bills?: BillsFrom };
 
 const TICKET_HOURS = 2;
+const FIRST_MONTHS = 12;
+/** QuickBooks keeps its list of deleted bills for 90 days: after a longer gap, the 12 months are read again. */
+const CHANGES_DAYS = 80;
+
+const day = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Where this sync's bill read starts (a day back from the last one, so nothing slips between). */
+function billsFrom(since: Date | null, now: Date): BillsFrom {
+  if (since && now.getTime() - since.getTime() < CHANGES_DAYS * 86_400_000) return { changedSince: day(new Date(since.getTime() - 86_400_000)) };
+  const from = new Date(now);
+  from.setMonth(from.getMonth() - FIRST_MONTHS);
+  return { datedFrom: day(from) };
+}
+
+const request = (step: Step, s: State) =>
+  step === "bills" ? billRequest(s.bills!, s.iteratorId) : step === "deleted" ? deletedBillsRequest("changedSince" in s.bills! ? s.bills.changedSince : day(new Date())) : listRequest(step, s.iteratorId);
 
 const byTicket = async (ticket: string) => {
   if (!ticket) return null;
@@ -52,7 +75,8 @@ export async function qbAuthenticate(username: string, password: string): Promis
     return ["", "nvu"];
   }
   const ticket = randomBytes(24).toString("hex");
-  const state: State = { step: 0, iteratorId: null, startedAt: new Date().toISOString() };
+  const now = new Date();
+  const state: State = { step: 0, iteratorId: null, startedAt: now.toISOString(), bills: billsFrom(c.billsSince, now) };
   await systemDb.qbConnection.update({ where: { id: c.id }, data: { ticket, ticketState: JSON.stringify(state), ticketAt: new Date() } });
   // Once tied to a company file, name it: the Web Connector opens that one (and no other).
   return [ticket, c.companyFile ?? ""];
@@ -72,7 +96,8 @@ export async function qbNextRequest(ticket: string, companyFile: string): Promis
   }
   if (!c.companyFile && companyFile) await systemDb.qbConnection.update({ where: { id: c.id }, data: { companyFile } });
   const s = stateOf(c.ticketState);
-  return listRequest(LIST_STEPS[Math.min(s.step, LIST_STEPS.length - 1)], s.iteratorId);
+  if (!s.bills) s.bills = billsFrom(c.billsSince, new Date());
+  return request(STEPS[Math.min(s.step, STEPS.length - 1)], s);
 }
 
 /** receiveResponseXML: QuickBooks' answer. Returns how far along (100 = done; below 0 = stopped). */
@@ -80,42 +105,73 @@ export async function qbTakeResponse(ticket: string, response: string, hresult: 
   const c = await byTicket(ticket);
   if (!c) return -1;
   const fail = async (why: string) => {
-    await systemDb.qbConnection.update({ where: { id: c.id }, data: { ticketState: JSON.stringify({ ...stateOf(c.ticketState), step: LIST_STEPS.length }), lastError: why } });
+    await systemDb.qbConnection.update({ where: { id: c.id }, data: { ticketState: JSON.stringify({ ...stateOf(c.ticketState), step: STEPS.length }), lastError: why } });
     return -1;
   };
   if (hresult) return fail(`QuickBooks couldn't answer: ${message || hresult}`);
   const s = stateOf(c.ticketState);
-  const step = LIST_STEPS[s.step];
+  if (!s.bills) s.bills = billsFrom(c.billsSince, new Date());
+  const step = STEPS[s.step];
   if (!step) return 100;
-  let reply;
+  const seenAt = new Date();
+  let iteratorId: string | undefined;
   try {
-    reply = readListReply(step, response);
+    if (step === "bills") {
+      const reply = readBillReply(response);
+      if (!reply.ok) return fail(`QuickBooks said: ${reply.error}`);
+      await runAsCompany(c.companyId, async () => {
+        for (const b of reply.bills) {
+          const row = { txnDate: fromQbDate(b.data.date), data: JSON.stringify(b.data), seenAt };
+          await db.qbTxn.upsert({ where: { companyId_kind_txnId: { companyId: c.companyId, kind: "BILL", txnId: b.txnId } }, create: { kind: "BILL", txnId: b.txnId, ...row }, update: row });
+        }
+      });
+      iteratorId = reply.iteratorId;
+    } else if (step === "deleted") {
+      const reply = readDeletedReply(response);
+      if (!reply.ok) return fail(`QuickBooks said: ${reply.error}`);
+      if (reply.txnIds.length) await runAsCompany(c.companyId, () => db.qbTxn.deleteMany({ where: { kind: "BILL", txnId: { in: reply.txnIds } } }));
+    } else {
+      const reply = readListReply(step as ListStep, response);
+      if (!reply.ok) return fail(`QuickBooks said: ${reply.error}`);
+      await runAsCompany(c.companyId, async () => {
+        for (const r of reply.rows) {
+          const data = { name: r.name, fullName: r.fullName, parentListId: r.parentListId, sublevel: r.sublevel, active: r.active, detail: JSON.stringify(r.detail), seenAt };
+          await db.qbListItem.upsert({ where: { companyId_kind_listId: { companyId: c.companyId, kind: r.kind, listId: r.listId } }, create: { kind: r.kind, listId: r.listId, ...data }, update: data });
+        }
+      });
+      if (step === "company" && reply.companyName) await systemDb.qbConnection.update({ where: { id: c.id }, data: { qbCompany: reply.companyName } });
+      iteratorId = reply.iteratorId;
+    }
   } catch {
     return fail("QuickBooks' answer couldn't be read.");
   }
-  if (!reply.ok) return fail(`QuickBooks said: ${reply.error}`);
 
-  const seenAt = new Date();
-  await runAsCompany(c.companyId, async () => {
-    for (const r of reply.rows) {
-      const data = { name: r.name, fullName: r.fullName, parentListId: r.parentListId, sublevel: r.sublevel, active: r.active, detail: JSON.stringify(r.detail), seenAt };
-      await db.qbListItem.upsert({ where: { companyId_kind_listId: { companyId: c.companyId, kind: r.kind, listId: r.listId } }, create: { kind: r.kind, listId: r.listId, ...data }, update: data });
-    }
-  });
-  if (step === "company" && reply.companyName) await systemDb.qbConnection.update({ where: { id: c.id }, data: { qbCompany: reply.companyName } });
-
-  const next: State = reply.iteratorId ? { ...s, iteratorId: reply.iteratorId } : { ...s, step: s.step + 1, iteratorId: null };
-  if (next.step < LIST_STEPS.length) {
+  let next: State = iteratorId ? { ...s, iteratorId } : { ...s, step: s.step + 1, iteratorId: null };
+  // The first time (12 months read in full) there's nothing to ask about deletions: what wasn't read is gone.
+  if (STEPS[next.step] === "deleted" && !("changedSince" in s.bills)) next = { ...next, step: next.step + 1 };
+  if (next.step < STEPS.length) {
     await systemDb.qbConnection.update({ where: { id: c.id }, data: { ticketState: JSON.stringify(next) } });
-    return Math.max(1, Math.min(99, Math.round((next.step / LIST_STEPS.length) * 100)));
+    return Math.max(1, Math.min(99, Math.round((next.step / STEPS.length) * 100)));
   }
 
-  // All read: anything QuickBooks didn't list this time is gone from it. Then link things up.
+  // All read: anything QuickBooks didn't list this time is gone from it. Then link things up and put bills on their jobs.
+  const started = new Date(s.startedAt);
+  let summary = "Up to date";
   await runAsCompany(c.companyId, async () => {
-    await db.qbListItem.deleteMany({ where: { seenAt: { lt: new Date(s.startedAt) } } });
+    await db.qbListItem.deleteMany({ where: { seenAt: { lt: started } } });
+    if ("datedFrom" in s.bills!) await db.qbTxn.deleteMany({ where: { kind: "BILL", txnDate: { gte: fromQbDate(s.bills!.datedFrom) }, seenAt: { lt: started } } });
     await applyMatches();
+    const { applyBills } = await import("@/lib/qbo/sync");
+    const bills = await applyBills();
+    if (bills.changed) {
+      summary = `${bills.changed} bill${bills.changed === 1 ? "" : "s"} brought in or changed`;
+      await logActivity({ type: "quickbooks.synced", description: `QuickBooks: ${summary}` });
+    }
   });
-  await systemDb.qbConnection.update({ where: { id: c.id }, data: { ticket: null, ticketState: null, lastSyncAt: new Date(), lastError: null } });
+  await systemDb.qbConnection.update({
+    where: { id: c.id },
+    data: { ticket: null, ticketState: null, lastSyncAt: new Date(), lastError: null, lastSummary: summary, billsSince: started },
+  });
   return 100;
 }
 

@@ -2370,6 +2370,9 @@ model QbConnection {
   qbCompany    String? // its company name, as QuickBooks has it
   lastSyncAt   DateTime?
   lastError    String?
+  lastSummary  String? // what the last update brought in ("3 bills brought in or changed")
+  // Bills are read as changed since this (null: the last 12 months are read).
+  billsSince   DateTime?
   // The Web Connector session in progress: its ticket and what's left to ask for (JSON).
   ticket       String?   @unique
   ticketState  String?
