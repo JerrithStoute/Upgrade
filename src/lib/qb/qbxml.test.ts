@@ -208,7 +208,7 @@ test("an invoice to QuickBooks Desktop: its job, each line on its item, the job'
   };
   const add = invoiceAddRequest(inv, { customerId: "C-1", itemId: "I-ANY", classId: "K-1" });
   parseXml(add);
-  assert.match(add, /<InvoiceAdd><CustomerRef><ListID>C-1<\/ListID><\/CustomerRef><ClassRef><ListID>K-1<\/ListID><\/ClassRef><TxnDate>2026-11-05<\/TxnDate><RefNumber>12<\/RefNumber><DueDate>2026-11-20<\/DueDate><Memo>Draw 2 — from The Builder Station<\/Memo>/);
+  assert.match(add, /<InvoiceAdd><CustomerRef><ListID>C-1<\/ListID><\/CustomerRef><ClassRef><ListID>K-1<\/ListID><\/ClassRef><TxnDate>2026-11-05<\/TxnDate><RefNumber>12<\/RefNumber><DueDate>2026-11-20<\/DueDate><Memo>Draw 2 &#8212; from The Builder Station<\/Memo>/);
   assert.match(add, /<InvoiceLineAdd><ItemRef><ListID>I-2102<\/ListID><\/ItemRef><Desc>Framing &lt;draw&gt;<\/Desc><Quantity>1<\/Quantity><Rate>25000<\/Rate><ClassRef><ListID>K-1<\/ListID><\/ClassRef><\/InvoiceLineAdd>/);
   assert.match(add, /<ItemRef><ListID>I-ANY<\/ListID><\/ItemRef><Desc>Allowance<\/Desc><Quantity>2\.5<\/Quantity><Rate>100\.12346<\/Rate>/, "no cost code item: the picked one");
   assert.doesNotMatch(add, /Tax/);
@@ -220,4 +220,15 @@ test("an invoice to QuickBooks Desktop: its job, each line on its item, the job'
   assert.deepEqual(readInvoiceReply(reply(`<InvoiceAddRs requestID="1" statusCode="3140" statusSeverity="Error" statusMessage="Invalid reference to Item"/>`)), { ok: false, error: "Invalid reference to Item" });
   assert.equal(readInvoiceReply(reply(`<InvoiceQueryRs requestID="1" statusCode="1" statusSeverity="Info" statusMessage="No match"/>`)).ok, false, "gone from QuickBooks");
   assert.equal(readInvoiceReply(reply(`<TxnVoidRs requestID="1" statusCode="0" statusSeverity="Info" statusMessage="Status OK"><TxnVoidType>Invoice</TxnVoidType><TxnID>T-1</TxnID></TxnVoidRs>`)).txnId, "T-1");
+});
+
+test("anything past plain ASCII goes as a character reference (QuickBooks can't parse it as it is)", () => {
+  const add = invoiceAddRequest(
+    { number: 3, title: "Draw — Café ½", issueDate: new Date("2026-11-05T12:00:00Z"), dueDate: null, notes: null, items: [{ description: "Tile 🧱", quantity: 1, unitPrice: 5, isTax: false, itemId: "I" }] },
+    { customerId: "C", itemId: null, classId: null },
+  );
+  assert.match(add, /<Memo>Draw &#8212; Caf&#233; &#189; &#8212; from The Builder Station<\/Memo>/);
+  assert.match(add, /<Desc>Tile &#129521;<\/Desc>/);
+  assert.match(add, /^[\x00-\x7e]*$/);
+  parseXml(add);
 });

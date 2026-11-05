@@ -23,7 +23,10 @@ const QUERY: Record<ListStep, string> = {
   classes: "ClassQueryRq",
 };
 
-const wrap = (body: string) => `<?xml version="1.0" encoding="utf-8"?><?qbxml version="${QBXML_VERSION}"?><QBXML><QBXMLMsgsRq onError="stopOnError">${body}</QBXMLMsgsRq></QBXML>`;
+/** Anything past plain ASCII (— é ½) as a character reference: QuickBooks can't parse it as it is. */
+const ascii = (s: string) => s.replace(/[^\x00-\x7e]/gu, (c) => `&#${c.codePointAt(0)};`);
+
+const wrap = (body: string) => `<?xml version="1.0" encoding="utf-8"?><?qbxml version="${QBXML_VERSION}"?><QBXML><QBXMLMsgsRq onError="stopOnError">${ascii(body)}</QBXMLMsgsRq></QBXML>`;
 
 /** The request for one step: a list's first page, or (with an iterator id) its next page. */
 export function listRequest(step: ListStep, iteratorId?: string | null): string {

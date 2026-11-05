@@ -102,3 +102,8 @@ export async function takeInvoiceReply(job: InvoiceJob, xml: string): Promise<In
   else await settle(job.id, { qbSyncToken: reply.editSequence ?? null, qbError: null });
   return null;
 }
+
+/** QuickBooks couldn't take the request at all (not even to refuse it): kept on the invoice. */
+export async function invoiceRefused(job: InvoiceJob, why: string) {
+  await settle(job.id, { qbError: `QuickBooks said: ${why}` });
+}

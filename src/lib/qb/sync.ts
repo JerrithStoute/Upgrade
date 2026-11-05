@@ -22,7 +22,7 @@ import { planCostCodes, planJobs, planVendors, type QbEntry } from "./match";
 import { cleanVendorName } from "@/lib/vendors";
 import { renameVendorEverywhere } from "@/lib/vendor-list";
 import { fromQbDate } from "@/lib/qbo/shape";
-import { invoiceRequest, nextInvoiceJob, takeInvoiceReply, type InvoiceJob } from "./invoices";
+import { invoiceRefused, invoiceRequest, nextInvoiceJob, takeInvoiceReply, type InvoiceJob } from "./invoices";
 
 /**
  * One Web Connector session (the Web Connector on the QuickBooks computer calls /api/qbwc):
@@ -41,6 +41,18 @@ import { invoiceRequest, nextInvoiceJob, takeInvoiceReply, type InvoiceJob } fro
 /** What a sync asks for, in order: the lists, invoices out, bills, payments, then (on a later update) what was deleted since. */
 const STEPS = [...LIST_STEPS, "invoices", "bills", "payments", "deleted"] as const;
 type Step = (typeof STEPS)[number];
+/** Where an update stopped, in its message. */
+const STEP_NAMES: Record<Step, string> = {
+  company: "reading the company",
+  vendors: "reading vendors",
+  customers: "reading customers and jobs",
+  items: "reading items",
+  classes: "reading classes",
+  invoices: "sending an invoice",
+  bills: "reading bills",
+  payments: "reading payments",
+  deleted: "reading what was deleted",
+};
 
 /** `invoice`: the invoice going now; `tried`: invoices done this update (so one QuickBooks refuses isn't asked again). */
 type State = { step: number; iteratorId: string | null; startedAt: string; bills?: BillsFrom; invoice?: InvoiceJob | null; tried?: string[] };
@@ -149,18 +161,21 @@ export async function qbTakeResponse(ticket: string, response: string, hresult: 
     await systemDb.qbConnection.update({ where: { id: c.id }, data: { ticketState: JSON.stringify({ ...stateOf(c.ticketState), step: STEPS.length }), lastError: why } });
     return -1;
   };
-  if (hresult) return fail(`QuickBooks couldn't answer: ${message || hresult}`);
   const s = stateOf(c.ticketState);
   if (!s.bills) s.bills = billsFrom(c.billsSince, new Date());
   const step = STEPS[s.step];
   if (!step) return 100;
+  // QuickBooks couldn't take the request at all: on an invoice, that invoice says why and the update
+  // goes on; anywhere else the update stops, saying where.
+  if (hresult && !(step === "invoices" && s.invoice)) return fail(`QuickBooks couldn't answer (${STEP_NAMES[step]}): ${message || hresult}`);
   const seenAt = new Date();
   let iteratorId: string | undefined;
   let following: InvoiceJob | null = null;
   try {
     if (step === "invoices") {
       // (A refusal stays on that invoice — the rest of the update goes on.)
-      if (s.invoice) following = await runAsCompany(c.companyId, () => takeInvoiceReply(s.invoice!, response));
+      if (hresult) await runAsCompany(c.companyId, () => invoiceRefused(s.invoice!, message || hresult));
+      else if (s.invoice) following = await runAsCompany(c.companyId, () => takeInvoiceReply(s.invoice!, response));
     } else if (step === "bills" || step === "payments") {
       const reply = step === "bills" ? readBillReply(response) : readPaymentReply(response);
       if (!reply.ok) return fail(`QuickBooks said: ${reply.error}`);

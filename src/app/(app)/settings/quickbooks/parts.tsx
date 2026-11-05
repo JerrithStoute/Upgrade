@@ -63,7 +63,8 @@ export function LinkPicker({
       {Object.entries(hidden).map(([k, v]) => (
         <input key={k} type="hidden" name={k} value={v} />
       ))}
-      <select name="listId" defaultValue={value} aria-label={label} className="input !py-1.5 text-sm" onChange={(e) => e.currentTarget.form?.requestSubmit()}>
+      {/* (Keyed by the saved pick: after saving, the form resets to it, not to what it showed at first.) */}
+      <select key={value} name="listId" defaultValue={value} aria-label={label} className="input !py-1.5 text-sm" onChange={(e) => e.currentTarget.form?.requestSubmit()}>
         <option value="">{empty}</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
