@@ -28,18 +28,19 @@ import { invoiceRefused, invoiceRequest, nextInvoiceJob, takeInvoiceReply, type 
  * One Web Connector session (the Web Connector on the QuickBooks computer calls /api/qbwc):
  *   authenticate → sendRequestXML / receiveResponseXML, once per request → closeConnection.
  * Each sync reads QuickBooks' lists (company, vendors, customers & jobs, items, classes), keeps
- * them (QbListItem), then links vendors, jobs and cost codes (match.ts). Invoices sent here since
- * the last update go to QuickBooks (invoices.ts) — the only thing written there. Then bills and
- * customer payments: the first time, the last 12 months; after that, the ones added, changed or
- * deleted since the last update. They're put on their jobs and invoices here the same way as from
- * QuickBooks Online (qbo/sync.ts applyBills, applyPayments).
+ * them (QbListItem), then links vendors, jobs and cost codes (match.ts). Then bills and customer
+ * payments: the first time, the last 12 months; after that, the ones added, changed or deleted
+ * since the last update. They're put on their jobs and invoices here the same way as from
+ * QuickBooks Online (qbo/sync.ts applyBills, applyPayments). Last, invoices sent here since the
+ * last update go to QuickBooks (invoices.ts) — the only thing written there; after the bills, so
+ * each knows its job's class.
  *
  * Where it's at between calls is kept on the connection (ticketState), not in memory, so a
  * restart in the middle doesn't lose the place.
  */
 
-/** What a sync asks for, in order: the lists, invoices out, bills, payments, then (on a later update) what was deleted since. */
-const STEPS = [...LIST_STEPS, "invoices", "bills", "payments", "deleted"] as const;
+/** What a sync asks for, in order: the lists, bills, payments, (on a later update) what was deleted since, then invoices out. */
+const STEPS = [...LIST_STEPS, "bills", "payments", "deleted", "invoices"] as const;
 type Step = (typeof STEPS)[number];
 /** Where an update stopped, in its message. */
 const STEP_NAMES: Record<Step, string> = {
@@ -211,6 +212,15 @@ export async function qbTakeResponse(ticket: string, response: string, hresult: 
     return fail("QuickBooks' answer couldn't be read.");
   }
 
+  const started = new Date(s.startedAt);
+  // The lists are all read: anything QuickBooks didn't list this time is gone from it. Link things up
+  // now — invoices later in this update go on these jobs and items.
+  if (step === LIST_STEPS[LIST_STEPS.length - 1] && !iteratorId)
+    await runAsCompany(c.companyId, async () => {
+      await db.qbListItem.deleteMany({ where: { seenAt: { lt: started } } });
+      await applyMatches();
+    });
+
   let next: State;
   if (iteratorId) next = { ...s, iteratorId };
   else if (step === "invoices") {
@@ -224,19 +234,16 @@ export async function qbTakeResponse(ticket: string, response: string, hresult: 
     return Math.max(1, Math.min(99, Math.round((next.step / STEPS.length) * 100)));
   }
 
-  // All read: anything QuickBooks didn't list this time is gone from it. Then link things up and put
-  // bills on their jobs and payments on their invoices.
-  const started = new Date(s.startedAt);
+  // All done: bills and payments QuickBooks didn't list this time are gone from it. Then bills go on
+  // their jobs and payments on their invoices.
   let summary = "Up to date";
   await runAsCompany(c.companyId, async () => {
-    await db.qbListItem.deleteMany({ where: { seenAt: { lt: started } } });
     if ("datedFrom" in s.bills!)
       await db.qbTxn.deleteMany({ where: { kind: { in: ["BILL", "PAYMENT"] }, txnDate: { gte: fromQbDate(s.bills!.datedFrom) }, seenAt: { lt: started } } });
-    await applyMatches();
     const { applyBills, applyPayments } = await import("@/lib/qbo/sync");
     const bills = await applyBills();
     const payments = await applyPayments();
-    const tried = (s.tried ?? []).filter(Boolean);
+    const tried = (next.tried ?? []).filter(Boolean);
     const sent = tried.length ? await db.invoice.count({ where: { id: { in: tried }, qbError: null } }) : 0;
     const said = [
       sent && `${sent} invoice${sent === 1 ? "" : "s"} sent to QuickBooks`,
