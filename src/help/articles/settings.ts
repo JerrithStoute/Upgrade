@@ -309,7 +309,7 @@ export const SETTINGS: HelpArticle[] = [
           { name: "The first bills", what: "The first update brings in bills from the last 12 months. After that, only bills added, changed or deleted since." },
           { name: "Bills waiting for a job", what: "Bills on a QuickBooks customer that isn't linked to a job here. Pick the job and they come in on it." },
           { name: "Link by name again", what: "Matches jobs, cost codes and vendors by name again, using the last read from QuickBooks." },
-          { name: "Jobs", what: "A job links when its name matches a QuickBooks customer or job exactly, or pick one from the list." },
+          { name: "Jobs", what: "A job links when its name matches a QuickBooks customer or job exactly, or pick one from the list. The practice job isn't listed: its numbers aren't real, so no bills go on it." },
           { name: "Cost codes", what: "Each cost code links to the QuickBooks item named with its code; pick any that didn't match." },
           { name: "Vendors", what: "How many of your vendors are linked. Vendors added or renamed in QuickBooks show up after the next update." },
           { name: "Make the password / New password (Desktop)", what: "The Web Connector's password, shown once. A new one makes the old one stop working. Don't share it or take a picture of it." },

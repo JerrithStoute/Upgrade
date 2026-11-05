@@ -106,8 +106,8 @@ export const linkCustomerToJob = friendly(async function linkCustomerToJob(fd: F
   if (!projectId) return;
   const customer = await db.qbListItem.findFirst({ where: { kind: "CUSTOMER", listId } });
   if (!customer) throw new Error("That QuickBooks customer is gone — update and try again");
-  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, qbListId: true, name: true } });
-  if (!project) throw new Error("That job is gone");
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, qbListId: true, name: true, isSample: true } });
+  if (!project || project.isSample) throw new Error("That job is gone");
   if (project.qbListId && project.qbListId !== listId) throw new Error(`${project.name} is already linked to another QuickBooks customer — change it under Jobs`);
   await db.project.update({ where: { id: projectId }, data: { qbListId: listId } });
   await applyBills();
@@ -124,8 +124,9 @@ export const linkJob = friendly(async function linkJob(fd: FormData) {
   await requireEdit("quickbooks");
   const projectId = str(fd, "projectId");
   const listId = str(fd, "listId") || null;
-  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true } });
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { id: true, isSample: true } });
   if (!project) throw new Error("That job is gone");
+  if (project.isSample && listId) throw new Error("The practice job can't be linked to QuickBooks — its numbers aren't real");
   if (listId) {
     const choices = jobChoices((await db.qbListItem.findMany({ where: { kind: "CUSTOMER" } })).map(entry));
     const pick = choices.find((c) => c.listId === listId);

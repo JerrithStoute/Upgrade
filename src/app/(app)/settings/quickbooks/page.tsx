@@ -48,7 +48,8 @@ export default async function QuickBooksPage({ searchParams }: { searchParams: P
     db.qbConnection.findFirst(),
     db.qboConnection.findFirst(),
     db.qbListItem.findMany({ orderBy: { fullName: "asc" } }),
-    db.project.findMany({ where: { isTemplate: false }, select: { id: true, number: true, name: true, qbListId: true }, orderBy: { number: "desc" } }),
+    // (Not the practice job: its numbers aren't real, so no bills go on it.)
+    db.project.findMany({ where: { isTemplate: false, isSample: false }, select: { id: true, number: true, name: true, qbListId: true }, orderBy: { number: "desc" } }),
     db.costCode.findMany({ where: { active: true }, select: { id: true, code: true, name: true, qbListId: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }] }),
     db.vendor.count({ where: { qbListId: { not: null } } }),
   ]);
