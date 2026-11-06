@@ -140,6 +140,7 @@ import {
   setSheetScale,
   updateMeasurement,
   copyConditionForShape,
+  discardShapeCopy,
   deleteConditionShapes,
   restoreShapes,
   reorderConditions,
@@ -566,6 +567,8 @@ export function PlanViewer({
     spanTables?: { id: string; name: string; use: string }[];
     /** A new takeoff: the type picked from New takeoff ▾. */
     newType?: ConditionType;
+    /** Just made by Change items, not saved yet (?fresh=1). */
+    fresh?: boolean;
   } | null;
 }) {
   const router = useRouter();
@@ -872,6 +875,8 @@ export function PlanViewer({
   const clipboard = useRef<ShapeData | null>(null);
   const pointerPage = useRef<Pt | null>(null);
   const [flash, setFlash] = useState<string | null>(notice ?? null);
+  // The takeoff "Change items" just made, until its panel is saved: Cancel undoes it.
+  const freshCopy = useRef<{ id: string; moved: { id: string; from: string; sizeLocked: boolean }[] } | null>(null);
   // Takeoffs whose details are open in the list.
   const [infoOpen, setInfoOpen] = useState<Set<string>>(new Set());
   // Auto-count: the search under way / under review, and the box being dragged around a sample symbol.
@@ -2043,7 +2048,8 @@ export function PlanViewer({
     startTransition(async () => {
       try {
         const r = await copyConditionForShape({ projectId, measurementId });
-        router.push(editHref(r.id), { scroll: false });
+        freshCopy.current = r;
+        router.push(`${editHref(r.id)}&fresh=1`, { scroll: false });
       } catch (err) {
         setError(err instanceof Error ? err.message : "Could not copy the takeoff");
       }
@@ -4953,6 +4959,26 @@ export function PlanViewer({
               spanTables={editor.spanTables}
               closeHref={viewerHref}
               stayHref={editor.condition ? editHref(editor.condition.id) : editHref("new")}
+              onCancel={
+                // Not saved yet (saving drops &fresh): Cancel puts the shapes back and deletes the copy.
+                editor.condition && editor.fresh && freshCopy.current?.id === editor.condition.id
+                  ? () => {
+                      const copy = freshCopy.current!;
+                      freshCopy.current = null;
+                      startTransition(async () => {
+                        try {
+                          await discardShapeCopy({ projectId, copyId: copy.id, moved: copy.moved });
+                          // Its undo step (moving the shapes) has nothing left to undo.
+                          history.current.undo = history.current.undo.filter((h) => !(h.kind === "updateMany" && h.changes.some((c) => c.after.conditionId === copy.id)));
+                          syncHistory();
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "Could not cancel the copy");
+                        }
+                        router.push(viewerHref, { scroll: false });
+                      });
+                    }
+                  : undefined
+              }
               newType={editor.newType}
             />
           ) : null}
@@ -5516,8 +5542,9 @@ export function PlanViewer({
                               setNewLikeMany(null);
                               setMulti([]);
                               setFlash(`Made ${name} with ${before.length} shapes — change its settings (height, size…) here`);
+                              freshCopy.current = r;
                               // Its settings, to make it what it's for (a 10' wall, another size…).
-                              router.push(editHref(r.id), { scroll: false });
+                              router.push(`${editHref(r.id)}&fresh=1`, { scroll: false });
                             } catch (err) {
                               setError(err instanceof Error ? err.message : "Could not make the takeoff");
                             }

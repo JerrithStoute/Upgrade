@@ -91,6 +91,7 @@ export function ConditionForm({
   values,
   hasMeasurements,
   cancelHref,
+  onCancel,
   nextColor,
   codeRules = {},
   assemblyItems,
@@ -110,6 +111,8 @@ export function ConditionForm({
   values?: ConditionFormValues;
   hasMeasurements?: boolean;
   cancelHref?: string;
+  /** Cancel runs this instead of following cancelHref. */
+  onCancel?: () => void;
   nextColor?: string;
   /** Remembered "same cost code for all windows / lumber / …" answers. */
   codeRules?: CodeRules;
@@ -246,7 +249,11 @@ export function ConditionForm({
         <SubmitButton size="xs" className="order-last" pendingText={values ? "Saving…" : "Adding…"}>
           {submitText}
         </SubmitButton>
-        {cancelHref ? (
+        {onCancel ? (
+          <button type="button" onClick={onCancel} className={buttonClasses("secondary", "xs")}>
+            Cancel
+          </button>
+        ) : cancelHref ? (
           <Link href={cancelHref} scroll={false} className={buttonClasses("secondary", "xs")}>
             Cancel
           </Link>

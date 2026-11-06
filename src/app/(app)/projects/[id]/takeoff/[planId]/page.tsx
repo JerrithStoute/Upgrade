@@ -24,6 +24,7 @@ export default async function PlanViewerPage({
   searchParams: Promise<{
     page?: string;
     cond?: string;
+    fresh?: string;
     ctype?: string;
     applied?: string;
     skipped?: string;
@@ -36,7 +37,7 @@ export default async function PlanViewerPage({
 }) {
   const user = await requireView("takeoffs");
   const { id, planId } = await params;
-  const { page, cond, ctype, applied, skipped, templateError, toolbox, library: libraryNote, note, at } = await searchParams;
+  const { page, cond, fresh, ctype, applied, skipped, templateError, toolbox, library: libraryNote, note, at } = await searchParams;
   const project = await getProject(id);
   const [plan, plans, conditions, doorItems, costCodes, codeRules, needsCodes, templates, library] = await Promise.all([
     db.takeoffPlan.findFirst({
@@ -219,6 +220,7 @@ export default async function PlanViewerPage({
       toolbox: user.role === "ADMIN" ? templates.map((t) => ({ id: t.id, name: t.name })) : undefined,
       // New takeoff ▾: the type picked.
       newType: (CONDITION_TYPES as readonly string[]).includes(ctype ?? "") ? (ctype as ConditionType) : undefined,
+      fresh: fresh === "1",
     };
   }
 

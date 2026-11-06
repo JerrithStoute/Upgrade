@@ -42,6 +42,7 @@ export function ConditionDrawer({
   closeHref,
   stayHref,
   newType,
+  onCancel,
 }: {
   projectId: string;
   condition: DrawerCondition | null; // null = new condition
@@ -56,6 +57,8 @@ export function ConditionDrawer({
   stayHref: string; // the viewer with this panel open
   /** A new takeoff: the type picked from New takeoff ▾. */
   newType?: ConditionType;
+  /** Cancel does this instead of just closing (Change items' copy, not saved yet). */
+  onCancel?: () => void;
 }) {
   const [editItem, setEditItem] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -102,6 +105,7 @@ export function ConditionDrawer({
           values={condition ?? undefined}
           hasMeasurements={condition?.hasMeasurements}
           cancelHref={closeHref}
+          onCancel={onCancel}
           nextColor={nextColor}
         />
 

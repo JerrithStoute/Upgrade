@@ -321,7 +321,42 @@ export async function copyConditionForShape(input: { projectId: string; measurem
       shapes.map((m) => ({ type: m.condition.type, sheetId: m.sheetId })),
     );
   revalidate(data.projectId);
-  return { id: copy.id, from: first.conditionId, moved: shapes.map((m) => ({ id: m.id, from: m.conditionId })) };
+  return { id: copy.id, from: first.conditionId, moved: shapes.map((m) => ({ id: m.id, from: m.conditionId, sizeLocked: m.sizeLocked })) };
+}
+
+/**
+ * Cancel on the panel that "Change items" opened, before it was ever saved: as if it never
+ * happened — the shapes go back to the takeoff they came from and the copy is deleted.
+ */
+export async function discardShapeCopy(input: { projectId: string; copyId: string; moved: { id: string; from: string; sizeLocked: boolean }[] }) {
+  await requireEdit("takeoffs");
+  const data = z
+    .object({
+      projectId: z.string(),
+      copyId: z.string(),
+      moved: z.array(z.object({ id: z.string(), from: z.string(), sizeLocked: z.boolean() })).max(2000),
+    })
+    .parse(input);
+  const copy = await db.takeoffCondition.findFirst({ where: { id: data.copyId, projectId: data.projectId }, include: { measurements: { select: { id: true, sheetId: true } } } });
+  if (!copy) return;
+  const back = new Map(data.moved.map((m) => [m.id, m]));
+  // Only shapes it moved, back to a takeoff of this job; anything else drawn into the copy keeps it.
+  const froms = await db.takeoffCondition.findMany({ where: { projectId: data.projectId, id: { in: [...new Set(data.moved.map((m) => m.from))] } }, select: { id: true } });
+  const ok = new Set(froms.map((f) => f.id));
+  const going = copy.measurements.filter((m) => ok.has(back.get(m.id)?.from ?? ""));
+  if (going.length < copy.measurements.length) return;
+  for (const m of going) {
+    const b = back.get(m.id)!;
+    await db.takeoffMeasurement.update({ where: { id: m.id }, data: { conditionId: b.from, sizeLocked: b.sizeLocked } });
+  }
+  await db.takeoffCondition.delete({ where: { id: copy.id } });
+  if (hasAutoLines(copy.type)) await syncAutoItems(data.projectId);
+  if (copy.type === "WALL" || copy.type === "BEAM")
+    await supportsChanged(
+      data.projectId,
+      going.map((m) => ({ type: copy.type, sheetId: m.sheetId })),
+    );
+  revalidate(data.projectId);
 }
 
 export const deleteCondition = friendly(async function deleteCondition(fd: FormData) {
