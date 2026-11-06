@@ -859,6 +859,13 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     let says = looks.map((l) => l?.kind ?? null);
     // A short wall (a bump-out's side) with brick along it is outside — too short to out-vote one look the other way.
     if (poche && n <= 3 && looks.some((l) => l?.brick)) says = says.map(() => "exterior");
+    // A wall of windows in a brick house: brick at both ends (the corners) and, between, only the
+    // windows — their glass is two lines like a thin inside wall, read a foot here and there between
+    // feet with no say. An inside wall reads inside foot after foot. All outside.
+    const brickNear = (from: number, to: number) => looks.slice(from, to).some((l) => l?.brick);
+    let insideRun = 0;
+    for (let k = 0, run = 0; k < n; k++) insideRun = Math.max(insideRun, (run = looks[k]?.kind === "interior" ? run + 1 : 0));
+    if (n >= 4 && brickNear(0, 2) && brickNear(n - 2, n) && insideRun < 3 && looks.slice(2, n - 2).every((l) => !l || l.kind === "interior" || l.brick)) says = says.map(() => "exterior");
     // Smooth: each foot goes with most of the 5 around it.
     says = says.map((_, k) => {
       let ext = 0;
@@ -886,14 +893,17 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
       if (last && last.kind === kd) last.to = k + 1;
       else runs.push({ from: k, to: k + 1, kind: kd });
     }
+    // (An end stretch read that way just one foot — the rest no say — beside brick is the corner's foot too: the wall crossing there.)
+    const brickIn = (r: (typeof runs)[number]) => looks.slice(r.from, r.to).some((l) => l?.brick);
+    const readAs = (r: (typeof runs)[number]) => looks.slice(r.from, r.to).filter((l) => l?.kind === r.kind).length;
     for (let r = runs.length - 1; r > 0; r--)
-      if (runs[r].to - runs[r].from < 2 && runs.length > 1) {
+      if ((runs[r].to - runs[r].from < 2 || (r === runs.length - 1 && readAs(runs[r]) < 2 && brickIn(runs[r - 1]))) && runs.length > 1) {
         runs[r - 1].to = runs[r].to;
         runs.splice(r, 1);
       }
     // …and a short first one goes with the one after it (a corner's foot at the start isn't a stretch
     // of its own — left alone, it makes the next stretch look like a window between two of its kind).
-    if (runs.length > 1 && runs[0].to - runs[0].from < 2) {
+    if (runs.length > 1 && (runs[0].to - runs[0].from < 2 || (readAs(runs[0]) < 2 && brickIn(runs[1])))) {
       runs[1].from = runs[0].from;
       runs.shift();
     }
@@ -902,7 +912,6 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
     // is a stray only when it's shorter than both and no brick was seen along it — otherwise the
     // wall changes there: a bump-out's outside wall running on as the inside wall between two rooms.
     const span = (r: (typeof runs)[number]) => r.to - r.from;
-    const brickIn = (r: (typeof runs)[number]) => looks.slice(r.from, r.to).some((l) => l?.brick);
     const joinAlike = () => {
       for (let r = runs.length - 1; r > 0; r--)
         if (runs[r].kind === runs[r - 1].kind) {
