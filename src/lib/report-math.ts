@@ -18,6 +18,8 @@ export type JobInputs = {
   collected: number;
   /** A finished job is 100% complete whatever its costs say. */
   completed?: boolean;
+  /** Where the cost is heading, worked out line by line as on the job's Budget tab. Without it: the budget, or what's been spent if that's already more. */
+  projectedCost?: number;
 };
 
 export type JobNumbers = JobInputs & {
@@ -44,7 +46,7 @@ export type JobNumbers = JobInputs & {
 };
 
 export function jobNumbers(j: JobInputs): JobNumbers {
-  const projectedCost = Math.max(j.budgetCost, j.actualCost);
+  const projectedCost = j.projectedCost ?? Math.max(j.budgetCost, j.actualCost);
   const projectedProfit = j.contract - projectedCost;
   // No budget (no approved estimate): nothing to measure against — bid = where it's heading, no fade.
   const budgetProfit = j.budgetCost > 0 ? j.contract - j.budgetCost : projectedProfit;

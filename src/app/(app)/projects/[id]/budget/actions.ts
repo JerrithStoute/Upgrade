@@ -93,3 +93,15 @@ export const deleteExpense = friendly(async function deleteExpense(formData: For
   revalidate(projectId);
   redirect(budgetPath(projectId));
 });
+
+/** Check or uncheck Done on a cost code. Never locks it: later bills still land on the line. */
+export async function setBudgetDone(projectId: string, costCodeId: string, done: boolean) {
+  await requireEdit("budget");
+  const project = await db.project.findUnique({ where: { id: projectId }, select: { budgetDone: true } });
+  if (!project) throw new Error("Project not found");
+  const next = new Set(project.budgetDone);
+  if (done) next.add(costCodeId);
+  else next.delete(costCodeId);
+  await db.project.update({ where: { id: projectId }, data: { budgetDone: [...next] } });
+  revalidate(projectId);
+}

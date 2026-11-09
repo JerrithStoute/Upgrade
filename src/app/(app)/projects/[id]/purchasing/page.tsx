@@ -1,15 +1,15 @@
 import Link from "@/components/link";
-import { awardCode } from "@/lib/sub-bids";
 import { ClipboardList, Plus, ShieldAlert } from "lucide-react";
 import { requireView } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { getProject, activeCostCodes } from "@/lib/projects";
-import { costCodeLabel, fmtDate, lineCost, money } from "@/lib/utils";
+import { getProject } from "@/lib/projects";
+import { fmtDate, money } from "@/lib/utils";
 import { BILL_STATUS_LABEL, PO_STATUS_LABEL, billTotal, poTotal } from "@/lib/purchasing";
 import { paperworkWarning } from "@/lib/paperwork";
 import { vendorsPaperwork } from "@/lib/paperwork-server";
 import { Badge, ButtonLink, Collapsible, EmptyState, Stat, Table, THead, TBody, Tr, Th, Td } from "@/components/ui";
 import { NewPoForm } from "./_components/new-po-form";
+import { newPoChoices } from "./_data";
 
 export default async function PurchasingPage({ params }: { params: Promise<{ id: string }> }) {
   await requireView("purchasing");
@@ -17,7 +17,7 @@ export default async function PurchasingPage({ params }: { params: Promise<{ id:
   const project = await getProject(id);
   const base = `/projects/${project.id}/purchasing`;
 
-  const [pos, bills, estimate, awards, vendors, codes, paper] = await Promise.all([
+  const [pos, bills, choices, paper] = await Promise.all([
     db.purchaseOrder.findMany({
       where: { projectId: project.id },
       orderBy: { number: "desc" },
@@ -28,44 +28,10 @@ export default async function PurchasingPage({ params }: { params: Promise<{ id:
       orderBy: [{ billDate: "desc" }, { createdAt: "desc" }],
       include: { lines: true, purchaseOrder: { select: { number: true } } },
     }),
-    db.estimate.findFirst({
-      where: { projectId: project.id },
-      orderBy: [{ approvedAt: { sort: "desc", nulls: "last" } }, { version: "desc" }],
-      include: { items: { where: { isOptional: false } } },
-    }),
-    db.bidAward.findMany({ where: { projectId: project.id }, include: { bid: { include: { lines: true } } } }),
-    db.vendor.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
-    activeCostCodes(),
+    newPoChoices(project.id),
     vendorsPaperwork(),
   ]);
   const paperOf = new Map(paper.map((p) => [p.vendor.id, paperworkWarning(p.lines, (d) => fmtDate(d, "MMM d"))]));
-  const codeName = (k: string) => {
-    const c = codes.find((x) => x.id === k);
-    return c ? costCodeLabel(c) : "No cost code";
-  };
-
-  // The budget by cost code — what "From the budget" can put on a PO.
-  const byCode = new Map<string, { cost: number; lines: number }>();
-  for (const i of estimate?.items ?? []) {
-    const k = i.costCodeId ?? "none";
-    const row = byCode.get(k) ?? { cost: 0, lines: 0 };
-    row.cost += lineCost(i);
-    row.lines += 1;
-    byCode.set(k, row);
-  }
-  const budget = [...byCode.entries()]
-    .map(([codeKey, r]) => ({ codeKey, label: codeName(codeKey), ...r }))
-    .sort((a, b) => (codes.findIndex((c) => c.id === a.codeKey) + 1 || 1e9) - (codes.findIndex((c) => c.id === b.codeKey) + 1 || 1e9));
-  const awardOptions = awards.map((a) => {
-    // (A sub's bid is filed as "sub:<code>" — its line is the plain code.)
-    const code = awardCode(a.codeKey);
-    const lines = a.bid.lines.filter((l) => l.codeKey === code && l.unitPrice != null);
-    return {
-      value: `${a.bidId}|${code}`,
-      label: `${a.bid.vendorName} · ${lines[0]?.codeLabel ?? codeName(code)} (Bid #${a.bid.number})`,
-      total: lines.reduce((n, l) => n + l.quantity * (l.unitPrice ?? 0), 0),
-    };
-  });
 
   const rows = pos.map((po) => {
     const total = poTotal(po.lines);
@@ -103,7 +69,7 @@ export default async function PurchasingPage({ params }: { params: Promise<{ id:
       </div>
 
       <Collapsible summary="New purchase order" defaultOpen={pos.length === 0}>
-        <NewPoForm projectId={project.id} vendors={vendors.map((v) => v.name)} budget={budget} awards={awardOptions} />
+        <NewPoForm projectId={project.id} vendors={choices.vendors} budget={choices.budget} awards={choices.awards} />
       </Collapsible>
 
       <section className="space-y-2">

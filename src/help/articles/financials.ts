@@ -21,7 +21,7 @@ export const FINANCIALS: HelpArticle[] = [
       {
         heading: "The Purchasing tab",
         items: [
-          { name: "Enter a bill", what: "Records a bill a sub or vendor sent you, with or without a PO.", how: "Click it, fill in who it's from, the date and the lines, attach their PDF or a photo, then **Save bill**." },
+          { name: "Enter a bill", what: "Records a bill a sub or vendor sent you, with or without a PO.", how: "Click it, fill in who it's from, the date and the lines, attach their PDF or a photo, then **Save bill**. Started from the Budget (**Create bill** or **Add bill here**), it begins with one line per cost code you picked, filled in with what's left of each." },
           {
             name: "On POs / Waiting for approval / Approved — not paid / Paid",
             what: "The totals across the job: what's on purchase orders (not counting void or declined ones), bills waiting for someone to approve them (amber when there are any), bills approved but not yet paid, and bills paid.",

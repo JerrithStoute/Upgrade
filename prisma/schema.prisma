@@ -225,6 +225,9 @@ model Project {
   companyId      String    @default(dbgenerated("current_setting('app.company_id'::text)"))
   number         Int
   name           String
+  // Budget tab: the cost codes checked Done (no more spending expected; their projected cost is what's spent).
+  // Never locks anything: later bills still land on the line.
+  budgetDone     String[]  @default([])
   status         String    @default("LEAD")
   type           String    @default("REMODEL")
   description    String?

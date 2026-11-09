@@ -713,12 +713,21 @@ test("opens the Bills list", async () => {
 
 test("enters a bill against the job", async () => {
   await page.goto(`${job}/budget`);
-  const form = page.locator("form").filter({ has: page.getByRole("button", { name: "Add expense" }) });
-  await form.locator("[name=vendor]").fill("Flow Lumber Co");
-  await form.locator("[name=amount]").fill("750");
-  await form.locator("[name=description]").fill("Framing nails");
-  await form.getByRole("button", { name: "Add expense" }).click();
-  await expect(page.getByText("Flow Lumber Co").first()).toBeVisible();
+  // + New → Expense / receipt opens a side panel; saving closes it and the cost is on the budget.
+  await page.getByRole("button", { name: "New", exact: true }).click();
+  await page.getByRole("button", { name: "Expense / receipt" }).click();
+  const panel = page.getByRole("complementary", { name: "Details" });
+  await panel.locator("[name=vendor]").fill("Flow Lumber Co");
+  await panel.locator("[name=amount]").fill("750");
+  await panel.locator("[name=description]").fill("Framing nails");
+  await panel.getByRole("button", { name: "Add expense" }).click();
+  await expect(panel).toHaveCount(0);
+  // Every number opens what makes it up: Spent lists the expense, linked to it.
+  await page.getByRole("button", { name: /^Spent/ }).click();
+  await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Not sorted" }).click();
+  await expect(page.getByRole("complementary", { name: "Details" }).getByRole("link", { name: "Flow Lumber Co" })).toBeVisible();
+  await page.getByRole("complementary", { name: "Details" }).getByRole("button", { name: "Close" }).click();
+  await page.getByText("All expenses").click();
   await expect(page.getByText("$750.00").first()).toBeVisible();
 });
 

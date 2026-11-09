@@ -7,6 +7,7 @@ import { parseMarkupTable, tableExtras } from "./markup";
 import { invoiceTotal, paymentsTotal } from "./finance";
 import { billTotal } from "./purchasing";
 import { syncCarrying } from "./spec";
+import { jobProjectedCost } from "./budget-math";
 import { agingBucket, daysLate, jobNumbers, periodOf, periods, type AgingKey, type JobNumbers } from "./report-math";
 
 /** Jobs that have a contract: sold, building, on hold, or finished. */
@@ -43,9 +44,12 @@ export async function jobRows(statuses: string[] = SOLD, asOf = new Date()) {
       changeOrders: { where: { status: "APPROVED" }, include: { items: true } },
       expenses: { where: { date: { lte: asOf } }, select: { amount: true, costCodeId: true, carryingCostId: true, vendor: true } },
       carryingCosts: { select: { costCodeId: true } },
+      purchaseOrders: { where: { createdAt: { lte: asOf } }, select: { status: true, bidId: true, lines: { select: { costCodeId: true, quantity: true, unitCost: true } } } },
+      bidAwards: { where: { awardedAt: { lte: asOf } }, select: { bidId: true, codeKey: true, bid: { select: { lines: { select: { codeKey: true, quantity: true, unitPrice: true } } } } } },
       invoices: { where: { status: { notIn: ["DRAFT", "VOID"] }, issueDate: { lte: asOf } }, include: { items: true, payments: { where: { date: { lte: asOf } } } } },
     },
   });
+  const knownCodes = new Set((await db.costCode.findMany({ select: { id: true } })).map((c) => c.id));
   return projects.map((p): JobRow => {
     const est = p.estimates[0];
     const estItems = (est?.items ?? []).filter((i) => !i.isOptional);
@@ -56,6 +60,15 @@ export async function jobRows(statuses: string[] = SOLD, asOf = new Date()) {
     const coPrice = cos.reduce((n, c) => n + changeOrderTotals(c, c.items).total, 0);
     const coCost = cos.reduce((n, c) => n + c.items.reduce((t, i) => t + lineCost(i), 0), 0);
     let budgetCost = estItems.reduce((n, i) => n + lineCost(i), 0) + coCost;
+    // Where it's heading, line by line, the same as the job's Budget tab (spec houses: below).
+    let projectedCost: number | undefined = jobProjectedCost({
+      budget: [...estItems, ...cos.flatMap((c) => c.items)].map((i) => ({ costCodeId: i.costCodeId, amount: lineCost(i) })),
+      spent: p.expenses,
+      pos: p.purchaseOrders,
+      awards: p.bidAwards.map((a) => ({ bidId: a.bidId, codeKey: a.codeKey, lines: a.bid.lines })),
+      done: p.budgetDone,
+      knownCodes,
+    });
     if (p.isSpec && budgetCost > 0) {
       // A spec house's expected cost, as the offer calculator works it out: each cost code's
       // estimate, or what's been spent once that's more — plus carrying and selling costs on top
@@ -70,6 +83,7 @@ export async function jobRows(statuses: string[] = SOLD, asOf = new Date()) {
         if (e.carryingCostId || e.vendor === "Sale of home") onTop += e.amount;
         else spent.set(e.costCodeId ?? "", (spent.get(e.costCodeId ?? "") ?? 0) + e.amount);
       }
+      projectedCost = undefined;
       budgetCost =
         onTop +
         [...new Set([...byCode.keys(), ...spent.keys()])].reduce((n, k) => n + (carryCodes.has(k) ? (spent.get(k) ?? 0) : Math.max(byCode.get(k) ?? 0, spent.get(k) ?? 0)), 0);
@@ -82,6 +96,7 @@ export async function jobRows(statuses: string[] = SOLD, asOf = new Date()) {
       billed: p.invoices.reduce((n, i) => n + invoiceTotal(i.items), 0),
       collected: p.invoices.reduce((n, i) => n + paymentsTotal(i.payments), 0),
       completed: p.status === "COMPLETED",
+      projectedCost,
     });
     return {
       ...nums,

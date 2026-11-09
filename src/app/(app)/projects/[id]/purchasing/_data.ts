@@ -1,7 +1,8 @@
 import "server-only";
 import { db } from "@/lib/db";
 import { activeCostCodes } from "@/lib/projects";
-import { costCodeLabel } from "@/lib/utils";
+import { costCodeLabel, lineCost } from "@/lib/utils";
+import { awardCode } from "@/lib/sub-bids";
 import { billTotal, poTotal } from "@/lib/purchasing";
 import type { PoChoice } from "./_components/bill-form";
 
@@ -36,4 +37,47 @@ export async function billChoices(projectId: string, vendorId?: string) {
     return { id: po.id, label: `PO-${po.number} · ${po.vendorName} · ${po.title}`, vendor: po.vendorName, left: cents(total - billed), lines };
   });
   return { choices, codes: codes.map((c) => ({ id: c.id, label: costCodeLabel(c) })), vendors: vendors.map((v) => v.name) };
+}
+
+/**
+ * What a new PO can start from: the budget's cost codes (the job's latest estimate, at cost)
+ * and the bids you took. Used on Purchasing and on the Budget.
+ */
+export async function newPoChoices(projectId: string) {
+  const [estimate, awards, vendors, codes] = await Promise.all([
+    db.estimate.findFirst({
+      where: { projectId },
+      orderBy: [{ approvedAt: { sort: "desc", nulls: "last" } }, { version: "desc" }],
+      include: { items: { where: { isOptional: false } } },
+    }),
+    db.bidAward.findMany({ where: { projectId }, include: { bid: { include: { lines: true } } } }),
+    db.vendor.findMany({ select: { name: true }, orderBy: { name: "asc" } }),
+    activeCostCodes(),
+  ]);
+  const codeName = (k: string) => {
+    const c = codes.find((x) => x.id === k);
+    return c ? costCodeLabel(c) : "No cost code";
+  };
+  const byCode = new Map<string, { cost: number; lines: number }>();
+  for (const i of estimate?.items ?? []) {
+    const k = i.costCodeId ?? "none";
+    const row = byCode.get(k) ?? { cost: 0, lines: 0 };
+    row.cost += lineCost(i);
+    row.lines += 1;
+    byCode.set(k, row);
+  }
+  const budget = [...byCode.entries()]
+    .map(([codeKey, r]) => ({ codeKey, label: codeName(codeKey), ...r }))
+    .sort((a, b) => (codes.findIndex((c) => c.id === a.codeKey) + 1 || 1e9) - (codes.findIndex((c) => c.id === b.codeKey) + 1 || 1e9));
+  const awardOptions = awards.map((a) => {
+    // (A sub's bid is filed as "sub:<code>" — its line is the plain code.)
+    const code = awardCode(a.codeKey);
+    const lines = a.bid.lines.filter((l) => l.codeKey === code && l.unitPrice != null);
+    return {
+      value: `${a.bidId}|${code}`,
+      label: `${a.bid.vendorName} · ${lines[0]?.codeLabel ?? codeName(code)} (Bid #${a.bid.number})`,
+      total: lines.reduce((n, l) => n + l.quantity * (l.unitPrice ?? 0), 0),
+    };
+  });
+  return { budget, awards: awardOptions, vendors: vendors.map((v) => v.name) };
 }

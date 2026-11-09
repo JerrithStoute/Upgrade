@@ -14,13 +14,16 @@ export function NewPoForm({
   vendors,
   budget,
   awards,
+  picked,
 }: {
   projectId: string;
   vendors: string[];
   budget: { codeKey: string; label: string; cost: number; lines: number }[];
   awards: { value: string; label: string; total: number }[];
+  /** Cost codes picked on the Budget: start "From the budget" with them ticked. */
+  picked?: string[];
 }) {
-  const [source, setSource] = useState<"blank" | "budget" | "bid">(awards.length ? "bid" : budget.length ? "budget" : "blank");
+  const [source, setSource] = useState<"blank" | "budget" | "bid">(picked?.length && budget.length ? "budget" : awards.length ? "bid" : budget.length ? "budget" : "blank");
   const tab = (v: typeof source, label: string, disabled?: boolean) => (
     <button
       type="button"
@@ -71,7 +74,7 @@ export function NewPoForm({
           <div className="grid grid-cols-1 gap-1 sm:grid-cols-2">
             {budget.map((b) => (
               <label key={b.codeKey} className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" name="code" value={b.codeKey} className="h-4 w-4 rounded border-slate-300" />
+                <input type="checkbox" name="code" value={b.codeKey} defaultChecked={picked?.includes(b.codeKey)} className="h-4 w-4 rounded border-slate-300" />
                 <span className="min-w-0 flex-1 truncate">{b.label}</span>
                 <span className="text-xs tabular-nums text-slate-500">{money(b.cost)}</span>
               </label>
