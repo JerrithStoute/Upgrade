@@ -2,9 +2,8 @@ import { runAsCompany } from "@/lib/tenant";
 import { db } from "@/lib/db";
 import { bidWorkbook } from "@/lib/bids";
 import { bidPdf } from "@/lib/bid-pdf";
+import { bidPdfInput } from "@/lib/bid-pdf-input";
 import { bidFileName } from "@/lib/bid-email";
-import { companyLines } from "@/lib/company";
-import { fmtDate } from "@/lib/utils";
 import { bidForLink } from "../../data";
 
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
@@ -24,8 +23,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ token: s
     const project = await db.project.findUniqueOrThrow({ where: { id: bid.projectId } });
     const blank = { ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) };
     if (kind === "xlsx") return bidWorkbook(blank, project, company);
-    const address = [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", ");
-    return bidPdf({ bid: blank, project, address, from: companyLines(company), date: fmtDate(new Date()), replyTo: company?.email ?? null });
+    return bidPdf(await bidPdfInput(blank, project, company, company?.email ?? null));
   });
   const name = bidFileName(bid, bid.project, kind);
   return new Response(new Uint8Array(data), {

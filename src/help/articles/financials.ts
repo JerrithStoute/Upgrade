@@ -45,7 +45,11 @@ export const FINANCIALS: HelpArticle[] = [
           "A PO moves through **Draft → Sent → Accepted → Closed**. It can also be **Declined** by the vendor or **Void** (cancelled).",
         ],
         items: [
-          { name: "Print / PDF", what: "The PO as a page to print or save as a PDF, for vendors you don't email." },
+          {
+            name: "Print / PDF",
+            what: "The PO as the vendor gets it — the same page they see when they open it — in the same look as your proposals, change orders and invoices: your logo, its number, issue and deliver-by dates and where it stands (Sent · waiting on vendor, Accepted, Declined, Closed); From, To and Deliver to; what it's for; the order and its total (your cost codes don't print); delivery and **Send your bill to**, with \"Put PO No. … on every delivery ticket and bill\"; your PO terms; and the acceptance — when the vendor accepted, and who sent it and when.",
+            how: "Admins: click **+ Add PO terms** (or **Edit** on them), type, and **Save for every PO**. A short line on its own above a paragraph prints as its heading. **Print / Save PDF** prints it, for vendors you don't email.",
+          },
           {
             name: "Mark sent",
             what: "Marks a draft PO sent and emails it to the vendor. The note under the header says where it will go. If there's no email on file it won't be emailed, so print it or add their email in Directory → Subs & vendors.",
@@ -163,6 +167,10 @@ export const FINANCIALS: HelpArticle[] = [
         heading: "Sent",
         items: [
           { name: "Excel file / PDF", what: "The bid as an Excel file (prices typed into it come back in by themselves), or as a PDF to print and fill in by hand. Both go with the bid's email." },
+          {
+            name: "The PDF",
+            what: "In the same look as your proposals, POs and invoices: your logo, the request's number, when it was sent and when prices are needed, From, To and Job, your note, and a line saying to write prices in and email it back (or use the link in the email). Then the items grouped by cost code — quantity, a blank for their price each and one for a substitute — and the price list for other lengths; on a sub's bid, the plans to price from and a blank for each trade. **Your quote** at the end has blanks for how long their prices are good, a delivery charge (a sub: the start date they can make), who quoted and the date.",
+          },
           { name: "Typed online", what: "Every bid email has a **Type your prices online** button: the vendor opens a page with your list (no sign-in, works on a phone), writes a note to you at the top, types a price on each line (**Sub** on a line offers something else instead), can attach their own quote (a PDF, a photo or their Excel file), and sends. A quote with no prices typed comes in too: type its prices on **Prices**, with it beside you. The prices land on their bid, it shows as back, and whoever emailed it (and the job's manager) gets an email with their note. They can change and send again until you take their bid. Taking another vendor's bid for the same cost code doesn't close theirs (concrete from one supplier, the rest of the cost code from another). The link only opens that one bid and stops working after 30 days." },
           { name: "Email all", what: "Emails every bid that hasn't been emailed yet, each to its vendor's email on file, with the usual message and the online-prices button — the Excel file and PDF attached too if you ticked that in a bid's email window. Vendors with no email on file are listed: open their bid's **Email** and type one in." },
           { name: "Email", what: "Shows the email before it goes: To, Subject and Message, all editable. The list of items goes in the email too, with a button to type prices online; the Excel file and PDF are on that page to download. It goes from bids@thebuilderstation.com with your company's name.", how: "Tick **Also attach the Excel file and PDF** only when a vendor needs them attached (an email with files from a new sender lands in fewer inboxes), and **Send me a copy** to get one yourself — both are remembered and used by Email all too. Click **Send**. **Text the link** shows the vendor's link in a box: **Text it** starts a text to them with the link in it (on a phone — their number when it's on file), **Share…** opens your phone's share menu, and **Copy the link** copies it to paste anywhere, such as your own email. It comes from your company's name, and when the vendor replies, it goes to your own email. **Open in my email** is still there if you'd rather send it yourself (the online link goes in the message; download the files and attach them). Want your words in every bid email? Tick **Use as my standard message** under the message (or set it in Directory → Subs & vendors)." },
@@ -239,7 +247,11 @@ export const FINANCIALS: HelpArticle[] = [
           { name: "Mark sent", what: "Sends a draft: emails it to the client and shows it in their portal. If the client has no portal sign-in yet, the email includes a link to set one up. The note under the header says who it will go to." },
           { name: "← All invoices / ← the job's invoices", what: "Two ways back at the top. **All invoices** returns to Invoices in the menu, on the same filter you opened it from, so you can work through invoices on many jobs one after another. The other goes to this job's Invoices tab." },
           { name: "Next →", what: "When you opened the invoice from Invoices in the menu: a Next → link under \"All invoices\" (with where it is in that list, \"3 of 12\"), so you can work straight through. It follows the list as it showed when you clicked, with its filter and anything typed in the find box." },
-          { name: "Print / PDF", what: "The invoice as a page to print or save as a PDF." },
+          {
+            name: "Print / PDF",
+            what: "The invoice as the client gets it — the same paper they see in their portal, in the same look as your proposals and change orders: your logo, its number, issue and due dates and where it stands (Due, Partly paid, Overdue, Paid and when, Void); From, Bill to and Project; its lines (quantity and unit price only when a line has a quantity); each payment received and the **Balance due**; **Where your contract stands** — the contract with approved change orders, what was invoiced before, this invoice and what's left to invoice after it, with a bar and what's been paid so far; **How to pay**; and the notes.",
+            how: "**Contract summary** at the top turns \"Where your contract stands\" off or on for this invoice. Admins: click **+ Add how to pay** (or **Edit** on it), type, and **Save for every invoice**. **Print / Save PDF** prints it.",
+          },
           { name: "Void… / Delete…", what: "Void cancels the invoice; it stops counting toward what's been invoiced. Delete removes a draft for good. Both ask first." },
           { name: "Total / Paid / Balance due", what: "The tiles under the header. Balance due turns red when it's overdue." },
           { name: "Lines → Edit", what: "Opens that line right where it is: change the description, quantity, price or cost code and click **Save**, or **Delete line…**. Lines are locked once the invoice is sent." },

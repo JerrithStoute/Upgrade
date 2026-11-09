@@ -79,3 +79,13 @@ export function isOverdue(inv: { status: string; dueDate: Date | null }, now = n
 export function linePriceOfChangeOrder(items: CostLine[]) {
   return lineTotals(items, { includeOptional: true }).price;
 }
+
+/**
+ * "Where your contract stands" on an invoice: the contract (approved change orders in), what was
+ * invoiced before this one, this one, and what's left to invoice after it (below zero: billed past
+ * the contract). Paid so far counts every payment on the job's invoices.
+ */
+export function contractStanding(contract: number, before: number, thisOne: number, paid: number) {
+  const c = (n: number) => Math.round(n * 100) / 100;
+  return { contract: c(contract), before: c(before), thisOne: c(thisOne), left: c(contract - before - thisOne), paid: c(paid) };
+}

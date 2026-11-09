@@ -7,7 +7,6 @@ import { loadTemplateSheet } from "@/lib/estimate-lines";
 import { divisionCategories, loadEstimateCategories } from "@/lib/estimate-categories";
 import { codeDivisions } from "@/lib/cost-code-divisions";
 import { loadParameters, templateValues } from "@/lib/estimate-parameters";
-import { pct } from "@/lib/utils";
 import { ConfirmForm, SubmitButton } from "@/components/ui";
 import { EstimateSheet } from "@/components/estimate/estimate-sheet";
 import { deleteTemplate, duplicateTemplate, saveTemplate, saveTemplateValues, updateTemplateDetails } from "../actions";
@@ -98,19 +97,15 @@ export default async function EstimateTemplatePage({ params, searchParams }: { p
         {edit === "details" ? (
           <form action={updateTemplateDetails} className="space-y-2 bg-blue-50/40 px-4 py-3">
             <input type="hidden" name="templateId" value={template.id} />
-            <label className="flex items-center gap-2 text-xs text-slate-600">
-              <span className="w-28 shrink-0">Starting markup %</span>
-              <input name="defaultMarkup" type="number" step="0.1" min="0" className="input !h-7 !w-24 !py-0 text-xs" defaultValue={template.defaultMarkup} />
-              <span className="text-slate-500">What new lines start with</span>
-            </label>
             <label className="flex items-start gap-2 text-xs text-slate-600">
-              <span className="w-28 shrink-0 pt-1.5">Proposal notes</span>
+              <span className="w-28 shrink-0 pt-1.5">Introduction</span>
               <textarea name="notes" rows={2} className="input min-w-0 flex-1 text-xs" defaultValue={template.notes ?? ""} />
             </label>
             <label className="flex items-start gap-2 text-xs text-slate-600">
               <span className="w-28 shrink-0 pt-1.5">Terms</span>
               <textarea name="terms" rows={2} className="input min-w-0 flex-1 text-xs" defaultValue={template.terms ?? ""} />
             </label>
+            <p className="pl-[7.5rem] text-xs text-slate-500">The proposal&apos;s opening paragraph and terms for jobs started from this template. Leave one empty to use your standard one (Settings → Proposals).</p>
             <SubmitButton size="sm" className={small}>
               Save
             </SubmitButton>
@@ -119,8 +114,7 @@ export default async function EstimateTemplatePage({ params, searchParams }: { p
           <dl className="px-4 py-2 text-sm">
             {(
               [
-                ["Starting markup", <>{pct(template.defaultMarkup, 1)} <span className="text-xs text-slate-500">· what new lines start with</span></>],
-                ["Proposal notes", template.notes],
+                ["Introduction", template.notes],
                 ["Terms", template.terms],
               ] as const
             ).map(([label, value]) => (

@@ -15,14 +15,14 @@ export default async function InvoiceSettingsPage({ searchParams }: { searchPara
   await requireAdmin();
   const { saved } = await searchParams;
   const [company, next, highest, fallback, codes] = await Promise.all([
-    db.company.findFirst({ select: { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: true, invoiceNextNumber: true } }),
+    db.company.findFirst({ select: { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: true, invoiceNextNumber: true, paymentInstructions: true } }),
     nextInvoiceNumber(),
     db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } }),
     invoiceFallbackCodes(),
     db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true } }),
   ]);
   const codeList = codes.map((x) => ({ id: x.id, label: costCodeLabel(x, " ") }));
-  const c = company ?? { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: "AUTO", invoiceNextNumber: null };
+  const c = company ?? { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: "AUTO", invoiceNextNumber: null, paymentInstructions: null };
   const box = "flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-800 has-[:checked]:border-blue-300 has-[:checked]:bg-blue-50/50";
 
   return (
@@ -121,6 +121,21 @@ export default async function InvoiceSettingsPage({ searchParams }: { searchPara
             </span>
           </label>
           <p className="text-xs text-slate-500">Either way, a draft invoice&apos;s number can be changed with Edit on its Details.</p>
+        </CardBody>
+      </Card>
+
+      <Card>
+        <CardHeader title="How to pay" description="Prints on every invoice, above “Please put invoice No. … on your payment.” You can also change it right on an invoice’s Print page." />
+        <CardBody>
+          <textarea
+            name="paymentInstructions"
+            rows={6}
+            className="input text-sm"
+            defaultValue={c.paymentInstructions ?? ""}
+            aria-label="How to pay"
+            placeholder={"By check\nPayable to … and where to mail it\n\nBy bank transfer (ACH)\nCall the office for our bank details."}
+          />
+          <p className="mt-1 text-xs text-slate-500">A short line on its own above a paragraph prints as its heading.</p>
         </CardBody>
       </Card>
 

@@ -4,6 +4,8 @@ import { getBrand } from "./company-brand";
 import { approvedEstimateTotal } from "./projects";
 import { changeOrderTotals, effectOnContract, parseApprovals, parseDocOptions, parseIds } from "./change-orders";
 import { companyClock } from "@/lib/company-zone";
+import { documentColors } from "./brand-style";
+import { photoCaption } from "./proposal-options";
 
 /** Everything the printed change order shows: your letterhead, the client and job, lines, totals, effect on contract, signatures. */
 export async function loadChangeOrderDoc(projectId: string, coId: string) {
@@ -18,7 +20,7 @@ export async function loadChangeOrderDoc(projectId: string, coId: string) {
     approvedEstimateTotal(projectId),
     // The contract date: when the estimate was approved.
     db.estimate.findFirst({ where: { projectId, status: "APPROVED" }, orderBy: { approvedAt: "desc" }, select: { approvedAt: true } }),
-    db.fileAsset.findMany({ where: { changeOrderId: coId, clientVisible: true }, orderBy: { createdAt: "asc" }, select: { id: true, name: true } }),
+    db.fileAsset.findMany({ where: { changeOrderId: coId, clientVisible: true }, orderBy: { createdAt: "asc" }, select: { id: true, name: true, mimeType: true } }),
   ]);
   if (!co) return null;
   const approverIds = parseIds(co.approverIds);
@@ -59,7 +61,13 @@ export async function loadChangeOrderDoc(projectId: string, coId: string) {
     client: client ? `${client.firstName} ${client.lastName}`.trim() : null,
     project: { name: project.name, number: project.number, lines: [project.address, cityLine(project)].filter((x): x is string => !!x) },
     contractDate: contract?.approvedAt ?? null,
-    files,
+    // Pictures print as a row of small pictures; other files as links.
+    photos: files.filter((f) => f.mimeType.startsWith("image/")).map((f) => ({ id: f.id, url: `/api/files/${f.id}`, caption: photoCaption(f.name) })),
+    files: files.filter((f) => !f.mimeType.startsWith("image/")).map((f) => ({ id: f.id, name: f.name })),
+    previousCount: others.length,
+    colors: documentColors(brand.color),
+    clientLines: client ? [client.company, client.address, cityLine(client), client.phone, client.email].filter((x): x is string => !!x) : [],
+    footer: [company?.name ?? "Your Company", company?.phone, company?.website].filter((x): x is string => !!x).join(" · "),
     // Your team first, then the client.
     signers: [
       ...approvers.map((a) => ({ role: "Builder", name: a.name, approvedAt: approvals[a.id] ? wall(new Date(approvals[a.id])) : null, as: null as string | null })),

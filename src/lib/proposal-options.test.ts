@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_PROPOSAL_OPTIONS, NO_VIEW, buildProposal, goodThroughDay, parseProposalOptions, proposalExpired, type ProposalOptions, type ProposalSpec } from "./proposal-options";
+import { DEFAULT_PROPOSAL_OPTIONS, NO_VIEW, buildProposal, goodThroughDay, parseProposalOptions, paymentSchedule, photoCaption, proposalExpired, termsBlocks, type ProposalOptions, type ProposalSpec } from "./proposal-options";
 
 const line = (id: string, qty: number, cost: number, markup: number, costType = "MATERIAL", isOptional = false) => ({
   id,
@@ -194,5 +194,100 @@ describe("proposal good through", () => {
   it("no good-for days: it never expires", () => {
     assert.equal(goodThroughDay("2026-08-01", 0), null);
     assert.equal(proposalExpired("2026-08-01", 0, "2030-01-01"), false);
+  });
+});
+
+describe("proposal: what's left off", () => {
+  const unused = (id: string, category: string): ProposalSpec => ({
+    id,
+    name: id,
+    category,
+    specText: null,
+    isAllowance: false,
+    kind: "SPECIFICATION",
+    allowanceProfit: false,
+    choice: null,
+    view: NO_VIEW,
+    lines: [],
+  });
+  it("leaves off a template's unused categories, and a division with nothing left in it", () => {
+    const d = buildProposal([...specs, unused("Legal Fees", "Preparation Preliminaries"), unused("Septic", "Preparation Preliminaries"), unused("Mantel", "Finishes")], DEFAULT_PROPOSAL_OPTIONS, null);
+    assert.deepEqual(
+      d.categories.map((c) => [c.name, c.divisions.map((x) => x.name)]),
+      [
+        ["Excavation and Foundation", ["2000 Excavation", "2100 Footing and Foundation"]],
+        ["Finishes", ["Flooring"]],
+      ],
+    );
+  });
+  it("keeps one with no lines when it says something, has a picture or is a selection", () => {
+    const d = buildProposal(
+      [
+        { ...unused("Note", "Notes"), specText: "Owner supplies the mailbox" },
+        { ...unused("Pic", "Notes"), photos: [{ id: "f1", url: "/api/files/f1", caption: null }] },
+        { ...unused("Pick", "Notes"), kind: "SELECTION" },
+      ],
+      DEFAULT_PROPOSAL_OPTIONS,
+      null,
+    );
+    assert.deepEqual(d.categories[0].divisions.map((x) => x.name), ["Note", "Pic", "Pick"]);
+    assert.equal(d.categories[0].divisions[1].photos[0].id, "f1");
+  });
+});
+
+describe("payment schedule", () => {
+  it("works each payment out from the total, the last taking the rounding", () => {
+    const s = paymentSchedule(135081.75, [
+      { label: "At signing", pct: 10 },
+      { label: "Demo complete", pct: 40 },
+      { label: "Cabinets installed", pct: 40 },
+      { label: "Substantial completion", pct: 10 },
+    ]);
+    assert.deepEqual(
+      s.rows.map((r) => r.amount),
+      [13508.18, 54032.7, 54032.7, 13508.17],
+    );
+    assert.equal(s.amountTotal, 135081.75);
+    assert.equal(s.pctTotal, 100);
+  });
+  it("says so when the percentages don't add up to 100, and leaves blank rows off", () => {
+    const s = paymentSchedule(1000, [
+      { label: "Deposit", pct: 25 },
+      { label: "", pct: 0 },
+      { label: "Final", pct: 50 },
+    ]);
+    assert.equal(s.rows.length, 2);
+    assert.equal(s.pctTotal, 75);
+    assert.equal(s.amountTotal, 750);
+  });
+  it("is off and starts from a simple schedule by default", () => {
+    assert.equal(DEFAULT_PROPOSAL_OPTIONS.payments.show, false);
+    assert.equal(DEFAULT_PROPOSAL_OPTIONS.payments.rows.reduce((t, r) => t + r.pct, 0), 100);
+    assert.equal(DEFAULT_PROPOSAL_OPTIONS.terms, true);
+  });
+});
+
+describe("terms", () => {
+  it("prints a short line above a paragraph as its heading", () => {
+    assert.deepEqual(termsBlocks("Change orders\nAny change is made by written change order.\n\nWarranty\n\nOne year on workmanship."), [
+      { title: "Change orders", body: "Any change is made by written change order." },
+      { title: "Warranty", body: "One year on workmanship." },
+    ]);
+  });
+  it("takes a heading that ends in brackets", () => {
+    assert.equal(termsBlocks("By bank transfer (ACH)\nCall the office.")[0].title, "By bank transfer (ACH)");
+  });
+  it("leaves sentences, lead-ins and lists as they are", () => {
+    assert.deepEqual(termsBlocks("10% deposit at signing, 40% at demo complete."), [{ title: null, body: "10% deposit at signing, 40% at demo complete." }]);
+    assert.deepEqual(termsBlocks("Payments may be made by:\n- Check\n- ACH"), [{ title: null, body: "Payments may be made by:\n- Check\n- ACH" }]);
+  });
+});
+
+describe("picture captions", () => {
+  it("uses a file's name, but not a camera's", () => {
+    assert.equal(photoCaption("Kitchen_elevation.png"), "Kitchen elevation");
+    assert.equal(photoCaption("IMG_4053.jpg"), null);
+    assert.equal(photoCaption("PXL_20261101_153000.jpg"), null);
+    assert.equal(photoCaption("20261101_153000.jpg"), null);
   });
 });

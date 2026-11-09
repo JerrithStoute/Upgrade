@@ -31,6 +31,7 @@ export type SourceSpec = {
   proposalView?: string | null;
   allowanceProfit?: boolean | null;
   selectionId?: string | null;
+  photos?: string[];
 };
 
 export type SourceItem = {
@@ -121,6 +122,8 @@ export async function copyIntoEstimate(
         proposalView: s.proposalView ?? null,
         allowanceProfit: s.allowanceProfit ?? null,
         selectionId: opts.keepSelectionLinks ? (s.selectionId ?? null) : null,
+        // The proposal's pictures are this job's files: they come along within the job only.
+        photos: opts.keepSelectionLinks ? (s.photos ?? []) : [],
       },
     });
     specMap.set(s.id, copy.id);
@@ -193,8 +196,9 @@ export async function createProjectEstimate(projectId: string, templateId: strin
         defaultMarkup: template?.defaultMarkup ?? startingProfit(company?.markupTable),
         // The template's Markup, Margin & Tax table, else your default.
         markupTable: template?.markupTable ?? company?.markupTable ?? null,
-        notes: template?.notes ?? null,
-        terms: template?.terms ?? null,
+        // The template's introduction and terms, else your standard ones (Settings → Proposals).
+        notes: template?.notes?.trim() ? template.notes : (company?.proposalIntro ?? null),
+        terms: template?.terms?.trim() ? template.terms : (company?.proposalTerms ?? null),
       },
     });
     // Its own parameter values: the template's, else none (a new version may be other plans).
@@ -384,7 +388,7 @@ export async function pruneSelections(tx: Tx, selectionIds: (string | null | und
 export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: string, input: SaveSheetInput) {
   const over = sourceId === targetId;
   const [srcSpecs, srcItems, valid] = await Promise.all([
-    tx.estimateSpec.findMany({ where: { estimateId: sourceId }, select: { id: true, selectionId: true } }),
+    tx.estimateSpec.findMany({ where: { estimateId: sourceId }, select: { id: true, selectionId: true, photos: true } }),
     tx.estimateItem.findMany({
       where: { estimateId: sourceId },
       select: {
@@ -444,7 +448,7 @@ export async function saveEstimateSheet(tx: Tx, sourceId: string, targetId: stri
     const specId =
       over && src
         ? (await tx.estimateSpec.update({ where: { id: src.id }, data })).id
-        : (await tx.estimateSpec.create({ data: { ...data, estimateId: targetId, selectionId: src?.selectionId ?? null } })).id;
+        : (await tx.estimateSpec.create({ data: { ...data, estimateId: targetId, selectionId: src?.selectionId ?? null, photos: src?.photos ?? [] } })).id;
 
     for (const l of s.lines) {
       if (removedByTakeoff(l)) continue;

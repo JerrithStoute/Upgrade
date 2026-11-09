@@ -1,6 +1,6 @@
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { parseProposalOptions } from "@/lib/proposal-options";
+import { parseProposalOptions, STARTER_PAYMENTS } from "@/lib/proposal-options";
 import { Card, CardBody, CardHeader, Field, SubmitButton } from "@/components/ui";
 import { saveProposalDefaults } from "./actions";
 
@@ -40,8 +40,10 @@ function Group({ title, children }: { title: string; children: React.ReactNode }
 export default async function ProposalDefaultsPage({ searchParams }: { searchParams: Promise<{ saved?: string }> }) {
   await requireAdmin();
   const { saved } = await searchParams;
-  const company = await db.company.findFirst({ select: { proposalOptions: true, name: true, escalationPct: true, escalationFrom: true } });
+  const company = await db.company.findFirst({ select: { proposalOptions: true, name: true, escalationPct: true, escalationFrom: true, proposalIntro: true, proposalTerms: true } });
   const o = parseProposalOptions(company?.proposalOptions);
+  // Room for 8 payments; blank rows are left off.
+  const payRows = [...(o.payments.rows.length ? o.payments.rows : STARTER_PAYMENTS), ...Array(8).fill({ label: "", pct: 0 })].slice(0, 8);
 
   return (
     <form action={saveProposalDefaults} className="space-y-6">
@@ -102,13 +104,41 @@ export default async function ProposalDefaultsPage({ searchParams }: { searchPar
         </Group>
 
         <Group title="Pricing & signatures">
-          <Field label="Pricing good for (days)" htmlFor="p-valid" hint="Prints “Pricing … is good for N days, through (date)” above the signatures. Leave it empty to leave it off.">
+          <Field label="Pricing good for (days)" htmlFor="p-valid" hint="Shows “Pricing good through (date)” at the top of the proposal. Leave it empty to leave it off.">
             <input id="p-valid" name="validDays" type="number" min={0} max={365} className="input" defaultValue={o.validDays || ""} placeholder="—" />
           </Field>
           <Field label="Builder signs as" htmlFor="p-signer">
             <input id="p-signer" name="signer" className="input" defaultValue={o.signer} placeholder={company?.name ?? ""} />
           </Field>
           <Check name="clientSignature" label="Client signs too" checked={o.clientSignature} />
+        </Group>
+
+        <Group title="Payment schedule">
+          <Check name="paymentsShow" label="Show the payment schedule" checked={o.payments.show} />
+          <p className="text-xs text-slate-500">Each payment&apos;s name and % of the total — the proposal works out the dollar amounts. Leave a row blank to leave it off.</p>
+          <div className="space-y-1.5">
+            {payRows.map((r, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input name="payLabel" className="input min-w-0 flex-1" defaultValue={r.label} placeholder="When it's due" aria-label={`Payment ${i + 1}`} />
+                <input name="payPct" className="input !w-20 text-right" inputMode="decimal" defaultValue={r.pct || ""} placeholder="%" aria-label={`Payment ${i + 1} percent`} />
+                <span className="text-sm text-slate-500">%</span>
+              </div>
+            ))}
+          </div>
+        </Group>
+
+        <Group title="Introduction & terms">
+          <p className="text-xs text-slate-500">
+            Your standard wording. New estimates start with it (unless their estimate template has its own); change it on any proposal by clicking it. Proposals already made keep
+            their own.
+          </p>
+          <Field label="Introduction" htmlFor="p-intro" hint="Opens the proposal, under the header: a thank-you and what it covers.">
+            <textarea id="p-intro" name="proposalIntro" rows={4} className="input" defaultValue={company?.proposalIntro ?? ""} />
+          </Field>
+          <Check name="terms" label="Show the terms & conditions" checked={o.terms} />
+          <Field label="Terms & conditions" htmlFor="p-terms" hint="A short line on its own above a paragraph prints as its heading.">
+            <textarea id="p-terms" name="proposalTerms" rows={8} className="input" defaultValue={company?.proposalTerms ?? ""} />
+          </Field>
         </Group>
 
         <Group title="Material price escalation">

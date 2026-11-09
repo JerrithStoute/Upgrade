@@ -1,253 +1,209 @@
 import { FileText } from "lucide-react";
 import { fmtDate, fmtDateTime, money, num, cn } from "@/lib/utils";
 import type { ChangeOrderDoc } from "@/lib/change-order-doc";
+import { DocFooter, DocHeader, PhotoRow, SectionTitle, SignBox, SignLine, TermsText, docColors, type DocPill } from "@/components/doc-parts";
 
-const STATUS: Record<string, [string, string]> = {
-  DRAFT: ["Draft", "text-slate-600"],
-  PENDING_APPROVAL: ["Awaiting approval", "text-amber-700"],
-  APPROVED: ["Approved", "text-emerald-700"],
-  DECLINED: ["Declined", "text-rose-700"],
-  VOID: ["Void", "text-slate-500"],
+const STATUS: Record<string, DocPill> = {
+  DRAFT: { label: "Draft", tone: "draft" },
+  PENDING_APPROVAL: { label: "Awaiting approval", tone: "waiting" },
+  APPROVED: { label: "Approved", tone: "ok" },
+  DECLINED: { label: "Declined", tone: "no" },
+  VOID: { label: "Void", tone: "void" },
 };
 
 /**
- * A change order as one document, top to bottom: the title and its status, the dates,
- * your company and the job, the intro text, the line items (their total in the table),
- * the effect on the contract, terms and dates, the closing text and the approvals —
- * a signature line for each. The client's portal page and both printouts.
+ * A change order as one document, in the same look as the proposal: the header (your logo, its
+ * number, dates and status), From / Prepared for / Project, the title, the intro text and pictures,
+ * the changes and their prices, the effect on the contract and the schedule, the terms, the closing
+ * text, and the approvals — a line for each signer. The client's portal page and both printouts.
  */
 export function ChangeOrderDocument({ d }: { d: ChangeOrderDoc }) {
   const { co, totals, doc } = d;
   const hasSelections = d.lines.some((l) => l.kind === "SELECTION");
   const prices = co.showPrices;
-  // Client choices' Client price and Allowance beside the difference (the panel can leave them off).
+  // Client choices' price and allowance beside the difference (the panel can leave them off).
   const allow = hasSelections && prices && doc.allowance;
-  // Columns: item, (choice), (client price, allowance), price / difference.
-  const cols = 1 + (hasSelections ? 1 : 0) + (prices ? (allow ? 3 : 1) : 0);
-  const [status, statusTone] = STATUS[co.status] ?? [co.status, "text-slate-600"];
   const signers = d.signers.length ? d.signers : [{ role: "Client", name: d.client ?? "Client", approvedAt: null, as: null }];
+  const st = STATUS[co.status] ?? { label: co.status, tone: "draft" as const };
+  const decided = co.status === "APPROVED" || co.status === "DECLINED" ? co.decidedAt : null;
+  const days = co.scheduleImpactDays;
+  const scheduleShown = doc.schedule && (!!days || !!co.priorCompletion || !!co.newCompletion);
+  const kind = doc.heading;
+  const number = `${co.number}`;
+  // Columns for the lines: item, (choice), (price, allowance), amount / difference.
+  const grid = hasSelections ? (allow ? "grid-cols-[1.2fr_1.3fr_auto] sm:grid-cols-[1.2fr_1.3fr_auto_auto_auto]" : prices ? "grid-cols-[1.2fr_1.3fr_auto]" : "grid-cols-[1fr_1fr]") : prices ? "grid-cols-[1fr_auto]" : "grid-cols-1";
+  const cell = "border-b border-slate-100 py-2.5";
+  const head = "border-b-[1.5px] border-slate-900 pb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-500";
 
   return (
-    <article className="proposal-doc mx-auto w-full max-w-4xl rounded-xl border border-slate-200 bg-white p-5 text-slate-900 sm:p-10 shadow-sm print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
-      {d.company.logoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={d.company.logoUrl} alt={d.company.name} className="mx-auto max-h-24 max-w-[16rem] object-contain" />
+    <article
+      className="proposal-doc mx-auto w-full max-w-4xl rounded-xl border border-slate-200 bg-white p-6 text-slate-900 shadow-sm sm:p-12 print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none"
+      style={docColors(d.colors)}
+    >
+      <DocHeader
+        logoUrl={d.company.logoUrl}
+        companyName={d.company.name}
+        kind={kind}
+        number={number}
+        dates={[
+          ["Issued", fmtDate(co.sentAt ?? co.createdAt)],
+          ...(d.contractDate ? [["Contract signed", fmtDate(d.contractDate)] as [string, string]] : []),
+        ]}
+        pill={{ ...st, label: `${st.label}${decided ? ` ${fmtDate(decided)}` : ""}` }}
+        parties={[
+          { label: "From", name: d.company.name, lines: d.company.lines },
+          { label: "Prepared for", name: d.client, lines: d.clientLines },
+          { label: "Project", name: d.project.name, lines: [...(d.project.lines.length ? [d.project.lines.join(", ")] : []), `Job #${d.project.number}`] },
+        ]}
+      />
+
+      <h1 className="mt-4 font-serif text-2xl">{co.title}</h1>
+      {co.introText && doc.intro ? <p className="mt-2 whitespace-pre-line text-sm leading-relaxed text-slate-700">{co.introText}</p> : null}
+      {doc.files && d.photos.length ? (
+        <div className="mt-3">
+          <PhotoRow photos={d.photos} />
+        </div>
       ) : null}
 
-      {/* Title and status */}
-      <header className={cn("text-center", d.company.logoUrl && "mt-6")}>
-        <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">
-          {doc.heading} #{co.number}
-        </p>
-        <h1 className="mt-1 text-3xl font-bold tracking-tight">{co.title}</h1>
-        <p className="mt-1 text-sm">
-          <span className="font-semibold text-slate-700">Status:</span> <span className={cn("font-semibold", statusTone)}>{status}</span>
-        </p>
-      </header>
-
-      {/* Dates, then you and the job */}
-      <section className="mt-8 space-y-0.5 text-sm">
-        <p>
-          <span className="font-semibold">Document date:</span> {fmtDate(co.sentAt ?? co.createdAt, "EEEE, MMMM d, yyyy")}
-        </p>
-        {d.contractDate ? (
-          <p>
-            <span className="font-semibold">Contract date:</span> {fmtDate(d.contractDate, "EEEE, MMMM d, yyyy")}
-          </p>
-        ) : null}
-      </section>
-      <section className="mt-4 grid grid-cols-1 gap-6 text-sm leading-relaxed sm:grid-cols-2">
-        <div>
-          <p className="font-semibold">{d.company.name}</p>
-          {d.company.lines.map((l) => (
-            <p key={l} className="text-slate-700">
-              {l}
-            </p>
+      {/* The changes; the total is their last row */}
+      <SectionTitle>{prices ? "Changes & pricing" : "Changes"}</SectionTitle>
+      {co.showItems ? (
+        <div className={cn("grid gap-x-4 text-[13.5px]", grid)}>
+          <span className={head}>{hasSelections ? "Selection / item" : "Description"}</span>
+          {hasSelections ? <span className={head}>Choice</span> : null}
+          {allow ? <span className={cn(head, "hidden text-right sm:block")}>Price</span> : null}
+          {allow ? <span className={cn(head, "hidden text-right sm:block")}>Allowance</span> : null}
+          {prices ? <span className={cn(head, "text-right")}>{hasSelections ? "Difference" : "Amount"}</span> : null}
+          {d.lines.map((l) => (
+            <Row key={l.id}>
+              <span className={cell}>{l.kind === "CHARGE" ? <span className="text-slate-600">Extra charge — {l.description}</span> : l.description}</span>
+              {hasSelections ? <span className={cn(cell, "text-slate-700")}>{l.kind === "SELECTION" ? l.choiceName : ""}</span> : null}
+              {allow ? <span className={cn(cell, "hidden text-right tabular-nums sm:block")}>{l.kind === "CHARGE" ? "" : money(l.clientPrice)}</span> : null}
+              {allow ? <span className={cn(cell, "hidden text-right tabular-nums text-slate-600 sm:block")}>{l.allowance !== null ? money(l.allowance) : ""}</span> : null}
+              {prices ? <span className={cn(cell, "text-right tabular-nums")}>{money(l.amount)}</span> : null}
+            </Row>
           ))}
+          {d.lines.length === 0 ? <span className={cn(cell, "col-span-full text-slate-500")}>No line items.</span> : null}
         </div>
-        <div className="sm:text-right">
-          <p className="font-semibold">Project</p>
-          {d.client ? <p className="text-slate-700">{d.client}</p> : null}
-          {d.project.lines.length ? (
-            d.project.lines.map((l) => (
-              <p key={l} className="text-slate-700">
-                {l}
-              </p>
-            ))
-          ) : (
-            <p className="text-slate-700">{d.project.name}</p>
-          )}
+      ) : null}
+      <div className="ml-auto mt-4 w-full break-inside-avoid text-sm sm:w-80">
+        {co.showItems && prices && (totals.profitLine || totals.tax) ? <Foot label="Subtotal" value={totals.shownSubtotal} /> : null}
+        {co.showItems && prices && totals.profitLine ? (
+          <Foot label={`${co.profitLabel}${totals.feePct !== null && doc.feePct ? ` (${num(totals.feePct, 2)}%)` : ""}`} value={totals.profit} />
+        ) : null}
+        {co.showItems && prices && totals.tax ? <Foot label={`${co.taxLabel} (${num(co.taxPct, 3)}%)`} value={totals.tax} /> : null}
+        <div className="mt-1.5 flex items-baseline justify-between gap-4 border-y-slate-900 py-2.5 text-base font-bold [border-bottom:3px_double] [border-top:1.5px_solid]">
+          <span>This change order</span>
+          <span className="tabular-nums">{money(totals.total)}</span>
         </div>
-      </section>
+      </div>
 
-      {co.introText && doc.intro ? <p className="mt-6 whitespace-pre-line text-sm leading-relaxed text-slate-700">{co.introText}</p> : null}
-
-      {/* Line items — the total is the table's last row */}
-      <section className="mt-8 break-inside-avoid">
-        <h2 className="text-lg font-semibold">Line items</h2>
-        <table className="mt-2 w-full text-sm">
-          {co.showItems ? (
-            <>
-              <thead>
-                <tr className="border-b-2 border-slate-800 text-left text-xs uppercase tracking-wide text-slate-600">
-                  <th className="py-2 pr-3">{hasSelections ? "Selection / item" : "Item"}</th>
-                  {hasSelections ? <th className="py-2 pr-3">Choice</th> : null}
-                  {allow ? <th className="py-2 pr-3 text-right">Client price</th> : null}
-                  {allow ? <th className="py-2 pr-3 text-right">Allowance</th> : null}
-                  {prices ? <th className="py-2 text-right">{hasSelections ? "Difference" : "Price"}</th> : null}
-                </tr>
-              </thead>
-              <tbody>
-                {d.lines.map((l) => (
-                  <tr key={l.id} className="break-inside-avoid border-b border-slate-100 align-top">
-                    <td className="py-2 pr-3">{l.kind === "CHARGE" ? <span className="text-slate-600">Extra charge — {l.description}</span> : l.description}</td>
-                    {hasSelections ? <td className="py-2 pr-3 text-slate-700">{l.kind === "SELECTION" ? l.choiceName : ""}</td> : null}
-                    {allow ? <td className="py-2 pr-3 text-right tabular-nums">{l.kind === "CHARGE" ? "" : money(l.clientPrice)}</td> : null}
-                    {allow ? <td className="py-2 pr-3 text-right tabular-nums text-slate-600">{l.allowance !== null ? money(l.allowance) : ""}</td> : null}
-                    {prices ? <td className="py-2 text-right tabular-nums">{money(l.amount)}</td> : null}
-                  </tr>
-                ))}
-                {d.lines.length === 0 ? (
-                  <tr>
-                    <td colSpan={cols} className="py-3 text-slate-500">
-                      No line items.
-                    </td>
-                  </tr>
+      {/* Effect on the contract, and on the schedule */}
+      {doc.effect || scheduleShown ? (
+        <section className="break-inside-avoid">
+          <SectionTitle>{doc.effect ? "Effect on your contract" : "Effect on the schedule"}</SectionTitle>
+          <div className={cn("grid overflow-hidden rounded-md border border-slate-200 text-[13.5px]", doc.effect && scheduleShown && "sm:grid-cols-[1.3fr_1fr]")}>
+            {doc.effect ? (
+              <div className="px-5 py-4">
+                <Line label="Original contract" value={money(d.effect.basePrice)} />
+                {Math.abs(d.effect.previous) >= 0.005 ? <Line label={`Approved change orders (${d.previousCount})`} value={signed(d.effect.previous)} /> : null}
+                <Line label="This change order" value={signed(d.effect.thisOne)} />
+                <div className="mt-1.5 flex justify-between gap-3 border-t-[1.5px] border-slate-900 pt-2 font-bold">
+                  <span>New contract total</span>
+                  <span className="tabular-nums">{money(d.effect.total)}</span>
+                </div>
+              </div>
+            ) : null}
+            {scheduleShown ? (
+              <div className={cn("bg-[var(--doc-tint)] px-5 py-4", doc.effect && "border-t border-slate-200 sm:border-l sm:border-t-0")}>
+                <p className="text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-500">Schedule</p>
+                <p className="mt-1 font-serif text-2xl">{days ? `${days > 0 ? "+" : ""}${days} day${Math.abs(days) === 1 ? "" : "s"}` : "No change"}</p>
+                {co.priorCompletion || co.newCompletion ? (
+                  <p className="mt-1 text-xs text-slate-600">
+                    Completion {co.priorCompletion ? `moves from ${fmtDate(co.priorCompletion)} ` : ""}
+                    {co.newCompletion ? `to ${fmtDate(co.newCompletion)}` : ""}.
+                  </p>
                 ) : null}
-              </tbody>
-            </>
-          ) : null}
-          <tfoot>
-            {co.showItems && prices && (totals.profitLine || totals.tax) ? <Foot cols={cols} label="Subtotal" value={totals.shownSubtotal} /> : null}
-            {co.showItems && prices && totals.profitLine ? (
-              <Foot cols={cols} label={`${co.profitLabel}${totals.feePct !== null && doc.feePct ? ` (${num(totals.feePct, 2)}%)` : ""}`} value={totals.profit} />
+              </div>
             ) : null}
-            {co.showItems && prices && totals.tax ? <Foot cols={cols} label={`${co.taxLabel} (${num(co.taxPct, 3)}%)`} value={totals.tax} /> : null}
-            <tr className="border-y-2 border-slate-800 text-base font-bold">
-              <td colSpan={co.showItems ? Math.max(cols - 1, 1) : 1} className="py-2 pr-3">
-                Total{co.showItems ? "" : " for this change order"}
-              </td>
-              <td className="py-2 text-right tabular-nums">{money(totals.total)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </section>
-
-      {/* Effect on the contract */}
-      {doc.effect ? (
-      <section className="mt-8 break-inside-avoid">
-        <h2 className="text-lg font-semibold">Effect on contract total</h2>
-        <table className="mt-2 w-full text-sm">
-          <tbody className="divide-y divide-slate-200 border-y border-slate-300">
-            <tr>
-              <td className="py-1.5 font-medium">Base price</td>
-              <td className="py-1.5 text-right tabular-nums">{money(d.effect.basePrice)}</td>
-            </tr>
-            {Math.abs(d.effect.previous) >= 0.005 ? (
-              <tr>
-                <td className="py-1.5 font-medium">Previously approved change orders</td>
-                <td className="py-1.5 text-right tabular-nums">{money(d.effect.previous)}</td>
-              </tr>
-            ) : null}
-            <tr>
-              <td className="py-1.5 font-medium">Total from this change order</td>
-              <td className="py-1.5 text-right tabular-nums">{money(d.effect.thisOne)}</td>
-            </tr>
-            <tr className="font-bold">
-              <td className="py-1.5">Total price*</td>
-              <td className="py-1.5 text-right tabular-nums">{money(d.effect.total)}</td>
-            </tr>
-          </tbody>
-        </table>
-        <p className="mt-1 text-xs text-slate-500">* May not include other change orders approved since this one was created.</p>
-      </section>
+          </div>
+          {doc.effect ? <p className="mt-1.5 text-xs text-slate-500">Counts the other change orders approved so far.</p> : null}
+        </section>
       ) : null}
 
-      {/* Terms, dates, files */}
-      {(doc.terms && co.terms) || (doc.schedule && (co.scheduleImpactDays || co.priorCompletion || co.newCompletion)) || (doc.files && d.files.length) ? (
-        <section className="mt-6 break-inside-avoid space-y-1 text-sm text-slate-700">
-          {co.terms && doc.terms ? (
-            <p>
-              <span className="font-semibold text-slate-900">Terms:</span> {co.terms}
-            </p>
-          ) : null}
-          {co.scheduleImpactDays && doc.schedule ? (
-            <p>
-              <span className="font-semibold text-slate-900">Effect on completion date:</span> {co.scheduleImpactDays > 0 ? "+" : ""}
-              {co.scheduleImpactDays} day{Math.abs(co.scheduleImpactDays) === 1 ? "" : "s"}
-            </p>
-          ) : null}
-          {(co.priorCompletion || co.newCompletion) && doc.schedule ? (
-            <p>
-              <span className="font-semibold text-slate-900">Projected completion:</span> {co.priorCompletion ? fmtDate(co.priorCompletion) : "—"} →{" "}
-              {co.newCompletion ? fmtDate(co.newCompletion) : "—"}
-            </p>
-          ) : null}
-          {d.files.length && doc.files ? (
-            <p className="flex flex-wrap items-center gap-2 pt-1">
-              <span className="font-semibold text-slate-900">Files:</span>
-              {d.files.map((f) => (
-                <a
-                  key={f.id}
-                  href={`/api/files/${f.id}`}
-                  target="_blank"
-                  rel="noopener"
-                  className="inline-flex items-center gap-1 text-blue-700 hover:underline print:text-slate-800"
-                >
-                  <FileText className="h-3.5 w-3.5" /> {f.name}
-                </a>
-              ))}
-            </p>
-          ) : null}
+      {co.terms && doc.terms ? (
+        <section>
+          <SectionTitle>Terms</SectionTitle>
+          <TermsText text={co.terms} />
         </section>
+      ) : null}
+
+      {doc.files && d.files.length ? (
+        <p className="mt-6 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          <span className="font-semibold">Attached:</span>
+          {d.files.map((f) => (
+            <a key={f.id} href={`/api/files/${f.id}`} target="_blank" rel="noopener" className="inline-flex items-center gap-1 text-blue-700 hover:underline print:text-slate-800">
+              <FileText className="h-3.5 w-3.5" /> {f.name}
+            </a>
+          ))}
+        </p>
       ) : null}
 
       {co.closingText && doc.closing ? <p className="mt-6 whitespace-pre-line text-sm leading-relaxed text-slate-700">{co.closingText}</p> : null}
 
-      {/* Approvals: a line for each signer; the client's Approve / Decline sits on theirs */}
-      <section className="mt-10 break-inside-avoid">
-        <h2 className="text-lg font-semibold">Approvals</h2>
-        <div className="mt-4 space-y-8">
-          {signers.map((s, i) => (
-            <div key={i}>
-              <div className="grid grid-cols-[1fr_8rem] gap-4 sm:grid-cols-[1fr_12rem] sm:gap-6">
-                <div>
-                  <div className="flex h-10 items-end border-b border-slate-400 pb-1 text-sm">
-                    {s.approvedAt ? (
-                      <span className="italic text-emerald-800">Approved electronically{s.as ? ` — ${s.as}` : ""}</span>
-                    ) : co.status === "DECLINED" && s.role === "Client" ? (
-                      <span className="italic text-rose-700">Declined{co.decidedBy ? ` — ${co.decidedBy}` : ""}</span>
-                    ) : (
-                      <span className="no-print text-xs text-slate-400">Awaiting approval</span>
-                    )}
-                  </div>
-                  <p className="mt-1 text-sm text-slate-700">
-                    <span className="font-semibold">{s.role === "Client" ? "Client" : "Team member"}:</span> {s.name}
-                  </p>
-                </div>
-                <div>
-                  <div className="flex h-10 items-end border-b border-slate-400 pb-1 text-sm text-slate-700">
-                    {s.approvedAt ? fmtDateTime(s.approvedAt) : co.status === "DECLINED" && s.role === "Client" && co.decidedAt ? fmtDateTime(co.decidedAt) : ""}
-                  </div>
-                  <p className="mt-1 text-sm text-slate-700">Date</p>
-                </div>
+      {/* Approvals: a line for each signer */}
+      <SignBox statement="The changes, price and schedule above are approved, and become part of the contract.">
+        <div className={cn("mt-5 grid grid-cols-1 gap-8", signers.length > 1 && "sm:grid-cols-2")}>
+          {signers.map((s, i) => {
+            const declined = !s.approvedAt && co.status === "DECLINED" && s.role === "Client";
+            return (
+              <div key={i}>
+                <SignLine
+                  who={s.name}
+                  sub={s.role === "Client" ? null : d.company.name}
+                  signed={s.approvedAt ? (s.as ?? s.name) : null}
+                  stamp={
+                    s.approvedAt
+                      ? `✓ Approved${s.role === "Client" ? " online" : ""} ${fmtDateTime(s.approvedAt)}`
+                      : declined
+                        ? `Declined${co.decidedBy ? ` by ${co.decidedBy}` : ""}${co.decidedAt ? ` ${fmtDateTime(co.decidedAt)}` : ""}`
+                        : null
+                  }
+                  declined={declined}
+                />
+                {declined && co.decisionNote ? <p className="mt-1 text-sm text-slate-600">Reason: {co.decisionNote}</p> : null}
               </div>
-              {s.role === "Client" && co.status === "DECLINED" && co.decisionNote ? <p className="mt-2 text-sm text-slate-600">Reason: {co.decisionNote}</p> : null}
-            </div>
-          ))}
+            );
+          })}
         </div>
-      </section>
+      </SignBox>
+
+      <DocFooter left={d.footer} right={`${kind} No. ${number} · Job #${d.project.number}`} />
     </article>
   );
 }
 
-function Foot({ cols, label, value }: { cols: number; label: string; value: number }) {
+/** One line's cells (a grid row; keeps a line's cells together across a page break). */
+function Row({ children }: { children: React.ReactNode }) {
+  return <div className="contents break-inside-avoid">{children}</div>;
+}
+
+const signed = (n: number) => `${n < 0 ? "−" : "+"} ${money(Math.abs(n))}`;
+
+function Line({ label, value }: { label: string; value: string }) {
   return (
-    <tr className="text-slate-700">
-      <td colSpan={Math.max(cols - 1, 1)} className="py-1.5 pr-3 text-right">
-        {label}
-      </td>
-      <td className="py-1.5 text-right tabular-nums">{money(value)}</td>
-    </tr>
+    <div className="flex justify-between gap-3 py-1 text-slate-600">
+      <span>{label}</span>
+      <span className="tabular-nums text-slate-900">{value}</span>
+    </div>
+  );
+}
+
+function Foot({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="flex items-baseline justify-between gap-4 py-1 text-slate-600">
+      <span>{label}</span>
+      <span className="tabular-nums text-slate-900">{money(value)}</span>
+    </div>
   );
 }

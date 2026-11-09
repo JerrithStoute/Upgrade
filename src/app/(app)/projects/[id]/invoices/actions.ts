@@ -315,3 +315,25 @@ async function invoiceNumberFrom(formData: FormData) {
   await assertNumberFree(n);
   return n;
 }
+
+// --- The printed invoice ---------------------------------------------------------------
+
+/** "Where your contract stands" on this invoice's paper, on or off. */
+export async function setInvoiceSummary(projectId: string, invoiceId: string, on: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireEdit("invoices");
+  const inv = await db.invoice.findFirst({ where: { id: invoiceId, projectId }, select: { id: true } });
+  if (!inv) return { ok: false, error: "Invoice not found" };
+  await db.invoice.update({ where: { id: inv.id }, data: { showSummary: on === true } });
+  revalidate(projectId, inv.id);
+  return { ok: true };
+}
+
+/** How to pay — your wording, on every invoice (admins). */
+export async function savePaymentInstructions(projectId: string, invoiceId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireEdit("invoices");
+  if (user.role !== "ADMIN") return { ok: false, error: "Only an admin can change how to pay." };
+  const value = String(text ?? "").replace(/\r\n?/g, "\n").trim().slice(0, 5000) || null;
+  await db.company.updateMany({ data: { paymentInstructions: value } });
+  revalidate(projectId, invoiceId);
+  return { ok: true };
+}

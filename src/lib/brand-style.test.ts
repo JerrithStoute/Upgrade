@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { DEFAULT_STYLE, brandStyleJson, colorPalette, parseBrandStyle, usableBackground, workScreenCss } from "./brand-style";
+import { DEFAULT_STYLE, brandStyleJson, colorPalette, documentColors, parseBrandStyle, usableBackground, workScreenCss } from "./brand-style";
 
 describe("the work screens' look", () => {
   it("the built-in look stores nothing and adds no CSS", () => {
@@ -38,5 +38,15 @@ describe("the work screens' look", () => {
     const css = workScreenCss({ ...DEFAULT_STYLE, screen: "color", background: navy, intensity: 60 });
     assert.ok(css.includes(`--background:${pal.background}`));
     assert.equal(parseBrandStyle(JSON.stringify({ screen: "color", background: "nope" })).screen, "bright", "no color picked: Bright");
+  });
+});
+
+describe("document colors", () => {
+  it("keeps a dark main color, darkens a light one, and has its own when there's none", () => {
+    assert.equal(documentColors("#1e4d5c").accent, "#1e4d5c");
+    const yellow = documentColors("#f5b301").accent;
+    assert.notEqual(yellow, "#f5b301");
+    assert.match(documentColors(null).accent, /^#[0-9a-f]{6}$/);
+    assert.match(documentColors("#1e4d5c").tint, /^#[0-9a-f]{6}$/);
   });
 });

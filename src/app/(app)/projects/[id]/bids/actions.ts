@@ -13,7 +13,7 @@ import { beamLength, toPerLf } from "@/lib/bid-beams";
 import { setItemPrice } from "@/lib/job-prices";
 import { proposalOut } from "@/lib/bids";
 import { saveUpload } from "@/lib/uploads";
-import { fmtDate, money, str } from "@/lib/utils";
+import { money, str } from "@/lib/utils";
 import { itemNameKey, substituteLength } from "@/lib/takeoff";
 import { addSubstitution } from "@/lib/substitutions";
 import { newItemPlacement } from "@/lib/item-codes";
@@ -23,6 +23,7 @@ import { bidEmail, bidEmailText, bidFileName, emailedBids, standardFromBody, sub
 import { companyLines } from "@/lib/company";
 import { appUrl, sendMail } from "@/lib/mail";
 import { bidPdf } from "@/lib/bid-pdf";
+import { bidPdfInput } from "@/lib/bid-pdf-input";
 import { makeBidLink } from "@/lib/bid-link";
 import { codeLabelOf } from "@/lib/takeoff-materials";
 import { PLAN_FOLDERS, putSubBidOnEstimate, readPlanIds, subAwardKey } from "@/lib/sub-bids";
@@ -563,14 +564,7 @@ async function emailBid(
     how.attach && !plans
       ? await Promise.all([
           bidWorkbook({ ...bid, lines: bid.lines.map((l) => ({ ...l, unitPrice: null })) }, project, company),
-          bidPdf({
-            bid,
-            project,
-            address: [project.address, [project.city, project.state].filter(Boolean).join(", ")].filter(Boolean).join(", "),
-            from: companyLines(company),
-            date: fmtDate(new Date()),
-            replyTo: user.email,
-          }),
+          bidPdfInput(bid, project, company, user.email).then(bidPdf),
         ])
       : [null, null];
   try {

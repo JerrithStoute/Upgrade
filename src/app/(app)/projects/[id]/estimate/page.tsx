@@ -9,8 +9,8 @@ import { loadEstimateSheet, templateOptions } from "@/lib/estimate-lines";
 import { divisionCategories, loadEstimateCategories } from "@/lib/estimate-categories";
 import { codeDivisions } from "@/lib/cost-code-divisions";
 import { estimateValues, loadParameters, refreshFormulaQuantities } from "@/lib/estimate-parameters";
-import { pct, fmtDate, cn } from "@/lib/utils";
-import { Badge, Collapsible, ConfirmForm, EmptyState, Field, FormGrid, SubmitButton, buttonClasses } from "@/components/ui";
+import { fmtDate, cn } from "@/lib/utils";
+import { Badge, ConfirmForm, EmptyState, SubmitButton, buttonClasses } from "@/components/ui";
 import { EstimateSheet } from "@/components/estimate/estimate-sheet";
 import {
   createEstimate,
@@ -343,7 +343,6 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
           {estimate.status === "DECLINED" && estimate.decidedAt
             ? ` · Declined by ${estimate.signedBy ?? "the client"} ${fmtDate(estimate.decidedAt)}${estimate.decisionNote ? `: “${estimate.decisionNote}”` : ""}`
             : ""}
-          {` · New lines start at ${pct(estimate.defaultMarkup, 1)} markup`}
           {isDraft ? "" : " · Changes save as a new version"}
         </span>
         {locked ? (
@@ -445,29 +444,6 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
         }
       />
 
-      <Collapsible summary="Proposal introduction, terms & starting markup %">
-        <form action={updateEstimateDetails} className="space-y-4">
-          <input type="hidden" name="projectId" value={project.id} />
-          <input type="hidden" name="id" value={estimate.id} />
-          <FormGrid>
-            <Field
-              label="Introduction (top of the proposal)"
-              htmlFor="est-notes"
-              className="md:col-span-2"
-              hint="Opens the proposal, under your header — a thank-you and what it covers."
-            >
-              <textarea id="est-notes" name="notes" rows={5} className="input" defaultValue={estimate.notes ?? ""} />
-            </Field>
-            <Field label="Terms (end of the proposal)" htmlFor="est-terms" className="md:col-span-2">
-              <textarea id="est-terms" name="terms" rows={5} className="input" defaultValue={estimate.terms ?? ""} />
-            </Field>
-            <Field label="Starting markup %" htmlFor="est-markup" hint="What new lines start with.">
-              <input id="est-markup" name="defaultMarkup" type="number" step="0.1" min="0" className="input" defaultValue={estimate.defaultMarkup} />
-            </Field>
-          </FormGrid>
-          <SubmitButton size="sm">Save</SubmitButton>
-        </form>
-      </Collapsible>
     </div>
   );
 }

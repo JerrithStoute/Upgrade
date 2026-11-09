@@ -30,11 +30,20 @@ export default async function PortalProposalPage({ params }: { params: Promise<{
   if (!p) notFound();
   // The finished numbers only — the cost lines behind them stay on the server.
   const doc = clientCopy(buildProposal(p.specs, p.options, p.estimate.basePrice, p.extras));
-  const { dateTime, now } = await companyClock();
+  const { now } = await companyClock();
   const waiting = est.status === "SENT" || (user.preview && est.status === "DRAFT");
   // Past its "good through" day: no Approve — they ask for an updated one.
   const expired = waiting && proposalExpired(p.pricedOn, p.options.validDays, fmtDate(now, "yyyy-MM-dd"));
-  const o = { cover: p.options.cover, intro: p.options.intro, heading: p.options.heading, validDays: p.options.validDays, signer: p.options.signer, clientSignature: p.options.clientSignature };
+  const o = {
+    cover: p.options.cover,
+    intro: p.options.intro,
+    heading: p.options.heading,
+    validDays: p.options.validDays,
+    signer: p.options.signer,
+    clientSignature: p.options.clientSignature,
+    payments: p.options.payments,
+    terms: p.options.terms,
+  };
 
   const versions = await db.estimate.count({ where: { projectId: est.projectId, status: { in: ["SENT", "APPROVED", "DECLINED"] } } });
   const [y, m, d] = p.pricedOn.split("-").map(Number);
@@ -145,28 +154,11 @@ export default async function PortalProposalPage({ params }: { params: Promise<{
             doc={doc}
             o={o}
             basePrice={p.estimate.basePrice}
-            pricedOn={p.pricedOn}
-            companyName={p.companyName}
+            head={p.head}
             cover={p.cover}
             intro={p.intro}
-            header={p.header}
-            footer={p.footer}
-            signing={
-              // What prints at the end once they've answered (on screen it's in the card).
-              est.status === "APPROVED" && est.signedBy ? (
-                <section className="mt-12 break-inside-avoid rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-                  <p className="font-semibold">Approved</p>
-                  <p>
-                    Signed {est.signedBy} · {dateTime(est.decidedAt ?? est.approvedAt)}
-                  </p>
-                </section>
-              ) : est.status === "DECLINED" ? (
-                <section className="mt-12 break-inside-avoid rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-900">
-                  <p className="font-semibold">Declined{est.decidedAt ? ` · ${dateTime(est.decidedAt)}` : ""}</p>
-                  {est.decisionNote ? <p className="whitespace-pre-line">{est.decisionNote}</p> : null}
-                </section>
-              ) : undefined
-            }
+            terms={p.terms}
+            decision={p.decision}
           />
         </div>
       </div>

@@ -1,10 +1,12 @@
 import "server-only";
 import { db } from "./db";
 import { getBrand } from "./company-brand";
+import { documentColors } from "./brand-style";
+import { companyClock } from "./company-zone";
 import { coverUrl } from "./project-cover";
 import { fmtDate } from "./utils";
 import { allowanceExtras, parseMarkupTable, tableExtras, tableTaxLabel, tableTaxRate } from "./markup";
-import { parseProposalOptions, parseSpecView, type ProposalSpec } from "./proposal-options";
+import { goodThroughDay, parseProposalOptions, photoCaption, parseSpecView, type DocPhoto, type ProposalSpec } from "./proposal-options";
 
 /**
  * Everything a proposal is made from — one place, so the proposal you see and print and the
@@ -26,6 +28,13 @@ export async function loadProposal(projectId: string, estimateId: string) {
     getBrand(),
   ]);
   if (!estimate || !project) return null;
+  // The pictures on the proposal: this job's own, only ones your client may see, pictures only.
+  const photoIds = [...new Set(estimate.specs.flatMap((sp) => sp.photos))];
+  const photoFiles = photoIds.length
+    ? await db.fileAsset.findMany({ where: { id: { in: photoIds }, projectId, clientVisible: true, mimeType: { startsWith: "image/" } }, select: { id: true, name: true } })
+    : [];
+  const photoById = new Map(photoFiles.map((f) => [f.id, { id: f.id, url: `/api/files/${f.id}`, caption: photoCaption(f.name) }]));
+  const photosOf = (ids: string[]): DocPhoto[] => ids.flatMap((id) => photoById.get(id) ?? []);
   const selById = new Map(selections.map((s) => [s.id, s]));
   /** What the client chose for a selection category: the choice, "DECLINED", or null (still TBD). */
   const choiceOf = (selectionId: string | null) => {
@@ -52,6 +61,7 @@ export async function loadProposal(projectId: string, estimateId: string) {
       estimate.items.filter((i) => i.specId === sp.id),
     ),
     view: parseSpecView(sp.proposalView),
+    photos: photosOf(sp.photos),
     lines: estimate.items
       .filter((i) => i.specId === sp.id)
       .map((i) => ({
@@ -73,6 +83,11 @@ export async function loadProposal(projectId: string, estimateId: string) {
   const companyName = company?.name ?? "Your Company";
   const clientName = client ? `${client.firstName} ${client.lastName}`.trim() : null;
   const date = fmtDate(estimate.sentAt ?? estimate.updatedAt);
+  const pricedOn = fmtDate(estimate.sentAt ?? estimate.updatedAt, "yyyy-MM-dd");
+  const through = goodThroughDay(pricedOn, options.validDays);
+  const { dateTime } = await companyClock();
+  const colors = documentColors(brand.color);
+  const decided = estimate.decidedAt ?? estimate.approvedAt;
 
   return {
     estimate,
@@ -81,7 +96,7 @@ export async function loadProposal(projectId: string, estimateId: string) {
     options,
     isCustom: !!estimate.proposalOptions,
     extras: { overhead: tableAmounts.overheadTotal, taxLabel: tableTaxLabel(markup), taxPct: tableTaxRate(markup) },
-    pricedOn: fmtDate(estimate.sentAt ?? estimate.updatedAt, "yyyy-MM-dd"),
+    pricedOn,
     companyName,
     clientName,
     cover: {
@@ -93,19 +108,56 @@ export async function loadProposal(projectId: string, estimateId: string) {
       logoUrl: brand.logoUrl,
     },
     intro: estimate.notes,
-    header: letterheadFrom({ brand, company, companyName, clientName, project, line: `${date} · ${estimate.name} v${estimate.version}` }),
-    footer: (
-      <div>
-        {estimate.terms ? (
-          <section className="mt-10 break-inside-avoid">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-600">Terms</h2>
-            <p className="mt-1 whitespace-pre-line text-sm text-slate-700">{estimate.terms}</p>
-          </section>
-        ) : null}
-      </div>
-    ),
+    terms: estimate.terms,
+    /** Your standard introduction and terms (Settings → Proposals) — the builder's page offers them. */
+    standard: { intro: company?.proposalIntro ?? null, terms: company?.proposalTerms ?? null },
+    head: {
+      logoUrl: brand.logoUrl,
+      companyName,
+      accent: colors.accent,
+      tint: colors.tint,
+      number: `${project.number}-${estimate.version}`,
+      issued: date,
+      goodThrough: through ? fmtDate(new Date(`${through}T12:00:00`)) : null,
+      status: estimate.status,
+      decidedOn: decided ? fmtDate(decided) : null,
+      from: [company?.address, cityLine(company), company?.phone, company?.email, company?.licenseNumber ? `License ${company.licenseNumber}` : null].filter((x): x is string => !!x),
+      forName: clientName,
+      forLines: client
+        ? [client.company, client.address, cityLine(client), client.phone, client.email].filter((x): x is string => !!x)
+        : [],
+      project: project.name,
+      projectLines: [[project.address, cityLine(project)].filter(Boolean).join(", "), `Job #${project.number}`].filter(Boolean),
+      footer: [companyName, company?.phone, company?.website].filter((x): x is string => !!x).join(" · "),
+    } satisfies DocHead,
+    /** The client's approval (typed signature) or decline, once they've answered. */
+    decision:
+      estimate.status === "APPROVED" && estimate.signedBy
+        ? ({ kind: "APPROVED", name: estimate.signedBy, when: dateTime(decided) } as const)
+        : estimate.status === "DECLINED"
+          ? ({ kind: "DECLINED", when: decided ? dateTime(decided) : null, note: estimate.decisionNote } as const)
+          : null,
   };
 }
+
+/** The top of the proposal: who it's from and for, its number, dates and where it stands. */
+export type DocHead = {
+  logoUrl: string | null;
+  companyName: string;
+  accent: string;
+  tint: string;
+  number: string;
+  issued: string;
+  goodThrough: string | null;
+  status: string;
+  decidedOn: string | null;
+  from: string[];
+  forName: string | null;
+  forLines: string[];
+  project: string;
+  projectLines: string[];
+  footer: string;
+};
 
 const cityLine = (c: { city: string | null; state: string | null; zip: string | null } | null | undefined) =>
   c ? [[c.city, c.state].filter(Boolean).join(", "), c.zip].filter(Boolean).join(" ") : "";

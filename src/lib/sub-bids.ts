@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "./db";
-import { parseMarkupTable, tableTaxPct } from "./markup";
+import { parseMarkupTable, tableProfitPct, tableTaxPct } from "./markup";
 import { divisionCategories } from "./estimate-categories";
 
 /**
@@ -147,7 +147,8 @@ export async function putSubBidOnEstimate(
       quantity: 1,
       unit: "ls",
       unitCost: total,
-      markupPct: est.defaultMarkup,
+      // The Markup, Margin & Tax table's profit and tax for subcontractor lines.
+      markupPct: tableProfitPct(parseMarkupTable(est.markupTable, est.defaultMarkup), "SUBCONTRACTOR") ?? est.defaultMarkup,
       costType: "SUBCONTRACTOR",
       taxPct: tableTaxPct(parseMarkupTable(est.markupTable, est.defaultMarkup), "SUBCONTRACTOR"),
       takeoffStopped: rollKey,

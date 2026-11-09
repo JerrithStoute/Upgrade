@@ -29,7 +29,6 @@ export const ESTIMATES: HelpArticle[] = [
           { name: "New version", what: "**Copy vN — today's prices**: every line and parameter of this version, for a revision on the same plans; Item List and takeoff lines take today's price, typed prices and **This job only** items stay. **Copy vN exactly**: every price as vN had it; the takeoff's lines keep vN's prices while their quantities still follow the takeoff (a gray note says so, with **Use today's prices**). **Start fresh**: blank or from a template, for other plans. **Save as template** (admins): a template from this estimate; it keeps your lines, formulas and typed unit costs, and this job's quantities, allowances and parameter values start blank for the next job." },
           { name: "Delete", what: "Deletes a draft version." },
           { name: "Add from template", what: "In the sheet's toolbar, on a draft: pick a template and click **Add its lines** to add its categories and items." },
-          { name: "Proposal introduction, terms & starting markup %", what: "The thank-you at the top of the proposal, the terms at the end, and the markup new lines start with." },
         ],
       },
       {
@@ -119,7 +118,7 @@ export const ESTIMATES: HelpArticle[] = [
     group: "Estimates",
     area: "estimates",
     pages: ["/projects/*/estimate/*/proposal"],
-    what: "The proposal is the estimate as your client sees it: your cover, introduction, divisions and categories, allowances, total and signature lines. Your costs, markup and cost codes never appear on it. The panel beside it sets what it shows.",
+    what: "The proposal is the estimate as your client sees it: your logo and its number, dates and status at the top; who it's from and for; your introduction; the scope and prices by division, with pictures; the total; the payment schedule and terms; and the signatures. Allowances print on their own page at the end (Attachment A). Your costs, markup and cost codes never appear on it. The panel beside it sets what it shows.",
     how: [
       "On the estimate, click **View proposal**.",
       "Use the panel on the side (**What the client sees**) to choose what shows.",
@@ -128,22 +127,40 @@ export const ESTIMATES: HelpArticle[] = [
     ],
     sections: [
       {
+        heading: "How it reads",
+        items: [
+          { name: "The top", what: "Your logo, the proposal's number (job number and version, like 1001-1), the day it was issued, \"Pricing good through\" and its status (Draft, Sent, Approved, Declined). Under it: **From** (your company), **Prepared for** (the client) and **Project**. Anything you haven't filled in is left off — nothing prints as a blank." },
+          { name: "Your color", what: "The lines, labels and division bands are in your **Main color** (Settings → Branding). A light color is darkened so it reads on white." },
+          { name: "Scope & pricing", what: "Each division is a shaded band with its total; its categories are under it with their text, an \"Allowance $X\" tag and any pictures. Categories with nothing in them (no lines, no text, no picture, nothing to choose) are left off, so a template's unused ones never print as $0.00." },
+          { name: "Pictures", what: "A row of small pictures under a category — a rendering, the tile, what's there today. Clicking one opens it full size.", how: "Click **Picture** under the category: **Upload a picture**, or click one of the job's photos your client can see. The ✕ on a picture takes it off the proposal (it stays in the job's Files). Uploads go to the job's Photos, visible to the client." },
+          { name: "Page breaks", what: "The proposal flows from the top through the totals, payment schedule and terms to the signatures, with no forced breaks, so the signatures never sit alone on a page. The allowances start their own page at the end, as Attachment A, and the signature line says it includes them." },
+          { name: "Signatures", what: "\"The specifications, prices and terms above … are accepted\" with a line for the client and one for you. Once the client approves in their portal, their typed name shows on their line with when they signed." },
+          { name: "Introduction and terms", what: "Typed right on the proposal. Your standard wording (Settings → Proposals) fills them on new estimates; each estimate keeps its own copy, so changing your standard never changes a proposal already sent or signed.", how: "Click **Edit** on the introduction or the terms (or **+ Add an introduction** / **+ Add terms** when there's none), type, then **Save for this estimate** — or **Save as my default** (admins) to make it your standard too. **Use my default** puts your standard wording in." },
+        ],
+      },
+      {
         heading: "What the client sees",
         items: [
           { name: "Page", what: "The heading, a **Cover page with a picture** (drop in a rendering of the front elevation), and a title over the introduction." },
           { name: "Divisions", what: "Show divisions, and their totals." },
           { name: "Categories", what: "Show categories, their prices, specification text, \"Allowance: $X\" under allowances, and \"Choice – To be specified by client\" under selections." },
           { name: "Items", what: "Show items, with or without quantities and prices." },
-          { name: "Totals", what: "**Final total only** hides every other price. **Allowance Summary page** lists the allowances at the end." },
+          { name: "Totals", what: "**Final total only** hides every other price. **Allowance Summary page** lists the allowances on their own page at the end (Attachment A)." },
           { name: "Profit", what: "**Built into the prices**, or a **Separate fee line** with prices at cost (an open-book look), named as you like, with or without the %." },
           { name: "Sales tax", what: "The tax you pay is in the total either way: built into the prices, or its own line." },
-          { name: "Pricing good for N days", what: "Prints how long the price holds, counted from the day it's sent. Past that day the client can't approve it in their portal: they see that it expired, with **Ask for an updated proposal** (and can still decline). Leave it blank to leave it off.", how: "To let them approve an expired one as it is, give it more days here and click **Save for this estimate**. Or make a new version with **Copy with today's prices** and send that." },
+          { name: "Pricing good for N days", what: "Shows \"Pricing good through (date)\" at the top, counted from the day it's sent. Past that day the client can't approve it in their portal: they see that it expired, with **Ask for an updated proposal** (and can still decline). Leave it blank to leave it off.", how: "To let them approve an expired one as it is, give it more days here and click **Save for this estimate**. Or make a new version with **Copy with today's prices** and send that." },
+          { name: "Payment schedule", what: "On or off. Each payment's name and % of the total (like Deposit at signing 10%); the proposal works out the dollar amounts, and the last one takes the rounding so they add up to the total exactly. The panel tells you when the %s don't add up to 100.", how: "Change a name or %, **Add a payment**, or the ✕ to remove one. **Save as my default** keeps your usual schedule for every proposal." },
+          { name: "Terms & conditions", what: "On or off. The terms are typed right on the proposal. A short line on its own just above a paragraph (no period at its end) prints as that paragraph's heading." },
           { name: "Signatures", what: "How the builder signs, and whether the client signs too." },
           { name: "Save for this estimate / Save as my default / Use my default instead", what: "Keep these settings for this estimate only, make them everyone's default (admins), or go back to the default." },
         ],
       },
     ],
-    tips: ["Optional items print under **Not included**.", "Your company's default proposal settings are in **Settings → Proposals**."],
+    tips: [
+      "Optional items print under **Not included**.",
+      "Your company's default proposal settings, including your usual payment schedule, are in **Settings → Proposals**.",
+      "Pictures stay with the estimate: a new version of it keeps them.",
+    ],
     related: ["estimate", "estimate-settings"],
   },
   {
@@ -174,7 +191,7 @@ export const ESTIMATES: HelpArticle[] = [
           { name: "+ New template", what: "A one-line box: name and description. **Create** opens it: a blank estimate to fill with your usual line items, allowances, notes and terms, to start new jobs from." },
           { name: "A template's name / Duplicate", what: "The name opens it (same sheet as the estimate). **Duplicate** copies it and opens the copy." },
           { name: "Edit (beside the name)", what: "Changes its name and description." },
-          { name: "Copied into each new estimate", what: "Its starting markup, proposal notes and terms. **Edit** changes them in place." },
+          { name: "Copied into each new estimate", what: "Its proposal introduction and terms (empty ones use your standard wording from Settings → Proposals). **Edit** changes them in place. New lines start at the markup in its Markup, Margin & Tax table." },
           { name: "Delete template…", what: "Top right of a template. Estimates already made from it aren't affected." },
         ],
       },
@@ -208,7 +225,11 @@ export const ESTIMATES: HelpArticle[] = [
     sections: [
       {
         heading: "Proposals",
-        text: ["The same choices as the panel beside a proposal: page, divisions, categories, items, totals, profit, sales tax, pricing and signatures. Proposals follow these unless an estimate has its own."],
+        text: [
+          "The same choices as the panel beside a proposal: page, divisions, categories, items, totals, profit, sales tax, pricing, payment schedule, terms and signatures. Proposals follow these unless an estimate has its own.",
+          "**Payment schedule**: your usual payments, each a name and a % of the total (up to 8 here; blank rows are left off).",
+          "**Introduction & terms**: your standard opening paragraph and terms & conditions — new estimates start with them unless their template has its own — and whether the terms print.",
+        ],
       },
       {
         heading: "Material price escalation",

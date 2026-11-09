@@ -14,7 +14,7 @@ import { saveSheetInput } from "@/lib/estimate-sheet";
 import { learnDivisions } from "@/lib/estimate-categories";
 import { estimateValues, saveEstimateValues, templateValues } from "@/lib/estimate-parameters";
 import { saveCover } from "@/lib/project-cover";
-import { deleteUpload } from "@/lib/uploads";
+import { deleteUpload, saveUpload } from "@/lib/uploads";
 import { proposalOptionsSchema } from "@/lib/proposal-options";
 import { priceSheetSchema } from "@/lib/price-sheet";
 import { markupTableSchema } from "@/lib/markup";
@@ -487,6 +487,81 @@ export async function setProjectCover(projectId: string, fd: FormData): Promise<
     return { ok: false, error: (e as Error).message };
   }
   revalidatePath(`/projects/${projectId}/estimate`, "layout");
+  return { ok: true };
+}
+
+// --- Proposal introduction and terms -------------------------------------------------
+
+/**
+ * The proposal's introduction or terms, typed right on the proposal: for this estimate, or (admins)
+ * as your standard one too — what new estimates start with. Proposals already made keep their own.
+ */
+export async function saveProposalText(
+  projectId: string,
+  estimateId: string,
+  field: "intro" | "terms",
+  text: string,
+  scope: "estimate" | "default",
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireEdit("estimates", { costs: true });
+  const est = await db.estimate.findFirst({ where: { id: estimateId, projectId }, select: { id: true } });
+  if (!est) return { ok: false, error: "Estimate not found" };
+  if (field !== "intro" && field !== "terms") return { ok: false, error: "That can't be saved." };
+  const value = String(text ?? "").replace(/\r\n?/g, "\n").trim().slice(0, 20000) || null;
+  if (scope === "default" && user.role !== "ADMIN") return { ok: false, error: "Only an admin can change your standard wording." };
+  await db.estimate.update({ where: { id: est.id }, data: field === "intro" ? { notes: value } : { terms: value } });
+  if (scope === "default") {
+    await db.company.updateMany({ data: field === "intro" ? { proposalIntro: value } : { proposalTerms: value } });
+    revalidatePath("/settings/proposals");
+  }
+  revalidatePath(`/projects/${projectId}/estimate/${estimateId}/proposal`);
+  return { ok: true };
+}
+
+// --- Proposal pictures ----------------------------------------------------------------
+
+/** The most pictures under one category on a proposal. */
+const MAX_PROPOSAL_PHOTOS = 8;
+
+const proposalSpec = (projectId: string, estimateId: string, specId: string) =>
+  db.estimateSpec.findFirst({ where: { id: specId, estimateId, estimate: { projectId } }, select: { id: true, photos: true } });
+
+/**
+ * The pictures under a category on the proposal, in order (remove one, or add one of the job's photos).
+ * Only this job's pictures your client may see are kept — the proposal shows them to the client.
+ */
+export async function setProposalPhotos(projectId: string, estimateId: string, specId: string, ids: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireEdit("estimates");
+  const spec = await proposalSpec(projectId, estimateId, specId);
+  if (!spec) return { ok: false, error: "That category isn't on this estimate any more." };
+  const want = [...new Set((Array.isArray(ids) ? ids : []).map(String))].slice(0, MAX_PROPOSAL_PHOTOS);
+  const ok = new Set(
+    (await db.fileAsset.findMany({ where: { id: { in: want }, projectId, clientVisible: true, mimeType: { startsWith: "image/" } }, select: { id: true } })).map((f) => f.id),
+  );
+  await db.estimateSpec.update({ where: { id: spec.id }, data: { photos: want.filter((id) => ok.has(id)) } });
+  revalidatePath(`/projects/${projectId}/estimate/${estimateId}/proposal`);
+  return { ok: true };
+}
+
+/** A new picture under a category on the proposal: saved to the job's Photos (your client can see it) and added. */
+export async function uploadProposalPhoto(projectId: string, estimateId: string, specId: string, fd: FormData): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireEdit("estimates");
+  const spec = await proposalSpec(projectId, estimateId, specId);
+  if (!spec) return { ok: false, error: "That category isn't on this estimate any more." };
+  if (spec.photos.length >= MAX_PROPOSAL_PHOTOS) return { ok: false, error: `${MAX_PROPOSAL_PHOTOS} pictures is the most for one line.` };
+  const file = fd.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Pick a picture first." };
+  if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) return { ok: false, error: "Use a PNG, JPG or WebP picture." };
+  try {
+    const meta = await saveUpload(file, projectId, undefined, "photo");
+    const asset = await db.fileAsset.create({ data: { ...meta, projectId, uploadedById: user.id, folder: "Photos", clientVisible: true } });
+    await db.estimateSpec.update({ where: { id: spec.id }, data: { photos: [...spec.photos, asset.id] } });
+    await logActivity({ projectId, userId: user.id, type: "file.uploaded", description: `Added a picture to the proposal (${meta.name})` });
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  revalidatePath(`/projects/${projectId}/estimate/${estimateId}/proposal`);
+  revalidatePath(`/projects/${projectId}/files`);
   return { ok: true };
 }
 

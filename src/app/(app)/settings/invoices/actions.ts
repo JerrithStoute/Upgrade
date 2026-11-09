@@ -27,6 +27,7 @@ export const saveBilling = friendly(async function saveBilling(fd: FormData) {
       invoiceNextNumber: n,
       invoiceDrawCodeId,
       invoiceCoCodeId,
+      ...(fd.has("paymentInstructions") ? { paymentInstructions: String(fd.get("paymentInstructions") ?? "").replace(/\r\n?/g, "\n").trim().slice(0, 5000) || null } : {}),
     },
   });
   revalidatePath("/settings/invoices");

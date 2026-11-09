@@ -1,24 +1,33 @@
 "use client";
 
-import { useMemo, useRef, useState, useTransition } from "react";
+import { Fragment, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ImagePlus, SlidersHorizontal } from "lucide-react";
-import { cn, money, num, fmtDate } from "@/lib/utils";
-import { buildProposal, type ProposalDoc, type ProposalExtras, type ProposalOptions, type ProposalSpec } from "@/lib/proposal-options";
+import { ImagePlus, Plus, SlidersHorizontal, X } from "lucide-react";
+import { cn, money, num } from "@/lib/utils";
+import {
+  buildProposal,
+  paymentSchedule,
+  STARTER_PAYMENTS,
+  type DocPhoto,
+  type ProposalDoc,
+  type ProposalExtras,
+  type ProposalOptions,
+  type ProposalSpec,
+} from "@/lib/proposal-options";
+import type { DocHead } from "@/lib/proposal-data";
+import { DocFooter, DocHeader, PhotoRow, SectionTitle, SignBox, SignLine, TermsText, Th, docColors, type DocPill } from "@/components/doc-parts";
 import { buttonClasses } from "@/components/ui";
 import { LogoEditor } from "@/app/(app)/settings/logo-editor";
-import { saveProposalOptions, setProjectCover } from "../../actions";
-import { addDays } from "date-fns";
+import { saveProposalOptions, saveProposalText, setProjectCover, setProposalPhotos, uploadProposalPhoto } from "../../actions";
 
 type Cover = { url: string | null; projectName: string; address: string; clientName: string | null; date: string; logoUrl: string | null };
 
 /**
  * The proposal, with the options that decide what the client sees beside it (the
- * options don't print). Laid out the way your CoConstruct proposals read: logo and
- * RE: block, divisions with their categories' spec text, "Allowance: $X", "Option –
- * To be specified by client … TBD", the base price, an Allowance Summary page and
- * signatures. Changes show at once; "Save for this estimate" or "Save as my
- * default" keeps them.
+ * options don't print): header, divisions with their categories' spec text, allowances,
+ * choices and pictures, the totals, payment schedule, terms and signatures, and the
+ * allowances on their own page. Changes show at once; "Save for this estimate" or
+ * "Save as my default" keeps them.
  */
 export function ProposalView({
   projectId,
@@ -28,13 +37,17 @@ export function ProposalView({
   extras,
   initial,
   isCustom,
-  pricedOn,
   isAdmin,
   companyName,
   cover,
   intro,
-  header,
-  footer,
+  terms,
+  head,
+  issuedOn,
+  decision,
+  jobPhotos,
+  standard,
+  canEditText,
 }: {
   projectId: string;
   estimateId: string;
@@ -45,15 +58,23 @@ export function ProposalView({
   initial: ProposalOptions;
   /** This estimate has its own options (not following your default). */
   isCustom: boolean;
-  /** The proposal's date (yyyy-mm-dd) — "good for N days" counts from it. */
-  pricedOn: string;
   isAdmin: boolean;
   companyName: string;
   cover: Cover;
   /** The estimate's notes: the proposal's introduction, under the header. */
   intro: string | null;
-  header: React.ReactNode;
-  footer: React.ReactNode;
+  /** The estimate's Terms box. */
+  terms: string | null;
+  head: DocHead;
+  /** The proposal's date (yyyy-mm-dd) — "good for N days" counts from it. */
+  issuedOn: string;
+  decision: Decision;
+  /** This job's pictures your client can see — to add under a category. */
+  jobPhotos: DocPhoto[];
+  /** Your standard introduction and terms. */
+  standard: { intro: string | null; terms: string | null };
+  /** May type the introduction and terms (sees costs and may change estimates). */
+  canEditText: boolean;
 }) {
   const router = useRouter();
   const [o, setO] = useState(initial);
@@ -205,7 +226,15 @@ export function ProposalView({
             />
             days
           </label>
-          <p className="text-xs text-slate-500">Prints &ldquo;Pricing … is good for N days, through (date)&rdquo; above the signatures. Leave it empty to leave it off.</p>
+          <p className="text-xs text-slate-500">Shows &ldquo;Pricing good through (date)&rdquo; at the top. Leave it empty to leave it off.</p>
+        </Group>
+        <Group title="Payment schedule">
+          <Check label="Show the payment schedule" checked={o.payments.show} onChange={(v) => set((p) => ({ ...p, payments: { ...p.payments, show: v } }))} />
+          {o.payments.show ? <PaymentRows rows={o.payments.rows} total={doc.total} onChange={(rows) => set((p) => ({ ...p, payments: { ...p.payments, rows } }))} /> : null}
+        </Group>
+        <Group title="Terms & conditions">
+          <Check label="Show the terms" checked={o.terms} onChange={(v) => set((p) => ({ ...p, terms: v }))} />
+          <p className="text-xs text-slate-500">From the estimate&apos;s Terms box. A short line on its own above a paragraph prints as its heading.</p>
         </Group>
         <Group title="Signatures">
           <label className="block text-sm text-slate-700">
@@ -243,76 +272,348 @@ export function ProposalView({
         doc={doc}
         o={o}
         basePrice={basePrice}
-        pricedOn={pricedOn}
-        companyName={companyName}
+        head={{ ...head, goodThrough: o.validDays > 0 ? goodThrough(issuedOn, o.validDays) : null }}
         cover={cover}
         intro={intro}
-        header={header}
-        footer={footer}
+        terms={terms}
+        decision={decision}
+        photoEdit={{ projectId, estimateId, jobPhotos }}
+        textEdit={canEditText ? { projectId, estimateId, isAdmin, standard } : undefined}
       />
     </div>
   );
 }
 
 /** What decides how the paper reads (from the proposal's settings). */
-export type PaperOptions = Pick<ProposalOptions, "cover" | "intro" | "heading" | "validDays" | "signer" | "clientSignature">;
+export type PaperOptions = Pick<ProposalOptions, "cover" | "intro" | "heading" | "signer" | "clientSignature" | "payments" | "terms">;
+
+/** The client's answer, once they've given it: their typed signature, or their decline. */
+export type Decision = { kind: "APPROVED"; name: string; when: string } | { kind: "DECLINED"; when: string | null; note: string | null } | null;
+
+/** Adding and removing a category's pictures — the builder's page only (the client's copy never has it). */
+export type PhotoEdit = { projectId: string; estimateId: string; jobPhotos: DocPhoto[] };
+
+/** Typing the introduction and terms right on the paper — the builder's page only. */
+export type TextEdit = { projectId: string; estimateId: string; isAdmin: boolean; standard: { intro: string | null; terms: string | null } };
 
 /**
  * The proposal as a document — what prints, and what the client opens in their portal.
- * It's handed the finished numbers (`doc`), never the cost lines behind them.
+ * It's handed the finished numbers (`doc`), never the cost lines behind them. It flows from the
+ * header through the scope, totals, payment schedule and terms to the signatures (no forced page
+ * breaks, so the signatures never sit alone); the allowances follow on their own page as Attachment A.
  */
 export function ProposalPaper({
   doc,
   o,
   basePrice,
-  pricedOn,
-  companyName,
+  head,
   cover,
   intro,
-  header,
-  footer,
-  signing,
+  terms,
+  decision,
+  photoEdit,
+  textEdit,
 }: {
   doc: ProposalDoc;
   o: PaperOptions;
   basePrice: number | null;
-  pricedOn: string;
-  companyName: string;
+  head: DocHead;
   cover: Cover;
   intro: string | null;
-  header: React.ReactNode;
-  footer: React.ReactNode;
-  /** In place of the blank signature lines (the client's Approve / Decline, or their signed approval). */
-  signing?: React.ReactNode;
+  terms: string | null;
+  decision?: Decision;
+  photoEdit?: PhotoEdit;
+  textEdit?: TextEdit;
 }) {
+  const kind = o.heading.trim() || "Proposal";
+  const payments = o.payments.show ? paymentSchedule(doc.total, o.payments.rows) : null;
+  const showTerms = o.terms && (!!terms?.trim() || !!textEdit);
+  const attachment = doc.allowances.length > 0;
   return (
-  <article className="proposal-doc mx-auto w-full min-w-0 max-w-4xl flex-1 rounded-xl border border-slate-200 bg-white p-10 text-slate-900 shadow-sm print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none">
+    <article
+      className="proposal-doc mx-auto w-full min-w-0 max-w-4xl flex-1 rounded-xl border border-slate-200 bg-white p-6 text-slate-900 shadow-sm sm:p-12 print:max-w-none print:rounded-none print:border-0 print:p-0 print:shadow-none"
+      style={docColors(head)}
+    >
       {o.cover ? <CoverPage cover={cover} /> : null}
-      {/* Wrapped so the server-made header/footer are each an only child (no key needed). */}
-      <div>{header}</div>
-      {intro?.trim() ? (
-        // The estimate's notes open the proposal, like a letter.
-        <section className="mt-10 break-inside-avoid">
-          {o.intro.titled && o.intro.title.trim() ? <h2 className="mb-2 text-sm font-semibold uppercase tracking-wide text-slate-600">{o.intro.title.trim()}</h2> : null}
-          <p className="whitespace-pre-line text-sm leading-relaxed text-slate-800">{intro.trim()}</p>
+      <DocHeader
+        logoUrl={head.logoUrl}
+        companyName={head.companyName}
+        kind={kind}
+        number={head.number}
+        dates={[["Issued", head.issued], ...(head.goodThrough ? [["Pricing good through", head.goodThrough] as [string, string]] : [])]}
+        pill={pillFor(head, decision ?? null)}
+        parties={[
+          { label: "From", name: head.companyName, lines: head.from },
+          { label: "Prepared for", name: head.forName, lines: head.forLines },
+          { label: "Project", name: head.project, lines: head.projectLines },
+        ]}
+      />
+      {intro?.trim() || textEdit ? (
+        // The estimate's introduction opens the proposal, like a letter.
+        <section className="mt-6 break-inside-avoid">
+          {o.intro.titled && o.intro.title.trim() && intro?.trim() ? <h2 className="mb-1 text-sm font-semibold text-slate-700">{o.intro.title.trim()}</h2> : null}
+          <EditableText field="intro" text={intro} edit={textEdit}>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-slate-700">{intro?.trim()}</p>
+          </EditableText>
         </section>
       ) : null}
-      <ProposalBody doc={doc} heading={o.heading || "Proposal"} basePrice={basePrice} />
-      <div>{footer}</div>
-      {o.validDays > 0 ? (
-        <p className="mt-10 text-sm text-slate-700 break-inside-avoid">
-          Pricing in this proposal is good for {o.validDays} days, through {fmtDate(addDays(localDay(pricedOn), o.validDays))}.
-        </p>
+
+      <SectionTitle>{doc.totalOnly ? "Scope" : "Scope & pricing"}</SectionTitle>
+      <ProposalBody doc={doc} basePrice={basePrice} photoEdit={photoEdit} />
+
+      {payments && payments.rows.length ? (
+        <section className="break-inside-avoid">
+          <SectionTitle>Payment schedule</SectionTitle>
+          <div className="grid grid-cols-[1fr_auto_auto] gap-x-6 text-sm">
+            <Th>When</Th>
+            <Th right>%</Th>
+            <Th right>Amount</Th>
+            {payments.rows.map((r, i) => (
+              <Fragment key={i}>
+                <span className="border-b border-slate-100 py-2">{r.label || `Payment ${i + 1}`}</span>
+                <span className="border-b border-slate-100 py-2 text-right tabular-nums">{num(r.pct, 2)}%</span>
+                <span className="border-b border-slate-100 py-2 text-right tabular-nums">{money(r.amount)}</span>
+              </Fragment>
+            ))}
+            <span className="border-t-[1.5px] border-slate-900 py-2 font-semibold">Total</span>
+            <span className="border-t-[1.5px] border-slate-900 py-2 text-right font-semibold tabular-nums">{num(payments.pctTotal, 2)}%</span>
+            <span className="border-t-[1.5px] border-slate-900 py-2 text-right font-semibold tabular-nums">{money(payments.amountTotal)}</span>
+          </div>
+        </section>
       ) : null}
-      {signing ?? <Signatures signer={o.signer.trim() || companyName} client={o.clientSignature ? (cover.clientName ?? "Client") : null} />}
+
+      {showTerms ? (
+        <section>
+          <SectionTitle>Terms &amp; conditions</SectionTitle>
+          <EditableText field="terms" text={terms} edit={textEdit}>
+            <TermsText text={terms ?? ""} />
+          </EditableText>
+        </section>
+      ) : null}
+
+      <Acceptance
+        signer={o.signer.trim() || head.companyName}
+        client={o.clientSignature ? (head.forName ?? "Client") : null}
+        attachment={attachment}
+        decision={decision ?? null}
+      />
+
+      <DocFooter left={head.footer} right={`${kind} ${head.number}${attachment ? " · Allowances attached" : ""}`} />
+
+      {attachment ? (
+        <section className="mt-12 break-before-page border-t border-dashed border-slate-300 pt-12 print:mt-0 print:border-0 print:pt-0">
+          <div className="flex items-center justify-between gap-4 border-b-[1.5px] border-[var(--doc-accent)] pb-3 text-xs text-slate-500">
+            {head.logoUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={head.logoUrl} alt={head.companyName} className="max-h-10 max-w-[7rem] object-contain" />
+            ) : (
+              <span className="font-semibold text-slate-900">{head.companyName}</span>
+            )}
+            <span className="text-right">
+              {kind} No. {head.number} · {head.project}
+            </span>
+          </div>
+          <SectionTitle>Attachment A · Allowances</SectionTitle>
+          <p className="text-sm leading-relaxed text-slate-700">
+            An allowance is a budget set for something you&apos;ll pick out yourself — fixtures, cabinets, countertops and the like. The amounts below are already included in the
+            proposal total.
+          </p>
+          <div className="mt-4 grid grid-cols-[1fr_auto] gap-x-6 text-sm sm:grid-cols-[1fr_auto_auto]">
+            <Th>Item</Th>
+            <Th className="hidden sm:block">Part of</Th>
+            <Th right>Allowance</Th>
+            {doc.allowances.map((a) => (
+              <Fragment key={a.id}>
+                <span className="border-b border-slate-100 py-2.5">{a.name}</span>
+                <span className="hidden border-b border-slate-100 py-2.5 text-slate-600 sm:block">{a.division}</span>
+                <span className="border-b border-slate-100 py-2.5 text-right tabular-nums">{money(a.amount)}</span>
+              </Fragment>
+            ))}
+            <span className="border-y-[1.5px] border-slate-900 py-2.5 font-semibold sm:col-span-2">Total allowances</span>
+            <span className="border-y-[1.5px] border-slate-900 py-2.5 text-right font-semibold tabular-nums">{money(doc.allowancesTotal)}</span>
+          </div>
+          <h3 className="mt-6 text-sm font-semibold">How allowances work</h3>
+          <p className="mt-1 text-sm leading-relaxed text-slate-700">
+            When you make your selections, what you pick is compared to its allowance. If it costs less, the difference is credited to you; if it costs more, the difference is billed by
+            change order. Either way, you see it and approve it first.
+          </p>
+          <DocFooter left={head.footer} right={`${kind} ${head.number} · Attachment A`} />
+        </section>
+      ) : null}
     </article>
   );
 }
 
-/** "2026-10-04" as that day on this computer (no time-zone shift). */
-function localDay(ymd: string) {
+const STATUS: Record<string, DocPill> = {
+  DRAFT: { label: "Draft", tone: "draft" },
+  SENT: { label: "Sent", tone: "waiting" },
+  APPROVED: { label: "Approved", tone: "ok" },
+  DECLINED: { label: "Declined", tone: "no" },
+};
+
+/** Draft, Sent, Approved (and the day, and "signed" once the client has), Declined. */
+function pillFor(head: DocHead, decision: Decision): DocPill {
+  const st = STATUS[head.status] ?? STATUS.DRAFT;
+  const day = (head.status === "APPROVED" || head.status === "DECLINED") && head.decidedOn ? ` ${head.decidedOn}` : "";
+  return { ...st, label: `${st.label}${day}${decision?.kind === "APPROVED" ? " · signed" : ""}` };
+}
+
+function Acceptance({ signer, client, attachment, decision }: { signer: string; client: string | null; attachment: boolean; decision: Decision }) {
+  const signed = decision?.kind === "APPROVED" ? decision : null;
+  return (
+    <SignBox statement={`The specifications, prices and terms above${attachment ? ", including the allowances in Attachment A," : ""} are accepted.`}>
+      {decision?.kind === "DECLINED" ? (
+        <div className="mt-4 rounded-md bg-rose-50 px-4 py-3 text-sm text-rose-900">
+          <p className="font-semibold">Declined{decision.when ? ` · ${decision.when}` : ""}</p>
+          {decision.note ? <p className="whitespace-pre-line">{decision.note}</p> : null}
+        </div>
+      ) : (
+        <div className={cn("mt-5 grid grid-cols-1 gap-8", client && "sm:grid-cols-2")}>
+          {client ? <SignLine who={client} signed={signed?.name} stamp={signed ? `✓ Signed online ${signed.when}` : null} /> : null}
+          <SignLine who={signer} />
+        </div>
+      )}
+    </SignBox>
+  );
+}
+
+/** "Mar 3, 2026": the day `days` after `ymd` ("2026-02-01") — the panel's "Good for" shows at the top as you type. */
+function goodThrough(ymd: string, days: number) {
   const [y, m, d] = ymd.split("-").map(Number);
-  return new Date(y, (m || 1) - 1, d || 1);
+  return new Date(y, (m || 1) - 1, (d || 1) + days).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+/**
+ * The introduction or terms on your page: click to type it right here, then save it for this estimate
+ * or as your standard. Empty: a dashed "Add…" box (never printed), with your standard one a click away.
+ */
+function EditableText({ field, text, edit, children }: { field: "intro" | "terms"; text: string | null; edit?: TextEdit; children: React.ReactNode }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState(text ?? "");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, start] = useTransition();
+  if (!edit) return <>{children}</>;
+  const name = field === "intro" ? "introduction" : "terms";
+  const standard = (field === "intro" ? edit.standard.intro : edit.standard.terms)?.trim() || null;
+  const save = (v: string, scope: "estimate" | "default") =>
+    start(async () => {
+      setErr(null);
+      const r = await saveProposalText(edit.projectId, edit.estimateId, field, v, scope);
+      if (!r.ok) setErr(r.error);
+      else {
+        setOpen(false);
+        router.refresh();
+      }
+    });
+  if (open)
+    return (
+      <div className="no-print space-y-2 rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+        <textarea
+          className="input min-h-[8rem] text-sm leading-relaxed"
+          rows={field === "terms" ? 10 : 5}
+          value={value}
+          autoFocus
+          aria-label={field === "intro" ? "Introduction" : "Terms & conditions"}
+          onChange={(e) => setValue(e.target.value)}
+        />
+        {field === "terms" ? <p className="text-xs text-slate-500">A short line on its own above a paragraph prints as its heading.</p> : null}
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" className={buttonClasses("primary", "sm")} disabled={busy} onClick={() => save(value, "estimate")}>
+            Save for this estimate
+          </button>
+          {edit.isAdmin ? (
+            <button type="button" className={buttonClasses("secondary", "sm")} disabled={busy} onClick={() => save(value, "default")} title={`New estimates start with this ${name}`}>
+              Save as my default
+            </button>
+          ) : null}
+          {standard && standard !== value.trim() ? (
+            <button type="button" className={buttonClasses("ghost", "sm")} disabled={busy} onClick={() => setValue(standard)}>
+              Use my default
+            </button>
+          ) : null}
+          <button
+            type="button"
+            className={buttonClasses("ghost", "sm")}
+            disabled={busy}
+            onClick={() => {
+              setValue(text ?? "");
+              setOpen(false);
+            }}
+          >
+            Cancel
+          </button>
+          {busy ? <span className="text-xs text-slate-500">Saving…</span> : null}
+        </div>
+        {err ? <p className="text-xs text-rose-700">{err}</p> : null}
+      </div>
+    );
+  if (!text?.trim())
+    return (
+      <div className="no-print flex flex-wrap items-center gap-2 rounded-lg border-2 border-dashed border-slate-200 px-3 py-2.5 text-sm text-slate-500">
+        <button type="button" className="font-medium text-blue-700 hover:underline" onClick={() => setOpen(true)}>
+          + Add {field === "intro" ? "an introduction" : "terms"}
+        </button>
+        {standard ? (
+          <button type="button" className="font-medium text-blue-700 hover:underline" disabled={busy} onClick={() => save(standard, "estimate")}>
+            Use my default
+          </button>
+        ) : null}
+        <span className="text-xs">Only you see this box; it doesn&apos;t print.</span>
+        {err ? <span className="text-xs text-rose-700">{err}</span> : null}
+      </div>
+    );
+  return (
+    <div className="group relative">
+      {children}
+      <button
+        type="button"
+        className="no-print absolute -right-2 -top-2 rounded bg-white px-1.5 py-0.5 text-xs text-slate-500 opacity-70 shadow-sm ring-1 ring-slate-200 hover:text-slate-900 hover:opacity-100 group-hover:opacity-100"
+        onClick={() => {
+          setValue(text ?? "");
+          setOpen(true);
+        }}
+      >
+        Edit
+      </button>
+    </div>
+  );
+}
+
+/** The payment schedule's rows: each payment's name and %, with what they add up to. */
+function PaymentRows({ rows, total, onChange }: { rows: ProposalOptions["payments"]["rows"]; total: number; onChange: (rows: ProposalOptions["payments"]["rows"]) => void }) {
+  const list = rows.length ? rows : STARTER_PAYMENTS;
+  const s = paymentSchedule(total, list);
+  const put = (i: number, r: Partial<(typeof list)[number]>) => onChange(list.map((x, j) => (j === i ? { ...x, ...r } : x)));
+  return (
+    <div className="space-y-1.5 pl-5">
+      {list.map((r, i) => (
+        <div key={i} className="flex items-center gap-1">
+          <input className="input !h-8 min-w-0 flex-1 !py-0 text-xs" value={r.label} placeholder="When it's due" aria-label={`Payment ${i + 1}`} onChange={(e) => put(i, { label: e.target.value })} />
+          <input
+            className="input !h-8 !w-14 !py-0 text-right text-xs"
+            inputMode="decimal"
+            value={r.pct || ""}
+            placeholder="%"
+            aria-label={`Payment ${i + 1} percent`}
+            onChange={(e) => put(i, { pct: Math.max(0, Math.min(100, Number(e.target.value.replace(/[^\d.]/g, "")) || 0)) })}
+          />
+          <span className="text-xs text-slate-400">%</span>
+          <button type="button" className="rounded p-0.5 text-slate-400 hover:text-rose-700" aria-label={`Remove payment ${i + 1}`} onClick={() => onChange(list.filter((_, j) => j !== i))}>
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      ))}
+      {list.length < 12 ? (
+        <button type="button" className="inline-flex items-center gap-1 text-xs font-medium text-blue-700 hover:underline" onClick={() => onChange([...list, { label: "", pct: 0 }])}>
+          <Plus className="h-3.5 w-3.5" /> Add a payment
+        </button>
+      ) : null}
+      <p className={cn("text-xs", s.pctTotal === 100 ? "text-slate-500" : "text-amber-700")}>
+        {s.pctTotal === 100 ? `Adds up to 100% — ${money(total)}.` : `Adds up to ${num(s.pctTotal, 2)}%, not 100%.`}
+      </p>
+    </div>
+  );
 }
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
@@ -429,7 +730,7 @@ function CoverPage({ cover }: { cover: Cover }) {
       )}
       <div className="mt-8 flex items-end justify-between gap-6">
         <div>
-          <p className="text-3xl font-bold tracking-tight">{cover.projectName}</p>
+          <p className="font-serif text-3xl">{cover.projectName}</p>
           {cover.address ? <p className="mt-1 text-slate-600">{cover.address}</p> : null}
           {cover.clientName ? <p className="mt-4 text-sm text-slate-600">Prepared for {cover.clientName}</p> : null}
           <p className="text-sm text-slate-600">{cover.date}</p>
@@ -441,60 +742,40 @@ function CoverPage({ cover }: { cover: Cover }) {
   );
 }
 
-/** Divisions → categories with their spec text, allowance and TBD lines, then the totals and the Allowance Summary. */
-function ProposalBody({ doc, heading, basePrice }: { doc: ProposalDoc; heading: string; basePrice: number | null }) {
+/** Divisions as tinted bands, their categories under them with spec text, allowances, choices and pictures; then the totals. */
+function ProposalBody({ doc, basePrice, photoEdit }: { doc: ProposalDoc; basePrice: number | null; photoEdit?: PhotoEdit }) {
   const footRows = !doc.totalOnly && (doc.fee || doc.tax);
   return (
     <>
-      <h2 className="mt-10 text-3xl font-bold tracking-tight">{heading}</h2>
-      <div className="mt-4 border-t border-slate-300">
-        {doc.categories.map((c) => (
-          <DivisionBlock key={c.name} doc={doc} division={c} />
-        ))}
+      <div className="flex justify-between border-b-[1.5px] border-slate-900 pb-2 text-[10.5px] font-semibold uppercase tracking-[0.14em] text-slate-500">
+        <span>Description</span>
+        <span>{doc.totalOnly ? "" : "Amount"}</span>
       </div>
+      {doc.categories.map((c) => (
+        <DivisionBlock key={c.name} doc={doc} division={c} photoEdit={photoEdit} />
+      ))}
 
-      <div className="mt-8 break-inside-avoid">
+      <div className="ml-auto mt-4 w-full break-inside-avoid text-sm sm:w-80">
         {footRows ? <Row label="Subtotal" value={money(doc.subtotal)} /> : null}
         {doc.fee && !doc.totalOnly ? <Row label={`${doc.fee.label}${doc.fee.pct !== null ? ` (${num(doc.fee.pct, 1)}%)` : ""}`} value={money(doc.fee.amount)} /> : null}
         {doc.taxes.map((t, i) => (
           <Row key={i} label={`${t.label} (${num(t.pct, 3)}%)`} value={money(t.amount)} />
         ))}
-        <div className="flex items-baseline justify-between gap-4 border-y border-slate-300 py-3 text-base font-bold">
+        <div className="mt-1.5 flex items-baseline justify-between gap-4 border-y-slate-900 py-2.5 text-base font-bold [border-bottom:3px_double] [border-top:1.5px_solid]">
           <span>{doc.tax ? "Total" : basePrice !== null ? "Base Price" : "Total"}</span>
           <span className="tabular-nums">{money(doc.total)}</span>
         </div>
       </div>
 
-      {doc.allowances.length > 0 ? (
-        <section className="mt-12 break-before-page print:mt-0">
-          <h2 className="text-3xl font-bold tracking-tight">Allowance Summary</h2>
-          <div className="mt-4 border-t border-slate-300">
-            {doc.allowances.map((a) => (
-              <div key={a.id} className="flex items-baseline justify-between gap-4 border-b border-slate-200 py-2.5 text-sm">
-                <span>{a.name}</span>
-                <span className="tabular-nums">{money(a.amount)}</span>
-              </div>
-            ))}
-          </div>
-          <div className="mt-6 flex items-baseline justify-between gap-4 border-y border-slate-300 py-2.5 text-sm font-bold">
-            <span>Total Allowance Items</span>
-            <span className="tabular-nums">{money(doc.allowancesTotal)}</span>
-          </div>
-          <p className="mt-2 text-xs text-slate-500">These amounts are included above. Final cost is adjusted to the selections you make; any difference is credited or billed.</p>
-        </section>
-      ) : null}
-
       {doc.optional.length > 0 ? (
-        <section className="mt-10 break-inside-avoid">
-          <h3 className="text-lg font-semibold">Not included</h3>
-          <div className="mt-2 border-t border-slate-300">
-            {doc.optional.map((i) => (
-              <div key={i.id} className="flex items-baseline justify-between gap-4 border-b border-slate-200 py-2 text-sm">
-                <span>{i.description}</span>
-                <span className="tabular-nums">{doc.totalOnly ? "" : money(i.amount)}</span>
-              </div>
-            ))}
-          </div>
+        <section className="break-inside-avoid">
+          <SectionTitle>Not included</SectionTitle>
+          {doc.optional.map((i) => (
+            <div key={i.id} className="flex items-baseline justify-between gap-4 border-b border-slate-100 py-2 text-sm">
+              <span>{i.description}</span>
+              <span className="tabular-nums">{doc.totalOnly ? "" : money(i.amount)}</span>
+            </div>
+          ))}
         </section>
       ) : null}
     </>
@@ -503,47 +784,50 @@ function ProposalBody({ doc, heading, basePrice }: { doc: ProposalDoc; heading: 
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-baseline justify-between gap-4 border-t border-slate-200 py-2 text-sm text-slate-700">
+    <div className="flex items-baseline justify-between gap-4 py-1 text-slate-600">
       <span>{label}</span>
-      <span className="tabular-nums">{value}</span>
+      <span className="tabular-nums text-slate-900">{value}</span>
     </div>
   );
 }
 
-function DivisionBlock({ doc, division: c }: { doc: ProposalDoc; division: ProposalDoc["categories"][number] }) {
+function DivisionBlock({ doc, division: c, photoEdit }: { doc: ProposalDoc; division: ProposalDoc["categories"][number]; photoEdit?: PhotoEdit }) {
   const visible = c.divisions.filter((d) => d.show || d.items?.length);
-  if (!doc.showCategories && visible.length === 0) return null;
+  if (visible.length === 0) return null;
   return (
     <div>
       {doc.showCategories ? (
-        <div className="flex items-baseline justify-between gap-4 border-b border-slate-300 py-3 font-semibold break-after-avoid">
+        <div className="flex items-baseline justify-between gap-4 border-l-[3px] border-t border-l-[var(--doc-accent)] border-t-slate-200 bg-[var(--doc-tint)] px-3 py-2 text-[13.5px] font-bold break-after-avoid">
           <span>{c.name}</span>
           <span className="tabular-nums">{doc.showCategoryAmounts ? money(c.amount) : ""}</span>
         </div>
       ) : null}
       {visible.map((d) => (
-        <CategoryBlock key={d.id} doc={doc} d={d} indent={doc.showCategories} />
+        <CategoryBlock key={d.id} doc={doc} d={d} indent={doc.showCategories} photoEdit={photoEdit} />
       ))}
     </div>
   );
 }
 
-function CategoryBlock({ doc, d, indent }: { doc: ProposalDoc; d: ProposalDoc["categories"][number]["divisions"][number]; indent: boolean }) {
+function CategoryBlock({ doc, d, indent, photoEdit }: { doc: ProposalDoc; d: ProposalDoc["categories"][number]["divisions"][number]; indent: boolean; photoEdit?: PhotoEdit }) {
   return (
-    <div className={cn("break-inside-avoid border-b border-slate-200 py-4", indent && "pl-8")}>
+    <div className={cn("break-inside-avoid border-b border-slate-100 py-2.5 pr-3 text-[13.5px]", indent ? "pl-7" : "pl-3")}>
       {d.show ? (
         <>
           <div className="flex items-baseline justify-between gap-4">
-            <h3 className="font-semibold">{d.name}</h3>
-            <span className="text-sm tabular-nums">{d.showPrice ? money(d.amount) : ""}</span>
+            <h3>{d.name}</h3>
+            <span className="tabular-nums">{d.showPrice ? money(d.amount) : ""}</span>
           </div>
-          {doc.showSpecText && d.specText ? <p className="mt-2 max-w-[40rem] whitespace-pre-line text-sm leading-relaxed text-slate-700">{d.specText}</p> : null}
+          {doc.showSpecText && d.specText ? <p className="mt-0.5 max-w-[40rem] whitespace-pre-line text-[12.5px] leading-relaxed text-slate-500">{d.specText}</p> : null}
+          {d.allowance !== null ? (
+            <span className="mt-1 inline-block rounded border border-[var(--doc-accent)] px-1.5 text-[11px] font-semibold text-[var(--doc-accent)]">Allowance {money(d.allowance)}</span>
+          ) : null}
         </>
       ) : null}
       {d.items?.length ? (
-        <div className={cn("mt-2 space-y-0.5", d.show && "pl-4")}>
+        <div className={cn("mt-1 space-y-0.5", d.show && "pl-4")}>
           {d.items.map((i) => (
-            <div key={i.id} className="flex items-baseline justify-between gap-4 text-[13px] text-slate-700">
+            <div key={i.id} className="flex items-baseline justify-between gap-4 text-[13px] text-slate-600">
               <span>
                 {i.description}
                 {doc.showItemQty ? (
@@ -557,9 +841,8 @@ function CategoryBlock({ doc, d, indent }: { doc: ProposalDoc; d: ProposalDoc["c
           ))}
         </div>
       ) : null}
-      {d.allowance !== null ? <p className="mt-3 text-sm">Allowance: {money(d.allowance)}</p> : null}
       {d.tbd ? (
-        <div className="mt-2 flex items-baseline justify-between gap-4 pl-8 text-sm text-slate-700">
+        <div className="mt-1 flex items-baseline justify-between gap-4 pl-4 text-[13px] text-slate-600">
           {d.choice === "DECLINED" ? (
             <>
               <span>Not wanted by client</span>
@@ -580,30 +863,116 @@ function CategoryBlock({ doc, d, indent }: { doc: ProposalDoc; d: ProposalDoc["c
           )}
         </div>
       ) : null}
+      {d.show ? <Photos specId={d.id} photos={d.photos} edit={photoEdit} /> : null}
     </div>
   );
 }
 
-function Signatures({ signer, client }: { signer: string; client: string | null }) {
-  const line = (who: string) => (
-    <div className="grid grid-cols-[1fr_12rem] gap-6">
-      <div>
-        <div className="h-10 border-b border-slate-400" />
-        <p className="mt-1 text-sm text-slate-700">{who}</p>
-      </div>
-      <div>
-        <div className="h-10 border-b border-slate-400" />
-        <p className="mt-1 text-sm text-slate-700">Date</p>
-      </div>
+/** The category's pictures as a row of small thumbnails (they open full size); on your page, add and remove them here. */
+function Photos({ specId, photos, edit }: { specId: string; photos: DocPhoto[]; edit?: PhotoEdit }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, start] = useTransition();
+  const input = useRef<HTMLInputElement>(null);
+  if (!photos.length && !edit) return null;
+  const ids = photos.map((p) => p.id);
+  const save = (next: string[]) =>
+    start(async () => {
+      setErr(null);
+      const r = await setProposalPhotos(edit!.projectId, edit!.estimateId, specId, next);
+      if (!r.ok) setErr(r.error);
+      else router.refresh();
+    });
+  const upload = (f: File | undefined) => {
+    if (!f) return;
+    start(async () => {
+      setErr(null);
+      const fd = new FormData();
+      fd.set("file", await smaller(f));
+      const r = await uploadProposalPhoto(edit!.projectId, edit!.estimateId, specId, fd);
+      if (!r.ok) setErr(r.error);
+      else {
+        setOpen(false);
+        router.refresh();
+      }
+    });
+  };
+  const others = edit?.jobPhotos.filter((p) => !ids.includes(p.id)) ?? [];
+  return (
+    <div className="mt-2">
+      <PhotoRow photos={photos}>
+        {(p) =>
+          edit ? (
+            <button
+              type="button"
+              className="no-print absolute right-1 top-1 rounded bg-white/90 px-1.5 text-xs text-rose-700 shadow ring-1 ring-slate-200 hover:bg-white"
+              onClick={() => save(ids.filter((x) => x !== p.id))}
+              disabled={busy}
+              aria-label="Take this picture off the proposal"
+              title="Take it off the proposal (it stays in the job's files)"
+            >
+              ✕
+            </button>
+          ) : null
+        }
+      </PhotoRow>
+      {edit ? (
+        <div className="no-print">
+          <button
+            type="button"
+            className="mt-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-slate-500 ring-1 ring-slate-200 hover:bg-slate-50 hover:text-slate-800"
+            onClick={() => setOpen((v) => !v)}
+          >
+            <ImagePlus className="h-3.5 w-3.5" /> Picture
+          </button>
+          {open ? (
+            <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className={buttonClasses("secondary", "sm")} onClick={() => input.current?.click()} disabled={busy}>
+                  Upload a picture
+                </button>
+                <span className="text-xs text-slate-500">or pick one of this job&apos;s photos your client can see:</span>
+                <button type="button" className="ml-auto text-xs text-slate-500 hover:text-slate-800" onClick={() => setOpen(false)}>
+                  Close
+                </button>
+              </div>
+              <input ref={input} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={(e) => upload(e.target.files?.[0])} />
+              {others.length ? (
+                <div className="mt-2 flex max-h-56 flex-wrap gap-2 overflow-y-auto">
+                  {others.map((p) => (
+                    <button key={p.id} type="button" className="w-20" onClick={() => save([...ids, p.id])} disabled={busy} title={p.caption ?? "Add this picture"}>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.url} alt={p.caption ?? ""} className="aspect-[4/3] w-full rounded border border-slate-200 object-cover hover:ring-2 hover:ring-blue-500" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs text-slate-500">No photos on this job yet — upload one above.</p>
+              )}
+              {busy ? <p className="mt-1 text-xs text-slate-500">Saving…</p> : null}
+            </div>
+          ) : null}
+          {err ? <p className="mt-1 text-xs text-rose-700">{err}</p> : null}
+        </div>
+      ) : null}
     </div>
   );
-  return (
-    <section className="mt-12 break-inside-avoid">
-      <h3 className="text-xl font-medium">Signatures</h3>
-      <div className="mt-4 space-y-6">
-        {line(`Builder: ${signer}`)}
-        {client ? line(`Client: ${client}`) : null}
-      </div>
-    </section>
-  );
+}
+
+/** A big phone photo made smaller before it's sent (the proposal shows it small, and the PDF stays light to email). */
+async function smaller(f: File): Promise<File> {
+  try {
+    const bmp = await createImageBitmap(f);
+    const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+    if (k === 1 && f.size < 1.5 * 1024 * 1024) return f;
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k);
+    c.height = Math.round(bmp.height * k);
+    c.getContext("2d")!.drawImage(bmp, 0, 0, c.width, c.height);
+    const blob = await new Promise<Blob | null>((r) => c.toBlob(r, "image/jpeg", 0.85));
+    return blob ? new File([blob], f.name.replace(/\.[a-z0-9]+$/i, "") + ".jpg", { type: "image/jpeg" }) : f;
+  } catch {
+    return f;
+  }
 }

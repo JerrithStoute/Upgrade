@@ -323,3 +323,13 @@ export const deleteBill = friendly(async function deleteBill(fd: FormData) {
   revalidate(project.id);
   redirect(base(project.id));
 });
+
+/** Your standard purchase order terms, printed on every PO (admins). */
+export async function savePoTerms(projectId: string, poId: string, text: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  const user = await requireEdit("purchasing");
+  if (user.role !== "ADMIN") return { ok: false, error: "Only an admin can change your PO terms." };
+  const value = String(text ?? "").replace(/\r\n?/g, "\n").trim().slice(0, 10000) || null;
+  await db.company.updateMany({ data: { poTerms: value } });
+  revalidatePath(`/projects/${projectId}/purchasing/po/${poId}/print`);
+  return { ok: true };
+}

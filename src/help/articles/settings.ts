@@ -270,6 +270,7 @@ export const SETTINGS: HelpArticle[] = [
           { name: "+ New cost code…", what: "The last choice in either list: type the new code's number (optional) and name, and it's added to your cost codes when you click **Save**." },
           { name: "Number them for me / Start at", what: "The program numbers invoices across all jobs. To carry on from QuickBooks, type its next number." },
           { name: "I'll type them", what: "Each new invoice asks for its number, with the next unused one filled in." },
+          { name: "How to pay", what: "Prints on every invoice, above \"Please put invoice No. … on your payment\": who checks are payable to and where to mail them, how to pay by bank transfer. A short line on its own above a paragraph prints as its heading. You can also change it right on an invoice's **Print / PDF** page." },
         ],
       },
     ],

@@ -197,3 +197,17 @@ export function workScreenCss(s: BrandStyle) {
   if (s.planDim > 0) rules.push(`canvas[data-plan]{filter:brightness(${(1 - s.planDim / 100).toFixed(2)})}`);
   return rules.length ? `@media screen{${rules.join("")}}` : "";
 }
+
+/** No main color: the proposal's own dark slate. */
+const DOC_DEFAULT = "#334155";
+
+/**
+ * The colors a client document is printed in, from the company's main color: `accent` for its labels and
+ * rules (kept dark enough to read as text on white — a light color is darkened), `tint` a faint wash of
+ * it behind the division rows.
+ */
+export function documentColors(color: string | null | undefined) {
+  const c = color && /^#[0-9a-f]{6}$/i.test(color) ? color : DOC_DEFAULT;
+  const [h, s, l] = hsl(c);
+  return { accent: hex(h, Math.min(s, 70), Math.min(l, 34)), tint: hex(h, Math.min(s, 30), 96) };
+}

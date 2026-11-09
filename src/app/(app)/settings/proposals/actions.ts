@@ -9,6 +9,16 @@ import { logActivity } from "@/lib/activity";
 import { parseProposalOptions, proposalOptionsSchema } from "@/lib/proposal-options";
 import { str } from "@/lib/utils";
 
+/** A box's wording as typed (empty: none). */
+const text = (fd: FormData, k: string) => String(fd.get(k) ?? "").replace(/\r\n?/g, "\n").trim().slice(0, 20000) || null;
+
+/** The payment rows as typed: a name and a % each; blank rows left off. */
+function payRows(fd: FormData) {
+  const labels = fd.getAll("payLabel").map((v) => String(v).trim().slice(0, 80));
+  const pcts = fd.getAll("payPct").map((v) => Math.max(0, Math.min(100, Number(String(v).replace(/[^\d.]/g, "")) || 0)));
+  return labels.map((label, i) => ({ label, pct: pcts[i] ?? 0 })).filter((r) => r.label || r.pct > 0);
+}
+
 /** What a new proposal shows — the same default "Save as my default" sets from a proposal. */
 export const saveProposalDefaults = friendly(async function saveProposalDefaults(fd: FormData) {
   const admin = await requireAdmin();
@@ -32,11 +42,15 @@ export const saveProposalDefaults = friendly(async function saveProposalDefaults
     validDays: Math.max(0, Math.min(365, Math.round(Number(str(fd, "validDays")) || 0))),
     signer: str(fd, "signer"),
     clientSignature: on("clientSignature"),
+    payments: { show: on("paymentsShow"), rows: payRows(fd) },
+    terms: on("terms"),
   });
   const pct = Number(str(fd, "escalationPct"));
   await db.company.updateMany({
     data: {
       proposalOptions: JSON.stringify(options),
+      ...(fd.has("proposalIntro") ? { proposalIntro: text(fd, "proposalIntro") } : {}),
+      ...(fd.has("proposalTerms") ? { proposalTerms: text(fd, "proposalTerms") } : {}),
       ...(fd.has("escalationPct") && Number.isFinite(pct) ? { escalationPct: Math.max(0, Math.min(100, Math.round(pct * 10) / 10)) } : {}),
       ...(fd.has("escalationFrom") ? { escalationFrom: str(fd, "escalationFrom") === "SIGNED" ? "SIGNED" : "SENT" } : {}),
     },

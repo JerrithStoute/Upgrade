@@ -396,11 +396,11 @@ test("writes a change order", async () => {
   await page.getByRole("link", { name: "Review and send →" }).click();
   await expect(page.getByRole("heading", { name: "What the client sees" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Send for approval" })).toBeVisible();
-  await expect(page.getByText("Effect on contract total")).toBeVisible();
+  await expect(page.getByText("New contract total")).toBeVisible();
   await page.getByLabel("Effect on contract").uncheck();
-  await expect(page.getByText("Effect on contract total")).toHaveCount(0);
+  await expect(page.getByText("New contract total")).toHaveCount(0);
   await page.getByLabel("Effect on contract").check();
-  await expect(page.getByText("Effect on contract total")).toBeVisible();
+  await expect(page.getByText("New contract total")).toBeVisible();
   await page.getByRole("link", { name: "Back to change order" }).click();
   // On the list: the money up top, and Find narrows it.
   await page.goto(`${job}/change-orders`);
@@ -539,7 +539,7 @@ test("makes an estimate template, sets its notes, duplicates it and deletes both
   await expect(page.getByRole("heading", { name: "Flow test estimate" })).toBeVisible();
   await expect(page.getByRole("link", { name: "← Estimate templates" })).toBeVisible();
   await page.locator("section", { hasText: "Copied into each new estimate" }).getByRole("link", { name: "Edit" }).click();
-  await page.getByLabel("Proposal notes").fill("Flow test note");
+  await page.getByLabel("Introduction").fill("Flow test note");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByText("Flow test note")).toBeVisible();
   await page.getByRole("button", { name: "Duplicate" }).click();

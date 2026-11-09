@@ -2,6 +2,9 @@ import Link from "@/components/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { requireView } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { allows } from "@/lib/access";
+import { photoCaption } from "@/lib/proposal-options";
 import { getProject } from "@/lib/projects";
 import { loadProposal } from "@/lib/proposal-data";
 import { ensureEstimateSpecs } from "@/lib/estimate-lines";
@@ -25,6 +28,15 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
   // A draft: warn about anything that would show at $0.
   const check = estimate.status === "DRAFT" ? await takeoffPriceCheck(project.id) : null;
   const zeroLines = estimate.status === "DRAFT" ? zeroLineNames(estimate.items) : [];
+  // The job's pictures your client can see: what can go under a category on the proposal.
+  const jobPhotos = (
+    await db.fileAsset.findMany({
+      where: { projectId: project.id, clientVisible: true, mimeType: { startsWith: "image/" } },
+      orderBy: { createdAt: "desc" },
+      take: 60,
+      select: { id: true, name: true },
+    })
+  ).map((f) => ({ id: f.id, url: `/api/files/${f.id}`, caption: photoCaption(f.name) }));
 
   return (
     <div className="space-y-4">
@@ -44,13 +56,17 @@ export default async function ProposalPage({ params }: { params: Promise<{ id: s
         extras={p.extras}
         initial={p.options}
         isCustom={p.isCustom}
-        pricedOn={p.pricedOn}
+        issuedOn={p.pricedOn}
         isAdmin={user.role === "ADMIN"}
         companyName={p.companyName}
         cover={p.cover}
-        header={p.header}
         intro={p.intro}
-        footer={p.footer}
+        terms={p.terms}
+        head={p.head}
+        decision={p.decision}
+        jobPhotos={jobPhotos}
+        standard={p.standard}
+        canEditText={user.access.costs && allows(user.access, "estimates", 2)}
       />
     </div>
   );

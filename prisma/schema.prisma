@@ -41,6 +41,13 @@ model Company {
   logoType            String?
   // What proposals show by default (JSON, see src/lib/proposal-options.ts); null = the built-in default.
   proposalOptions     String?
+  // Your standard proposal introduction and terms: new estimates start with them (unless their template has its own).
+  proposalIntro       String?
+  proposalTerms       String?
+  // How to pay, printed on every invoice (check payable to, bank transfer…).
+  paymentInstructions String?
+  // Your standard purchase order terms, printed on every PO.
+  poTerms             String?
   // New allowances start with profit in (true) or out (false, at cost); each can be switched.
   allowanceProfit     Boolean         @default(false)
   // Change order defaults ("Use as default"): JSON { introText, closingText, terms, ifDeclined, profitMode, profitValue, profitShown }.
@@ -466,6 +473,8 @@ model EstimateSpec {
   proposalView    String?
   // Allowance amount with profit in (true) or at cost (false); null = the company default.
   allowanceProfit Boolean?
+  // Pictures under this category on the proposal: the job's FileAsset ids, in order.
+  photos          String[]   @default([])
   sortOrder       Int        @default(0)
   createdAt       DateTime   @default(now())
 
@@ -988,6 +997,8 @@ model Invoice {
   // Tax on this invoice, your call each time (null = none). Kept as a tax line among the items.
   taxPct      Float?
   taxLabel    String    @default("Sales tax")
+  // "Where your contract stands" on the printed invoice.
+  showSummary Boolean   @default(true)
   // QuickBooks: the invoice it is there (Online: Id, SyncToken; Desktop: TxnID, EditSequence), when it went, and why it didn't.
   qbTxnId     String?
   qbSyncToken String?

@@ -18,6 +18,13 @@ export function allowanceAmount(lines: { quantity: number; unitCost: number; mar
 
 const bool = (d: boolean) => z.boolean().catch(d);
 
+/** A starting payment schedule; each builder changes it to their own. */
+export const STARTER_PAYMENTS = [
+  { label: "Deposit at signing", pct: 10 },
+  { label: "Final payment at completion", pct: 90 },
+];
+const paymentRow = z.object({ label: z.string().max(80).catch(""), pct: z.number().finite().min(0).max(100).catch(0) });
+
 export const proposalOptionsSchema = z.object({
   categories: z.object({ show: bool(true), subtotals: bool(true) }).catch({ show: true, subtotals: true }),
   divisions: z.object({ show: bool(true), prices: bool(true), specText: bool(true) }).catch({ show: true, prices: true, specText: true }),
@@ -36,6 +43,12 @@ export const proposalOptionsSchema = z.object({
   cover: bool(false),
   /** The estimate's notes open the proposal as its introduction — untitled unless you give it one. */
   intro: z.object({ titled: bool(false), title: z.string().max(60).catch("Notes") }).catch({ titled: false, title: "Notes" }),
+  /** The payment schedule: each payment's name and % of the total (the amounts are worked out from the total). */
+  payments: z
+    .object({ show: bool(false), rows: z.array(paymentRow).max(12).catch(STARTER_PAYMENTS) })
+    .catch({ show: false, rows: STARTER_PAYMENTS }),
+  /** The estimate's Terms (its Terms box) as the Terms & conditions section. */
+  terms: bool(true),
   /** Who signs for you ("Builder: …"); empty = your company name. */
   signer: z.string().max(80).catch(""),
   /** A signature line for the client too. */
@@ -118,6 +131,7 @@ export type ProposalSpec = {
   choice: { name: string; price: number } | "DECLINED" | null;
   view: SpecView;
   lines: ProposalLine[];
+  photos?: DocPhoto[];
 };
 
 export type DocItem = { id: string; description: string; quantity: number; unit: string; amount: number };
@@ -136,7 +150,10 @@ export type DocDivision = {
   showPrice: boolean;
   /** null: its items aren't shown. */
   items: DocItem[] | null;
+  /** Pictures under it on the proposal. */
+  photos: DocPhoto[];
 };
+export type DocPhoto = { id: string; url: string; caption: string | null };
 export type ProposalDoc = {
   categories: { name: string; amount: number; divisions: DocDivision[] }[];
   showCategories: boolean;
@@ -151,7 +168,7 @@ export type ProposalDoc = {
   /** Each tax row (the proposal shows one line per row). */
   taxes: { label: string; pct: number; amount: number }[];
   total: number;
-  allowances: { id: string; name: string; note: string | null; amount: number }[];
+  allowances: { id: string; name: string; division: string; note: string | null; amount: number }[];
   allowancesTotal: number;
   optional: { id: string; description: string; quantity: number; unit: string; amount: number }[];
   totalOnly: boolean;
@@ -190,11 +207,14 @@ export function buildProposal(specs: ProposalSpec[], o: ProposalOptions, basePri
   const shown = (l: ProposalLine) => (fee ? costOf(l) : share(l));
   const sum = (lines: ProposalLine[]) => cents(lines.filter((l) => !l.isOptional).reduce((t, l) => t + shown(l), 0));
 
+  // A category with nothing in it (no lines, no text, no choice to make, no pictures) is left off — a template's
+  // unused ones would otherwise print as rows of $0.00. A division with none left is left off too.
+  const empty = (s: ProposalSpec) => !s.lines.some((l) => !l.isOptional) && !s.specText?.trim() && s.kind !== "SELECTION" && s.choice === null && !s.photos?.length;
   const order: string[] = [];
-  for (const s of specs) if (!order.includes(s.category)) order.push(s.category);
+  for (const s of specs) if (!empty(s) && !order.includes(s.category)) order.push(s.category);
   const categories = order.map((name) => {
     const divisions = specs
-      .filter((s) => s.category === name)
+      .filter((s) => s.category === name && !empty(s))
       .map((s): DocDivision => {
         const lines = s.lines.filter((l) => !l.isOptional);
         const showItems = s.view.items ?? o.items.show;
@@ -210,6 +230,7 @@ export function buildProposal(specs: ProposalSpec[], o: ProposalOptions, basePri
           show: s.view.show ?? o.divisions.show,
           showPrice: !o.totalOnly && (s.view.prices ?? o.divisions.prices),
           items: showItems ? lines.map((l) => ({ id: l.id, description: l.description, quantity: l.quantity, unit: l.unit, amount: cents(shown(l)) })) : null,
+          photos: s.photos ?? [],
         };
       });
     return { name, amount: cents(divisions.reduce((t, d) => t + d.amount, 0)), divisions };
@@ -222,7 +243,7 @@ export function buildProposal(specs: ProposalSpec[], o: ProposalOptions, basePri
   const allowances = o.allowances
     ? specs
         .filter((s) => s.isAllowance)
-        .map((s) => ({ id: s.id, name: s.name, note: s.specText, amount: cents(allowanceAmount(s.lines, s.allowanceProfit) + (s.allowanceExtra ?? 0)) }))
+        .map((s) => ({ id: s.id, name: s.name, division: s.category, note: s.specText, amount: cents(allowanceAmount(s.lines, s.allowanceProfit) + (s.allowanceExtra ?? 0)) }))
     : [];
 
   return {
@@ -263,6 +284,7 @@ export function clientCopy(doc: ProposalDoc): ProposalDoc {
           ...d,
           name: d.show ? d.name : "",
           specText: d.show && doc.showSpecText ? d.specText : null,
+          photos: d.show ? d.photos : [],
           amount: d.show && d.showPrice ? d.amount : 0,
           items: d.items?.map((i) => ({ ...i, amount: doc.showItemPrices ? i.amount : 0, quantity: doc.showItemQty ? i.quantity : 0, unit: doc.showItemQty ? i.unit : "" })) ?? null,
         })),
@@ -295,4 +317,56 @@ export function goodThroughDay(pricedOn: string, validDays: number) {
 export function proposalExpired(pricedOn: string, validDays: number, today: string) {
   const end = goodThroughDay(pricedOn, validDays);
   return !!end && today > end;
+}
+
+/**
+ * The payment schedule's amounts, from the total: each payment its % of it, to the cent. When the
+ * percentages add up to 100, the last payment takes what rounding leaves, so they add up to the total exactly.
+ */
+export function paymentSchedule(total: number, rows: { label: string; pct: number }[]) {
+  const used = rows.filter((r) => r.label.trim() || r.pct > 0);
+  const pctTotal = Math.round(used.reduce((t, r) => t + r.pct, 0) * 1000) / 1000;
+  const out = used.map((r) => ({ label: r.label.trim(), pct: r.pct, amount: cents((total * r.pct) / 100) }));
+  if (out.length && pctTotal === 100) {
+    const others = out.slice(0, -1).reduce((t, r) => t + r.amount, 0);
+    out[out.length - 1].amount = cents(total - others);
+  }
+  return { rows: out, pctTotal, amountTotal: cents(out.reduce((t, r) => t + r.amount, 0)) };
+}
+
+/** A picture's caption from its file name — none for a camera's own name (IMG_4053.jpg). */
+export function photoCaption(name: string) {
+  const base = name.replace(/\.[a-z0-9]{2,5}$/i, "").trim();
+  if (!base || /^(img|dsc|dscn|pxl|photo|image|screenshot|screen shot|mvimg|wp)[-_ ]?\d/i.test(base) || /^[\d_ -]+$/.test(base) || /^[0-9a-f-]{16,}$/i.test(base)) return null;
+  return base.replace(/[_]+/g, " ").replace(/\s+/g, " ").slice(0, 60);
+}
+
+/** A line that reads as a heading: short, on its own, not a sentence or a list item. */
+const isTermsTitle = (l: string) => l.length > 0 && l.length <= 60 && !/[.,;:!?]$/.test(l) && !/^([-•*–]|\d+[.)])/.test(l);
+
+/**
+ * The Terms box in blocks: paragraphs as typed (a blank line between them), each with a heading when
+ * its first line is a short line of its own (no period at its end) — or when such a line stands alone
+ * just above it.
+ */
+export function termsBlocks(text: string) {
+  const paras = text
+    .replace(/\r\n?/g, "\n")
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  const out: { title: string | null; body: string }[] = [];
+  let pending: string | null = null;
+  paras.forEach((p, i) => {
+    const lines = p.split("\n");
+    const first = lines[0].trim();
+    if (lines.length === 1 && isTermsTitle(first) && i < paras.length - 1 && !pending) pending = first;
+    else if (lines.length > 1 && isTermsTitle(first) && !pending) out.push({ title: first, body: lines.slice(1).join("\n").trim() });
+    else {
+      out.push({ title: pending, body: p });
+      pending = null;
+    }
+  });
+  if (pending) out.push({ title: null, body: pending });
+  return out;
 }
