@@ -122,8 +122,9 @@ textarea.input {
   main {
     padding: 0 !important;
   }
-  /* Proposals print on their own named page so they get page numbers. */
-  .proposal-doc {
+  /* Proposals print on their own named page so they get page numbers. Set on the whole page, not just
+     the document: switching page names partway down makes Chrome start a new (blank) first page. */
+  html:has(.proposal-doc) {
     page: proposal;
   }
 }
