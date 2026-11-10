@@ -54,5 +54,9 @@ export function ProjectHeaderSwitch({ compact, children }: { compact: React.Reac
     setSlot(compact);
     return () => setSlot(null);
   }, [inBar, compact]);
-  return viewer ? null : <div ref={ref}>{children}</div>;
+  return viewer ? null : (
+    <div ref={ref} className="job-header">
+      {children}
+    </div>
+  );
 }

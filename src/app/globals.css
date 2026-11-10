@@ -127,6 +127,10 @@ textarea.input {
   html:has(.proposal-doc) {
     page: proposal;
   }
+  /* A document prints on its own: none of the job's header (← Projects, #number, Client view, Copy) above it. */
+  html:has(.proposal-doc) .job-header {
+    display: none;
+  }
 }
 
 @page proposal {
