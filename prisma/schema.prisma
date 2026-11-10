@@ -798,6 +798,8 @@ model SelectionOption {
   price         Float       @default(0) // what the client pays for this choice
   cost          Float? // what it costs you (staff only)
   imageUrl      String?
+  // Which of its pictures is the main one (shown big, first); null = the first added.
+  mainPictureId String?
   isRecommended Boolean     @default(false)
   sortOrder     Int         @default(0)
   files         FileAsset[]

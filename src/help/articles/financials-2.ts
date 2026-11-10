@@ -52,7 +52,7 @@ export const FINANCIALS_2: HelpArticle[] = [
         heading: "Doing things from the Budget",
         items: [
           { name: "+ New", what: "A bill, expense or receipt, purchase order, change order, invoice or bid request for this job. With a line's panel open, the bill, expense or PO starts on that cost code." },
-          { name: "Picking lines", what: "Tick the boxes on the left of one or more lines. A bar appears: **Create bill** (one line per cost code, filled in with what's left of each), **Create purchase order** (from the budget's lines for them) or **Send for bids**." },
+          { name: "Picking lines", what: "Tick the boxes on the left of one or more lines. A bar appears: **Create bill** (one line per cost code, filled in with what's left of each), **Create purchase order** (from the budget's lines for them) or **Send for bids** (opens Bids with those cost codes ticked: their Material list items under What to send, any others under Send to subs, and the vendors who bid them)." },
           { name: "Print", what: "Prints the budget." },
         ],
       },

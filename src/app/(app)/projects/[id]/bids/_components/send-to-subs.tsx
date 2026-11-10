@@ -24,6 +24,7 @@ export function SendToSubs({
   codes,
   vendors: initialVendors,
   plans,
+  startCodes = [],
 }: {
   action: (fd: FormData) => Promise<void>;
   addVendor: AddVendor;
@@ -32,11 +33,13 @@ export function SendToSubs({
   codes: Code[];
   vendors: SendVendor[];
   plans: Plan[];
+  /** Trades picked on the Budget that aren't on the Material list: they (and the subs who bid them) start ticked. */
+  startCodes?: string[];
 }) {
   const [vendors, setVendors] = useState(initialVendors);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(startCodes.filter((c) => codes.some((x) => x.id === c))));
   const [find, setFind] = useState("");
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [chosen, setChosen] = useState<Set<string>>(() => new Set(initialVendors.filter((v) => v.codes.some((c) => startCodes.includes(c))).map((v) => v.id)));
   const [touched, setTouched] = useState(false);
   const noEmail = vendors.filter((v) => chosen.has(v.id) && !v.email).map((v) => v.name);
   // The plan sheets go by default; other documents when you tick them.

@@ -425,7 +425,7 @@ Heads up: ${[check?.unpriced.length ? `${check.unpriced.length} takeoff item(s) 
         markupTable={parseMarkupTable(estimate.markupTable, estimate.defaultMarkup)}
         toolbarExtra={
           isDraft && templates.length > 0 ? (
-            <AddFromTemplate projectId={project.id} estimateId={estimate.id} templates={templates.map((t) => ({ id: t.id, name: t.name, lines: t._count.items }))} />
+            <AddFromTemplate key="add-from-template" projectId={project.id} estimateId={estimate.id} templates={templates.map((t) => ({ id: t.id, name: t.name, lines: t._count.items }))} />
           ) : null
         }
         markupLocked={

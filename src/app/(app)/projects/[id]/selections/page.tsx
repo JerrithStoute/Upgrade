@@ -7,6 +7,7 @@ import { deadlineState } from "@/lib/deadlines";
 import { cn, money } from "@/lib/utils";
 import { Badge, ButtonLink, EmptyState } from "@/components/ui";
 import { SelectionsBoard } from "./_components/selections-board";
+import { db } from "@/lib/db";
 import { HelpLink } from "@/components/help/help-link";
 import { ConfirmForm } from "@/components/ui";
 import { deleteSelection } from "./actions";
@@ -21,7 +22,12 @@ export default async function SelectionsPage({ params, searchParams }: { params:
   const { id } = await params;
   const { s: openFirst } = await searchParams;
   const project = await getProject(id);
-  const [{ estimate, cards: all, others, profitDefault }, tasks] = await Promise.all([boardForViewer(project.id, user.id, false), scheduleOptions(project.id)]);
+  const [{ estimate, cards: all, others, profitDefault }, tasks, pdfs] = await Promise.all([
+    boardForViewer(project.id, user.id, false),
+    scheduleOptions(project.id),
+    // The job's PDFs, to clip choices' pictures from (newest first).
+    db.fileAsset.findMany({ where: { projectId: project.id, mimeType: "application/pdf" }, orderBy: { createdAt: "desc" }, select: { id: true, name: true } }),
+  ]);
   // Their position doesn't see costs and profit: none of it is sent to the page.
   const showCosts = user.access.costs;
   const cards = showCosts ? all : all.map((c) => ({ ...c, budget: null, choices: c.choices.map((x) => ({ ...x, cost: null })) }));
@@ -88,6 +94,7 @@ export default async function SelectionsPage({ params, searchParams }: { params:
           tasks={tasks}
           showCosts={showCosts}
           initialId={openFirst}
+          pdfs={pdfs}
         />
       )}
 

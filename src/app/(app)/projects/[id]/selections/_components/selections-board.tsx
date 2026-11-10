@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "@/components/link";
 import { AlertTriangle, ArrowRightLeft, CalendarClock, ChevronDown, ChevronRight, Paperclip, Pencil, Plus, Trash2, X } from "lucide-react";
@@ -12,18 +12,22 @@ import type { ViewerCard } from "@/lib/selections";
 /** A card as the board gets it: without the original budget for someone who doesn't see costs. */
 type SelectionCard = Omit<ViewerCard, "budget"> & { budget: ViewerCard["budget"] | null };
 import { ChoiceFiles, ChoicePicture, CommentsBox, FilesBox } from "@/components/selections/extras";
+import { PdfClipper } from "@/components/selections/pdf-clipper";
 import {
   addChoiceFiles,
   addSelectionFiles,
   commentOnSelection,
   makeChoice,
+  makeMainPicture,
   moveChoice,
+  putChoicePicture,
   removeChoice,
   removeSelectionFile,
   saveChoice,
   setAllowanceProfit,
   setChoicePicture,
   setDeadlines,
+  undoChoicePicture,
 } from "../actions";
 
 type Task = { id: string; name: string; startDate: Date };
@@ -55,10 +59,13 @@ export function SelectionsBoard({
   tasks,
   showCosts = true,
   initialId,
+  pdfs = [],
 }: {
   projectId: string;
   estimateHref: string;
   cards: SelectionCard[];
+  /** The job's PDFs, to clip choices' pictures from. */
+  pdfs?: { id: string; name: string }[];
   /** The selection to open first (?s= in the address). */
   initialId?: string;
   profitDefault: boolean;
@@ -136,6 +143,7 @@ export function SelectionsBoard({
             profitDefault={profitDefault}
             tasks={tasks}
             showCosts={showCosts}
+            pdfs={pdfs}
           />
         ) : null}
       </div>
@@ -155,9 +163,11 @@ function Card({
   profitDefault,
   tasks,
   showCosts,
+  pdfs,
 }: {
   projectId: string;
   estimateHref: string;
+  pdfs: { id: string; name: string }[];
   c: SelectionCard;
   /** The job's other selections — a choice can be moved to one. */
   others: SelectionCard[];
@@ -178,6 +188,40 @@ function Card({
   const [budgetOpen, setBudgetOpen] = useState(false);
   const [dropOn, setDropOn] = useState<string | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
+  // Pictures clipped from a PDF or pasted: the choice the clipper is open for, the one the mouse is on
+  // (where Ctrl+V goes), and the last one put on (for Undo).
+  const [clipFor, setClipFor] = useState<{ id: string; name: string } | null>(null);
+  const hover = useRef<string | null>(null);
+  const [undo, setUndo] = useState<{ optionId: string; fileId: string; note: string } | null>(null);
+  const putPicture = (optionId: string, file: File, note: string) =>
+    start(async () => {
+      setErr(null);
+      const fd = new FormData();
+      fd.set("file", file);
+      const r = await putChoicePicture(projectId, c.selectionId, optionId, fd);
+      if (!r.ok) return setErr(r.error);
+      setUndo({ optionId, fileId: r.fileId, note });
+      router.refresh();
+    });
+  useEffect(() => {
+    if (!undo) return;
+    const t = setTimeout(() => setUndo(null), 10000);
+    return () => clearTimeout(t);
+  }, [undo]);
+  useEffect(() => {
+    const onPaste = (e: ClipboardEvent) => {
+      const to = hover.current;
+      const el = e.target as HTMLElement | null;
+      if (!to || editing || el?.closest("input, textarea, [contenteditable]")) return;
+      const file = Array.from(e.clipboardData?.files ?? []).find((f) => /^image\/(png|jpe?g|webp|gif)$/.test(f.type));
+      if (!file) return;
+      e.preventDefault();
+      const name = c.choices.find((x) => x.id === to)?.name ?? "the choice";
+      putPicture(to, new File([file], file.name && file.name !== "image.png" ? file.name : "Pasted picture.png", { type: file.type }), `Pasted picture on "${name}"`);
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+  });
   // Save the choice, then put the files from the form on it.
   const saveWithFiles = async (saving: ReturnType<typeof saveChoice>, files: File[]) => {
     const r = await saving;
@@ -355,6 +399,8 @@ function Card({
                   setDropOn(x.id);
                 }}
                 onDragLeave={() => setDropOn((d) => (d === x.id ? null : d))}
+                onMouseEnter={() => (hover.current = x.id)}
+                onMouseLeave={() => (hover.current = hover.current === x.id ? null : hover.current)}
                 onDrop={(e) => {
                   if (!e.dataTransfer.files.length) return;
                   e.preventDefault();
@@ -366,7 +412,15 @@ function Card({
               >
                 <input type="radio" name={`pick-${c.selectionId}`} className="mt-1 h-4 w-4" checked={pick === x.id} onChange={() => {}} onClick={() => toggle(x.id)} />
                 <span className="w-7 shrink-0 pt-0.5 text-sm font-semibold text-slate-500">#{i + 1}</span>
-                <ChoicePicture pictureId={x.pictureId} seen={x.pictureSeen} onUpload={(fd) => setChoicePicture(projectId, c.selectionId, x.id, fd)} />
+                <ChoicePicture
+                  pictureId={x.pictureId}
+                  seen={x.pictureSeen}
+                  more={x.pictures.slice(1)}
+                  onUpload={(fd) => setChoicePicture(projectId, c.selectionId, x.id, fd)}
+                  onClip={() => setClipFor({ id: x.id, name: x.name })}
+                  onMakeMain={(id) => makeMainPicture(projectId, c.selectionId, x.id, id)}
+                  onRemove={(id) => removeSelectionFile(projectId, id)}
+                />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold text-slate-900">
                     {x.name}
@@ -504,6 +558,34 @@ function Card({
           </button>
         </div>
       </div>
+      {clipFor ? (
+        <PdfClipper
+          projectId={projectId}
+          pdfs={pdfs}
+          forName={clipFor.name}
+          onClose={() => setClipFor(null)}
+          onClip={(file, from) => {
+            putPicture(clipFor.id, file, `Clipped from ${from}`);
+            setClipFor(null);
+          }}
+        />
+      ) : null}
+      {undo ? (
+        <div className="fixed bottom-5 left-1/2 z-50 flex -translate-x-1/2 items-center gap-4 rounded-lg bg-slate-900 px-4 py-2.5 text-sm text-white shadow-lg" role="status">
+          <span>{undo.note}</span>
+          <button
+            type="button"
+            className="font-semibold text-blue-300 hover:text-blue-200"
+            onClick={() => {
+              const u = undo;
+              setUndo(null);
+              run(() => undoChoicePicture(projectId, c.selectionId, u.optionId, u.fileId));
+            }}
+          >
+            Undo
+          </button>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -590,7 +672,7 @@ function ChoiceForm({
       </div>
       <label
         className={cn(
-          "flex cursor-pointer flex-wrap items-center gap-2 rounded-md border-2 border-dashed px-3 py-2 text-xs text-slate-500",
+          "flex min-h-32 cursor-pointer flex-wrap items-center justify-center gap-2 rounded-lg border-2 border-dashed px-4 py-6 text-center text-sm text-slate-500",
           over ? "border-blue-400 bg-blue-50" : "border-slate-200 hover:border-blue-300",
         )}
         onDragOver={(e) => {
@@ -604,7 +686,7 @@ function ChoiceForm({
           addFiles(e.dataTransfer.files);
         }}
       >
-        <Paperclip className="h-3.5 w-3.5" />
+        <Paperclip className="h-5 w-5 text-slate-400" />
         {files.length ? (
           files.map((f, i) => (
             <span key={i} className="inline-flex items-center gap-1 rounded bg-white px-1.5 py-0.5 text-slate-700 ring-1 ring-slate-200">

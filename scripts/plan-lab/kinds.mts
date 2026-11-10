@@ -19,7 +19,7 @@ const done = new Set(existsSync(out) ? readFileSync(out, "utf8").split("\n").fil
 function pdfsIn(dir: string): string[] {
   const res: string[] = [];
   for (const name of readdirSync(dir)) {
-    if (name.startsWith("_lab")) continue;
+    if (name.startsWith("_")) continue; // _lab and other working folders (copies) aren't test plans
     const p = join(dir, name);
     if (statSync(p).isDirectory()) res.push(...pdfsIn(p));
     else if (name.toLowerCase().endsWith(".pdf")) res.push(p);

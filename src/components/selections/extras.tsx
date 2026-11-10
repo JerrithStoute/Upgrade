@@ -284,9 +284,20 @@ export function ChoicePicture({
   seen,
   track,
   small,
+  onClip,
+  more = [],
+  onMakeMain,
+  onRemove,
 }: {
   pictureId: string | null;
+  /** Its other pictures (the main one is `pictureId`), shown small under it. */
+  more?: string[];
+  /** Your team: make one of the others the main picture, or take a picture off. */
+  onMakeMain?: (fileId: string) => Promise<Result>;
+  onRemove?: (fileId: string) => Promise<Result>;
   onUpload?: (fd: FormData) => Promise<Result>;
+  /** Clip the picture out of one of the job's PDFs (the clipper opens). */
+  onClip?: () => void;
   /** A smaller thumbnail (the client's compact list). */
   small?: boolean;
   /** See CardFile.seen; leave out to show nothing. */
@@ -296,9 +307,17 @@ export function ChoicePicture({
 }) {
   const input = useRef<HTMLInputElement>(null);
   const { busy, err, run } = useRun();
+  const [menu, setMenu] = useState(false);
   if (!pictureId && !onUpload) return null;
+  // With a clipper: a small menu (Clip from a PDF / Upload a picture); without, straight to the file picker.
+  const add = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (onClip) setMenu((m) => !m);
+    else input.current?.click();
+  };
   return (
-    <span className="relative block shrink-0">
+    <span className="group/pic relative block shrink-0">
       {pictureId ? (
         <a
           href={fileHref(pictureId, track)}
@@ -318,10 +337,7 @@ export function ChoicePicture({
           type="button"
           title="Add a picture"
           className="flex h-16 w-16 items-center justify-center rounded-md border-2 border-dashed border-slate-200 text-slate-300 hover:border-blue-300 hover:text-blue-600"
-          onClick={(e) => {
-            e.preventDefault();
-            input.current?.click();
-          }}
+          onClick={add}
           disabled={busy}
         >
           <ImagePlus className="h-5 w-5" />
@@ -330,27 +346,123 @@ export function ChoicePicture({
       {pictureId && onUpload ? (
         <button
           type="button"
-          className="absolute -bottom-1 left-1/2 -translate-x-1/2 rounded bg-white px-1 text-[10px] text-blue-700 shadow ring-1 ring-slate-200"
+          title="Add another picture"
+          className="absolute left-1/2 top-[3.4rem] -translate-x-1/2 rounded bg-white px-1 text-[10px] text-blue-700 shadow ring-1 ring-slate-200"
+          onClick={add}
+        >
+          + Add
+        </button>
+      ) : null}
+      {pictureId && onRemove ? (
+        <button
+          type="button"
+          title="Take this picture off"
+          aria-label="Take this picture off"
+          className="absolute -right-1.5 -top-1.5 hidden h-4 w-4 items-center justify-center rounded-full bg-white text-slate-500 shadow ring-1 ring-slate-200 hover:text-rose-600 group-hover/pic:flex"
           onClick={(e) => {
             e.preventDefault();
-            input.current?.click();
+            e.stopPropagation();
+            if (window.confirm("Take this picture off the choice?")) run(() => onRemove(pictureId));
           }}
         >
-          Change
+          <X className="h-3 w-3" />
         </button>
+      ) : null}
+      {more.length ? (
+        <span className="mt-2 flex w-16 flex-wrap gap-1">
+          {more.map((id) => (
+            <span key={id} className="group/more relative">
+              <a href={fileHref(id, track)} target="_blank" rel="noopener" onClick={(e) => (e.stopPropagation(), track?.(id))}>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={`/api/files/${id}`} alt="" className="h-[1.85rem] w-[1.85rem] rounded object-cover ring-1 ring-slate-200" />
+              </a>
+              {onMakeMain || onRemove ? (
+                <span className="absolute -top-6 left-1/2 z-10 hidden -translate-x-1/2 gap-0.5 rounded bg-white p-0.5 shadow ring-1 ring-slate-200 group-hover/more:flex">
+                  {onMakeMain ? (
+                    <button
+                      type="button"
+                      title="Make it the main picture"
+                      className="whitespace-nowrap rounded px-1 text-[10px] text-blue-700 hover:bg-blue-50"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        run(() => onMakeMain(id));
+                      }}
+                    >
+                      Main
+                    </button>
+                  ) : null}
+                  {onRemove ? (
+                    <button
+                      type="button"
+                      title="Take this picture off"
+                      aria-label="Take this picture off"
+                      className="rounded px-0.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (window.confirm("Take this picture off the choice?")) run(() => onRemove(id));
+                      }}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  ) : null}
+                </span>
+              ) : null}
+            </span>
+          ))}
+        </span>
+      ) : null}
+      {menu && onClip ? (
+        <span className="absolute left-0 top-full z-20 mt-1 block w-48 rounded-md bg-white py-1 text-sm shadow-lg ring-1 ring-slate-200" onMouseLeave={() => setMenu(false)}>
+          <button
+            type="button"
+            className="block w-full px-3 py-1.5 text-left hover:bg-slate-50"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMenu(false);
+              onClip();
+            }}
+          >
+            Clip from a PDF
+          </button>
+          <button
+            type="button"
+            className="block w-full px-3 py-1.5 text-left hover:bg-slate-50"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setMenu(false);
+              input.current?.click();
+            }}
+          >
+            Upload pictures
+          </button>
+          <span className="block border-t border-slate-100 px-3 pb-0.5 pt-1.5 text-[11px] leading-snug text-slate-500">Or copy a picture and press Ctrl+V with the mouse on the choice.</span>
+        </span>
       ) : null}
       {onUpload ? (
         <input
           ref={input}
           type="file"
           accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
           hidden
           onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (!f) return;
-            const fd = new FormData();
-            fd.set("file", f);
-            run(() => onUpload(fd));
+            const picked = Array.from(e.target.files ?? []);
+            e.target.value = "";
+            if (!picked.length) return;
+            // Several at once: each is added in turn.
+            run(async () => {
+              for (const f of picked) {
+                const fd = new FormData();
+                fd.set("file", f);
+                const r = await onUpload(fd);
+                if (!r.ok) return r;
+              }
+              return { ok: true };
+            });
           }}
         />
       ) : null}

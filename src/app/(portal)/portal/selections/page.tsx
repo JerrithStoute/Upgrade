@@ -48,6 +48,7 @@ export default async function PortalSelectionsPage({ searchParams }: { searchPar
       vendor: x.vendor,
       modelNumber: x.modelNumber,
       pictureId: x.pictureId,
+      morePictures: x.pictures.slice(1),
       pictureSeen: x.pictureSeen,
       files: x.files,
     })),

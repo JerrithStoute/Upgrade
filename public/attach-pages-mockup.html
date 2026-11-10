@@ -1,0 +1,110 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Selections book mockup</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}body{margin:0;font-family:Inter,system-ui,sans-serif;background:#e7e5e1;color:#1c1917}
+.wrap{max-width:1500px;margin:0 auto;padding:36px 24px 80px}
+.lbl{font-size:11px;color:#78716c;text-transform:uppercase;letter-spacing:.14em;margin:0 0 16px;font-weight:600}
+.spread{display:flex;gap:34px;overflow-x:auto;padding:6px 6px 44px}
+.pg{flex:none;width:408px;height:528px;background:#fff;box-shadow:0 1px 2px #0000000f,0 12px 40px #1c19171f;position:relative;font-size:11px;overflow:hidden}
+.pg .cap{position:absolute;bottom:-30px;left:0;font-size:12px;color:#78716c}
+.pg .cap{position:static;display:none}
+.capt{width:408px;font-size:12px;color:#57534e;margin-top:12px}
+.col{flex:none}
+.serif{font-family:"Cormorant Garamond",Georgia,serif}
+.eyebrow{font-size:8.5px;letter-spacing:.28em;text-transform:uppercase;color:#a8a29e;font-weight:500}
+.foot{position:absolute;left:40px;right:40px;bottom:22px;display:flex;justify-content:space-between;font-size:8px;letter-spacing:.18em;text-transform:uppercase;color:#a8a29e;border-top:1px solid #f0eeeb;padding-top:8px}
+/* cover */
+.cover .photo{height:340px;background:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 408 340"><defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="%23cbd5e1"/><stop offset="1" stop-color="%23f1f5f9"/></linearGradient><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="%2386a37a"/><stop offset="1" stop-color="%235d7a52"/></linearGradient></defs><rect width="408" height="340" fill="url(%23s)"/><rect y="250" width="408" height="90" fill="url(%23g)"/><polygon points="70,150 204,70 338,150" fill="%23403a35"/><rect x="88" y="148" width="232" height="108" fill="%23f5f2ec"/><polygon points="150,148 250,90 350,148" fill="%23302b27" opacity=".0"/><rect x="186" y="196" width="36" height="60" fill="%23574a3e"/><rect x="110" y="176" width="44" height="40" fill="%2394a3b8" stroke="%23e7e5e4" stroke-width="4"/><rect x="254" y="176" width="44" height="40" fill="%2394a3b8" stroke="%23e7e5e4" stroke-width="4"/><rect x="60" y="254" width="290" height="6" fill="%23a8a29e"/><ellipse cx="40" cy="250" rx="34" ry="44" fill="%23496442"/><ellipse cx="372" cy="246" rx="30" ry="50" fill="%233f5a39"/></svg>') center/cover}
+.cover .txt{padding:26px 40px}
+.cover h1{font-family:"Cormorant Garamond",serif;font-weight:400;font-size:34px;margin:8px 0 4px;letter-spacing:-.01em}
+.cover .meta{font-size:10px;color:#78716c;letter-spacing:.04em}
+.logo{position:absolute;top:22px;left:40px;font-size:9px;letter-spacing:.3em;text-transform:uppercase;color:#fff;font-weight:600;text-shadow:0 1px 4px #0005}
+/* contents */
+.inner{padding:46px 40px}
+h2{font-family:"Cormorant Garamond",serif;font-weight:400;font-size:28px;margin:8px 0 22px;letter-spacing:-.01em}
+.trow{display:grid;grid-template-columns:1fr auto;gap:2px 10px;padding:10px 0;border-bottom:1px solid #f0eeeb}
+.trow b{font-weight:500;font-size:11.5px}.trow .s{color:#78716c;font-size:10px;grid-column:1}.trow .p{grid-row:1/3;grid-column:2;align-self:center;font-family:"Cormorant Garamond",serif;font-size:16px;color:#a8a29e}
+.open{color:#9a3412}
+.dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#c2410c;margin-right:6px;vertical-align:middle}
+/* vendor page */
+.band{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 40px;border-bottom:1px solid #e7e5e4;font-size:8.5px;letter-spacing:.24em;text-transform:uppercase;color:#57534e}
+.band b{font-weight:600;color:#1c1917}
+.vendor{position:absolute;top:34px;left:0;right:0;bottom:52px;padding:20px 28px;background:#fbfbfa}
+.vhead{display:flex;justify-content:space-between;align-items:baseline;border-bottom:2px solid #0f3d3e;padding-bottom:6px;margin-bottom:12px}
+.vhead .n{font-weight:800;letter-spacing:.12em;color:#0f3d3e;font-size:13px}.vhead .r{font-size:8px;color:#6b7280}
+.prod{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center;padding:9px 0;border-bottom:1px solid #e5e7eb}
+.prod .im{height:96px;background:#fff;border:1px solid #eee;display:flex;align-items:center;justify-content:center}
+.prod b{font-size:10.5px;display:block;margin-bottom:2px}.prod .m{font-size:8.5px;color:#6b7280;line-height:1.5}
+.note{position:absolute;right:40px;bottom:62px;width:170px;background:#fff;border:1px solid #e7e5e4;padding:8px 10px;font-size:9px;line-height:1.45;color:#44403c;box-shadow:0 4px 14px #0000000d}
+.note .eyebrow{display:block;margin-bottom:3px;color:#9a3412}
+/* allowances */
+table{width:100%;border-collapse:collapse;font-size:10.5px}td,th{padding:9px 0;border-bottom:1px solid #f0eeeb;text-align:left}th{font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:#a8a29e;font-weight:500}
+.r{text-align:right}.tot td{border-top:1px solid #1c1917;border-bottom:none;font-weight:600;padding-top:11px}
+.sign{position:absolute;left:40px;right:40px;bottom:70px;display:grid;grid-template-columns:2fr 1fr;gap:26px}.sign div{border-top:1px solid #44403c;padding-top:6px;font-size:8px;letter-spacing:.2em;text-transform:uppercase;color:#78716c}
+.intro{font-size:10.5px;line-height:1.7;color:#57534e;margin:0 0 18px}
+/* card */
+.card{background:#fff;border:1px solid #e7e5e4;border-radius:14px;padding:18px 20px;max-width:640px;margin-bottom:56px}
+.card .name{font-size:18px;font-weight:600}.card .div{font-size:12px;color:#78716c}
+.thumbs{display:flex;gap:8px;margin-top:10px}
+.th{width:58px;height:75px;border:1px solid #e7e5e4;border-radius:3px;background:#fbfbfa;position:relative}
+.th.in{border:2px solid #1e3a5f}.th.out{opacity:.35}
+.th span{position:absolute;bottom:2px;left:4px;font-size:9px;color:#78716c}
+</style></head><body><div class="wrap">
+
+<p class="lbl">The book — real pages, letter size</p>
+<div class="spread">
+
+<div class="col"><div class="pg cover"><div class="photo"></div><div class="logo">JT&amp;I Construction</div>
+  <div class="txt"><span class="eyebrow">Selections</span><h1>The Whitfield Residence</h1><div class="meta">1420 Oak Ridge Drive &nbsp;·&nbsp; November 2026</div></div>
+  <div class="foot"><span>Prepared for Mark &amp; Dana Whitfield</span><span>JT&amp;I Construction</span></div></div>
+  <div class="capt"><b>Cover.</b> Your front shot, full bleed.</div></div>
+
+<div class="col"><div class="pg"><div class="inner"><span class="eyebrow">Contents</span><h2>Your selections</h2>
+  <p class="intro">Everything you've chosen for your home, with the maker's own pages for each. Items still to choose are marked.</p>
+  <div class="trow"><b>Plumbing fixtures</b><span class="s">Ferguson Showroom</span><span class="p">3</span></div>
+  <div class="trow"><b>Lighting</b><span class="s">Hinkley</span><span class="p">7</span></div>
+  <div class="trow"><b>Appliances</b><span class="s">Café · Ferguson</span><span class="p">10</span></div>
+  <div class="trow"><b>Cabinets</b><span class="s">Shaker door, Alabaster · Kitchen Co.</span><span class="p">12</span></div>
+  <div class="trow"><b>Flooring</b><span class="s open"><span class="dot"></span>Still to choose — by December 1</span><span class="p">—</span></div>
+  <div class="trow"><b>Tile</b><span class="s open"><span class="dot"></span>Still to choose — by December 1</span><span class="p">—</span></div>
+  </div><div class="foot"><span>Whitfield Residence</span><span>2</span></div></div>
+  <div class="capt"><b>Contents.</b> One glance: what's picked, from whom, what's left.</div></div>
+
+<div class="col"><div class="pg"><div class="band"><b>Plumbing fixtures</b><span>Ferguson Showroom</span></div>
+  <div class="vendor">
+    <div class="vhead"><span class="n">FERGUSON</span><span class="r">Bath, Kitchen &amp; Lighting Gallery · Quote 48211</span></div>
+    <div class="prod"><div class="im"><svg width="70" height="78" viewBox="0 0 70 78"><rect x="28" y="40" width="14" height="34" rx="2" fill="#1c1917"/><path d="M35 42 V14 Q35 6 43 6 H58 Q62 6 62 10 V20" stroke="#1c1917" stroke-width="6" fill="none" stroke-linecap="round"/><rect x="40" y="46" width="18" height="4" rx="2" fill="#1c1917"/><rect x="18" y="72" width="34" height="4" rx="1" fill="#57534e"/></svg></div>
+      <div><b>Kitchen faucet — pull-down</b><div class="m">Brizo Litze · 63044LF-BL<br>Matte Black · Qty 1</div></div></div>
+    <div class="prod"><div class="im"><svg width="70" height="60" viewBox="0 0 70 60"><rect x="10" y="44" width="50" height="6" rx="2" fill="#a8a29e"/><path d="M35 44 V20 Q35 12 44 12 H54" stroke="#1c1917" stroke-width="5" fill="none" stroke-linecap="round"/><circle cx="18" cy="40" r="4" fill="#1c1917"/><circle cx="52" cy="40" r="4" fill="#1c1917"/></svg></div>
+      <div><b>Primary bath — widespread lav</b><div class="m">Brizo Litze · 65398LF-BL<br>Matte Black · Qty 2</div></div></div>
+    <div class="prod"><div class="im"><svg width="70" height="70" viewBox="0 0 70 70"><circle cx="35" cy="22" r="16" fill="none" stroke="#1c1917" stroke-width="3"/><circle cx="35" cy="22" r="10" fill="#e7e5e4"/><rect x="33" y="36" width="4" height="26" fill="#1c1917"/><circle cx="35" cy="52" r="5" fill="#1c1917"/></svg></div>
+      <div><b>Shower system — rain head</b><div class="m">Brizo Litze · T60P75-BL<br>Matte Black · Qty 1</div></div></div>
+  </div>
+  <div class="note"><span class="eyebrow">Note</span>Kitchen faucet changed to matte black from chrome on Oct 28.</div>
+  <div class="foot"><span>Whitfield Residence</span><span>3</span></div></div>
+  <div class="capt"><b>The vendor's page.</b> Their page as-is, framed by your header and footer. (Drawn stand-in here — it'll be Ferguson's actual page.)</div></div>
+
+<div class="col"><div class="pg"><div class="inner"><span class="eyebrow">Allowances</span><h2>Where you stand</h2>
+  <table><tr><th>Division</th><th class="r">Allowance</th><th class="r">Chosen</th><th class="r">Difference</th></tr>
+    <tr><td>Plumbing</td><td class="r">$8,500</td><td class="r">$9,140</td><td class="r">+$640</td></tr>
+    <tr><td>Lighting</td><td class="r">$4,000</td><td class="r">$3,620</td><td class="r">−$380</td></tr>
+    <tr><td>Appliances</td><td class="r">$12,000</td><td class="r">$11,850</td><td class="r">−$150</td></tr>
+    <tr><td>Flooring</td><td class="r">$14,000</td><td class="r open">Open</td><td class="r">—</td></tr>
+    <tr class="tot"><td>Chosen so far</td><td></td><td></td><td class="r">+$110</td></tr></table>
+  <p class="intro" style="margin-top:18px">By signing, you confirm these selections. Changes after this date are handled by change order.</p></div>
+  <div class="sign"><div>Client signature</div><div>Date</div></div>
+  <div class="foot"><span>Whitfield Residence</span><span>15</span></div></div>
+  <div class="capt"><b>Last page.</b> The money, in writing, signed.</div></div>
+</div>
+
+<p class="lbl" style="margin-top:20px">On the selection card (where you attach it)</p>
+<div class="card">
+  <div class="div">Plumbing</div><div class="name">Plumbing fixtures</div>
+  <div style="margin-top:10px;font-size:14px"><b>Ferguson selections</b> <span style="color:#78716c">· Ferguson Showroom · $9,140</span></div>
+  <div style="margin-top:14px;font-size:13px">📄 <b>Ferguson picture book.pdf</b> <span style="color:#78716c">· 4 of 9 pages in the book</span></div>
+  <div class="thumbs"><div class="th out"><span>1</span></div><div class="th out"><span>2</span></div><div class="th in"><span>3</span></div><div class="th in"><span>4</span></div><div class="th out"><span>5</span></div><div class="th out"><span>6</span></div><div class="th in"><span>7</span></div><div class="th in"><span>8</span></div><div class="th out"><span>9</span></div></div>
+  <div style="font-size:12px;color:#a8a29e;margin-top:6px">Drop a vendor PDF on the card · click a page to leave it out</div>
+</div>
+
+</div></body></html>

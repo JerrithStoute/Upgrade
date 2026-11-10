@@ -24,6 +24,7 @@ export function RequestBids({
   vendors: initialVendors,
   rebid,
   ladders,
+  startCodes = [],
 }: {
   action: (fd: FormData) => Promise<void>;
   addVendor: AddVendor;
@@ -34,11 +35,16 @@ export function RequestBids({
   rebid: boolean;
   /** Lumber sizes on the job and every length they come in (the price ladder). */
   ladders: { size: string; lengths: number[]; itemKeys: string[] }[];
+  /** Cost codes picked on the Budget: their items (and the vendors who bid them) start ticked. */
+  startCodes?: string[];
 }) {
   const [vendors, setVendors] = useState(initialVendors);
-  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [picked, setPicked] = useState<Set<string>>(() => new Set(groups.filter((g) => startCodes.includes(g.codeKey)).flatMap((g) => g.items.map((i) => i.key))));
   const [open, setOpen] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<Set<string>>(new Set());
+  const [chosen, setChosen] = useState<Set<string>>(() => {
+    const codes = groups.filter((g) => startCodes.includes(g.codeKey)).map((g) => g.codeKey);
+    return new Set(initialVendors.filter((v) => v.codes.some((c) => codes.includes(c))).map((v) => v.id));
+  });
   const [touched, setTouched] = useState(false);
   const [note, setNote] = useState("");
   const [askLadder, setAskLadder] = useState(true);

@@ -422,7 +422,61 @@ export async function removeSelectionFile(projectId: string, fileId: string): Pr
   return { ok: true };
 }
 
-/** A choice's picture (form field "file"). */
+/**
+ * A picture clipped from a PDF or pasted onto a choice (form field "file"): added like setChoicePicture,
+ * and hands back its id for Undo.
+ */
+export async function putChoicePicture(
+  projectId: string,
+  selectionId: string,
+  optionId: string,
+  fd: FormData,
+): Promise<{ ok: true; fileId: string } | { ok: false; error: string }> {
+  const user = await requireEdit("selections");
+  const sel = await boardSelection(projectId, selectionId);
+  const opt = sel.options.find((o) => o.id === optionId);
+  const file = fd.get("file");
+  if (!opt || !(file instanceof File) || !file.size) return { ok: false, error: "Pick a picture" };
+  let fileId: string;
+  try {
+    fileId = await saveChoicePicture(projectId, opt.id, file, user.id);
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  await noteChange(sel.id, user, `Added a picture to "${opt.name}"`);
+  revalidate(projectId, sel.id);
+  return { ok: true, fileId };
+}
+
+/** Undo a clipped or pasted picture: it's deleted. */
+export async function undoChoicePicture(projectId: string, selectionId: string, optionId: string, fileId: string): Promise<Result> {
+  const user = await requireEdit("selections");
+  const sel = await boardSelection(projectId, selectionId);
+  const opt = sel.options.find((o) => o.id === optionId);
+  const file = await db.fileAsset.findFirst({ where: { id: fileId, projectId, selectionOptionId: optionId } });
+  if (!opt || !file) return { ok: false, error: "That picture is already gone" };
+  await db.fileAsset.delete({ where: { id: file.id } });
+  await deleteUpload(file.storagePath);
+  if (file.originalStoragePath) await deleteUpload(file.originalStoragePath);
+  await noteChange(sel.id, user, `Took the new picture off "${opt.name}"`);
+  revalidate(projectId, sel.id);
+  revalidatePath(`/projects/${projectId}/files`);
+  return { ok: true };
+}
+
+/** Makes one of a choice's pictures its main one — the big one shown first. */
+export async function makeMainPicture(projectId: string, selectionId: string, optionId: string, fileId: string): Promise<Result> {
+  await requireEdit("selections");
+  const sel = await boardSelection(projectId, selectionId);
+  const opt = sel.options.find((o) => o.id === optionId);
+  const file = await db.fileAsset.findFirst({ where: { id: fileId, projectId, selectionOptionId: optionId, mimeType: { startsWith: "image/" } }, select: { id: true } });
+  if (!opt || !file) return { ok: false, error: "That picture isn't on this choice" };
+  await db.selectionOption.update({ where: { id: opt.id }, data: { mainPictureId: file.id } });
+  revalidate(projectId, sel.id);
+  return { ok: true };
+}
+
+/** Adds a picture to a choice (form field "file"). */
 export async function setChoicePicture(projectId: string, selectionId: string, optionId: string, fd: FormData): Promise<Result> {
   const user = await requireEdit("selections");
   const sel = await boardSelection(projectId, selectionId);

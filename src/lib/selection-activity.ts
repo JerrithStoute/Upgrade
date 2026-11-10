@@ -61,15 +61,18 @@ export async function saveSelectionFiles(projectId: string, selectionId: string,
   return names;
 }
 
-/** A choice's picture (replaces the one before). Pictures only. */
+/**
+ * Adds a picture to a choice (a choice can have several; the first, or the one made main, is the big
+ * one). Pictures only. Returns the new picture's id.
+ */
 export async function saveChoicePicture(projectId: string, optionId: string, file: File, uploadedById: string) {
   if (!PICTURE.test(file.type)) throw new Error("A choice's picture must be a PNG, JPG, WebP or GIF image");
-  // The picture before it is let go (it stays in the job's files); the choice's documents stay.
-  await db.fileAsset.updateMany({ where: { selectionOptionId: optionId, mimeType: { startsWith: "image/" } }, data: { selectionOptionId: null } });
   const meta = await saveUpload(file, projectId, SELECTION_FILE_MAX);
-  await db.fileAsset.create({
+  const made = await db.fileAsset.create({
     data: { ...meta, name: meta.name || `choice${path.extname(file.name)}`, projectId, selectionOptionId: optionId, uploadedById, folder: "Photos", clientVisible: true },
+    select: { id: true },
   });
+  return made.id;
 }
 
 /**
@@ -102,8 +105,8 @@ export async function selectionExtras(selectionIds: string[], forClient: boolean
     }),
     db.fileAsset.findMany({
       where: { selectionOption: { selectionId: { in: selectionIds } }, mimeType: { startsWith: "image/" } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, selectionOptionId: true },
+      orderBy: [{ createdAt: "asc" }, { id: "asc" }],
+      select: { id: true, selectionOptionId: true, selectionOption: { select: { mainPictureId: true } } },
     }),
     db.fileAsset.findMany({
       where: { selectionOption: { selectionId: { in: selectionIds } }, NOT: { mimeType: { startsWith: "image/" } }, ...(forClient ? { clientVisible: true } : {}) },
@@ -116,9 +119,18 @@ export async function selectionExtras(selectionIds: string[], forClient: boolean
     for (const r of rows) if (r.selectionId) m.set(r.selectionId, [...(m.get(r.selectionId) ?? []), r]);
     return m;
   };
+  // Each choice's pictures in order: its main one first, then the rest as they were added.
+  const allPictures = new Map<string, string[]>();
+  for (const p of pictures) {
+    if (!p.selectionOptionId) continue;
+    const list = allPictures.get(p.selectionOptionId) ?? [];
+    if (p.id === p.selectionOption?.mainPictureId) list.unshift(p.id);
+    else list.push(p.id);
+    allPictures.set(p.selectionOptionId, list);
+  }
   const picture = new Map<string, string>();
-  for (const p of pictures) if (p.selectionOptionId && !picture.has(p.selectionOptionId)) picture.set(p.selectionOptionId, p.id);
+  for (const [opt, ids] of allPictures) picture.set(opt, ids[0]);
   const choiceFiles = new Map<string, { id: string; name: string }[]>();
   for (const d of choiceDocs) if (d.selectionOptionId) choiceFiles.set(d.selectionOptionId, [...(choiceFiles.get(d.selectionOptionId) ?? []), { id: d.id, name: d.name }]);
-  return { comments: by(comments), log: by(log), files: by(files), picture, choiceFiles };
+  return { comments: by(comments), log: by(log), files: by(files), picture, pictures: allPictures, choiceFiles };
 }

@@ -58,6 +58,8 @@ export default async function BidsPage({
     kept?: string;
     /** Taking bids with substitutes on them: what you picked, waiting on "use theirs / keep mine". */
     confirm?: string;
+    /** Cost codes picked on the Budget ("Send for bids"): ticked here to start. */
+    codes?: string;
   }>;
 }) {
   await requireView("estimates", { costs: "/dashboard" });
@@ -96,6 +98,9 @@ export default async function BidsPage({
   // A proposal has gone out: new bids are re-bids, for comparing.
   const rebid = await proposalOut(project.id);
   const base = `/projects/${project.id}/bids`;
+  // Picked on the Budget: Material list items under those codes start ticked; codes with none start ticked under Send to subs.
+  const startCodes = (q.codes ?? "").split(",").filter(Boolean);
+  const startSubCodes = startCodes.filter((c) => !groups.some((g) => g.codeKey === c));
   const openNow = new Set((q.open ?? "").split(",").filter(Boolean));
   const importedBid = q.imported ? cmp.bids.find((b) => b.id === q.imported) : null;
   const from = companyLines(company);
@@ -263,6 +268,7 @@ export default async function BidsPage({
               ladders={ladders}
               vendors={vendors.map((v) => ({ id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) }))}
               rebid={rebid}
+              startCodes={startCodes}
             />
           ) : (
             <EmptyState
@@ -289,6 +295,7 @@ export default async function BidsPage({
             codes={costCodes.map((c) => ({ id: c.id, label: codeLabelOf(c) }))}
             vendors={vendors.map((v) => ({ id: v.id, name: v.name, email: v.email, contact: v.contact, phone: v.phone, codes: vendorCodes(v) }))}
             plans={plans}
+            startCodes={startSubCodes}
           />
         </div>
       </section>

@@ -187,6 +187,8 @@ export async function boardForViewer(projectId: string, userId: string, forClien
       return {
         ...x,
         pictureId,
+        /** All its pictures, the main one first. */
+        pictures: extras.pictures.get(x.id) ?? [],
         pictureSeen: pictureId ? (seen.get(pictureId) ?? null) : null,
         files: (extras.choiceFiles.get(x.id) ?? []).map((f) => ({ ...f, seen: seen.get(f.id) ?? null })),
       };

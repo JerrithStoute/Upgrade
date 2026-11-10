@@ -650,7 +650,7 @@ function Radio({ name, label, checked, disabled, onChange }: { name: string; lab
 }
 
 /** The job's cover picture: drop or pick one, crop it, and it's saved to the job (every version uses it). */
-function CoverPicker({ projectId, url }: { projectId: string; url: string | null }) {
+export function CoverPicker({ projectId, url }: { projectId: string; url: string | null }) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
   const [editing, setEditing] = useState<string | null>(null);

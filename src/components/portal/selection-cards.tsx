@@ -23,6 +23,8 @@ export type PortalCard = {
     vendor: string | null;
     modelNumber: string | null;
     pictureId: string | null;
+    /** Its other pictures, shown small under the main one. */
+    morePictures: string[];
     /** When the client opened the picture full size (null = not yet). */
     pictureSeen: string | null;
     files: { id: string; name: string; seen: string | null }[];
@@ -199,7 +201,7 @@ function Card({ c, open, onToggle }: { c: PortalCard; open: boolean; onToggle: (
                   onChange={() => {}}
                   onClick={() => toggle(x.id)}
                 />
-                <ChoicePicture small pictureId={x.pictureId} seen={x.pictureId && isSeen({ id: x.pictureId, seen: x.pictureSeen }) ? (x.pictureSeen ?? "now") : null} track={track} />
+                <ChoicePicture small pictureId={x.pictureId} more={x.morePictures} seen={x.pictureId && isSeen({ id: x.pictureId, seen: x.pictureSeen }) ? (x.pictureSeen ?? "now") : null} track={track} />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium text-slate-900">
                     {x.name}

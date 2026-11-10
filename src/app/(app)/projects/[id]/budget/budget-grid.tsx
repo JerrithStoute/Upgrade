@@ -297,7 +297,7 @@ export function BudgetGrid({
                 Create purchase order
               </button>
             ) : null}
-            <Link href={`${base}/bids`} className={buttonClasses("secondary", "xs")}>
+            <Link href={`${base}/bids?codes=${[...picked].join(",")}`} className={buttonClasses("secondary", "xs")}>
               Send for bids
             </Link>
             <button type="button" onClick={() => setPicked(new Set())} className="px-2 text-slate-300 hover:text-white">

@@ -257,6 +257,11 @@ export const JOBS: HelpArticle[] = [
           { name: "Allowance", what: "The amount the client's choice is measured against for over / under. Pick how it's figured from the estimate, in dollars: **your cost, no markup**, or **with your markup**, or the company default." },
           { name: "Choices", what: "Each option: picture, name, description, vendor, model, your cost, the client price, and how it compares to the allowance. The last row, **I do not want this selection**, is the client saying no." },
           { name: "Add choice", what: "A new option: name, client price, your cost, description, vendor, model, and a file or picture. The form says which selection it's for." },
+          {
+            name: "A choice's pictures",
+            what: "A choice can have several pictures: the main one big, the others small under it (your client sees them the same way in the portal). Click the empty picture box, or **+ Add** under a picture, for **Clip from a PDF** or **Upload pictures** (pick several at once). Or copy a picture from anywhere (a website, an email, a snip with Win+Shift+S) and press **Ctrl+V** with the mouse on the choice, or drag picture files onto it. Each one is added; **Undo** shows for a few seconds after a clip or paste.",
+            how: "Point at a small picture for **Main** (make it the big one) or **×** (take it off); point at the big one for its **×**. **Clip from a PDF**: the job's PDFs are listed (the one you used last on top) and it opens on the page you were on. Type a model number or name in **Find in this PDF** and press Enter to jump to its page (Enter again for the next), or use the arrows. Drag a box around the product; letting go adds it. A scanned PDF has no text to find, so page through it.",
+          },
           { name: "Move to another selection (arrows)", what: "Moves a choice, with its picture and files, to another selection, for when it went on the wrong one. If it was the choice made, the first selection goes back to waiting." },
           { name: "Make choice / Clear choice", what: "Saves the ticked choice for the client, or clears it back to waiting." },
         ],
