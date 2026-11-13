@@ -471,3 +471,74 @@ describe("findWalls on a plan that stipples its walls", () => {
     assert.equal(r.runs.length, 1);
   });
 });
+
+describe("2x6 and 2x4 don't mix", () => {
+  // 1 unit = 1 inch. A brick outside 2x4 wall up the left (drywall x=10, sheathing 6½, brick 1–4½ hatched)
+  // with a window in it (y 60–96, drawn as its own lines 6" apart), and a 2x6 inside wall running into it.
+  // Brick's back face to the drywall is 5½" — a 2x6's thickness — with the sheathing line between (Pipkins).
+  const brickHouse = () => {
+    const segs: number[] = [];
+    const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+    for (const [a, b] of [
+      [0, 60],
+      [96, 240],
+    ]) {
+      for (const x of [10, 6.5, 4.5, 1]) line(x, a, x, b);
+      for (let y = a; y + 3.5 <= b; y += 4) line(1, y, 4.5, y + 3.5);
+    }
+    line(4, 60, 4, 96);
+    line(10, 60, 10, 96);
+    line(4, 60, 10, 60);
+    line(4, 96, 10, 96);
+    line(10, 120, 240, 120);
+    line(10, 125.5, 240, 125.5);
+    line(240, 120, 240, 125.5);
+    line(10, 0, 300, 0);
+    line(10, 3.5, 296.5, 3.5);
+    line(300, 0, 300, 240);
+    line(296.5, 3.5, 296.5, 240);
+    return segs;
+  };
+
+  it("a 2x6 inside wall clicked doesn't bring in the brick 2x4 outside wall it runs into", () => {
+    const r = findWalls(brickHouse(), [100, 120], { unitsPerFoot: 12, clickRadius: 2 });
+    assert.ok(r.ok);
+    assert.equal(r.thicknessIn, 5.5);
+    assert.equal(r.runs.length, 1);
+    assert.ok(r.runs[0].every(([, y]) => Math.abs(y - 122.75) < 0.1));
+  });
+
+  it("the brick 2x4 outside wall clicked is still a 2x4", () => {
+    const r = findWalls(brickHouse(), [10, 150], { unitsPerFoot: 12, clickRadius: 2 });
+    assert.ok(r.ok);
+    assert.equal(r.thicknessIn, 3.5);
+    assert.equal(r.kind, "exterior");
+  });
+
+  it("a click on a window's line reads the wall it's in, not the window's label box", () => {
+    // A 2x4 wall (faces y=0, 3½) with a 3' window x 100–136: frame lines 0 and 5, sash 1¾ and 3½, label boxed 6" out.
+    const segs: number[] = [];
+    const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+    for (const [a, b] of [
+      [0, 100],
+      [136, 240],
+    ]) {
+      line(a, 0, b, 0);
+      line(a, 3.5, b, 3.5);
+    }
+    for (const y of [0, 1.75, 3.5, 5]) line(100, y, 136, y);
+    line(100, 0, 100, 5);
+    line(136, 0, 136, 5);
+    line(96, -6, 140, -6);
+    line(96, -6, 96, 0);
+    line(140, -6, 140, 0);
+    line(0, 0, 0, 120);
+    line(3.5, 3.5, 3.5, 120);
+    line(240, 0, 240, 120);
+    line(236.5, 3.5, 236.5, 120);
+    const r = findWalls(segs, [118, 5], { unitsPerFoot: 12, clickRadius: 1 });
+    assert.ok(r.ok);
+    assert.equal(r.thicknessIn, 3.5);
+    assert.ok(r.lengthFt > 30);
+  });
+});

@@ -40,7 +40,7 @@ export default function SiteHome() {
                 See what it does
               </Link>
             </div>
-            <p className="mt-5 text-sm text-slate-500">Unlimited users · No contract · Free logins for clients and vendors</p>
+            <p className="mt-5 text-sm text-slate-500">$299 a month · Five users included · No contract · Free logins for clients and vendors</p>
           </div>
           <Shot shot="rafters" priority />
         </div>
@@ -134,7 +134,7 @@ export default function SiteHome() {
           <CheckList
             className="text-slate-700"
             items={[
-              "Unlimited users — bring your whole team, no per-seat fees",
+              "$299 a month with five users included — $20 a month for each one after that",
               "Month to month — no annual contract",
               "Clients and vendors log in free",
               "Common lumber sizes ready on day one — just add your prices",

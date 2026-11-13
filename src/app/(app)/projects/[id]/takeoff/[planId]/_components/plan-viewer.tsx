@@ -37,6 +37,7 @@ import {
   WandSparkles,
   PaintBucket,
   Scissors,
+  Plus,
   Eraser,
   Search,
   Library,
@@ -82,7 +83,8 @@ import type { DoorSwing, FillShape } from "./pdf-vectors";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { drawnStud } from "./wall-find";
 import { findWalls } from "@/lib/wall-detect";
-import { ROOM_DETECT_VERSION, splitOutline } from "@/lib/room-detect";
+import { ROOM_DETECT_VERSION, splitOutlineAlong } from "@/lib/room-detect";
+import { addPoint, breakAt as breakLine, breakOff, deletePiece, pieceAt, nearestEdge as edgeNear, removePoint, type Line } from "@/lib/line-pieces";
 import { looksLikeFloorPlan } from "@/lib/room-detect/sheet-kind";
 import { RoomFinder } from "./room-find";
 import { areaJoists, bayAt, bayOutline, breakAt, joistGroupText, memberAt, pieceLine, throughAt } from "./joist-labels";
@@ -131,6 +133,7 @@ import {
   addJobUnit,
   setJobUnits,
   addUnitChoice,
+  addUnitPart,
   removeJobUnitLine,
   type JobUnitLine,
   createShapes,
@@ -675,6 +678,11 @@ export function PlanViewer({
     if (r.ok) (kind === "window" ? setWinParts : setDoorParts)(r.parts);
     return r;
   };
+  const addPart = (kind: UnitKind) => async (name: string, as: "pick" | "yesno") => {
+    const r = await addUnitPart({ kind, name, as });
+    if (r.ok) (kind === "window" ? setWinParts : setDoorParts)(r.parts);
+    return r;
+  };
   const removeUnitLine = (kind: "door" | "window") => (line: { id: string; name: string }, placed: number) => {
     const type = kind === "window" ? "WINDOW" : "DOOR";
     const here = shapes.filter((m) => m.materialItemId === line.id && condById.get(m.conditionId)?.type === type && !m.pending).map((m) => m.id);
@@ -720,17 +728,22 @@ export function PlanViewer({
   const [hoverBay, setHoverBay] = useState<string | null>(null);
   // The little control on the plan where you clicked a joist area: a bay's size, or a break (joist-chip.tsx).
   const [chip, setChip] = useState<(ChipState & { id: string }) | null>(null);
-  // A picked area: its ✂ Split chip at the click; then splitting it — the line's first end, once clicked.
-  const [areaChip, setAreaChip] = useState<{ id: string; at: Pt } | null>(null);
-  const [splitting, setSplitting] = useState<{ id: string; a: Pt | null } | null>(null);
+  // A picked line or area: the chip at the click on one of its edges (a wall piece: Break off, Delete,
+  // + Point; an area: ✂ Split, + Point); then splitting an area — the split line's clicks so far
+  // (right-click or Enter finishes it, like measuring a wall).
+  const [edgeChip, setEdgeChip] = useState<{ id: string; at: Pt; edge: number } | null>(null);
+  // A point of the picked shape clicked (not dragged): Remove point / Break here.
+  const [pointChip, setPointChip] = useState<{ id: string; index: number } | null>(null);
+  const [splitting, setSplitting] = useState<{ id: string; pts: Pt[] } | null>(null);
   // The length of the member under the mouse (a rafter, hip, beam, wall…) — a small tag that follows it.
   const [hoverTip, setHoverTip] = useState<{ text: string; at: Pt } | null>(null);
   const pressAt = useRef<[number, number] | null>(null);
   useEffect(() => {
     if (bays && bays.id !== selectedId) setBays(null);
     if (chip && chip.id !== selectedId) setChip(null);
-    if (areaChip && areaChip.id !== selectedId) setAreaChip(null);
-  }, [bays, chip, areaChip, selectedId]);
+    if (edgeChip && edgeChip.id !== selectedId) setEdgeChip(null);
+    if (pointChip && pointChip.id !== selectedId) setPointChip(null);
+  }, [bays, chip, edgeChip, pointChip, selectedId]);
   // Several shapes at once (drag a box, or Shift+click). One shape picked is `selectedId` (it can be edited).
   const [multi, setMulti] = useState<string[]>([]);
   const [boxSel, setBoxSel] = useState<{ a: Pt; b: Pt; add: boolean } | null>(null);
@@ -1497,28 +1510,30 @@ export function PlanViewer({
     });
   };
 
-  /** Splits a picked area in two along the line a–b (Find area found two rooms as one, say). */
-  const splitArea = (id: string, a: Pt, b: Pt) => {
+  /**
+   * Swaps one shape for others (an area split in two, a wall piece broken off), undone together.
+   * `pick`: which of the new shapes is picked afterwards (none if left out).
+   */
+  const replaceShape = (id: string, parts: { points: Pt[]; arcs: number[] }[], label: string, done: string, pick?: number) => {
     const m = shapes.find((x) => x.id === id);
     const data = m ? shapeData(m) : null;
-    if (!m || !data) return setSplitting(null);
-    const parts = splitOutline(m.points, a, b);
-    if (!parts) return setError("That line doesn't cross the area — click on one side of it, then the other, across where it should split.");
-    setError(null);
-    setSplitting(null);
-    const added = parts.map((pts) => ({ ...data, points: pts, arcs: [] }));
+    if (!m || !data) return;
+    setEdgeChip(null);
+    setPointChip(null);
+    const added = parts.map((pt) => ({ ...data, points: pt.points, arcs: pt.arcs }));
     setRemoving((r) => new Set(r).add(id));
     const temps = added.map((d) => ({ ...d, id: `pending-${Math.random().toString(36).slice(2)}`, pending: true }));
     setPending((p) => [...p, ...temps]);
+    setSelectedId(null);
     startTransition(async () => {
       try {
         await deleteMeasurements({ projectId, ids: [id] });
-        const { ids } = await createShapes({ projectId, shapes: added });
+        const { ids } = added.length ? await createShapes({ projectId, shapes: added }) : { ids: [] as string[] };
         const real = new Map(temps.map((t, i) => [t.id, ids[i]]));
         setPending((p) => p.filter((x) => x.id !== id).map((x) => (real.has(x.id) ? { ...x, id: real.get(x.id)!, pending: false } : x)));
-        record({ kind: "replace", label: "a split", removedIds: [id], removed: [data], addedIds: ids, added });
-        setSelectedId(null);
-        setFlash("Split in two — click either part to delete it or change it");
+        record({ kind: "replace", label, removedIds: [id], removed: [data], addedIds: ids, added });
+        if (pick !== undefined && ids[pick]) setSelectedId(ids[pick]);
+        setFlash(done);
       } catch (e) {
         const gone = new Set(temps.map((t) => t.id));
         setPending((p) => p.filter((x) => !gone.has(x.id)));
@@ -1527,9 +1542,76 @@ export function PlanViewer({
           n.delete(id);
           return n;
         });
-        setError(actionMessage(e, "Could not split the area"));
+        setError(actionMessage(e, `Could not save ${label}`));
       }
     });
+  };
+
+  /** Splits a picked area in two along the line clicked (Find area found two rooms as one, say). */
+  const splitArea = (id: string, path: Pt[]) => {
+    const m = shapes.find((x) => x.id === id);
+    if (!m) return setSplitting(null);
+    const parts = splitOutlineAlong(m.points, path);
+    if (!parts)
+      return setError("That line doesn't cut the area in two — start and end it at the area's edges (corners between inside the area), then right-click.");
+    setError(null);
+    setSplitting(null);
+    replaceShape(
+      id,
+      parts.map((pts) => ({ points: pts, arcs: [] })),
+      "a split",
+      "Split in two — click either part to delete it or change it",
+    );
+  };
+
+  /** A line shape as a Line (its points and curve points). */
+  const lineOf = (m: ViewerMeasurement): Line => ({ points: m.points, arcs: m.arcs ?? [] });
+
+  /** The piece of a wall / line clicked: its own line now (picked, to change its items), the rest on each side stays. */
+  const breakOffPiece = (id: string, edge: number) => {
+    const m = shapes.find((x) => x.id === id);
+    const r = m ? breakOff(lineOf(m), edge) : null;
+    if (!r) return setFlash("This is one piece already — change it in the box in the corner");
+    const parts = [r.before, r.piece, r.after].filter((x): x is Line => !!x);
+    replaceShape(id, parts, "breaking off a piece", "Broken off — it's picked: Change items, or a takeoff in the corner box", r.before ? 1 : 0);
+  };
+
+  /** Takes the piece of a wall / line clicked out; what's on each side stays. */
+  const deleteLinePiece = (id: string, edge: number) => {
+    const m = shapes.find((x) => x.id === id);
+    if (!m) return;
+    const left = deletePiece(lineOf(m), edge);
+    if (!left.length) {
+      setEdgeChip(null);
+      return removeShape(id);
+    }
+    replaceShape(id, left, "deleting a piece", "Piece deleted");
+  };
+
+  /** Breaks a wall / line in two at one of its points. */
+  const breakLineAt = (id: string, i: number) => {
+    const m = shapes.find((x) => x.id === id);
+    const two = m ? breakLine(lineOf(m), i) : null;
+    if (!two) return setFlash("Break at a corner between the ends (not on a curve)");
+    replaceShape(id, two, "a break", "Broken in two — click either one to change it");
+  };
+
+  /** Takes a point out of the picked shape (it needs its fewest points left). */
+  const removeShapePoint = (id: string, i: number) => {
+    const m = shapes.find((x) => x.id === id);
+    const c = m ? condById.get(m.conditionId) : undefined;
+    setPointChip(null);
+    if (!m || !c) return;
+    if (m.points.length <= minPoints(c.type)) return setFlash("A shape needs at least " + minPoints(c.type) + " points");
+    patchShape(id, removePoint(lineOf(m), i));
+  };
+
+  /** Adds a point on the picked shape's edge, where it was clicked. */
+  const addShapePoint = (id: string, edge: number, at: Pt) => {
+    const m = shapes.find((x) => x.id === id);
+    setEdgeChip(null);
+    if (!m) return;
+    patchShape(id, addPoint(lineOf(m), edge, at));
   };
 
   const save = useCallback(
@@ -2044,10 +2126,11 @@ export function PlanViewer({
    * Like copying a takeoff — "2x6 joists (copy)", items and all — with only this shape moved to
    * it; its panel opens next to rename it and change its items.
    */
-  const changeItems = (measurementId: string) =>
+  const changeItems = (measurementIds: string[]) =>
     startTransition(async () => {
       try {
-        const r = await copyConditionForShape({ projectId, measurementId });
+        const r = await copyConditionForShape({ projectId, measurementIds });
+        setMulti([]);
         freshCopy.current = r;
         router.push(`${editHref(r.id)}&fresh=1`, { scroll: false });
       } catch (err) {
@@ -2147,7 +2230,8 @@ export function PlanViewer({
         }
         if (tool === "findwalls" || tool === "findarea") setTool("measure");
         setSplitting(null);
-        setAreaChip(null);
+        setEdgeChip(null);
+        setPointChip(null);
         setAligning(null);
         resetDraft();
         setCalib([]);
@@ -2156,6 +2240,8 @@ export function PlanViewer({
         setMulti([]);
         setNewLikeMany(null);
         setClearing(false);
+      } else if (e.key === "Enter" && splitting) {
+        if (splitting.pts.length >= 2) splitArea(splitting.id, splitting.pts);
       } else if (e.key === "Enter" && draft.length) {
         finishDraft(draft);
       } else if ((e.key === "Backspace" || e.key === "Delete") && draft.length) {
@@ -2240,11 +2326,12 @@ export function PlanViewer({
   const dirAngle = dirShape ? (hoverEdge !== null ? edgeAngle(dirShape.points, hoverEdge) : (dirPreview ?? dirShape.angle)) : 0;
 
   // --- Mouse ---------------------------------------------------------------------------
+  // A drag-pan: where it started (to tell a drag from a click) and where the pointer was last.
   const panRef = useRef<{
     x: number;
     y: number;
-    left: number;
-    top: number;
+    lastX: number;
+    lastY: number;
     moved: boolean;
     right?: boolean; // started with the right button
   } | null>(null);
@@ -2274,7 +2361,7 @@ export function PlanViewer({
       return;
     }
     // Editing the selected shape: grab a point handle, or the shape itself.
-    if (tool === "select" && e.button === 0 && !panning && !dirFor && selected && !selected.pending) {
+    if (tool === "select" && e.button === 0 && !panning && !dirFor && !splitting && selected && !selected.pending) {
       const target = e.target as Element;
       const handle = target.closest("[data-handle]");
       const onShape = target.closest(`[data-shape="${selected.id}"]`);
@@ -2290,11 +2377,8 @@ export function PlanViewer({
           points: selected.points,
           moved: false,
         });
-        try {
-          svgRef.current?.setPointerCapture(e.pointerId);
-        } catch {
-          /* pointer already released */
-        }
+        // The mouse is held for the drag only once it moves (onPointerMove): a plain click still
+        // reaches the shape (its chip) or the point (its chip).
         return;
       }
     }
@@ -2318,8 +2402,8 @@ export function PlanViewer({
     panRef.current = {
       x: e.clientX,
       y: e.clientY,
-      left: el.scrollLeft,
-      top: el.scrollTop,
+      lastX: e.clientX,
+      lastY: e.clientY,
       moved: false,
       right: rightPan,
     };
@@ -2333,11 +2417,21 @@ export function PlanViewer({
   const onPointerMove = (e: React.PointerEvent) => {
     const pan = panRef.current;
     if (pan && scrollRef.current) {
-      const dx = e.clientX - pan.x;
-      const dy = e.clientY - pan.y;
-      if (Math.abs(dx) + Math.abs(dy) > 3) pan.moved = true;
-      scrollRef.current.scrollLeft = pan.left - dx;
-      scrollRef.current.scrollTop = pan.top - dy;
+      if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 3) pan.moved = true;
+      // Moved by how far the pointer went since last time (not from where the drag started), so a
+      // wheel zoom gliding at the same moment adds to it instead of being yanked back.
+      const dx = e.clientX - pan.lastX;
+      const dy = e.clientY - pan.lastY;
+      pan.lastX = e.clientX;
+      pan.lastY = e.clientY;
+      scrollRef.current.scrollLeft -= dx;
+      scrollRef.current.scrollTop -= dy;
+      // A zoom still gliding holds a spot of the plan on screen: that spot moves with the hand.
+      const a = anchorRef.current;
+      if (a) {
+        a.cx += dx;
+        a.cy += dy;
+      }
       return;
     }
     if (!svgRef.current) return;
@@ -2374,6 +2468,12 @@ export function PlanViewer({
         points = drag.startPoints.map(([x, y]) => [x + dx, y + dy] as Pt);
       }
       const moved = drag.moved || dist(raw, drag.start) * zoom > 3;
+      if (moved && !drag.moved)
+        try {
+          svgRef.current?.setPointerCapture(e.pointerId);
+        } catch {
+          /* pointer already released */
+        }
       setDrag({ ...drag, points, moved });
       return;
     }
@@ -2387,7 +2487,12 @@ export function PlanViewer({
       const hit = magnet(raw);
       setSnapHit(hit);
       setCursor(hit?.point ?? raw);
-    } else if (dirFor || splitting) setCursor(raw);
+    } else if (splitting) {
+      // Split line clicks lock onto corners and lines like measuring does.
+      const hit = magnet(raw);
+      setSnapHit(hit);
+      setCursor(hit?.point ?? raw);
+    } else if (dirFor) setCursor(raw);
   };
 
   const onPointerUp = () => {
@@ -2424,6 +2529,13 @@ export function PlanViewer({
       if (drag.moved) {
         suppressClick.current = true;
         patchShape(drag.id, { points: drag.points }, { points: drag.startPoints });
+        setEdgeChip(null);
+        setPointChip(null);
+      } else if (drag.mode === "vertex") {
+        // A point clicked, not dragged: its chip (Remove point / Break here).
+        suppressClick.current = true;
+        setEdgeChip(null);
+        setPointChip({ id: drag.id, index: drag.index });
       }
       setDrag(null);
       setSnapHit(null);
@@ -2476,9 +2588,8 @@ export function PlanViewer({
     }
     if (panning) return;
     if (splitting) {
-      const p = toPage(e.clientX, e.clientY);
-      if (!splitting.a) setSplitting({ ...splitting, a: p });
-      else splitArea(splitting.id, splitting.a, p);
+      const p = cursor ?? toPage(e.clientX, e.clientY);
+      setSplitting({ ...splitting, pts: [...splitting.pts, p] });
       return;
     }
     if (upperPlacing) {
@@ -3063,9 +3174,8 @@ export function PlanViewer({
       onClick: (e: React.MouseEvent) => {
         if (splitting && !panning) {
           e.stopPropagation();
-          const p = toPage(e.clientX, e.clientY);
-          if (!splitting.a) setSplitting({ ...splitting, a: p });
-          else splitArea(splitting.id, splitting.a, p);
+          const p = cursor ?? toPage(e.clientX, e.clientY);
+          setSplitting({ ...splitting, pts: [...splitting.pts, p] });
           return;
         }
         if (tool !== "select" || panning || dirFor) return;
@@ -3100,8 +3210,14 @@ export function PlanViewer({
         if (e.shiftKey) return selectSet(picked.includes(m.id) ? picked.filter((x) => x !== m.id) : [...picked, m.id]);
         setMulti([]);
         setSelectedId(m.id);
-        // An area: ✂ Split, right where it was clicked.
-        if (c.type === "AREA" && still && !m.pending) setAreaChip({ id: m.id, at: toPage(e.clientX, e.clientY) });
+        // A line or an area: the chip for the edge (wall piece) clicked, right where it was clicked.
+        setPointChip(null);
+        if (still && !m.pending && (isLineType(c.type) || c.type === "AREA")) {
+          const p = toPage(e.clientX, e.clientY);
+          const hit = edgeNear(m.points, p, !isLineType(c.type), 14 / zoom);
+          // An area: Split anywhere in it (+ Point too, on an edge). A line: its piece.
+          setEdgeChip(hit || c.type === "AREA" ? { id: m.id, at: p, edge: hit ? hit.edge : -1 } : null);
+        } else setEdgeChip(null);
       },
       onDoubleClick: (e: React.MouseEvent) => {
         // Double-click a wall the picked joist area's joists run through (the wall may be drawn on top): broken there again.
@@ -4061,9 +4177,9 @@ export function PlanViewer({
                 autoComplete="off"
                 className="input !h-8 !py-1 !pl-7 text-xs"
               />
+              </div>
+              <NewTakeoffMenu hrefFor={(t) => `${editHref("new")}&ctype=${t}`} />
             </div>
-            <NewTakeoffMenu hrefFor={(t) => `${editHref("new")}&ctype=${t}`} />
-          </div>
           <button
             type="button"
             onClick={() => setLibraryOpen(true)}
@@ -4510,6 +4626,14 @@ export function PlanViewer({
                           e.preventDefault();
                           return;
                         }
+                        // Split: a right-click finishes the line (like measuring a wall); before 2 clicks it gets out.
+                        if (splitting) {
+                          e.preventDefault();
+                          setFlash(null);
+                          if (splitting.pts.length >= 2) splitArea(splitting.id, splitting.pts);
+                          else setSplitting(null);
+                          return;
+                        }
                         if (draft.length) {
                           e.preventDefault();
                           finishDraft(draft);
@@ -4553,18 +4677,18 @@ export function PlanViewer({
                             ),
                           )
                         : null}
-                      {splitting?.a && cursor ? (
+                      {splitting?.pts.length && cursor ? (
                         <g pointerEvents="none">
-                          <line
-                            x1={splitting.a[0]}
-                            y1={splitting.a[1]}
-                            x2={cursor[0]}
-                            y2={cursor[1]}
+                          <polyline
+                            points={[...splitting.pts, cursor].map((q) => q.join(",")).join(" ")}
+                            fill="none"
                             stroke="#0f172a"
                             strokeWidth={2 / zoom}
                             strokeDasharray={`${6 / zoom} ${4 / zoom}`}
                           />
-                          <circle cx={splitting.a[0]} cy={splitting.a[1]} r={4 / zoom} fill="#0f172a" />
+                          {splitting.pts.map((q, i) => (
+                            <circle key={i} cx={q[0]} cy={q[1]} r={4 / zoom} fill="#0f172a" />
+                          ))}
                         </g>
                       ) : null}
                       {autoOn && autoPlan ? (
@@ -4618,6 +4742,35 @@ export function PlanViewer({
                         />
                       ) : null}
 
+                      {/* The wall piece / edge the chip is for, drawn bold. An area clicked away from its edges: none. */}
+                      {tool === "select" &&
+                      selected &&
+                      !selected.pending &&
+                      !drag &&
+                      !splitting &&
+                      edgeChip?.id === selected.id &&
+                      edgeChip.edge >= 0 &&
+                      selected.points.length > 1
+                        ? (() => {
+                            const c = condById.get(selected.conditionId);
+                            const line = !!c && isLineType(c.type);
+                            const n = selected.points.length;
+                            const [s0, e0] = line ? pieceAt(lineOf(selected), edgeChip.edge) : [edgeChip.edge, edgeChip.edge + 1];
+                            const pts = Array.from({ length: e0 - s0 + 1 }, (_, k) => selected.points[(s0 + k) % n]);
+                            return (
+                              <polyline
+                                points={pts.map((q) => q.join(",")).join(" ")}
+                                fill="none"
+                                stroke={c?.color ?? "#0f172a"}
+                                strokeWidth={px(7)}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                pointerEvents="none"
+                              />
+                            );
+                          })()
+                        : null}
+
                       {/* Point handles on the selected shape: drag to move, double-click to curve / straighten, right-click to remove. Arc points are round. */}
                       {tool === "select" && selected && !selected.pending && !dirFor
                         ? selected.points.map((p, i) => (
@@ -4632,12 +4785,18 @@ export function PlanViewer({
                               fill={selected.arcs?.includes(i) ? "#fde68a" : "white"}
                               stroke="#0f172a"
                               strokeWidth={1.5}
-                              style={{ cursor: "grab" }}
+                              style={{ cursor: splitting ? "crosshair" : "grab" }}
+                              onClick={(e) => {
+                                // Splitting: a click on a point is a split click right on that point.
+                                if (!splitting) return;
+                                e.stopPropagation();
+                                setSplitting({ ...splitting, pts: [...splitting.pts, selected.points[i]] });
+                              }}
                               onDoubleClick={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
                                 const c = condById.get(selected.conditionId);
-                                if (!c || !canArc(c.type)) return;
+                                if (splitting || !c || !canArc(c.type)) return;
                                 const arcs = selected.arcs ?? [];
                                 if (arcs.includes(i)) return patchShape(selected.id, { points: selected.points, arcs: arcs.filter((j) => j !== i) });
                                 const closed = !isLineType(c.type);
@@ -4651,13 +4810,12 @@ export function PlanViewer({
                               onContextMenu={(e) => {
                                 e.preventDefault();
                                 e.stopPropagation();
-                                const c = condById.get(selected.conditionId);
-                                if (!c || selected.points.length <= minPoints(c.type))
-                                  return setFlash("A shape needs at least " + (c ? minPoints(c.type) : 2) + " points");
-                                patchShape(selected.id, {
-                                  points: selected.points.filter((_, j) => j !== i),
-                                  arcs: (selected.arcs ?? []).filter((j) => j !== i).map((j) => (j > i ? j - 1 : j)),
-                                });
+                                // Splitting: a right-click finishes the split line, like anywhere else.
+                                if (splitting) {
+                                  setFlash(null);
+                                  return splitting.pts.length >= 2 ? splitArea(splitting.id, splitting.pts) : setSplitting(null);
+                                }
+                                removeShapePoint(selected.id, i);
                               }}
                               {...stroke}
                             />
@@ -4665,7 +4823,7 @@ export function PlanViewer({
                         : null}
 
                       {/* Snap marker: square = line end, diamond = on a line, circle = takeoff point */}
-                      {snapHit && (tool === "measure" || tool === "calibrate" || tool === "ruler" || drag?.mode === "vertex") ? (
+                      {snapHit && (tool === "measure" || tool === "calibrate" || tool === "ruler" || drag?.mode === "vertex" || splitting) ? (
                         <g pointerEvents="none">
                           {snapHit.kind === "end" ? (
                             <rect
@@ -4901,33 +5059,114 @@ export function PlanViewer({
                     </svg>
                   ) : null}
                   {chip && size ? renderChip() : null}
-                  {areaChip && size && !splitting && tool === "select" ? (
-                    <div
-                      className="absolute z-20"
-                      style={{
-                        left: areaChip.at[0] * zoom,
-                        top: areaChip.at[1] * zoom,
-                        transform: `rotate(${-rotation}deg) translate(-50%, calc(-100% - 10px))`,
-                        transformOrigin: "0 0",
-                      }}
-                      onPointerDown={(e) => e.stopPropagation()}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        className="flex h-7 items-center gap-1 whitespace-nowrap rounded-md border border-slate-200 bg-white px-2 text-xs font-medium text-slate-700 shadow-lg hover:bg-slate-50"
-                        title="Split this area in two: click one side, then the other, across where it should split"
-                        onClick={() => {
-                          setSplitting({ id: areaChip.id, a: null });
-                          setAreaChip(null);
-                          setFlash("Split: click one side of the area, then the other — across where it splits. Esc = cancel.");
+                  {(() => {
+                    // The chip at a click on the picked shape: an edge (a wall piece) or one of its points.
+                    if (!size || splitting || tool !== "select" || !selected || selected.pending || drag) return null;
+                    const c = condById.get(selected.conditionId);
+                    if (!c) return null;
+                    const line = isLineType(c.type);
+                    const btn =
+                      "flex h-7 items-center gap-1 whitespace-nowrap px-2 text-xs font-medium text-slate-700 hover:bg-slate-50 first:rounded-l-md last:rounded-r-md";
+                    const place = (at: Pt, children: React.ReactNode) => (
+                      <div
+                        className="absolute z-20 flex divide-x divide-slate-200 rounded-md border border-slate-200 bg-white shadow-lg"
+                        style={{
+                          left: at[0] * zoom,
+                          top: at[1] * zoom,
+                          transform: `rotate(${-rotation}deg) translate(-50%, calc(-100% - 10px))`,
+                          transformOrigin: "0 0",
                         }}
+                        onPointerDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                        onContextMenu={(e) => e.stopPropagation()}
                       >
-                        <Scissors className="h-3.5 w-3.5" /> Split
-                      </button>
+                        {children}
                     </div>
-                  ) : null}
-                  {hoverTip && size && !chip ? (
+                    );
+                    if (pointChip && pointChip.id === selected.id && selected.points[pointChip.index]) {
+                      const i = pointChip.index;
+                      const canBreak = line && i > 0 && i < selected.points.length - 1 && !(selected.arcs ?? []).includes(i);
+                      return place(
+                        selected.points[i],
+                        <>
+                          {canBreak ? (
+                            <button
+                              type="button"
+                              className={btn}
+                              title="Two lines from here, each changed on its own"
+                              onClick={() => breakLineAt(selected.id, i)}
+                            >
+                              <Scissors className="h-3.5 w-3.5" /> Break here
+                            </button>
+                          ) : null}
+                          <button
+                            type="button"
+                            className={btn}
+                            title="Take this point out (a right-click on it does too)"
+                            onClick={() => removeShapePoint(selected.id, i)}
+                          >
+                            <Minus className="h-3.5 w-3.5" /> Remove point
+                          </button>
+                        </>,
+                      );
+                    }
+                    if (!edgeChip || edgeChip.id !== selected.id) return null;
+                    const { edge, at } = edgeChip;
+                    const onlyPiece = line && (edge < 0 || !breakOff(lineOf(selected), edge));
+                    return place(
+                      at,
+                      <>
+                        {line && !onlyPiece ? (
+                          <button
+                            type="button"
+                            className={btn}
+                            title="This piece becomes its own line, picked — then Change items or pick another takeoff for it"
+                            onClick={() => breakOffPiece(selected.id, edge)}
+                          >
+                            <Scissors className="h-3.5 w-3.5" /> Break off
+                          </button>
+                        ) : null}
+                        {line && !onlyPiece ? (
+                          <button
+                            type="button"
+                            className={btn}
+                            title="Take just this piece out; the rest stays"
+                            onClick={() => deleteLinePiece(selected.id, edge)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" /> Delete piece
+                          </button>
+                        ) : null}
+                        {c.type === "AREA" ? (
+                          <button
+                            type="button"
+                            className={btn}
+                            title="Split this area in two: click one side, then the other, across where it should split"
+                            onClick={() => {
+                              setSplitting({ id: selected.id, pts: [] });
+                              setEdgeChip(null);
+                              setFlash("Split: click across the area where it splits — as many points as it takes. Right-click = done · Esc = cancel.");
+                            }}
+                          >
+                            <Scissors className="h-3.5 w-3.5" /> Split
+                          </button>
+                        ) : null}
+                        {edge >= 0 ? (
+                          <button
+                            type="button"
+                            className={btn}
+                            title="A new point right here — drag it where it goes"
+                            onClick={() => {
+                              const ends = [selected.points[edge], selected.points[(edge + 1) % selected.points.length]];
+                              addShapePoint(selected.id, edge, edgeNear(ends, at, false, Infinity)?.at ?? at);
+                            }}
+                          >
+                            <Plus className="h-3.5 w-3.5" /> Point
+                          </button>
+                        ) : null}
+                      </>,
+                    );
+                  })()}
+                  {hoverTip && size && !chip && !edgeChip && !pointChip ? (
                     <div
                       className="pointer-events-none absolute z-20 whitespace-nowrap rounded bg-slate-900/90 px-1.5 py-0.5 text-xs font-medium text-white shadow"
                       style={{
@@ -5201,6 +5440,7 @@ export function PlanViewer({
                       onSet={setUnits("window")}
                       onRemove={removeUnitLine("window")}
                       onAddChoice={addChoice("window")}
+                      onAddPart={addPart("window")}
                     />
                     <button
                       type="button"
@@ -5226,6 +5466,7 @@ export function PlanViewer({
                       onSet={setUnits("door")}
                       onRemove={removeUnitLine("door")}
                       onAddChoice={addChoice("door")}
+                      onAddPart={addPart("door")}
                     />
                     <button
                       type="button"
@@ -5574,6 +5815,18 @@ export function PlanViewer({
                       </form>
                     ) : null}
                     <div className="mt-2 flex items-center gap-1.5">
+                      {type ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          className="!border-blue-300 !text-blue-700 hover:!bg-blue-50"
+                          onClick={() => changeItems(ids)}
+                          title="Gives just these shapes their own items (a porch ceiling in pine, not drywall)"
+                        >
+                          <ListChecks className="h-3.5 w-3.5" /> Change items
+                        </Button>
+                      ) : null}
                       <Button type="button" size="sm" variant="danger" onClick={() => removeMany(ids)}>
                         <Trash2 className="h-3.5 w-3.5" /> Delete {multiShapes.length}
                       </Button>
@@ -5671,7 +5924,7 @@ export function PlanViewer({
                   disabled={!!sel.m.pending}
                   onChange={(e) => {
                     const v = e.target.value;
-                    if (v === "__new") return changeItems(sel.m.id);
+                    if (v === "__new") return changeItems([sel.m.id]);
                     if (v !== sel.c!.id) patchShape(sel.m.id, { conditionId: v });
                   }}
                 >
@@ -5765,7 +6018,7 @@ export function PlanViewer({
                   size="sm"
                   variant="secondary"
                   className="!border-blue-300 !text-blue-700 hover:!bg-blue-50"
-                  onClick={() => changeItems(sel.m.id)}
+                  onClick={() => changeItems([sel.m.id])}
                   disabled={!!sel.m.pending}
                 >
                   <ListChecks className="h-3.5 w-3.5" /> Change items

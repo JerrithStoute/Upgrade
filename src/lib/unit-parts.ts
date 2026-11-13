@@ -227,6 +227,22 @@ export function withChoice(parts: UnitPart[], key: string, raw: string): { parts
   return { parts: parts.map((x) => (x === p ? { ...x, choices: [...x.choices, value] } : x)), value };
 }
 
+/**
+ * "+ Add a detail…" while adding a door or window: a part of your own (Mulled, Glass), asked from then on. A pick
+ * list starts with no choices and blank (nothing in the name) — its choices are added with "+ Add a choice…".
+ * One there already by that name that's turned off is turned back on.
+ */
+export function withPart(kind: UnitKind, parts: UnitPart[], raw: string, as: "pick" | "yesno"): { parts: UnitPart[]; key: string } | string {
+  const name = tidy(raw);
+  if (!name) return "Type the detail's name";
+  const had = parts.find((p) => same(p.name, name) || same(p.key, name));
+  if (had) return had.ask ? `${had.name} is there already` : { parts: parts.map((p) => (p === had ? { ...p, ask: true } : p)), key: had.key };
+  if (parts.filter((p) => !p.builtIn).length >= MAX_OWN_PARTS) return `You have ${MAX_OWN_PARTS} details of your own — take one off in the Catalog first`;
+  const next = cleanParts(kind, [...parts, ownPart(name, as)]);
+  const added = next.find((p) => !p.builtIn && same(p.name, name));
+  return added ? { parts: next, key: added.key } : `"${name}" can't be used as a detail's name`;
+}
+
 /** What each part is picked as to start with: its usual choice. */
 export const usualValues = (parts: UnitPart[]) => Object.fromEntries(parts.filter((p) => p.ask).map((p) => [p.key, p.usual]));
 

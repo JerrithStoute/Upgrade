@@ -191,6 +191,79 @@ test("uploads a plan, adds a takeoff from the new-takeoff panel, renames the pla
   await expect(page.getByRole("link", { name: "Flow permit set", exact: true })).toHaveCount(0);
 });
 
+test("draws a wall, then edits one piece of it on its own: break off, add and remove points, delete a piece", async () => {
+  await page.goto(`${job}/plans`);
+  const pdf = Buffer.from(
+    "%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 792 612]>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF",
+  );
+  await page.getByLabel("Choose plan files").setInputFiles({ name: "Flow walls.pdf", mimeType: "application/pdf", buffer: pdf });
+  await expect(page.getByRole("link", { name: "Flow walls", exact: true })).toBeVisible();
+  await page.goto(`${job}/plans`);
+  await page.getByRole("link", { name: "Measure" }).first().click();
+  await page.getByLabel("Scale", { exact: true }).selectOption({ index: 1 });
+  await expect(page.getByText("This sheet has no scale")).toHaveCount(0);
+  await page.getByRole("button", { name: "New takeoff" }).click();
+  await page.getByRole("menuitem", { name: "Walls" }).click();
+  const panel = page.locator("form").filter({ has: page.getByText("New takeoff", { exact: true }) });
+  await panel.getByLabel("Name", { exact: true }).fill("Flow wall");
+  await panel.getByRole("button", { name: "Add takeoff" }).first().click();
+  await page.getByRole("button", { name: /^Flow wall/ }).first().click();
+
+  // A wall run of 3 pieces: ┐ shape, left to right.
+  const svg = page.locator("svg.touch-none").first();
+  const box = (await svg.boundingBox())!;
+  const at = (fx: number, fy: number) => [box.x + box.width * fx, box.y + box.height * fy] as const;
+  const corners = [at(0.2, 0.3), at(0.5, 0.3), at(0.5, 0.6), at(0.8, 0.6)];
+  await page.keyboard.press("m");
+  for (const [x, y] of corners) await page.mouse.click(x, y);
+  await page.keyboard.press("Enter");
+  const shapes = page.locator("[data-shape]:not([data-shape^=pending])");
+  await expect(shapes).toHaveCount(1);
+  // (The plan can shift as the toolbar fills in: where it is now.)
+  await page.keyboard.press("v");
+  // The middle of the middle (up-and-down) piece, on screen, from the wall's own points.
+  const mid = await shapes
+    .first()
+    .locator("polyline")
+    .first()
+    .evaluate((el: SVGPolylineElement) => {
+      const [, a, b] = Array.from(el.points);
+      const m = new DOMPoint((a.x + b.x) / 2, (a.y + b.y) / 2).matrixTransform(el.getScreenCTM()!);
+      return [m.x, m.y] as const;
+    });
+
+  // Pick it, click its middle piece: the chip for that piece.
+  await page.mouse.click(...mid);
+  await expect(page.getByRole("button", { name: "Break off" })).toBeVisible();
+  // + Point: a point added on the piece (5 handles now).
+  await page.getByRole("button", { name: "Point", exact: true }).click();
+  await expect(page.locator("[data-handle]")).toHaveCount(5);
+  // A point clicked (not dragged): Remove point takes it back out.
+  await page.locator("[data-handle='2']").click();
+  await page.getByRole("button", { name: "Remove point" }).click();
+  await expect(page.locator("[data-handle]")).toHaveCount(4);
+
+  // Break off the middle piece: three walls, the piece picked (2 points).
+  await page.mouse.click(...mid);
+  await page.getByRole("button", { name: "Break off" }).click();
+  await expect(shapes).toHaveCount(3);
+  await expect(page.locator("[data-handle]")).toHaveCount(2);
+  // Undo puts the one wall back.
+  await page.keyboard.press("Control+z");
+  await expect(shapes).toHaveCount(1);
+
+  // Delete just the middle piece: two walls left; Break here at a corner splits one more.
+  await page.mouse.click(...mid);
+  await page.getByRole("button", { name: "Delete piece" }).click();
+  await expect(shapes).toHaveCount(2);
+
+  await page.goto(`${job}/plans`);
+  await page.getByRole("link", { name: /^Edit Flow walls/ }).click();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Delete plan…" }).click();
+  await expect(page.getByRole("link", { name: "Flow walls", exact: true })).toHaveCount(0);
+});
+
 test("opens Daily Logs: one card with New log and the Photos folder link", async () => {
   await page.goto(`${job}/daily-logs`);
   await expect(page.getByRole("link", { name: "New log" })).toBeVisible();

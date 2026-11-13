@@ -16,7 +16,8 @@ const ADD = "__add";
  * The job's doors or windows, to pick from while counting: a short list, each line numbered — click it, or
  * press its number, then click the plan. New ones are added right here: the size, and a pick for each part
  * the company asks for (Catalog → Doors / Windows). Each part starts at its usual choice, and stays as you
- * leave it for the next one. "+ Add a choice…" puts a new one on the company's list for every job after.
+ * leave it for the next one. "+ Add a choice…" puts a new one on the company's list for every job after, and
+ * "+ Add a detail…" a new part (Mulled, Glass).
  */
 export function UnitListPanel({
   kind,
@@ -29,6 +30,7 @@ export function UnitListPanel({
   onSet,
   onRemove,
   onAddChoice,
+  onAddPart,
   compact,
 }: {
   kind: UnitKind;
@@ -49,6 +51,8 @@ export function UnitListPanel({
   onRemove?: (line: JobUnitLine, placed: number) => void;
   /** A new choice on a part, for every job (the company's list); hands back the one to pick. */
   onAddChoice?: (key: string, value: string) => Promise<{ ok: true; value: string } | { ok: false; error: string }>;
+  /** A new part (Mulled, Glass), for every job (the company's list); hands back its key. */
+  onAddPart?: (name: string, as: "pick" | "yesno") => Promise<{ ok: true; key: string } | { ok: false; error: string }>;
   /** The selected one's panel: just the list, to switch it. */
   compact?: boolean;
 }) {
@@ -63,6 +67,8 @@ export function UnitListPanel({
   const [editing, setEditing] = useState<{ line: JobUnitLine; picks: Record<string, string> } | null>(null);
   // "+ Add a choice…" open on a part.
   const [adding, setAdding] = useState<{ key: string; text: string } | null>(null);
+  // "+ Add a detail…" open: its name, and a pick list or a yes / no.
+  const [newPart, setNewPart] = useState<{ name: string; as: "pick" | "yesno" } | null>(null);
   const shown = editing ? editing.picks : picks;
   const pickOf = (p: UnitPart) => shown[p.key] ?? p.usual;
   const setPick = (key: string, v: string) => (editing ? setEditing({ ...editing, picks: { ...editing.picks, [key]: v } }) : setPicks((x) => ({ ...x, [key]: v })));
@@ -109,6 +115,24 @@ export function UnitListPanel({
         setAdding(null);
       } catch (e) {
         setError(actionMessage(e, "The choice wasn't added"));
+      }
+    });
+  };
+
+  const addPart = () => {
+    if (!newPart || !onAddPart || !newPart.name.trim()) return;
+    const { name, as } = newPart;
+    start(async () => {
+      setError(null);
+      try {
+        const r = await onAddPart(name, as);
+        if (!r.ok) return setError(r.error);
+        setNewPart(null);
+        // A yes / no starts at No; a pick list is empty, so its first choice is asked for right away.
+        if (as === "yesno") setPick(r.key, "No");
+        else if (onAddChoice) setAdding({ key: r.key, text: "" });
+      } catch (e) {
+        setError(actionMessage(e, "The detail wasn't added"));
       }
     });
   };
@@ -297,6 +321,65 @@ export function UnitListPanel({
                 </label>
               ))}
             </div>
+          ) : null}
+          {onAddPart ? (
+            newPart ? (
+              <div className="space-y-1 rounded-md bg-slate-50 p-1.5">
+                <div className="flex items-center gap-1">
+                  <input
+                    className="input !h-7 min-w-0 flex-1 !px-1.5 !py-0 text-xs"
+                    aria-label="New detail's name"
+                    placeholder={kind === "window" ? "Mulled" : "Glass"}
+                    autoFocus
+                    maxLength={40}
+                    value={newPart.name}
+                    onChange={(e) => setNewPart({ ...newPart, name: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addPart();
+                      } else if (e.key === "Escape") setNewPart(null);
+                    }}
+                  />
+                  <button
+                    type="button"
+                    disabled={busy || !newPart.name.trim()}
+                    className="rounded-md bg-slate-900 px-1.5 py-1 text-xs font-medium text-white disabled:opacity-40"
+                    onClick={addPart}
+                  >
+                    Add
+                  </button>
+                  <button type="button" className="text-slate-400 hover:text-slate-700" aria-label="Cancel" onClick={() => setNewPart(null)}>
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                <div className="flex items-center gap-3 text-slate-700">
+                  {(
+                    [
+                      ["pick", "Pick list"],
+                      ["yesno", "Yes / no"],
+                    ] as const
+                  ).map(([as, label]) => (
+                    <label key={as} className="flex items-center gap-1">
+                      <input type="radio" className="h-3.5 w-3.5" checked={newPart.as === as} onChange={() => setNewPart({ ...newPart, as })} />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[11px] text-slate-500">For every job after. It&apos;s only in the name when you pick something.</p>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="text-blue-700 hover:underline"
+                onClick={() => {
+                  setAdding(null);
+                  setNewPart({ name: "", as: "pick" });
+                }}
+              >
+                + Add a detail…
+              </button>
+            )
           ) : null}
           <div className="flex items-center gap-1.5">
             <button

@@ -7,7 +7,7 @@ import { siteIsLive } from "@/lib/site";
 
 export const metadata = {
   title: { default: "The Builder Station — takeoffs, estimates and schedules for home builders", template: "%s · The Builder Station" },
-  description: "One program from plans to closeout: takeoffs, estimates, schedules, budgets, purchasing and a client portal. Unlimited users, no contract.",
+  description: "One program from plans to closeout: takeoffs, estimates, schedules, budgets, purchasing and a client portal. Five users included, no contract.",
 };
 
 // The website is always in The Builder Station's own colors — a signed-in company's color

@@ -4,7 +4,7 @@
  */
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { findDimensions, findRoom, splitOutline } from "./index";
+import { findDimensions, findRoom, splitOutline, splitOutlineAlong } from "./index";
 import type { Pt } from "../wall-detect";
 
 const opts = { unitsPerFoot: 12 };
@@ -221,6 +221,36 @@ describe("room finder", () => {
     assert.equal(splitOutline(sq, [200, 0], [200, 50]), null);
   });
 
+  it("an area splits along a line of several clicks (a jog around a closet), first and last run out to the edge", () => {
+    const sq: Pt[] = [
+      [0, 0],
+      [100, 0],
+      [100, 50],
+      [0, 50],
+    ];
+    // Down from the top at x 40 to y 20, over to x 60, down to the bottom (clicked short of the edges).
+    const r = splitOutlineAlong(sq, [
+      [40, 5],
+      [40, 20],
+      [60, 20],
+      [60, 45],
+    ]);
+    assert.ok(r);
+    assert.deepEqual(r.map((p) => Math.round(area(p) * 144)).sort((a, b) => a - b), [2400, 2600]);
+    // In and back out the same side: a notch cut off (a closet off the top wall).
+    const notch = splitOutlineAlong(sq, [
+      [20, 0],
+      [20, 10],
+      [30, 10],
+      [30, 0],
+    ]);
+    assert.ok(notch);
+    assert.deepEqual(notch.map((p) => Math.round(area(p) * 144)).sort((a, b) => a - b), [100, 4900]);
+    // Two clicks: a straight cut; a corner outside the area: no split.
+    assert.ok(splitOutlineAlong(sq, [[40, -10], [40, 60]]));
+    assert.equal(splitOutlineAlong(sq, [[40, 5], [40, 80], [60, 45]]), null);
+  });
+
   it("finds the dimension lines and their ticks (for auto-count to leave out), not the walls", () => {
     const segs = house({ dims: true });
     // A mark partway along the first string, crossing it.
@@ -255,6 +285,47 @@ describe("room finder", () => {
     assert.deepEqual(findRoom(segs, [400, 200], opts), { ok: false, reason: "unreadable" });
     // Another sheet is read as usual.
     assert.ok(findRoom(house(), [120, 300], opts).ok);
+  });
+
+  it("a room open to the outside (an 8' gap in an outside wall, nothing drawn across) is closed where it got out", () => {
+    // The house, its left outside wall broken by an 8' gap (y 150–246), jambs at both ends.
+    const segs: number[] = [];
+    const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+    for (const [x0, y0, x1, y1] of [
+      [0, 0, 480, 0],
+      [480, 0, 480, 360],
+      [480, 360, 0, 360],
+      [4.5, 4.5, 475.5, 4.5],
+      [475.5, 4.5, 475.5, 355.5],
+      [475.5, 355.5, 4.5, 355.5],
+      [0, 0, 0, 150],
+      [0, 246, 0, 360],
+      [4.5, 4.5, 4.5, 150],
+      [4.5, 246, 4.5, 355.5],
+      [0, 150, 4.5, 150],
+      [0, 246, 4.5, 246],
+      [240, 4.5, 240, 355.5],
+      [244.5, 4.5, 244.5, 355.5],
+      // The sheet's border, drawn double, well out around it (past the 60' a room can reach).
+      [-900, -900, 1380, -900],
+      [1380, -900, 1380, 1260],
+      [1380, 1260, -900, 1260],
+      [-900, 1260, -900, -900],
+      [-896, -896, 1376, -896],
+      [1376, -896, 1376, 1256],
+      [1376, 1256, -896, 1256],
+      [-896, 1256, -896, -896],
+    ])
+      line(x0, y0, x1, y1);
+    const r = findRoom(segs, [120, 300], opts);
+    assert.ok(r.ok, "found");
+    const want = ((240 - 4.5) * (355.5 - 4.5)) / 144;
+    assert.ok(Math.abs(r.areaSf - want) <= 0.02 * want, `${r.areaSf.toFixed(1)} sf, want ${want.toFixed(1)}`);
+    // Closed straight across the gap, in line with the wall: no corner out past its face.
+    assert.ok(Math.min(...r.outline.map((p) => p[0])) >= 4.5 - 0.5, "stops at the wall's line");
+    // Without it (or clicked outside), nothing.
+    assert.deepEqual(findRoom(segs, [120, 300], { ...opts, closeHouse: false }), { ok: false, reason: "open" });
+    assert.deepEqual(findRoom(segs, [-60, 200], opts), { ok: false, reason: "open" });
   });
 
   it("says why when there's no room there", () => {

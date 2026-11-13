@@ -20,7 +20,7 @@ export default function RequestInvitePage() {
               "We read every request ourselves",
               "Your invitation comes by email, with a sign-up link just for you",
               "Set up your company in a couple of minutes — common lumber sizes are already there",
-              "Bring your whole team: unlimited users",
+              "Bring your team: five users included, $20 a month for each one after that",
             ]}
           />
         </div>

@@ -44,6 +44,10 @@ export type RoomFindOptions = {
    * width is closed.
    */
   doors?: { x: number; y: number; r: number; a?: [number, number]; b?: [number, number] }[];
+  /** A click outside the house finds the porch or patio there (see 3b). */
+  porches?: boolean;
+  /** False: a room that runs on outside isn't closed in where it got out (see 3b) — it's "open". */
+  closeHouse?: boolean;
   /** (Internal: false closes every opening up to a door's width, swing or not — see `doors`.) */
   passages?: boolean;
   /** How long a click may take, in milliseconds (default 2500), before the sheet counts as unreadable. */
@@ -180,10 +184,13 @@ export function findRoom(segments: Float32Array | number[], click: Pt, opts: Roo
   // and symbols drawn as lines) isn't worked at any longer: it says so, and the room is traced by hand.
   const deadline = performance.now() + (opts.budgetMs ?? 2500);
   try {
-    const r = findRoomOnce(segments, click, opts, deadline);
+    const once = (more: Partial<RoomFindOptions>) => findRoomOnce(segments, click, { ...opts, ...more, closeHouse: false }, deadline);
+    let r = once({});
     // Leaving the passages open (see `doors`) joins rooms, never the outside: if the room ran out to the
     // outside that way, it's found again with every opening closed (the doors still shut theirs).
-    if (!r.ok && r.reason === "open" && opts.doors?.length) return findRoomOnce(segments, click, { ...opts, passages: false }, deadline);
+    if (!r.ok && r.reason === "open" && opts.doors?.length) r = once({ passages: false });
+    // Still out: the house is closed where it got out (3b) — the last thing tried.
+    if (!r.ok && r.reason === "open" && opts.closeHouse !== false && !opts.piecesOnly) r = findRoomOnce(segments, click, { ...opts, passages: opts.doors?.length ? false : opts.passages }, deadline);
     return r;
   } catch (e) {
     if (!(e instanceof TooSlow)) throw e;
@@ -890,7 +897,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   const W = Math.ceil((box.x1 - box.x0) / cell);
   const H = Math.ceil((box.y1 - box.y0) / cell);
   const blocked = new Uint8Array(W * H);
-  for (const w of walls) {
+  const block = (w: Band, into = blocked) => {
     // Its rectangle, a little wider and longer (so walls meeting at corners overlap).
     const S0 = w.s0 - w.half - cell;
     const S1 = w.s1 + w.half + cell;
@@ -926,32 +933,203 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       const i1 = Math.min(W - 1, Math.ceil((hi - box.x0) / cell));
       for (let i = i0; i <= i1; i++) {
         const x = box.x0 + (i + 0.5) * cell;
-        if (x >= lo && x <= hi) blocked[j * W + i] = 1;
+        if (x >= lo && x <= hi) into[j * W + i] = 1;
       }
     }
-  }
+  };
+  for (const w of walls) block(w);
   const ci = Math.floor((cx - box.x0) / cell);
   const cj = Math.floor((cy - box.y0) / cell);
   if (blocked[cj * W + ci]) return { ok: false, reason: "in-wall" };
-  // 1 = floor (reached from the click).
+  // 1 = floor (reached from the click). Filled out breadth-first, so when it runs out to the edge of the
+  // search the way it went (`from`) is the shortest way out — through the gap it leaked by.
   const floor = new Uint8Array(W * H);
+  const from = new Int32Array(W * H);
   const stack = new Int32Array(W * H);
   let top = 0;
-  stack[top++] = cj * W + ci;
-  floor[cj * W + ci] = 1;
-  while (top) {
-    check(4096);
-    const k = stack[--top];
-    const i = k % W;
-    const j = (k - i) / W;
-    // Reached the edge of the search: it isn't closed in (outside, or open to outside).
-    if (i === 0 || j === 0 || i === W - 1 || j === H - 1) return { ok: false, reason: "open" };
-    for (const n of [k - 1, k + 1, k - W, k + W])
-      if (!floor[n] && !blocked[n]) {
-        floor[n] = 1;
-        stack[top++] = n;
+  let leak = -1;
+  const fill = () => {
+    floor.fill(0);
+    let head = 0;
+    top = 0;
+    stack[top++] = cj * W + ci;
+    floor[cj * W + ci] = 1;
+    from[cj * W + ci] = -1;
+    while (head < top) {
+      check(4096);
+      const k = stack[head++];
+      const i = k % W;
+      const j = (k - i) / W;
+      // Reached the edge of the search: it isn't closed in (outside, or open to outside).
+      if (i === 0 || j === 0 || i === W - 1 || j === H - 1) {
+        leak = k;
+        return false;
       }
+      for (const n of [k - 1, k + 1, k - W, k + W])
+        if (!floor[n] && !blocked[n]) {
+          floor[n] = 1;
+          from[n] = k;
+          stack[top++] = n;
+        }
+    }
+    return true;
+  };
+  // 3b. The house is closed: a room inside it never runs on outside. When the floor gets out (a window,
+  // an outside door or a slider the walls above didn't close — drawn some way they don't read), the gap
+  // it got out by is closed straight across, in line with the wall it's in, and the floor filled again.
+  // Only then: a room that's closed in already comes out just as before. A click outside the house (a
+  // porch, the yard) isn't closed in at all.
+  // The gap the floor got out by: on its shortest way out, around where it crosses the house's edge, the
+  // narrowest stretch in line with a wall that ends there (a jamb) — from that wall's end across to the
+  // next thing in the way. Failing that, the narrowest place straight across the way out.
+  const freeRun = (x: number, y: number, ux: number, uy: number, max: number) => {
+    for (let t = 0; t <= max; t += cell / 2) {
+      const i = Math.floor((x + ux * t - box.x0) / cell);
+      const j = Math.floor((y + uy * t - box.y0) / cell);
+      if (i < 0 || j < 0 || i >= W || j >= H) return Infinity;
+      if (blocked[j * W + i]) return t;
+    }
+    return Infinity;
+  };
+  const gapClosing = (end: number): Band | null => {
+    const path: number[] = [];
+    for (let k = end; k >= 0; k = from[k]) path.push(k);
+    path.reverse();
+    const R = Math.round((4 * upf) / cell);
+    // (It has to get out across the house's edge where that's clear — open ground beyond. Otherwise
+    // there's no telling where the house ends.)
+    const at = path.findIndex((k) => outsideHouse![k]);
+    if (at < 0) return null;
+    const near = bandGrid(walls, 2 * upf);
+    const widest = 24 * upf;
+    let best: Band | null = null;
+    let bestWidth = Infinity;
+    const consider = (ux: number, uy: number, x: number, y: number, half: number, jamb?: number) => {
+      const a = freeRun(x, y, -ux, -uy, widest);
+      const b = freeRun(x, y, ux, uy, widest);
+      if (!(a + b < bestWidth) || a + b < upf || a + b > widest) return;
+      // (In line with a wall: one side of the gap is that wall's end.)
+      if (jamb !== undefined && Math.min(Math.abs(a - jamb), Math.abs(b - jamb)) > upf) return;
+      // (Not in line with a wall: only where something's drawn along it — a door or a wall set at 45°.)
+      if (jamb === undefined) {
+        const sp = x * ux + y * uy;
+        const rho = x * -uy + y * ux;
+        const along: [number, number][] = [];
+        let ang0 = Math.atan2(uy, ux);
+        if (ang0 < 0) ang0 += Math.PI;
+        if (ang0 >= Math.PI) ang0 -= Math.PI;
+        for (const l of parallelNear(ang0, Math.min(rho, -rho) - 6 * inch, Math.max(rho, -rho) + 6 * inch, Math.min(sp - a, -(sp + b)), Math.max(sp + b, -(sp - a)))) {
+          if (Math.abs(Math.sin(l.ang - ang0)) > Math.sin(5 * DEG)) continue;
+          const [mx, my] = [(l.x1 + l.x2) / 2, (l.y1 + l.y2) / 2];
+          if (Math.abs((mx - x) * -uy + (my - y) * ux) > 6 * inch) continue;
+          const t1 = (l.x1 - x) * ux + (l.y1 - y) * uy;
+          const t2 = (l.x2 - x) * ux + (l.y2 - y) * uy;
+          const [p0, p1] = [Math.max(-a, Math.min(t1, t2)), Math.min(b, Math.max(t1, t2))];
+          if (p1 > p0) along.push([p0, p1]);
+        }
+        along.sort((p, q) => p[0] - q[0]);
+        let covered = 0;
+        let reach = -a;
+        for (const [p0, p1] of along) {
+          if (p1 <= reach) continue;
+          covered += p1 - Math.max(p0, reach);
+          reach = p1;
+        }
+        if (covered < 0.5 * (a + b)) return;
+      }
+      let ang = Math.atan2(uy, ux);
+      if (ang < 0) ang += Math.PI;
+      if (ang >= Math.PI) ang -= Math.PI;
+      const [lx, ly] = [Math.cos(ang), Math.sin(ang)];
+      const [nx, ny] = [-ly, lx];
+      const sp = x * lx + y * ly;
+      const flip = lx * ux + ly * uy < 0;
+      const [lo, hi] = flip ? [sp - b, sp + a] : [sp - a, sp + b];
+      bestWidth = a + b;
+      best = { ang, ux: lx, uy: ly, nx, ny, rho: x * nx + y * ny, half, s0: lo - 2 * inch, s1: hi + 2 * inch };
+    };
+    // (Looked for back along the way out, from where it's out of the house: the line nearest the outside
+    // — the outside door, not a doorway between two rooms on the way to it.)
+    const inLineAt = (k: number) => {
+      const x = box.x0 + ((k % W) + 0.5) * cell;
+      const y = box.y0 + (Math.floor(k / W) + 0.5) * cell;
+      for (const v of near(x, y, 12 * upf)) {
+        if (v.s1 - v.s0 < upf) continue;
+        const off = x * v.nx + y * v.ny - v.rho;
+        if (Math.abs(off) > v.half + 3 * inch) continue;
+        const s = x * v.ux + y * v.uy;
+        const past = s > v.s1 ? s - v.s1 : s < v.s0 ? v.s0 - s : 0;
+        if (!(past > 0) || past > 12 * upf) continue;
+        const [qx, qy] = [x - off * v.nx, y - off * v.ny];
+        consider(v.ux, v.uy, qx, qy, Math.max(v.half, 1.5 * inch), past);
+      }
+    };
+    for (let i = Math.min(path.length - 1, at + R); i >= 0 && !best; i--)
+      if (!best) {
+        inLineAt(path[i]);
+        // (Both sides of the gap: the path's next few steps in too.)
+        if (best) for (let j = i - 1; j >= Math.max(0, i - 8); j--) inLineAt(path[j]);
+      }
+    const span = path.slice(Math.max(0, at - R / 2), Math.min(path.length, at + R + 1));
+    // (Straight across, any of the plan's square and 45° ways: a door in a corner set at 45° — taken
+    // over the wall's line only when it's much the narrower.)
+    const inLine = best as Band | null;
+    const inLineWidth = bestWidth;
+    bestWidth = Math.min(bestWidth * 0.6, 12 * upf);
+    for (const k of span) {
+      const x = box.x0 + ((k % W) + 0.5) * cell;
+      const y = box.y0 + (Math.floor(k / W) + 0.5) * cell;
+      for (const deg of [0, 45, 90, 135]) consider(Math.cos(deg * DEG), Math.sin(deg * DEG), x, y, 1.5 * inch);
+    }
+    if (best !== inLine) return best;
+    return inLineWidth < Infinity ? inLine : null;
+  };
+  let outsideHouse: Uint8Array | null = null;
+  let closes = 0;
+  let porch = false;
+  const lab = (why: string) => (globalThis as { labHouse?: (x: unknown) => void }).labHouse?.({ why, outsideHouse, W, H, box, cell, seals: walls.slice(walls.length - closes), floor: stack.slice(0, top) });
+  while (!fill()) {
+    if (opts.closeHouse === false || closes >= 12) return lab("too many"), { ok: false, reason: "open" };
+    if (!outsideHouse) {
+      // (Not counting the sheet's border — a frame drawn double around the page would close in the yard.
+      // A border runs nearly the whole way across the drawing, its own way.)
+      const [pw, ph] = sheetSize(segments);
+      const house = new Uint8Array(W * H);
+      for (const w of walls) if (w.s1 - w.s0 < 0.85 * (Math.abs(w.ux) * pw + Math.abs(w.uy) * ph)) block(w, house);
+      outsideHouse = houseOutside(house, W, H, Math.round((4 * upf) / cell));
+    }
+    if (outsideHouse[cj * W + ci]) {
+      // A click outside the house: a porch or patio — out from the house to its edge, the lines drawn
+      // around it (a slab's edge, a beam over the posts) counting as its sides. Once.
+      if (porch || !opts.porches) return lab("click outside"), { ok: false, reason: "open" };
+      porch = true;
+      for (const l of lines) {
+        if (l.s1 - l.s0 < 2 * upf || isDimension(l)) continue;
+        const edge = bandOf(l, l.rho, 0.75 * inch, l.s0, l.s1);
+        block(edge);
+        walls.push(edge);
+      }
+      continue;
+    }
+    const seal = gapClosing(leak);
+    if (!seal) return lab("no gap"), { ok: false, reason: "open" };
+    block(seal);
+    walls.push(seal);
+    closes++;
   }
+  lab("closed");
+  // (Closed in, but taking in ground outside the house — a wall it couldn't read, so it closed somewhere
+  // out in the yard: that's no room. Up to a few square feet is the doorway's own depth.)
+  if (porch) {
+    const sf = (top * cell * cell) / (upf * upf);
+    if (sf > 2500) return lab("porch too big"), { ok: false, reason: "open" };
+  } else if (closes && outsideHouse) {
+    let out = 0;
+    for (let k = 0; k < top; k++) if (outsideHouse[stack[k]]) out++;
+    const sf = (out * cell * cell) / (upf * upf);
+    if (sf > Math.max(10, (0.03 * top * cell * cell) / (upf * upf))) return { ok: false, reason: "open" };
+  }
+
   // 4. Whatever stands inside the room (an island, a label) is floor too: fill its holes — anything not
   // reachable from the edge of the search without crossing the floor.
   const outside = new Uint8Array(W * H);
@@ -1192,6 +1370,94 @@ export function findDimensions(
   return { lines: flat(dimension), ticks: flat(ticks) };
 }
 
+/** A sheet's drawing's width and height (page units), from its line work. */
+const sizeCache = new WeakMap<object, [number, number]>();
+function sheetSize(segments: Float32Array | number[]): [number, number] {
+  const known = sizeCache.get(segments);
+  if (known) return known;
+  let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (let i = 0; i + 1 < segments.length; i += 2) {
+    x0 = Math.min(x0, segments[i]);
+    x1 = Math.max(x1, segments[i]);
+    y0 = Math.min(y0, segments[i + 1]);
+    y1 = Math.max(y1, segments[i + 1]);
+  }
+  const size: [number, number] = [x1 - x0, y1 - y0];
+  sizeCache.set(segments, size);
+  return size;
+}
+
+/**
+ * What's outside the house on a room finder's grid (`blocked`: the walls; W×H cells): reached from the
+ * grid's edge without coming within `r` cells of a wall — so through no gap narrower than 2r — and then
+ * out to r cells around that. A doorway or a window is shut to it; the yard and a porch aren't.
+ */
+function houseOutside(blocked: Uint8Array, W: number, H: number, r: number): Uint8Array {
+  // Distances (3 a step, 4 a diagonal), to the walls, then to the outside found.
+  const distance = (seed: (k: number) => boolean) => {
+    const d = new Int32Array(W * H).fill(1 << 29);
+    for (let k = 0; k < W * H; k++) if (seed(k)) d[k] = 0;
+    for (let j = 0; j < H; j++)
+      for (let i = 0; i < W; i++) {
+        const k = j * W + i;
+        let v = d[k];
+        if (i > 0) v = Math.min(v, d[k - 1] + 3);
+        if (j > 0) {
+          v = Math.min(v, d[k - W] + 3);
+          if (i > 0) v = Math.min(v, d[k - W - 1] + 4);
+          if (i < W - 1) v = Math.min(v, d[k - W + 1] + 4);
+        }
+        d[k] = v;
+      }
+    for (let j = H - 1; j >= 0; j--)
+      for (let i = W - 1; i >= 0; i--) {
+        const k = j * W + i;
+        let v = d[k];
+        if (i < W - 1) v = Math.min(v, d[k + 1] + 3);
+        if (j < H - 1) {
+          v = Math.min(v, d[k + W] + 3);
+          if (i < W - 1) v = Math.min(v, d[k + W + 1] + 4);
+          if (i > 0) v = Math.min(v, d[k + W - 1] + 4);
+        }
+        d[k] = v;
+      }
+    return d;
+  };
+  const toWall = distance((k) => blocked[k] === 1);
+  const far = new Uint8Array(W * H);
+  const stack = new Int32Array(W * H);
+  let top = 0;
+  for (let i = 0; i < W; i++)
+    for (const j of [0, H - 1]) {
+      const k = j * W + i;
+      if (!far[k] && toWall[k] > 3 * r) {
+        far[k] = 1;
+        stack[top++] = k;
+      }
+    }
+  for (let j = 0; j < H; j++)
+    for (const i of [0, W - 1]) {
+      const k = j * W + i;
+      if (!far[k] && toWall[k] > 3 * r) {
+        far[k] = 1;
+        stack[top++] = k;
+      }
+    }
+  while (top) {
+    const k = stack[--top];
+    const i = k % W;
+    for (const n of [i > 0 ? k - 1 : -1, i < W - 1 ? k + 1 : -1, k - W, k + W])
+      if (n >= 0 && n < W * H && !far[n] && toWall[n] > 3 * r) {
+        far[n] = 1;
+        stack[top++] = n;
+      }
+  }
+  const toFar = distance((k) => far[k] === 1);
+  const out = new Uint8Array(W * H);
+  for (let k = 0; k < W * H; k++) if (!blocked[k] && toFar[k] <= 3 * r) out[k] = 1;
+  return out;
+}
+
 function bandGrid(bands: Band[], size: number) {
   const cells = new Map<string, Band[]>();
   for (const b of bands) {
@@ -1342,6 +1608,59 @@ export function splitOutline(points: Pt[], a: Pt, b: Pt): [Pt[], Pt[]] | null {
   };
   const one = walk(h1, h2);
   const two = walk(h2, h1);
+  if (Math.abs(shoelace(one)) < 1e-6 || Math.abs(shoelace(two)) < 1e-6) return null;
+  return [one, two];
+}
+
+/**
+ * An area's outline cut in two along a line of several clicks (a split that jogs around a wall or a
+ * closet): the line's first and last pieces run on out to the outline; the clicks between are the
+ * cut's corners and have to be inside the area. Two clicks: a straight cut (splitOutline).
+ */
+export function splitOutlineAlong(points: Pt[], path: Pt[]): [Pt[], Pt[]] | null {
+  const clicks = path.filter((p, i) => i === 0 || Math.hypot(p[0] - path[i - 1][0], p[1] - path[i - 1][1]) > 1e-6);
+  if (clicks.length < 2) return null;
+  if (clicks.length === 2) return splitOutline(points, clicks[0], clicks[1]);
+  const n = points.length;
+  if (n < 3) return null;
+  const mids = clicks.slice(1, -1);
+  if (!mids.every((p) => inside(points, p))) return null;
+  // From `from` out through `to` (and on past it): the first place it crosses the outline.
+  const out = (from: Pt, to: Pt): { side: number; u: number; p: Pt } | null => {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    let best: { side: number; u: number; p: Pt; t: number } | null = null;
+    for (let i = 0; i < n; i++) {
+      const p = points[i];
+      const q = points[(i + 1) % n];
+      const ex = q[0] - p[0];
+      const ey = q[1] - p[1];
+      const den = dx * ey - dy * ex;
+      if (Math.abs(den) < 1e-12) continue;
+      const t = ((p[0] - from[0]) * ey - (p[1] - from[1]) * ex) / den;
+      const u = ((p[0] - from[0]) * dy - (p[1] - from[1]) * dx) / den;
+      if (u < 0 || u >= 1 || t <= 1e-9) continue;
+      if (!best || t < best.t) best = { side: i, u, p: [from[0] + dx * t, from[1] + dy * t], t };
+    }
+    return best;
+  };
+  const h1 = out(clicks[1], clicks[0]);
+  const h2 = out(clicks[clicks.length - 2], clicks[clicks.length - 1]);
+  if (!h1 || !h2) return null;
+  // Round the outline from one crossing to the other (all the way round when both are on one side
+  // and the second comes first along it).
+  const walk = (from: { side: number; u: number; p: Pt }, to: { side: number; u: number; p: Pt }) => {
+    const pts: Pt[] = [from.p];
+    if (from.side === to.side && to.u > from.u) return [...pts, to.p];
+    for (let i = (from.side + 1) % n; ; i = (i + 1) % n) {
+      pts.push(points[i]);
+      if (i === to.side) break;
+    }
+    pts.push(to.p);
+    return pts;
+  };
+  const one = [...walk(h1, h2), ...[...mids].reverse()];
+  const two = [...walk(h2, h1), ...mids];
   if (Math.abs(shoelace(one)) < 1e-6 || Math.abs(shoelace(two)) < 1e-6) return null;
   return [one, two];
 }

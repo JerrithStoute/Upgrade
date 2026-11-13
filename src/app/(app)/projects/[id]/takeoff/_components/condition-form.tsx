@@ -254,8 +254,9 @@ export function ConditionForm({
             Cancel
           </button>
         ) : cancelHref ? (
+          // A takeoff already made stays open after Save, so this is how you get back to the plan.
           <Link href={cancelHref} scroll={false} className={buttonClasses("secondary", "xs")}>
-            Cancel
+            {values ? "Close" : "Cancel"}
           </Link>
         ) : null}
         {toolbox ? <LibraryButton templates={toolbox} label="+ Library" /> : null}

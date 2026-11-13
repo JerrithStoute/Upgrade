@@ -78,17 +78,29 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
         const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
         if (len >= MIN_SEGMENT || len === 0) out.push(a[0], a[1], b[0], b[1]);
       };
+      // (A door swing some programs draw as a run of short straight pieces, not a curve: each run of
+      // lines in the path, looked at for one when it ends.)
+      let run: [number, number][] = [];
+      const endRun = () => {
+        if (swings && run.length >= 6) swings.push(...polylineArcs(run));
+        run = [];
+      };
       for (let j = 0; j < data.length;) {
         const op = data[j++];
         if (op === DrawOPS.moveTo) {
+          endRun();
           cur = start = tx(data[j++], data[j++]);
+          run.push(cur);
           at(cur, true);
         } else if (op === DrawOPS.lineTo) {
           const p = tx(data[j++], data[j++]);
           if (cur) seg(cur, p);
+          if (!run.length && cur) run.push(cur);
+          run.push(p);
           cur = p;
           at(p);
         } else if (op === DrawOPS.curveTo) {
+          endRun();
           const c1 = tx(data[j++], data[j++]);
           const c2 = tx(data[j++], data[j++]);
           const p = tx(data[j++], data[j++]);
@@ -105,18 +117,21 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
           cur = p;
           at(p);
         } else if (op === DrawOPS.quadraticCurveTo) {
+          endRun();
           j += 2;
           const p = tx(data[j++], data[j++]);
           if (cur) out.push(p[0], p[1], p[0], p[1]);
           cur = p;
           at(p);
         } else if (op === DrawOPS.closePath) {
+          endRun();
           if (cur && start) seg(cur, start);
           cur = start;
         } else {
           break; // unknown operator: stop reading this path
         }
       }
+      endRun();
       if (filling) {
         const kept = rings.filter((r) => r.length >= 6);
         if (kept.length) fills.push({ color, rings: kept });
@@ -164,6 +179,63 @@ export function circleArc(p0: [number, number], c1: [number, number], c2: [numbe
   const b = [p3[0] - cx, p3[1] - cy];
   const turn = Math.abs(Math.atan2(a[0] * b[1] - a[1] * b[0], a[0] * b[0] + a[1] * b[1])) * (180 / Math.PI);
   return turn > minTurn && turn < maxTurn ? { cx, cy, r: r0 } : null;
+}
+
+/**
+ * Door swings drawn as a run of short straight pieces (a polyline, not a curve): stretches of `pts` where
+ * the pieces are alike in length and each turns the same way by a little (1°–25°), on one circle, turning
+ * 25°–100° in all. Each: its center (the hinge), radius and two ends — as `circleArc` gives for a curve.
+ */
+export function polylineArcs(pts: [number, number][]): DoorSwing[] {
+  const out: DoorSwing[] = [];
+  const DEG = Math.PI / 180;
+  const len = (i: number) => Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+  const turn = (i: number) => {
+    const [ax, ay] = [pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]];
+    const [bx, by] = [pts[i + 2][0] - pts[i + 1][0], pts[i + 2][1] - pts[i + 1][1]];
+    return Math.atan2(ax * by - ay * bx, ax * bx + ay * by);
+  };
+  let i = 0;
+  while (i + 2 < pts.length) {
+    const first = len(i);
+    const sign = Math.sign(turn(i));
+    let j = i;
+    // (Pieces i…j: each like the first in length, each turning the same way a little.)
+    while (j + 2 < pts.length) {
+      const t = turn(j);
+      const l = len(j + 1);
+      if (!(first > 0) || Math.sign(t) !== sign || Math.abs(t) < 1 * DEG || Math.abs(t) > 25 * DEG || l < 0.6 * first || l > 1.6 * first) break;
+      j++;
+    }
+    const n = j - i + 1;
+    if (n >= 5) {
+      const [a, m, b] = [pts[i], pts[i + Math.round(n / 2)], pts[j + 1]];
+      const c = circleThrough(a, m, b);
+      if (c) {
+        let fits = true;
+        for (let k = i; k <= j + 1 && fits; k++) fits = Math.abs(Math.hypot(pts[k][0] - c.cx, pts[k][1] - c.cy) - c.r) <= 0.04 * c.r;
+        // (How far it swings: the turns between its pieces, and half a piece's at each end.)
+        let turned = 0;
+        for (let k = i; k < j; k++) turned += Math.abs(turn(k));
+        const swept = (turned * n) / (n - 1) / DEG;
+        if (fits && swept > 25 && swept < 100) out.push({ x: c.cx, y: c.cy, r: c.r, a, b });
+      }
+    }
+    i = Math.max(i + 1, j);
+  }
+  return out;
+}
+
+/** The circle through three points, or null when they're in a line. */
+function circleThrough(a: [number, number], b: [number, number], c: [number, number]) {
+  const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+  if (Math.abs(d) < 1e-9) return null;
+  const sa = a[0] * a[0] + a[1] * a[1];
+  const sb = b[0] * b[0] + b[1] * b[1];
+  const sc = c[0] * c[0] + c[1] * c[1];
+  const cx = (sa * (b[1] - c[1]) + sb * (c[1] - a[1]) + sc * (a[1] - b[1])) / d;
+  const cy = (sa * (c[0] - b[0]) + sb * (a[0] - c[0]) + sc * (b[0] - a[0])) / d;
+  return { cx, cy, r: Math.hypot(a[0] - cx, a[1] - cy) };
 }
 
 /** All of a PDF page's own text, as one string (scanned plans, and most CAD plans, have none). */

@@ -14,6 +14,7 @@ import {
   readSizeCode,
   unitName,
   withChoice,
+  withPart,
   withAlias,
   withUsedChoices,
   writeParts,
@@ -71,6 +72,22 @@ test("choices: added once, never a near-copy", () => {
   assert.equal(withChoice(doors, "type", "PREHUNG").toString(), withChoice(doors, "type", "PREHUNG").toString());
   assert.equal((withChoice(doors, "type", "PREHUNG") as { value: string }).value, "Prehung");
   assert.equal(typeof withChoice(doors, "ext", "Garage"), "string");
+});
+
+test("a detail added while counting: blank until picked, then in the name", () => {
+  const r = withPart("window", windows, " mulled ", "pick");
+  assert.ok(typeof r !== "string");
+  const mulled = r.parts.find((p) => p.key === r.key)!;
+  assert.deepEqual([mulled.name, mulled.usual, mulled.choices], ["mulled", "", []]);
+  assert.equal(unitName("window", r.parts, s3050, { type: "Single Hung", color: "Standard" }), "3050 Single Hung");
+  const c = withChoice(r.parts, r.key, "Twin");
+  assert.ok(typeof c !== "string");
+  assert.equal(unitName("window", c.parts, s3050, { type: "Single Hung", color: "Standard", [r.key]: "Twin" }), "3050 Single Hung Twin");
+  assert.equal(typeof withPart("window", r.parts, "Mulled", "pick"), "string");
+  assert.equal(typeof withPart("window", windows, "color", "pick"), "string");
+  const off = r.parts.map((p) => (p.key === r.key ? { ...p, ask: false } : p));
+  const back = withPart("window", off, "MULLED", "yesno");
+  assert.ok(typeof back !== "string" && back.parts.find((p) => p.key === r.key)!.ask);
 });
 
 test("picks are checked against the choices", () => {

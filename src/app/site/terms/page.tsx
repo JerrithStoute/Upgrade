@@ -29,7 +29,7 @@ export default function TermsPage() {
         {
           h: "Billing",
           p: [
-            "Plans are billed monthly, per company, with unlimited users. There's no contract: you can cancel any time and your plan runs to the end of the month you've paid for. We'll give you at least 30 days' notice before a price change.",
+            "Your subscription is billed monthly, per company. It includes a set number of users, and more can be added for a monthly fee per user; your clients and vendors are never charged. There's no contract: you can cancel any time and your subscription runs to the end of the month you've paid for. We'll give you at least 30 days' notice before a price change.",
           ],
         },
         {

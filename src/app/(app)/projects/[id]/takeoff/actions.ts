@@ -41,7 +41,7 @@ import { groupOf, CODE_GROUP_KEYS, type CodeGroup } from "@/lib/code-groups";
 import { assignItemCodes, newItemPlacement, saveCodeRule } from "@/lib/item-codes";
 import { MAX_LINES, readJobWindows, readSizeCode } from "@/lib/window-list";
 import { MAX_DOOR_LINES, readJobDoors } from "@/lib/door-list";
-import { cleanValues, itemFields, itemValues, unitName, withChoice, type UnitKind, type UnitPart } from "@/lib/unit-parts";
+import { cleanValues, itemFields, itemValues, unitName, withChoice, withPart, type UnitKind, type UnitPart } from "@/lib/unit-parts";
 import { itemKindOf, loadUnitParts, saveUnitParts } from "@/lib/unit-parts-server";
 import { assemblyFields, conditionFields, type AssemblyFields } from "@/lib/takeoff-forms";
 import { addConditionsToTemplate, applyTemplate, pullLibraryTakeoff, saveTemplateFromProject } from "@/lib/takeoff-templates";
@@ -1624,6 +1624,25 @@ export async function setJobUnits(input: { projectId: string; kind: UnitKind; li
   const list = readJobList(kind, project);
   if (Array.isArray(input.lines)) list.lines = input.lines.map(String).filter((id) => list.lines.includes(id));
   return saveJobList(kind, project.id, list);
+}
+
+/**
+ * "+ Add a detail…" while adding a door or window (Mulled, Glass): a part of your own on the company's list
+ * (Catalog → Doors / Windows), asked on every job after.
+ */
+export async function addUnitPart(input: {
+  kind: UnitKind;
+  name: string;
+  as: "pick" | "yesno";
+}): Promise<{ ok: true; parts: UnitPart[]; key: string } | { ok: false; error: string }> {
+  await requireEdit("takeoffs");
+  const kind: UnitKind = input.kind === "window" ? "window" : "door";
+  const current = await loadUnitParts(kind);
+  const r = withPart(kind, current.parts, String(input.name ?? ""), input.as === "yesno" ? "yesno" : "pick");
+  if (typeof r === "string") return { ok: false, error: r };
+  await saveUnitParts(kind, { ...current, parts: r.parts });
+  revalidatePath(`/catalog/${kind}s`);
+  return { ok: true, parts: r.parts, key: r.key };
 }
 
 /**

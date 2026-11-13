@@ -68,7 +68,7 @@ const GROUPS: Group[] = [
   {
     id: "team",
     title: "Your team",
-    intro: "Unlimited users, with the right access for each.",
+    intro: "Everyone on your team with their own login and the right access for each.",
     items: ["Admins and staff, each with their own login", "Time clock on the phone, to the job and cost code", "To-dos and punch lists", "Two-step sign-in available for everyone"],
   },
 ];
@@ -99,7 +99,7 @@ export default function FeaturesPage() {
             </div>
           </section>
         ))}
-        <p className="text-sm text-slate-500">Coming next: QuickBooks sync.</p>
+        <p className="text-sm text-slate-500">Works with QuickBooks Desktop: vendors, bills, invoices and payments stay in step. QuickBooks Online is coming soon.</p>
       </div>
       <InviteBand />
     </>
