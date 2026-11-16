@@ -5,6 +5,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { findWalls, type Pt } from "./index";
+import { houseOutsideMap } from "../room-detect";
 
 const UPF = 12;
 const opts = { unitsPerFoot: UPF, clickRadius: 3 };
@@ -183,6 +184,81 @@ function hatchedHouse(stud = 3.5) {
   return segs;
 }
 
+/**
+ * A 40' × 30' 2x4 house (sheathing and siding outside, 1 unit = 1 inch) with two corners framed 2x6 (a
+ * plumbing wall round the corner — bottom left and top right, 5' each way): the outside faces run straight
+ * on, the inside faces step in 2" there. One click on either size: that size all round, the other left out.
+ */
+function twoBySixCornersHouse() {
+  const segs: number[] = [];
+  const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+  const h = (y: number, x1: number, x2: number) => line(x1, y, x2, y);
+  const v = (x: number, y1: number, y2: number) => line(x, y1, x, y2);
+  // Outside faces, sheathing, siding all round.
+  for (const o of [0, 0.8, 1]) {
+    h(-o, -o, 480 + o);
+    h(360 + o, -o, 480 + o);
+    v(-o, -o, 360 + o);
+    v(480 + o, -o, 360 + o);
+  }
+  // Inside faces: 2x4, stepping in to 2x6 for the two corners.
+  h(3.5, 3.5, 420); // top, 2x4
+  h(5.5, 420, 474.5); // top, 2x6 at the right corner
+  v(474.5, 5.5, 60); // right, 2x6
+  v(476.5, 60, 356.5); // right, 2x4
+  h(356.5, 60, 476.5); // bottom, 2x4
+  h(354.5, 5.5, 60); // bottom, 2x6 at the left corner
+  v(5.5, 300, 354.5); // left, 2x6
+  v(3.5, 3.5, 300); // left, 2x4
+  // The steps.
+  v(420, 3.5, 6);
+  h(60, 474, 476.5);
+  v(60, 354, 356.5);
+  h(300, 3.5, 6);
+  return segs;
+}
+
+/**
+ * A 40' × 30' 2x4 house (1 unit = 1 inch) with a 16' × 10' covered porch cut into its bottom-right corner:
+ * sheathing and siding drawn outside every wall but the porch's two (plain both sides, as plans draw them
+ * under a porch roof). A plain 2x4 inside wall up the left side.
+ */
+function porchHouse() {
+  const segs: number[] = [];
+  const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+  const h = (y: number, x1: number, x2: number) => line(x1, y, x2, y);
+  const v = (x: number, y1: number, y2: number) => line(x, y1, x, y2);
+  // Outside faces, then inside faces.
+  h(0, 0, 480);
+  v(480, 0, 240);
+  h(240, 288, 480);
+  v(288, 240, 360);
+  h(360, 0, 288);
+  v(0, 0, 360);
+  h(3.5, 3.5, 476.5);
+  v(476.5, 3.5, 236.5);
+  h(236.5, 284.5, 476.5);
+  v(284.5, 236.5, 356.5);
+  h(356.5, 3.5, 284.5);
+  v(3.5, 3.5, 356.5);
+  // Sheathing and siding — not on the porch's walls.
+  for (const o of [0.8, 1]) {
+    h(-o, -o, 480 + o);
+    v(480 + o, -o, 240);
+    h(360 + o, -o, 288);
+    v(-o, -o, 360 + o);
+  }
+  // The inside wall.
+  v(150, 3.5, 356.5);
+  v(153.5, 3.5, 356.5);
+  // The sheet's border, well out.
+  h(-240, -240, 720);
+  h(600, -240, 720);
+  v(-240, -240, 600);
+  v(720, -240, 600);
+  return segs;
+}
+
 const runLength = (runs: Pt[][]) => runs.reduce((sum, r) => sum + r.slice(1).reduce((s, p, i) => s + Math.hypot(p[0] - r[i][0], p[1] - r[i][1]), 0), 0);
 
 describe("wall finder", () => {
@@ -195,6 +271,54 @@ describe("wall finder", () => {
     assert.ok(Math.abs(runLength(r.runs) / UPF - 138) < 0.1);
     // It doesn't pick up the interior wall (thinner) or the dimension line.
     assert.ok(r.runs.every((run) => run.every(([x]) => Math.abs(x - 242.25) > 1)));
+  });
+
+  it("the outside wall carries on past 2x6 framed into it — the 2x6 left out, one click all the way round", () => {
+    const segs = twoBySixCornersHouse();
+    // The 2x6 corners: their own size, both of them (stepping over the 2x4 between), nothing else.
+    const six = findWalls(segs, [3, 330], opts);
+    assert.ok(six.ok);
+    assert.equal(six.thicknessIn, 5.5);
+    assert.ok(Math.abs(six.lengthFt - 19.1) < 0.2, `2x6: found ${six.lengthFt} ft`);
+    for (const click of [[200, 0.2], [200, 359.8], [0.2, 150], [479.8, 200]] as Pt[]) {
+      const r = findWalls(segs, click, opts);
+      assert.ok(r.ok, `click ${click}`);
+      assert.equal(r.kind, "exterior");
+      assert.equal(r.thicknessIn, 3.5);
+      // All four 2x4 stretches, each from its 2x4 corner to where the 2x6 starts.
+      const along = (x0: number, y0: number, x1: number, y1: number) =>
+        r.runs.some((run) => run.every(([x, y]) => x >= x0 - 1 && x <= x1 + 1 && y >= y0 - 1 && y <= y1 + 1) && Math.hypot(run[1][0] - run[0][0], run[1][1] - run[0][1]) >= Math.max(x1 - x0, y1 - y0) - 6);
+      assert.ok(along(1, 1, 420, 2.5), `click ${click}: top`);
+      assert.ok(along(1, 1, 2.5, 300), `click ${click}: left`);
+      assert.ok(along(477.5, 60, 479, 359), `click ${click}: right`);
+      assert.ok(along(60, 357.5, 479, 359), `click ${click}: bottom`);
+      // Nothing along the 2x6.
+      assert.ok(r.runs.every((run) => run.every(([x, y]) => !(x < 58 && y > 302) && !(x > 422 && y < 58))), `click ${click}: nothing along the 2x6`);
+    }
+  });
+
+  it("a porch's back walls (no siding drawn under the roof) are outside walls once the sheet's outside is known", () => {
+    const segs = porchHouse();
+    const onPorch = (r: { runs: Pt[][] }) => r.runs.some((run) => run.every(([x, y]) => x > 280 && y > 230));
+    // Without it, they read as inside walls: the outside wall stops at the porch.
+    const before = findWalls(segs, [200, 0.2], opts);
+    assert.ok(before.ok && before.kind === "exterior");
+    assert.ok(!onPorch(before));
+    const outside = houseOutsideMap(segs, { unitsPerFoot: UPF });
+    assert.ok(outside);
+    for (const click of [[200, 0.2], [479.9, 100], [286, 300], [380, 238]] as Pt[]) {
+      const r = findWalls(segs, click, { ...opts, outside });
+      assert.ok(r.ok, `click ${click}`);
+      assert.equal(r.kind, "exterior", `click ${click}`);
+      assert.ok(onPorch(r), `click ${click}: the porch's walls`);
+      // All the way round: 2 × (40' + 30') less the corners, center line.
+      assert.ok(Math.abs(r.lengthFt - 138.8) < 1, `click ${click}: found ${r.lengthFt} ft`);
+    }
+    // The inside wall is still an inside wall, on its own.
+    const inner = findWalls(segs, [150, 100], { ...opts, outside });
+    assert.ok(inner.ok);
+    assert.equal(inner.kind, "interior");
+    assert.ok(Math.abs(inner.lengthFt - 29.4) < 0.5, `inside wall: ${inner.lengthFt} ft`);
   });
 
   it("finds the walls even when a face is drawn in pieces", () => {

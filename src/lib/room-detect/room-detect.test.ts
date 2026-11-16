@@ -328,6 +328,30 @@ describe("room finder", () => {
     assert.deepEqual(findRoom(segs, [-60, 200], opts), { ok: false, reason: "open" });
   });
 
+  it("a garage (a 16' door in its outside wall, the door drawn across it) is found, not taken for the yard", () => {
+    // A 24' × 24' garage on the house's right end: its far wall broken by a 16' door (y 52–244) drawn as
+    // a single line across, jambs at both ends. The rest of the house to its left.
+    const segs: number[] = [];
+    const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+    for (const [x0, y0, x1, y1] of [
+      [0, 0, 588, 0], [0, 4.5, 583.5, 4.5], [0, 288, 588, 288], [0, 283.5, 583.5, 283.5],
+      [0, 0, 0, 288], [4.5, 4.5, 4.5, 283.5],
+      [300, 4.5, 300, 283.5], [304.5, 4.5, 304.5, 283.5],
+      [588, 0, 588, 52], [583.5, 4.5, 583.5, 52], [583.5, 52, 588, 52],
+      [588, 244, 588, 288], [583.5, 244, 583.5, 283.5], [583.5, 244, 588, 244],
+      [586, 52, 586, 244], // the garage door
+      [-900, -900, 1500, -900], [1500, -900, 1500, 1200], [1500, 1200, -900, 1200], [-900, 1200, -900, -900],
+      [-896, -896, 1496, -896], [1496, -896, 1496, 1196], [1496, 1196, -896, 1196], [-896, 1196, -896, -896],
+    ])
+      line(x0, y0, x1, y1);
+    const r = findRoom(segs, [440, 140], opts);
+    assert.ok(r.ok, `found (${r.ok ? "" : r.reason})`);
+    const want = ((583.5 - 304.5) * (283.5 - 4.5)) / 144;
+    assert.ok(Math.abs(r.areaSf - want) <= 0.03 * want, `${r.areaSf.toFixed(1)} sf, want ${want.toFixed(1)}`);
+    // Out in the yard past the door: still nothing.
+    assert.deepEqual(findRoom(segs, [800, 140], opts), { ok: false, reason: "open" });
+  });
+
   it("says why when there's no room there", () => {
     assert.deepEqual(findRoom(house(), [-60, 100], opts), { ok: false, reason: "open" });
     assert.deepEqual(findRoom(house(), [242, 300], opts), { ok: false, reason: "in-wall" });

@@ -6,6 +6,8 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ["@prisma/client", "bcryptjs"],
   // Don't announce what the server runs on.
   poweredByHeader: false,
+  // Local copy only: another computer on the home network can open it at this PC's address (Plan Lab labeling).
+  allowedDevOrigins: ["192.168.1.7"],
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders(process.env.NODE_ENV === "production") }];
   },

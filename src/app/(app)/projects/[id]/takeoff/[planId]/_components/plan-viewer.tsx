@@ -854,7 +854,12 @@ export function PlanViewer({
     if (!vectors || !vectors.length || !sheetScale || !looksLikeFloorPlan(vectors, doorSwings, sheetScale)) return;
     let live = true;
     const f = (roomFinder.current ??= new RoomFinder());
-    void f.prepare(f.sheet(vectors, fills, doorSwings), sheetScale).then((readable) => live && !readable && setUnreadableSheet(vectors));
+    const key = f.sheet(vectors, fills, doorSwings);
+    void f.prepare(key, sheetScale).then((readable) => {
+      if (live && !readable) setUnreadableSheet(vectors);
+      // …then what's outside the house, for Find walls (a porch's back wall reads as outside).
+      else if (readable) f.loadOutside(key, sheetScale);
+    });
     return () => {
       live = false;
     };
@@ -2606,7 +2611,7 @@ export function PlanViewer({
       const p = toPage(e.clientX, e.clientY);
       let walls = pickFloor(thisFloorWalls, p, (SNAP_PX * 1.5) / zoom, unitsPerFoot ? unitsPerFoot * 0.75 : 12 / zoom);
       if (!walls && vectors?.length && unitsPerFoot) {
-        const r = findWalls(vectors, p, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom });
+        const r = findWalls(vectors, p, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot) });
         if (r.ok) walls = r.runs as Pt[][];
       }
       if (!walls) return setError("No wall there — click right on one of the floor above's walls (or trace them first with Find walls).");
@@ -2633,7 +2638,7 @@ export function PlanViewer({
       if (!unitsPerFoot) return setError("Set this sheet's scale before finding walls.");
       if (!vectors || !vectors.length)
         return setError("This sheet has no line work to read (a scanned plan?) — walls can't be found here. Trace them with Measure.");
-      const r = findWalls(vectors, toPage(e.clientX, e.clientY), { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom });
+      const r = findWalls(vectors, toPage(e.clientX, e.clientY), { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot) });
       if (!r.ok) {
         return setError(
           r.reason === "no-line"

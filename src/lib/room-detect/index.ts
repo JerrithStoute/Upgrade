@@ -18,7 +18,7 @@
 import { DEG, bucketOf, distToSeg, grid, toLine, type Line, type Pt } from "../wall-detect";
 
 /** Which rules the room finder runs: saved with each Find area click (AreaFindLog). Change it with them. */
-export const ROOM_DETECT_VERSION = "2026-11-12a";
+export const ROOM_DETECT_VERSION = "2026-11-13a";
 
 export type RoomFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -52,7 +52,50 @@ export type RoomFindOptions = {
   budgetMs?: number;
   /** (Internal: hand back the wall pieces found — before any are sorted out — and stop.) */
   piecesOnly?: (bands: { half: number; s0: number; s1: number }[]) => void;
+  /** (Internal: hand back what's outside the house around the click — see `houseOutsideMap` — and stop.) */
+  outsideOnly?: (map: OutsideMap) => void;
 };
+
+/**
+ * What's outside the house on a sheet, on a grid: `out[j * W + i]` is 1 for the cell at
+ * (x0 + (i + ½)·cell, y0 + (j + ½)·cell). The yard and a porch or patio (open to it, 4' wide and more) are
+ * outside; rooms, and a garage behind its door, aren't. The same as Find area uses to keep a room in the house.
+ */
+export type OutsideMap = { x0: number; y0: number; cell: number; W: number; H: number; out: Uint8Array };
+
+const outsideMaps = new WeakMap<object, Map<number, OutsideMap | null>>();
+/**
+ * The sheet's outside-the-house map (see `OutsideMap`), worked out once per sheet — a second or so on a
+ * big sheet, so ahead of the clicks (Find walls reads it). Null when the sheet can't be read in `budgetMs`.
+ */
+export function houseOutsideMap(segments: Float32Array | number[], opts: Pick<RoomFindOptions, "unitsPerFoot" | "fills" | "budgetMs">): OutsideMap | null {
+  const upf = opts.unitsPerFoot;
+  const byUpf = outsideMaps.get(segments) ?? new Map<number, OutsideMap | null>();
+  outsideMaps.set(segments, byUpf);
+  const known = byUpf.get(upf);
+  if (known !== undefined) return known;
+  if (!(upf > 0) || segments.length < 4 || unreadable.has(segments)) return null;
+  let xs = [Infinity, -Infinity];
+  let ys = [Infinity, -Infinity];
+  for (let i = 0; i + 1 < segments.length; i += 2) {
+    xs = [Math.min(xs[0], segments[i]), Math.max(xs[1], segments[i])];
+    ys = [Math.min(ys[0], segments[i + 1]), Math.max(ys[1], segments[i + 1])];
+  }
+  const deadline = performance.now() + (opts.budgetMs ?? 8000);
+  let map: OutsideMap | null = null;
+  try {
+    findRoomOnce(segments, [(xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2], {
+      unitsPerFoot: upf,
+      fills: opts.fills,
+      reachFt: Math.max(xs[1] - xs[0], ys[1] - ys[0]) / 2 / upf + 10,
+      outsideOnly: (m) => (map = m),
+    }, deadline);
+  } catch (e) {
+    if (!(e instanceof TooSlow)) throw e;
+  }
+  byUpf.set(upf, map);
+  return map;
+}
 
 /**
  * The wall thicknesses a sheet uses (inches, to ¼), worked out once per sheet: every pair of long
@@ -934,6 +977,34 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     }
   };
   for (const w of walls) block(w);
+  /** What's outside the house (the yard, a porch, a patio — not the garage, behind its door). */
+  const outsideOfHouse = () => {
+    // (Not counting the sheet's border — a frame drawn double around the page would close in the yard.
+    // A border runs nearly the whole way across the drawing, its own way.)
+    const [pw, ph] = sheetSize(segments);
+    const house = new Uint8Array(W * H);
+    for (const w of walls) if (w.s1 - w.s0 < 0.85 * (Math.abs(w.ux) * pw + Math.abs(w.uy) * ph)) block(w, house);
+    // (A garage door — up to 20', something drawn across it — is part of the house's edge: the pieces of
+    // a real wall in line across it closed for telling outside from in, so the garage isn't the yard.)
+    for (let i = 0; i < byLine.length; i++) {
+      const w = byLine[i];
+      if (!anchored(w)) continue;
+      let next: Band | null = null;
+      for (let j = i + 1; j < byLine.length; j++) {
+        const p = byLine[j];
+        if (Math.round(p.ang / DEG) !== Math.round(w.ang / DEG) || Math.abs(p.rho - w.rho) > tMax) break;
+        if (Math.abs(p.rho - w.rho) > Math.max(w.half, p.half) || p.s0 <= w.s1 || !anchored(p)) continue;
+        if (!next || p.s0 < next.s0) next = p;
+      }
+      if (next && next.s0 - w.s1 <= 20 * upf && drawnAlong(w, w.s1, next.s0) >= 0.8 && !crossedBetween(w, w.s1, next.s0))
+        block({ ...w, rho: (w.rho + next.rho) / 2, half: Math.min(w.half, next.half), s0: w.s1 - inch, s1: next.s0 + inch }, house);
+    }
+    return houseOutside(house, W, H, Math.round((4 * upf) / cell));
+  };
+  if (opts.outsideOnly) {
+    opts.outsideOnly({ x0: box.x0, y0: box.y0, cell, W, H, out: outsideOfHouse() });
+    return { ok: false, reason: "open" };
+  }
   const ci = Math.floor((cx - box.x0) / cell);
   const cj = Math.floor((cy - box.y0) / cell);
   if (blocked[cj * W + ci]) return { ok: false, reason: "in-wall" };
@@ -1084,14 +1155,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   let closes = 0;
   while (!fill()) {
     if (opts.closeHouse === false || closes >= 12) return { ok: false, reason: "open" };
-    if (!outsideHouse) {
-      // (Not counting the sheet's border — a frame drawn double around the page would close in the yard.
-      // A border runs nearly the whole way across the drawing, its own way.)
-      const [pw, ph] = sheetSize(segments);
-      const house = new Uint8Array(W * H);
-      for (const w of walls) if (w.s1 - w.s0 < 0.85 * (Math.abs(w.ux) * pw + Math.abs(w.uy) * ph)) block(w, house);
-      outsideHouse = houseOutside(house, W, H, Math.round((4 * upf) / cell));
-    }
+    if (!outsideHouse) outsideHouse = outsideOfHouse();
     if (outsideHouse[cj * W + ci]) return { ok: false, reason: "open" };
     const seal = gapClosing(leak);
     if (!seal) return { ok: false, reason: "open" };
