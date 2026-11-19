@@ -16,6 +16,7 @@ import { usesTakeoffWaste,
   measurementMetrics,
   metricUnit,
   parseArcs,
+  parseHoles,
   parsePoints,
   polylineLength,
   withMemberSize,
@@ -297,6 +298,7 @@ function computeTotals(c: LoadedCondition): ConditionTotals {
     m: {
       points: parsePoints(m.points),
       arcs: parseArcs(m.points),
+      holes: parseHoles(m.points),
       isDeduction: m.isDeduction,
       angle: m.angle,
       pitch: m.pitch,
@@ -312,7 +314,7 @@ function computeTotals(c: LoadedCondition): ConditionTotals {
   // …and the joists other areas of the family hand to this size.
   for (const x of c.bandSplit?.extra ?? [])
     shapes.push({
-      m: { points: [], arcs: [], isDeduction: false, angle: x.angle, pitch: x.pitch, pitch2: null, height: null, door: null, memberLengths: x.lengths },
+      m: { points: [], arcs: [], holes: [], isDeduction: false, angle: x.angle, pitch: x.pitch, pitch2: null, height: null, door: null, memberLengths: x.lengths },
       unitsPerFoot: x.sheet.unitsPerFoot,
       sheet: x.sheet,
     });

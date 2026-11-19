@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { nextInvoiceNumber } from "@/lib/projects";
 import { costCodeLabel } from "@/lib/utils";
 import { invoiceFallbackCodes } from "@/lib/billing-flow";
+import { parseCoDefaults } from "@/lib/change-orders";
 import { CodePick } from "./code-pick";
 import { Card, CardBody, CardHeader, SubmitButton } from "@/components/ui";
 import { saveBilling } from "./actions";
@@ -15,14 +16,15 @@ export default async function InvoiceSettingsPage({ searchParams }: { searchPara
   await requireAdmin();
   const { saved } = await searchParams;
   const [company, next, highest, fallback, codes] = await Promise.all([
-    db.company.findFirst({ select: { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: true, invoiceNextNumber: true, paymentInstructions: true } }),
+    db.company.findFirst({ select: { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: true, invoiceNextNumber: true, paymentInstructions: true, changeOrderDefaults: true } }),
     nextInvoiceNumber(),
     db.invoice.findFirst({ orderBy: { number: "desc" }, select: { number: true } }),
     invoiceFallbackCodes(),
     db.costCode.findMany({ where: { active: true }, orderBy: [{ sortOrder: "asc" }, { code: "asc" }], select: { id: true, code: true, name: true } }),
   ]);
   const codeList = codes.map((x) => ({ id: x.id, label: costCodeLabel(x, " ") }));
-  const c = company ?? { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: "AUTO", invoiceNextNumber: null, paymentInstructions: null };
+  const c = company ?? { autoSelectionCO: true, autoInvoiceCO: true, invoiceNumbering: "AUTO", invoiceNextNumber: null, paymentInstructions: null, changeOrderDefaults: null };
+  const perItem = parseCoDefaults(c.changeOrderDefaults).invoiceLines === "ITEM";
   const box = "flex items-start gap-3 rounded-lg border border-slate-200 p-3 text-sm text-slate-800 has-[:checked]:border-blue-300 has-[:checked]:bg-blue-50/50";
 
   return (
@@ -59,9 +61,34 @@ export default async function InvoiceSettingsPage({ searchParams }: { searchPara
       </Card>
 
       <Card>
+        <CardHeader title="Change orders on invoices" description="How an approved change order is listed when it goes on an invoice — by you or by itself. Its total is the same either way." />
+        <CardBody className="space-y-3">
+          <label className={box}>
+            <input type="radio" name="invoiceLines" value="CODE" defaultChecked={!perItem} className="mt-0.5 h-4 w-4" />
+            <span>
+              <span className="block font-medium">One line per cost code</span>
+              <span className="block text-xs text-slate-500">
+                A change order&apos;s items with the same cost code are added together — a shorter invoice. Two cost codes, two lines.
+              </span>
+            </span>
+          </label>
+          <label className={box}>
+            <input type="radio" name="invoiceLines" value="ITEM" defaultChecked={perItem} className="mt-0.5 h-4 w-4" />
+            <span>
+              <span className="block font-medium">One line per item</span>
+              <span className="block text-xs text-slate-500">
+                Every item on its own line, even two with the same cost code. On the Selections change order, each selection is its own line with the client&apos;s choice.
+              </span>
+            </span>
+          </label>
+          <p className="text-xs text-slate-500">The builder&apos;s fee and sales tax follow each change order: their own lines, or built into the prices, as set on the change order.</p>
+        </CardBody>
+      </Card>
+
+      <Card>
         <CardHeader
           title="Cost codes on invoice lines"
-          description="For you and QuickBooks (each line goes on the item named for its code) — the client's invoice doesn't show them. A change order goes on an invoice one line per cost code. These fill in a line that has no code of its own; any line's code can be changed on the invoice."
+          description="For you and QuickBooks (each line goes on the item named for its code) — the client's invoice doesn't show them. These fill in a line that has no code of its own; any line's code can be changed on the invoice."
         />
         <CardBody className="space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-800">

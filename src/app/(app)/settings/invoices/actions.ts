@@ -7,11 +7,12 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { boolField, str } from "@/lib/utils";
 import { logActivity } from "@/lib/activity";
+import { parseCoDefaults } from "@/lib/change-orders";
 
 /** Settings → Invoices: what flows on by itself, and how invoices are numbered. */
 export const saveBilling = friendly(async function saveBilling(fd: FormData) {
   const admin = await requireAdmin();
-  const company = await db.company.findFirst({ select: { id: true } });
+  const company = await db.company.findFirst({ select: { id: true, changeOrderDefaults: true } });
   if (!company) throw new Error("Set up your company first");
   const next = str(fd, "invoiceNextNumber");
   const n = next ? Math.round(Number(next)) : null;
@@ -27,6 +28,11 @@ export const saveBilling = friendly(async function saveBilling(fd: FormData) {
       invoiceNextNumber: n,
       invoiceDrawCodeId,
       invoiceCoCodeId,
+      // How an approved change order goes on an invoice: one line per cost code (blank) or per item.
+      changeOrderDefaults: JSON.stringify({
+        ...parseCoDefaults(company.changeOrderDefaults),
+        invoiceLines: str(fd, "invoiceLines") === "ITEM" ? "ITEM" : undefined,
+      }),
       ...(fd.has("paymentInstructions") ? { paymentInstructions: String(fd.get("paymentInstructions") ?? "").replace(/\r\n?/g, "\n").trim().slice(0, 5000) || null } : {}),
     },
   });

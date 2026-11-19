@@ -264,7 +264,8 @@ export const SETTINGS: HelpArticle[] = [
         heading: "On the page",
         items: [
           { name: "Selection overages and credits go on a change order", what: "When a client's choice is over or under its allowance, the difference goes on the job's draft \"Selections\" change order (started if needed)." },
-          { name: "Approved change orders go on the next invoice", what: "An approved change order is added to the job's draft invoice (started if needed), one line per cost code. It's never billed twice." },
+          { name: "Approved change orders go on the next invoice", what: "An approved change order is added to the job's draft invoice (started if needed), listed the way you pick below. It's never billed twice." },
+          { name: "Change orders on invoices", what: "How an approved change order is listed on an invoice. **One line per cost code** adds up the change order's items that share a cost code — a shorter invoice. **One line per item** puts every item on its own line, even two with the same cost code; on the Selections change order each selection gets its own line with the client's choice. The total is the same either way, and the builder's fee and sales tax follow how each change order shows them." },
           { name: "Cost codes on invoice lines → Draws and deposits", what: "The cost code a progress draw (percent of contract) gets — for example \"Contract\" or \"Building sale\"." },
           { name: "Cost codes on invoice lines → Change orders", what: "The cost code for change order lines that have none of their own, and for the builder's fee or sales tax when the change order showed them as their own line — for example \"Change order\"." },
           { name: "+ New cost code…", what: "The last choice in either list: type the new code's number (optional) and name, and it's added to your cost codes when you click **Save**." },

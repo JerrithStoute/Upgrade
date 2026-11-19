@@ -37,6 +37,7 @@ import {
   WandSparkles,
   PaintBucket,
   Scissors,
+  Merge as Combine,
   Plus,
   Eraser,
   Search,
@@ -67,6 +68,7 @@ import {
   isUnitType,
   doorSizeCode,
   arcPath,
+  polygonArea,
   shapePath,
   memberThickness,
   parseStockLengths,
@@ -83,6 +85,10 @@ import type { DoorSwing, FillShape } from "./pdf-vectors";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { drawnStud } from "./wall-find";
 import { findWalls } from "@/lib/wall-detect";
+import { cutArea, cutLine, withoutExisting } from "@/lib/deduct";
+
+/** Total length of runs (plan units). */
+const runsLf = (runs: Pt[][]) => runs.reduce((s, r) => s + r.slice(1).reduce((t, q, i) => t + Math.hypot(q[0] - r[i][0], q[1] - r[i][1]), 0), 0);
 import { ROOM_DETECT_VERSION, splitOutlineAlong } from "@/lib/room-detect";
 import { addPoint, breakAt as breakLine, breakOff, deletePiece, pieceAt, nearestEdge as edgeNear, removePoint, type Line } from "@/lib/line-pieces";
 import { looksLikeFloorPlan } from "@/lib/room-detect/sheet-kind";
@@ -197,6 +203,7 @@ type ViewerMeasurement = {
   pitch2?: number | null;
   height?: number | null; // Linear: this line's own wall height (null = the takeoff's)
   arcs?: number[]; // indexes of arc points (the curve passes through them)
+  holes?: Pt[][]; // Areas: the holes deducted out of it
   materialItemId?: string | null; // Doors: which door this marker is
   cased?: boolean | null; // Windows: cased or not (null = cased)
   sizeLocked?: boolean; // span-table joists/rafters: you picked its size yourself
@@ -320,6 +327,7 @@ type ShapeData = {
   pitch2: number | null;
   height?: number | null;
   arcs?: number[];
+  holes?: Pt[][];
   materialItemId?: string | null;
   cased?: boolean | null;
 };
@@ -332,6 +340,7 @@ type ShapePatch = {
   height?: number | null; // Linear: this line's own wall height (null = the takeoff's)
   points?: Pt[];
   arcs?: number[]; // sent with points
+  holes?: Pt[][]; // sent with points: an area's holes (left out = the ones it has)
   materialItemId?: string | null; // Doors: which door
   cased?: boolean | null; // Windows
   sizeLocked?: boolean; // span-table joists/rafters: false = sized by the table again
@@ -581,6 +590,9 @@ export function PlanViewer({
   const scrollRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
   const [saving, startTransition] = useTransition();
+  const savingRef = useRef(saving);
+  savingRef.current = saving;
+  const queuedHistory = useRef<("undo" | "redo")[]>([]);
   // After saves: the server finishes the job's lumber lines and joist sizes in the background;
   // "Saving…" stays up until that's done, then the plan refreshes with the results.
   const [catchingUp, setCatchingUp] = useState(false);
@@ -882,7 +894,7 @@ export function PlanViewer({
   } | null>(null);
   // A shape being moved: shown where it was moved to until the plan's refreshed shapes include the move
   // (`over` is the shape it was saved over; a newer one from the server means the move has arrived).
-  const [overrides, setOverrides] = useState<Map<string, { points: Pt[]; arcs?: number[]; over?: ViewerMeasurement }>>(new Map());
+  const [overrides, setOverrides] = useState<Map<string, { points: Pt[]; arcs?: number[]; holes?: Pt[][]; over?: ViewerMeasurement }>>(new Map());
   // Undo / redo for this sheet. Re-created shapes get new ids; idMap follows them.
   const history = useRef<{ undo: HistoryEntry[]; redo: HistoryEntry[] }>({
     undo: [],
@@ -1087,9 +1099,14 @@ export function PlanViewer({
         ...pending.filter((m) => (m as { sheetId?: string }).sheetId === sheet?.id && !removing.has(m.id) && !measurements.some((x) => x.id === m.id)),
       ].map((m) => {
         // Show a shape where it's being dragged to, or where it was just moved while saving.
-        if (drag?.id === m.id) return { ...m, points: drag.points };
+        if (drag?.id === m.id) {
+          // (Moved whole: its holes go with it.)
+          const dx = drag.mode === "move" ? drag.points[0][0] - drag.startPoints[0][0] : 0;
+          const dy = drag.mode === "move" ? drag.points[0][1] - drag.startPoints[0][1] : 0;
+          return { ...m, points: drag.points, holes: dx || dy ? m.holes?.map((h) => h.map(([x, y]) => [x + dx, y + dy] as Pt)) : m.holes };
+        }
         const moved = overrides.get(m.id);
-        return moved ? { ...m, points: moved.points, arcs: moved.arcs ?? m.arcs } : m;
+        return moved ? { ...m, points: moved.points, arcs: moved.arcs ?? m.arcs, holes: moved.holes ?? m.holes } : m;
       }),
     [measurements, pending, removing, drag, overrides, sheet?.id],
   );
@@ -1447,6 +1464,7 @@ export function PlanViewer({
           pitch2: m.pitch2 ?? null,
           height: m.height ?? null,
           arcs: m.arcs ?? [],
+          holes: m.holes ?? [],
           materialItemId: m.materialItemId ?? null,
           cased: m.cased ?? null,
         }
@@ -1454,8 +1472,13 @@ export function PlanViewer({
   /** Saves a shape (copy / paste, undo of a delete). */
   const saveShape = async (data: ShapeData) => (await createMeasurement({ projectId, ...data })).id;
 
+  /** Measuring with a hidden takeoff turns its eye back on (so what you just drew shows). */
+  const showConds = (ids: (string | null | undefined)[]) =>
+    setHidden((h) => (ids.some((id) => id && h.has(id)) ? new Set([...h].filter((x) => !ids.includes(x))) : h));
+
   /** Saves a new shape (shown right away as pending) and records it for undo. */
   const createShape = (data: ShapeData, track = true, onSaved?: (id: string) => void) => {
+    showConds([data.conditionId]);
     const tempId = `pending-${Math.random().toString(36).slice(2)}`;
     setPending((p) => [
       ...p,
@@ -1469,6 +1492,7 @@ export function PlanViewer({
       try {
         const r = await createMeasurement({ projectId, ...data });
         setPending((p) => p.map((m) => (m.id === tempId ? { ...m, id: r.id, conditionId: r.conditionId ?? m.conditionId, pending: false } : m)));
+        showConds([r.conditionId]);
         if (track) record({ kind: "create", id: r.id, data });
         onSaved?.(r.id);
         // Joists/rafters on a span table: say which size it got (and why).
@@ -1497,8 +1521,11 @@ export function PlanViewer({
   });
 
   /** Saves many new shapes in one trip (shown right away), undone together. */
+  /** Walls Find walls added in the last few seconds (before they show in `shapes`): never added again. */
+  const justAdded = useRef<{ sheetId: string; points: Pt[]; at: number }[]>([]);
   const createMany = (list: ShapeData[], label: string) => {
     if (!list.length) return;
+    showConds(list.map((d) => d.conditionId));
     const temps = list.map((d) => ({ ...d, id: `pending-${Math.random().toString(36).slice(2)}`, pending: true }));
     setPending((p) => [...p, ...temps]);
     startTransition(async () => {
@@ -1519,24 +1546,37 @@ export function PlanViewer({
    * Swaps one shape for others (an area split in two, a wall piece broken off), undone together.
    * `pick`: which of the new shapes is picked afterwards (none if left out).
    */
-  const replaceShape = (id: string, parts: { points: Pt[]; arcs: number[] }[], label: string, done: string, pick?: number) => {
+  const replaceShape = (id: string, parts: { points: Pt[]; arcs: number[]; holes?: Pt[][] }[], label: string, done: string, pick?: number) => {
     const m = shapes.find((x) => x.id === id);
     const data = m ? shapeData(m) : null;
     if (!m || !data) return;
+    replaceShapes(
+      [id],
+      parts.map((pt) => ({ ...data, points: pt.points, arcs: pt.arcs, holes: pt.holes ?? [] })),
+      label,
+      done,
+      pick,
+    );
+  };
+
+  /** Swaps shapes for others (a deduction cut out of the ones under it), undone together. */
+  const replaceShapes = (removeIds: string[], added: ShapeData[], label: string, done: string, pick?: number) => {
+    const list = removeIds.map((id) => shapes.find((x) => x.id === id)).filter((m): m is ViewerMeasurement => !!m && !m.pending);
+    const removed = list.map(shapeData).filter((d): d is ShapeData => !!d);
+    if (list.length !== removeIds.length || removed.length !== list.length) return;
     setEdgeChip(null);
     setPointChip(null);
-    const added = parts.map((pt) => ({ ...data, points: pt.points, arcs: pt.arcs }));
-    setRemoving((r) => new Set(r).add(id));
+    setRemoving((r) => new Set([...r, ...removeIds]));
     const temps = added.map((d) => ({ ...d, id: `pending-${Math.random().toString(36).slice(2)}`, pending: true }));
     setPending((p) => [...p, ...temps]);
     setSelectedId(null);
     startTransition(async () => {
       try {
-        await deleteMeasurements({ projectId, ids: [id] });
+        await deleteMeasurements({ projectId, ids: removeIds });
         const { ids } = added.length ? await createShapes({ projectId, shapes: added }) : { ids: [] as string[] };
         const real = new Map(temps.map((t, i) => [t.id, ids[i]]));
-        setPending((p) => p.filter((x) => x.id !== id).map((x) => (real.has(x.id) ? { ...x, id: real.get(x.id)!, pending: false } : x)));
-        record({ kind: "replace", label, removedIds: [id], removed: [data], addedIds: ids, added });
+        setPending((p) => p.filter((x) => !removeIds.includes(x.id)).map((x) => (real.has(x.id) ? { ...x, id: real.get(x.id)!, pending: false } : x)));
+        record({ kind: "replace", label, removedIds: removeIds, removed, addedIds: ids, added });
         if (pick !== undefined && ids[pick]) setSelectedId(ids[pick]);
         setFlash(done);
       } catch (e) {
@@ -1544,7 +1584,7 @@ export function PlanViewer({
         setPending((p) => p.filter((x) => !gone.has(x.id)));
         setRemoving((r) => {
           const n = new Set(r);
-          n.delete(id);
+          for (const id of removeIds) n.delete(id);
           return n;
         });
         setError(actionMessage(e, `Could not save ${label}`));
@@ -1552,21 +1592,66 @@ export function PlanViewer({
     });
   };
 
+  /**
+   * Deduct: `points` (drawn, found, or a shape of its own — `selfId`, which goes) cut out of this takeoff's
+   * shapes under it on this sheet. Nothing of the deduction is kept: the areas lose that part (a hole when it's
+   * all inside), the wall lines that stretch. Undo puts it all back.
+   */
+  const deductWith = (cond: ViewerCondition, points: Pt[], arcs: number[] = [], selfId?: string) => {
+    if (!sheet) return;
+    const isArea = cond.type === "AREA";
+    const cut = arcPath(points, arcs, isArea);
+    const under = shapes.filter((m) => m.conditionId === cond.id && m.id !== selfId && !m.isDeduction && !m.pending);
+    const removeIds: string[] = [];
+    const added: ShapeData[] = [];
+    for (const m of under) {
+      const data = shapeData(m);
+      if (!data) continue;
+      if (isArea) {
+        const outline = arcPath(m.points, m.arcs, true);
+        const left = cutArea(outline, m.holes ?? [], cut);
+        if (!left) continue;
+        removeIds.push(m.id);
+        // Only a hole cut (its outline's the same): it keeps its own points and curves.
+        const same = left.length === 1 && Math.abs(polygonArea(left[0].points) - polygonArea(outline)) <= polygonArea(outline) * 1e-6;
+        for (const part of left)
+          added.push(same ? { ...data, holes: part.holes } : { ...data, points: part.points, arcs: [], holes: part.holes });
+      } else {
+        const left = cutLine(arcPath(m.points, m.arcs, false), cut, SNAP_PX / 2 / zoom);
+        if (!left) continue;
+        removeIds.push(m.id);
+        for (const run of left) added.push({ ...data, points: run, arcs: [], holes: [] });
+      }
+    }
+    if (!removeIds.length) return setFlash(`Nothing of ${cond.name} under it to deduct from`);
+    if (selfId) removeIds.push(selfId);
+    replaceShapes(removeIds, added, "a deduction", isArea ? "Deducted — Ctrl+Z to take it back" : "Wall taken out there — Ctrl+Z to take it back");
+  };
+
   /** Splits a picked area in two along the line clicked (Find area found two rooms as one, say). */
   const splitArea = (id: string, path: Pt[]) => {
     const m = shapes.find((x) => x.id === id);
     if (!m) return setSplitting(null);
-    const parts = splitOutlineAlong(m.points, path);
+    const parts = splitOutlineAlong(m.points, path, SNAP_PX / 2 / zoom);
     if (!parts)
       return setError("That line doesn't cut the area in two — start and end it at the area's edges (corners between inside the area), then right-click.");
     setError(null);
     setSplitting(null);
     replaceShape(
       id,
-      parts.map((pts) => ({ points: pts, arcs: [] })),
+      // (A hole goes with the part it's in.)
+      parts.map((pts) => ({ points: pts, arcs: [], holes: (m.holes ?? []).filter((h) => insidePoly(pts, centroid(h))) })),
       "a split",
       "Split in two — click either part to delete it or change it",
     );
+  };
+
+  /** Whether a point is inside an outline. */
+  const insidePoly = (pts: Pt[], [x, y]: Pt) => {
+    let c = false;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++)
+      if (pts[i][1] > y !== pts[j][1] > y && x < ((pts[j][0] - pts[i][0]) * (y - pts[i][1])) / (pts[j][1] - pts[i][1]) + pts[i][0]) c = !c;
+    return c;
   };
 
   /** A line shape as a Line (its points and curve points). */
@@ -1611,6 +1696,62 @@ export function PlanViewer({
     patchShape(id, removePoint(lineOf(m), i));
   };
 
+  /**
+   * What Merge does at point `i` of a shape, when another point sits right on it: two points of this shape
+   * (one right after the other → one point; else they're made one spot and move together), or the end of
+   * another line of the same takeoff on this line's end (→ one line).
+   */
+  const mergeAt = (m: ViewerMeasurement, i: number): { kind: "dup"; j: number } | { kind: "join"; other: ViewerMeasurement; otherEnd: number } | null => {
+    const c = condById.get(m.conditionId);
+    if (!c || isCountType(c.type) || m.pending) return null;
+    const p = m.points[i];
+    const near = (q: Pt) => dist(p, q) * zoom <= 3;
+    const n = m.points.length;
+    const closed = !isLineType(c.type);
+    for (let j = 0; j < n; j++) {
+      if (j === i || !near(m.points[j])) continue;
+      // (A line's two ends on one spot already move together — nothing to merge.)
+      if (!closed && ((i === 0 && j === n - 1) || (j === 0 && i === n - 1)) && dist(p, m.points[j]) === 0) continue;
+      if (dist(p, m.points[j]) === 0 && Math.abs(i - j) !== 1 && !(closed && Math.abs(i - j) === n - 1)) continue;
+      return { kind: "dup", j };
+    }
+    if (!isLineType(c.type) || (i !== 0 && i !== n - 1)) return null;
+    for (const o of shapes) {
+      if (o.id === m.id || o.pending || o.conditionId !== m.conditionId || o.points.length < 2) continue;
+      if (near(o.points[0])) return { kind: "join", other: o, otherEnd: 0 };
+      if (near(o.points[o.points.length - 1])) return { kind: "join", other: o, otherEnd: o.points.length - 1 };
+    }
+    return null;
+  };
+
+  /** Merge (see mergeAt). */
+  const mergePoint = (id: string, i: number) => {
+    const m = shapes.find((x) => x.id === id);
+    const what = m ? mergeAt(m, i) : null;
+    setPointChip(null);
+    if (!m || !what) return;
+    if (what.kind === "dup") {
+      const { j } = what;
+      const n = m.points.length;
+      const closed = !isLineType(condById.get(m.conditionId)?.type ?? "");
+      // One right after the other: one of them goes.
+      if (Math.abs(i - j) === 1 || (closed && Math.abs(i - j) === n - 1)) return patchShape(id, removePoint(lineOf(m), i));
+      // Apart along the shape (a corner it comes back to): the same spot, so they move as one.
+      return patchShape(id, { points: m.points.map((q, k) => (k === j ? m.points[i] : q)) });
+    }
+    // Two lines end to end: one line, the meeting point once.
+    const { other, otherEnd } = what;
+    const a = i === 0 ? [...m.points].reverse() : m.points;
+    const aArcs = (m.arcs ?? []).map((k) => (i === 0 ? m.points.length - 1 - k : k));
+    const b = otherEnd === 0 ? other.points : [...other.points].reverse();
+    const bArcs = (other.arcs ?? []).map((k) => (otherEnd === 0 ? k : other.points.length - 1 - k));
+    const points = [...a, ...b.slice(1)];
+    const arcs = [...aArcs, ...bArcs.filter((k) => k > 0).map((k) => k + a.length - 1)].sort((x, y) => x - y);
+    const data = shapeData(m);
+    if (!data) return;
+    replaceShapes([m.id, other.id], [{ ...data, points, arcs, holes: [] }], "a merge", "Merged into one line", 0);
+  };
+
   /** Adds a point on the picked shape's edge, where it was clicked. */
   const addShapePoint = (id: string, edge: number, at: Pt) => {
     const m = shapes.find((x) => x.id === id);
@@ -1622,6 +1763,8 @@ export function PlanViewer({
   const save = useCallback(
     (cond: ViewerCondition, points: Pt[], framingAngle?: number, arcs: number[] = []) => {
       if (!sheet) return;
+      // Deduct on: cut out of what's under it, not saved as a shape of its own.
+      if (deduct && (cond.type === "AREA" || cond.type === "LINEAR")) return deductWith(cond, points, arcs);
       createShape(shapeFor(cond, sheet.id, points, framingAngle, arcs));
     },
     // createShape / shapeFor are recreated each render; save only needs their latest versions.
@@ -1689,6 +1832,7 @@ export function PlanViewer({
         if (k === "pitch" || k === "pitch2" || k === "height") prev[k] = shape[k] ?? null;
         else if (k === "points") prev.points = shape.points;
         else if (k === "arcs") prev.arcs = shape.arcs ?? [];
+        else if (k === "holes") prev.holes = shape.holes ?? [];
         else if (k === "materialItemId") prev.materialItemId = shape.materialItemId ?? null;
         else if (k === "cased") prev.cased = shape.cased ?? null;
         else if (k === "angle") prev.angle = shape.angle;
@@ -1697,7 +1841,7 @@ export function PlanViewer({
         else if (k === "sizeLocked") prev.sizeLocked = !!shape.sizeLocked;
       }
     }
-    if (patch.points) setOverrides((o) => new Map(o).set(id, { points: patch.points!, arcs: patch.arcs }));
+    if (patch.points) setOverrides((o) => new Map(o).set(id, { points: patch.points!, arcs: patch.arcs, holes: patch.holes }));
     startTransition(async () => {
       try {
         const r = await updateMeasurement({ projectId, id, ...patch });
@@ -1793,6 +1937,7 @@ export function PlanViewer({
             conditionId: r.conditionId,
             points: r.points,
             arcs: r.arcs,
+            holes: r.holes,
             isDeduction: r.isDeduction,
             angle: r.angle,
             pitch: r.pitch,
@@ -2020,12 +2165,33 @@ export function PlanViewer({
       : [];
 
   const runHistory = (direction: "undo" | "redo") => {
+    // Still saving (the last shape, or the last undo): this one waits its turn — undoing before a
+    // save is back would undo the step before it, or leave the shape on screen.
+    if (savingRef.current) {
+      queuedHistory.current.push(direction);
+      return;
+    }
     const from = direction === "undo" ? history.current.undo : history.current.redo;
     const entry = from.pop();
     if (!entry) return;
     syncHistory();
     setSelectedId(null);
     setMulti([]);
+    // The shapes this takes away go from the screen now (back if it fails).
+    const undo = direction === "undo";
+    const going = (
+      entry.kind === "create" ? (undo ? [entry.id] : [])
+      : entry.kind === "delete" ? (undo ? [] : [entry.id])
+      : entry.kind === "createMany" || entry.kind === "addMany" ? (undo ? entry.ids : [])
+      : entry.kind === "deleteMany" ? (undo ? [] : entry.ids)
+      : entry.kind === "replace" ? (undo ? entry.addedIds : entry.removedIds)
+      : []
+    ).map(resolveId);
+    if (going.length) {
+      const g = new Set(going);
+      setRemoving((r) => new Set([...r, ...going]));
+      setPending((p) => p.filter((m) => !g.has(m.id)));
+    }
     startTransition(async () => {
       try {
         if (entry.kind === "createMany") {
@@ -2099,12 +2265,24 @@ export function PlanViewer({
           `${direction === "undo" ? "Undid" : "Redid"} ${entry.kind === "create" ? "adding a shape" : entry.kind === "delete" ? "a delete" : "an edit"}`,
         );
       } catch (e) {
+        if (going.length)
+          setRemoving((r) => {
+            const n = new Set(r);
+            for (const id of going) n.delete(id);
+            return n;
+          });
         setError(actionMessage(e, `Could not ${direction}`));
       } finally {
         syncHistory();
       }
     });
   };
+  // Undos pressed while saving, one at a time once it's done.
+  useEffect(() => {
+    if (!saving && queuedHistory.current.length) runHistory(queuedHistory.current.shift()!);
+    // runHistory is recreated each render; the latest is what we want.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saving]);
 
   const copySelected = () => {
     if (!selected || selected.pending) return;
@@ -2124,6 +2302,7 @@ export function PlanViewer({
       ...c,
       sheetId: sheet.id,
       points: c.points.map(([x, y]) => [x + dx, y + dy] as Pt),
+      holes: c.holes?.map((h) => h.map(([x, y]) => [x + dx, y + dy] as Pt)),
     });
   };
   /**
@@ -2247,6 +2426,10 @@ export function PlanViewer({
         setClearing(false);
       } else if (e.key === "Enter" && splitting) {
         if (splitting.pts.length >= 2) splitArea(splitting.id, splitting.pts);
+      } else if ((e.key === "Backspace" || e.key === "Delete") && splitting) {
+        // Splitting: takes back the last split click — never the area.
+        e.preventDefault();
+        setSplitting({ ...splitting, pts: splitting.pts.slice(0, -1) });
       } else if (e.key === "Enter" && draft.length) {
         finishDraft(draft);
       } else if ((e.key === "Backspace" || e.key === "Delete") && draft.length) {
@@ -2312,6 +2495,8 @@ export function PlanViewer({
     upperPicking,
     winList,
     doorList,
+    // (Splitting changes what Enter / Backspace do — without it here, Backspace deleted the area being split.)
+    splitting,
   ]);
 
   // --- Framing direction chooser ---------------------------------------------------------
@@ -2371,12 +2556,25 @@ export function PlanViewer({
       const handle = target.closest("[data-handle]");
       const onShape = target.closest(`[data-shape="${selected.id}"]`);
       if (handle || onShape) {
-        e.preventDefault();
         const start = toPage(e.clientX, e.clientY);
+        // Areas and lines are reshaped by their points, never dragged whole (a missed point grab dragged the whole
+        // area off). A press near a point grabs that point; anywhere else on the shape is just a click.
+        const st = condById.get(selected.conditionId)?.type ?? "";
+        const pointsOnly = st === "AREA" || st === "FRAMING" || isLineType(st);
+        let index = handle ? Number(handle.getAttribute("data-handle")) : -1;
+        if (index < 0 && pointsOnly) {
+          let bd = 14 / zoom;
+          selected.points.forEach((q, i) => {
+            const d = Math.hypot(q[0] - start[0], q[1] - start[1]);
+            if (d < bd) (bd = d), (index = i);
+          });
+          if (index < 0) return;
+        }
+        e.preventDefault();
         setDrag({
           id: selected.id,
-          mode: handle ? "vertex" : "move",
-          index: handle ? Number(handle.getAttribute("data-handle")) : -1,
+          mode: index >= 0 ? "vertex" : "move",
+          index,
           start,
           startPoints: selected.points,
           points: selected.points,
@@ -2388,7 +2586,7 @@ export function PlanViewer({
       }
     }
     // Select: drag on the plan (not on a shape) to box shapes in. Shift+drag adds to the ones picked.
-    if (tool === "select" && e.button === 0 && !panning && !dirFor && e.target === svgRef.current) {
+    if (tool === "select" && e.button === 0 && !panning && !dirFor && !splitting && e.target === svgRef.current) {
       e.preventDefault();
       const p = toPage(e.clientX, e.clientY);
       setBoxSel({ a: p, b: p, add: e.shiftKey });
@@ -2422,7 +2620,8 @@ export function PlanViewer({
   const onPointerMove = (e: React.PointerEvent) => {
     const pan = panRef.current;
     if (pan && scrollRef.current) {
-      if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > 3) pan.moved = true;
+      // (A right-click's hand shake isn't a pan: it still finishes the shape / the split.)
+      if (Math.abs(e.clientX - pan.x) + Math.abs(e.clientY - pan.y) > (pan.right ? 8 : 3)) pan.moved = true;
       // Moved by how far the pointer went since last time (not from where the drag started), so a
       // wheel zoom gliding at the same moment adds to it instead of being yanked back.
       const dx = e.clientX - pan.lastX;
@@ -2466,7 +2665,9 @@ export function PlanViewer({
         const hit = magnet(raw, drag.id);
         setSnapHit(hit);
         const p = hit?.point ?? raw;
-        points = drag.startPoints.map((q, i) => (i === drag.index ? p : q));
+        // (Points of the shape on the same spot — merged — move as one.)
+        const at = drag.startPoints[drag.index];
+        points = drag.startPoints.map((q, i) => (i === drag.index || (q[0] === at[0] && q[1] === at[1]) ? p : q));
       } else {
         const dx = raw[0] - drag.start[0];
         const dy = raw[1] - drag.start[1];
@@ -2533,7 +2734,12 @@ export function PlanViewer({
     if (drag) {
       if (drag.moved) {
         suppressClick.current = true;
-        patchShape(drag.id, { points: drag.points }, { points: drag.startPoints });
+        const m = shapes.find((x) => x.id === drag.id);
+        const dx = drag.points[0][0] - drag.startPoints[0][0], dy = drag.points[0][1] - drag.startPoints[0][1];
+        // Moved whole, an area's holes go with it.
+        if (drag.mode === "move" && m?.holes?.length)
+          patchShape(drag.id, { points: drag.points, holes: m.holes.map((h) => h.map(([x, y]) => [x + dx, y + dy] as Pt)) }, { points: drag.startPoints, holes: m.holes });
+        else patchShape(drag.id, { points: drag.points }, { points: drag.startPoints });
         setEdgeChip(null);
         setPointChip(null);
       } else if (drag.mode === "vertex") {
@@ -2649,17 +2855,31 @@ export function PlanViewer({
         );
       }
       setError(null);
+      // A wall is never counted twice: what's already measured on this sheet (any wall takeoff) is left out — and
+      // what a click a moment ago added, before it shows (a double-click, two quick clicks).
+      const inch = unitsPerFoot / 12;
+      const now = Date.now();
+      justAdded.current = justAdded.current.filter((j) => now - j.at < 3000);
+      const existing = [
+        ...shapes.filter((m) => !m.isDeduction && condById.get(m.conditionId)?.type === "WALL").map((m) => m.points),
+        ...justAdded.current.filter((j) => j.sheetId === sheet.id).map((j) => j.points),
+      ];
+      const runs = withoutExisting(r.runs as Pt[][], existing, (r.thicknessIn / 2 + 1.5) * inch, 6 * inch);
+      if (!runs.length) return setFlash("Those walls are already measured — nothing added.");
+      for (const run of runs) justAdded.current.push({ sheetId: sheet.id, points: run, at: now });
+      const lf = runsLf(runs) / unitsPerFoot;
+      const skipped = r.lengthFt - lf > 0.5 ? ` (${num(r.lengthFt - lf)} lf already measured, left out)` : "";
       // Added right away — each wall on its own, undone together (Ctrl+Z); click one + Delete to drop it.
       createMany(
-        r.runs.map((run) => shapeFor(active, sheet.id, run as Pt[])),
-        `adding ${r.runs.length} walls`,
+        runs.map((run) => shapeFor(active, sheet.id, run)),
+        `adding ${runs.length} walls`,
       );
       // Drawn a different size than this takeoff (2x6 walls, a 2x4 takeoff): said, so it can be undone.
       const drawnAs = drawnStud(r.thicknessIn);
       const takeoffStud = active.memberSize?.match(/2\s*x\s*(4|6|8|10|12)/i)?.[1];
       const mismatch =
         drawnAs && takeoffStud && drawnAs !== `2x${takeoffStud}` ? ` — drawn like ${drawnAs}, this takeoff is ${active.memberSize}. Wrong takeoff? Ctrl+Z` : "";
-      setFlash(`Added ${r.runs.length} ${r.kind} wall${r.runs.length === 1 ? "" : "s"} · ${num(r.lengthFt)} lf${mismatch}`);
+      setFlash(`Added ${runs.length} ${r.kind} wall${runs.length === 1 ? "" : "s"} · ${num(lf)} lf${skipped}${mismatch}`);
       return;
     }
     if (tool === "findarea") {
@@ -2710,6 +2930,37 @@ export function PlanViewer({
             );
           }
           setError(null);
+          if (isDeduction && cond.type === "AREA") {
+            void logAreaFind({ ...log, ok: true, areaSf: r.areaSf, outline: r.outline });
+            return deductWith(cond, r.outline);
+          }
+          // Never measured twice: what this takeoff already has on the sheet is left out of the room.
+          let pieces: { points: Pt[]; holes: Pt[][] }[] = [{ points: r.outline, holes: [] }];
+          let cut = false;
+          for (const m of shapes) {
+            if (m.isDeduction || m.conditionId !== cond.id || m.points.length < 3) continue;
+            const next: typeof pieces = [];
+            for (const p of pieces) {
+              const c = cutArea(p.points, p.holes, m.points);
+              if (c) cut = true;
+              next.push(...(c ?? [p]));
+            }
+            pieces = next;
+          }
+          if (cut) {
+            const sf = (p: { points: Pt[]; holes: Pt[][] }) =>
+              (polygonArea(p.points) - p.holes.reduce((s, h) => s + polygonArea(h), 0)) / (unitsPerFoot * unitsPerFoot);
+            // (Slivers along the shared walls aren't rooms.)
+            pieces = pieces.filter((p) => sf(p) >= 2);
+            void logAreaFind({ ...log, ok: true, areaSf: r.areaSf, outline: r.outline });
+            if (!pieces.length) return setFlash(`That room is already measured in ${cond.name} — nothing added.`);
+            const added = pieces.reduce((s, p) => s + sf(p), 0);
+            createMany(
+              pieces.map((p) => ({ ...shapeFor(cond, forSheet, p.points), holes: p.holes })),
+              "adding an area",
+            );
+            return setFlash(`Added ${num(added)} sf (${num(r.areaSf - added)} sf already measured in ${cond.name}, left out) — Ctrl+Z to take it back`);
+          }
           createShape(
             shapeFor(cond, forSheet, r.outline),
             true,
@@ -3238,7 +3489,7 @@ export function PlanViewer({
       },
       style: {
         // Joist areas are clicked for their bays and breaks: a plain pointer, not the move cross.
-        cursor: tool === "select" ? (isSel && c.type !== "FRAMING" ? "move" : "pointer") : undefined,
+        cursor: tool === "select" ? (isSel && c.type !== "FRAMING" && c.type !== "AREA" && !isLineType(c.type) ? "move" : "pointer") : undefined,
       },
       opacity: m.pending ? 0.5 : 1,
     };
@@ -3462,6 +3713,18 @@ export function PlanViewer({
             strokeOpacity={ownShowing ? 0.9 : 0.35}
             strokeWidth={ownShowing ? (isSel ? 4 : 1.5) : 1}
             strokeDasharray={ownShowing ? undefined : "4 4"}
+            strokeLinejoin="round"
+            {...stroke}
+          />
+        ) : ownShowing && m.holes?.length ? (
+          // Holes deducted out of it: not shaded, outlined like its edge.
+          <path
+            d={[shapePath(c.type, m), ...m.holes].map((r) => `M${r.map((q) => q.join(" ")).join("L")}Z`).join("")}
+            fillRule="evenodd"
+            fill={color}
+            fillOpacity={0.28}
+            stroke={color}
+            strokeWidth={isSel ? 4 : 2}
             strokeLinejoin="round"
             {...stroke}
           />
@@ -4152,7 +4415,7 @@ export function PlanViewer({
               </strong>
             )}
             {tool === "select" && selected
-              ? "Drag a point or the shape to move it · double-click an edge to add a point · double-click a point to curve or straighten it · right-click a point to remove it · Ctrl+C / Ctrl+V / Ctrl+D copy, paste, duplicate · Ctrl+Z undo."
+              ? "Drag a point to move it · double-click an edge to add a point · double-click a point to curve or straighten it · right-click a point to remove it · Ctrl+C / Ctrl+V / Ctrl+D copy, paste, duplicate · Ctrl+Z undo."
               : tool === "select"
                 ? "Click a shape to pick it · drag a box on the plan to pick every shape inside it (Shift adds more) · Delete removes them. Right-drag (or hold Space) to pan. Ctrl+Z undoes."
                 : "Pick a takeoff on the left, then Measure. Scroll to zoom; right-drag (or hold Space) to pan. Right-click finishes a shape. Ctrl+Z undoes."}
@@ -5091,9 +5354,20 @@ export function PlanViewer({
                     if (pointChip && pointChip.id === selected.id && selected.points[pointChip.index]) {
                       const i = pointChip.index;
                       const canBreak = line && i > 0 && i < selected.points.length - 1 && !(selected.arcs ?? []).includes(i);
+                      const merge = mergeAt(selected, i);
                       return place(
                         selected.points[i],
                         <>
+                          {merge ? (
+                            <button
+                              type="button"
+                              className={btn}
+                              title={merge.kind === "join" ? "One line from these two, this point once" : "The two points here as one"}
+                              onClick={() => mergePoint(selected.id, i)}
+                            >
+                              <Combine className="h-3.5 w-3.5" /> Merge
+                            </button>
+                          ) : null}
                           {canBreak ? (
                             <button
                               type="button"
@@ -6011,10 +6285,11 @@ export function PlanViewer({
                     type="button"
                     size="sm"
                     variant="secondary"
-                    onClick={() => patchShape(sel.m.id, { isDeduction: !sel.m.isDeduction })}
+                    // A deduction from before (drawn as its own shape): back to an addition. Otherwise: cut out of what's under it.
+                    onClick={() => (sel.m.isDeduction ? patchShape(sel.m.id, { isDeduction: false }) : sel.c && deductWith(sel.c, sel.m.points, sel.m.arcs, sel.m.id))}
                     disabled={!!sel.m.pending}
                   >
-                    <Minus className="h-3.5 w-3.5" /> {sel.m.isDeduction ? "Make addition" : "Make deduction"}
+                    <Minus className="h-3.5 w-3.5" /> {sel.m.isDeduction ? "Make addition" : "Deduct it"}
                   </Button>
                 ) : null}
                 {/* Duplicate is Ctrl+D; this spot is for giving one part of a takeoff its own items. */}

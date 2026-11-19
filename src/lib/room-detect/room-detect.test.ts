@@ -249,6 +249,21 @@ describe("room finder", () => {
     // Two clicks: a straight cut; a corner outside the area: no split.
     assert.ok(splitOutlineAlong(sq, [[40, -10], [40, 60]]));
     assert.equal(splitOutlineAlong(sq, [[40, 5], [40, 80], [60, 45]]), null);
+    // Two clicks on corners / the inside corner of an L: split, no point left twice.
+    const L: Pt[] = [
+      [0, 0],
+      [100, 0],
+      [100, 40],
+      [40, 40],
+      [40, 100],
+      [0, 100],
+    ];
+    const l = splitOutlineAlong(L, [[40, 40], [40, 0]]);
+    assert.ok(l);
+    assert.deepEqual(l.map((p) => Math.round(area(p) * 144)).sort((a, b) => a - b), [2400, 4000]);
+    const d = splitOutlineAlong(sq, [[0, 0], [100, 50]]);
+    assert.ok(d);
+    assert.deepEqual(d.map((p) => p.length), [3, 3]);
   });
 
   it("finds the dimension lines and their ticks (for auto-count to leave out), not the walls", () => {

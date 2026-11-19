@@ -105,7 +105,10 @@ console.log(
 if (differ.length) {
   console.log(differ.join("\n"));
   if (process.argv.includes("--accept")) {
-    writeFileSync(ACCEPTED, JSON.stringify({ ...accepted, ...toAccept }, null, 1));
-    console.log(`Accepted those ${differ.length} as changed on purpose.`);
+    // --only=<text>: accept just the rooms whose line has that text (e.g. one plan), not every one different.
+    const only = process.argv.find((a) => a.startsWith("--only="))?.slice(7);
+    const ids = Object.keys(toAccept).filter((_, i) => !only || differ[i].includes(only));
+    writeFileSync(ACCEPTED, JSON.stringify({ ...accepted, ...Object.fromEntries(ids.map((id) => [id, toAccept[id]])) }, null, 1));
+    console.log(`Accepted ${ids.length} of those ${differ.length} as changed on purpose.`);
   } else process.exitCode = 1;
 }

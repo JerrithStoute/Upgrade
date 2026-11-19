@@ -40,6 +40,7 @@ import {
   pieceLengthFromName,
   arcPath,
   parseArcs,
+  parseHoles,
   parsePoints,
   pointsJson,
   polylineLength,
@@ -108,6 +109,23 @@ describe("areas, lines and counts", () => {
 
   it("deductions subtract", () => {
     assert.equal(measurementMetrics(cond({ type: "AREA" }), shape(ROOM, { isDeduction: true }), UPF).area, -240);
+  });
+
+  it("a hole deducted out of an area isn't counted, and is kept with it", () => {
+    // 20' x 12' room, a 4' x 3' stair opening cut out of it.
+    const hole: Pt[] = [
+      [24, 24],
+      [72, 24],
+      [72, 60],
+      [24, 60],
+    ];
+    const m = measurementMetrics(cond({ type: "AREA" }), shape(ROOM, { holes: [hole] }), UPF);
+    assert.equal(m.area, 228);
+    assert.equal(m.perimeter, 64 + 14);
+    const json = pointsJson(ROOM, [], [hole]);
+    assert.deepEqual(parsePoints(json), ROOM);
+    assert.deepEqual(parseHoles(json), [hole]);
+    assert.deepEqual(parseHoles(pointsJson(ROOM)), []);
   });
 
   it("pitched area", () => {

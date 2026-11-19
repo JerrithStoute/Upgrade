@@ -42,6 +42,7 @@
     "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^6.3.289",
     "pg": "^8.23.1",
+    "polygon-clipping": "^0.15.7",
     "prisma": "^6.19.3",
     "qrcode": "^1.5.4",
     "react": "19.2.8",

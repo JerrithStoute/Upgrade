@@ -18,7 +18,7 @@
 import { DEG, bucketOf, distToSeg, grid, toLine, type Line, type Pt } from "../wall-detect";
 
 /** Which rules the room finder runs: saved with each Find area click (AreaFindLog). Change it with them. */
-export const ROOM_DETECT_VERSION = "2026-11-13a";
+export const ROOM_DETECT_VERSION = "2026-11-19a";
 
 export type RoomFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -602,7 +602,27 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   const filledBands = wallFill ? filledAll : filledAll.filter((w) => w.s1 - w.s0 >= 2 * upf || tiedToFilled(w));
   const lengthOf = (xs: Band[]) => xs.filter((w) => w.s1 - w.s0 >= upf).reduce((n, w) => n + (w.s1 - w.s0), 0);
   const filledLength = lengthOf(filledBands);
-  const heavy = filledLength >= 20 * upf && (!!wallFill || filledLength >= 0.25 * lengthOf(bands));
+  let heavy = filledLength >= 20 * upf && (!!wallFill || filledLength >= 0.25 * lengthOf(bands));
+  // (Only the outside walls drawn hatched — the inside ones plain double lines, more of them than the hatched: the
+  // plain ones are walls too, not cabinets. A plan that hatches every wall has few plain pairs at wall thickness.
+  // Likewise a fill color in only some walls — Derouen, 165' filled of 6,700': not the plan's wall fill.)
+  let mixed = false;
+  if (heavy) {
+    const bk = (w: Band) => Math.round(((2 * w.half) / inch) * 4) / 4;
+    const { used } = sheetWallThicknesses(segments, upf, deadline);
+    // (Plain pairs as thick as the hatched walls themselves — the thicknesses that carry a good share of the
+    // hatched length. Lormand fills its walls at 3½" and 5½" and has plenty of plain pairs at other spacings —
+    // cabinets, trim: those don't count.)
+    const fillBy = new Map<number, number>();
+    for (const w of filledBands) fillBy.set(bk(w), (fillBy.get(bk(w)) ?? 0) + (w.s1 - w.s0));
+    const wallT = [...fillBy].filter(([, n]) => n >= 0.15 * filledLength).map(([t]) => t);
+    const plain = bands.filter((w) => !filledAll.includes(w) && w.s1 - w.s0 >= 2 * upf && used.some((t) => Math.abs(bk(w) - t) <= 0.375) && wallT.some((t) => Math.abs(bk(w) - t) <= 0.375));
+    if (lengthOf(plain) > filledLength) (heavy = false), (mixed = true);
+  }
+  // (Hatched walls on a plan that draws its other walls plain: each hatched piece is still a wall the way it is on a
+  // plan that hatches them all — its loose ends closed to the next piece, short bits included.)
+  const hatched = new Set(mixed ? filledAll : []);
+  const asHeavy = (w: Band) => heavy || hatched.has(w);
   if (heavy) bands.splice(0, bands.length, ...filledBands);
   else {
     // A plan that draws its walls as plain double lines draws them at a few set thicknesses — 3½" (a
@@ -765,7 +785,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       }
     }
     const bridge = (to: Band) => bridges.push({ ...w, rho: (w.rho + to.rho) / 2, half: Math.min(w.half, to.half), s0: w.s1 - inch, s1: to.s0 + inch });
-    if (heavy) {
+    if (asHeavy(w)) {
       // (Not through another wall: pieces in line on either side of a wall that crosses between them
       // are two rooms' walls, not one wall with an opening.)
       // (Longer — up to 40' — where windows and doors are drawn across most of it: a wall of glass.)
@@ -872,7 +892,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       // words are drawn as lines, a letter's arm comes off its spine (an E) — it isn't a wall.
       const other = dir > 0 ? w.s0 : w.s1;
       // (On a plan that fills its walls, every filled piece is a wall.)
-      if (meets(w, end) || (!heavy && !(meets(w, other, true) || runsOn(w, other, true) || inLineBeyond(w, other, -dir, true) || stairSide.has(w)))) continue;
+      if (meets(w, end) || (!asHeavy(w) && !(meets(w, other, true) || runsOn(w, other, true) || inLineBeyond(w, other, -dir, true) || stairSide.has(w)))) continue;
       const reachDoor = maxDoor;
       let hit = Infinity;
       for (const v of nearBy(ex, ey, reachDoor + inch)) {
@@ -917,6 +937,34 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         nearReal(mx, my, upf).some((v) => parallel(v) && distToBand(mx, my, v) <= 8 * inch);
       return square && !alongWall;
     });
+    // (A door hung in a wall at 45°: both ends of its swing at 45°, square to each other — the open end has the door's
+    // slab drawn along it, the shut end is the doorway.)
+    if (shut.length === 0 && around.some((v) => Math.abs(Math.sin(2 * v.ang)) > Math.sin(80 * DEG))) {
+      const dirOf = (e: number[]) => Math.atan2(e[1] - d.y, e[0] - d.x);
+      const diag = (a: number) => Math.abs(Math.sin(2 * a)) > Math.sin(80 * DEG);
+      const [ea, eb] = [d.a, d.b];
+      if (diag(dirOf(ea)) && diag(dirOf(eb)) && Math.abs(Math.cos(dirOf(ea) - dirOf(eb))) < Math.sin(5 * DEG)) {
+        const slab = (e: number[]) => {
+          const [mx, my] = [(d.x + e[0]) / 2, (d.y + e[1]) / 2];
+          const a = dirOf(e);
+          return strokesNear(mx - inch, my - inch, mx + inch, my + inch).some((l) => Math.abs(Math.sin(l.ang - a)) < Math.sin(5 * DEG) && distToSeg(mx, my, l) <= 2.5 * inch);
+        };
+        const open = [ea, eb].filter((e) => !slab(e));
+        if (open.length === 1) shut.push(open[0]);
+      }
+    }
+    // (Both ends square to the walls — a door in a wall at 45°: its shut end is the one in line with the wall it's
+    // hung in, through the hinge; the open one stands square off it.)
+    // (Only beside a wall that itself runs at 45° — a plain door drawn open 90° in a square wall has a different tell.)
+    if (shut.length === 2 && around.some((v) => Math.abs(Math.sin(2 * v.ang)) > Math.sin(80 * DEG))) {
+      const inLine = shut.filter((e) =>
+        around.some((v) => {
+          const off = (p: [number, number]) => Math.abs(p[0] * v.nx + p[1] * v.ny - v.rho);
+          return off([d.x, d.y]) <= v.half + 3 * inch && off(e as [number, number]) <= v.half + 3 * inch;
+        }),
+      );
+      if (inLine.length === 1) shut.splice(0, 2, inLine[0]);
+    }
     if (shut.length !== 1) continue;
     const e = shut[0];
     let ang = Math.atan2(e[1] - d.y, e[0] - d.x);
@@ -1659,14 +1707,46 @@ export function splitOutline(points: Pt[], a: Pt, b: Pt): [Pt[], Pt[]] | null {
  * closet): the line's first and last pieces run on out to the outline; the clicks between are the
  * cut's corners and have to be inside the area. Two clicks: a straight cut (splitOutline).
  */
-export function splitOutlineAlong(points: Pt[], path: Pt[]): [Pt[], Pt[]] | null {
+export function splitOutlineAlong(points: Pt[], path: Pt[], near = 0): [Pt[], Pt[]] | null {
   const clicks = path.filter((p, i) => i === 0 || Math.hypot(p[0] - path[i - 1][0], p[1] - path[i - 1][1]) > 1e-6);
   if (clicks.length < 2) return null;
-  if (clicks.length === 2) return splitOutline(points, clicks[0], clicks[1]);
   const n = points.length;
   if (n < 3) return null;
+  const total = Math.abs(shoelace(points));
+  if (!(total > 0)) return null;
+  const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+  const size = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const eps = size * 1e-9;
+  const tol = Math.max(near, eps);
+  // A click on the outline (on an edge or a corner): the cut ends right there.
+  const onOutline = (q: Pt): { side: number; u: number; p: Pt } | null => {
+    let best: { side: number; u: number; p: Pt; d: number } | null = null;
+    for (let i = 0; i < n; i++) {
+      const a = points[i], b = points[(i + 1) % n];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const len2 = ex * ex + ey * ey;
+      if (!len2) continue;
+      const u = Math.max(0, Math.min(1, ((q[0] - a[0]) * ex + (q[1] - a[1]) * ey) / len2));
+      const p: Pt = [a[0] + ex * u, a[1] + ey * u];
+      const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (d <= tol && (!best || d < best.d - eps)) best = { side: i, u, p, d };
+    }
+    if (!best) return null;
+    // A corner is the start of the side after it (so the walk round the outline keeps it once).
+    if (best.u >= 1 - 1e-9) return { side: (best.side + 1) % n, u: 0, p: points[(best.side + 1) % n] };
+    if (best.u <= 1e-9) return { side: best.side, u: 0, p: points[best.side] };
+    return { side: best.side, u: best.u, p: best.p };
+  };
+  // Two clicks: the cut runs out both ways from between them (clicks short of the edges, or past them).
+  let aim: Pt | null = null;
+  if (clicks.length === 2) {
+    const m: Pt = [(clicks[0][0] + clicks[1][0]) / 2, (clicks[0][1] + clicks[1][1]) / 2];
+    if (!inside(points, m) && !(onOutline(clicks[0]) && onOutline(clicks[1]))) return splitOutline(points, clicks[0], clicks[1]);
+    clicks.splice(1, 0, m);
+    aim = m;
+  }
   const mids = clicks.slice(1, -1);
-  if (!mids.every((p) => inside(points, p))) return null;
+  if (!mids.every((p) => inside(points, p) || onOutline(p))) return null;
   // From `from` out through `to` (and on past it): the first place it crosses the outline.
   const out = (from: Pt, to: Pt): { side: number; u: number; p: Pt } | null => {
     const dx = to[0] - from[0];
@@ -1686,9 +1766,10 @@ export function splitOutlineAlong(points: Pt[], path: Pt[]): [Pt[], Pt[]] | null
     }
     return best;
   };
-  const h1 = out(clicks[1], clicks[0]);
-  const h2 = out(clicks[clicks.length - 2], clicks[clicks.length - 1]);
+  const h1 = onOutline(clicks[0]) ?? out(clicks[1], clicks[0]);
+  const h2 = onOutline(clicks[clicks.length - 1]) ?? out(clicks[clicks.length - 2], clicks[clicks.length - 1]);
   if (!h1 || !h2) return null;
+  if (h1.side === h2.side && Math.abs(h1.u - h2.u) < 1e-9) return null;
   // Round the outline from one crossing to the other (all the way round when both are on one side
   // and the second comes first along it).
   const walk = (from: { side: number; u: number; p: Pt }, to: { side: number; u: number; p: Pt }) => {
@@ -1701,9 +1782,24 @@ export function splitOutlineAlong(points: Pt[], path: Pt[]): [Pt[], Pt[]] | null
     pts.push(to.p);
     return pts;
   };
-  const one = [...walk(h1, h2), ...[...mids].reverse()];
-  const two = [...walk(h2, h1), ...mids];
-  if (Math.abs(shoelace(one)) < 1e-6 || Math.abs(shoelace(two)) < 1e-6) return null;
+  // A corner clicked (or a cut along an edge) leaves no point twice, one on top of the other.
+  const tidy = (pts: Pt[]) => {
+    const t = pts.filter((p, i) => Math.hypot(p[0] - pts[(i + 1) % pts.length][0], p[1] - pts[(i + 1) % pts.length][1]) > eps);
+    return t.filter((p, i) => {
+      const a = t[(i - 1 + t.length) % t.length], b = t[(i + 1) % t.length];
+      // (nor a point the outline doubles back through)
+      return Math.abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) > eps * size || (p[0] - a[0]) * (b[0] - p[0]) + (p[1] - a[1]) * (b[1] - p[1]) > 0;
+    });
+  };
+  // (The two-click middle only aims the cut.)
+  const cut = mids.filter((p) => p !== aim);
+  const one = tidy([...walk(h1, h2), ...[...cut].reverse()]);
+  const two = tidy([...walk(h2, h1), ...cut]);
+  if (one.length < 3 || two.length < 3) return null;
+  const a1 = Math.abs(shoelace(one)), a2 = Math.abs(shoelace(two));
+  if (a1 < total * 1e-6 || a2 < total * 1e-6) return null;
+  // The two parts have to make up the area exactly (a cut that wanders outside it doesn't).
+  if (Math.abs(a1 + a2 - total) > total * 1e-6) return null;
   return [one, two];
 }
 

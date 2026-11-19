@@ -183,12 +183,16 @@ export async function invoiceFallbackCodes() {
 
 type BillableCo = Parameters<typeof coInvoiceLines>[0] & { id: string; docOptions: string | null; items: Parameters<typeof coInvoiceLines>[1] };
 
-/** A change order's invoice lines (one per cost code — see coInvoiceLines), ready to save from `sortOrder` on. */
+/** A change order's invoice lines (one per cost code, or per item — Settings → Invoices; see coInvoiceLines), ready to save from `sortOrder` on. */
 export async function changeOrderInvoiceItems(co: BillableCo, sortOrder: number) {
   const fallback = await invoiceFallbackCodes();
   const ids = [...new Set([...co.items.map((i) => i.costCodeId), fallback.co].filter((x): x is string => !!x))];
-  const codes = await db.costCode.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } });
-  const lines = coInvoiceLines({ ...co, feePct: parseDocOptions(co.docOptions).feePct }, co.items, new Map(codes.map((c) => [c.id, c.name])), fallback.co);
+  const [codes, company] = await Promise.all([
+    db.costCode.findMany({ where: { id: { in: ids } }, select: { id: true, name: true } }),
+    db.company.findFirst({ select: { changeOrderDefaults: true } }),
+  ]);
+  const by = parseCoDefaults(company?.changeOrderDefaults).invoiceLines === "ITEM" ? "ITEM" : "CODE";
+  const lines = coInvoiceLines({ ...co, feePct: parseDocOptions(co.docOptions).feePct }, co.items, new Map(codes.map((c) => [c.id, c.name])), fallback.co, by);
   return lines.map((l, k) => ({ description: l.description, quantity: 1, unitPrice: l.amount, costCodeId: l.costCodeId, changeOrderId: co.id, sortOrder: sortOrder + k }));
 }
 

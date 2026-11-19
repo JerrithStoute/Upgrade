@@ -542,6 +542,25 @@ test("invoices the client", async () => {
   await expect(page.getByText(`2 of ${rows}`)).toBeVisible();
 });
 
+test("picks how change orders go on invoices, and the change order defaults keep it", async () => {
+  await page.goto("/settings/invoices");
+  await expect(page.getByText("One line per cost code")).toBeVisible();
+  await page.getByLabel(/One line per item/).check();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page).toHaveURL(/saved=1/);
+  await expect(page.getByLabel(/One line per item/)).toBeChecked();
+  // Saving Settings → Change orders doesn't undo it.
+  await page.goto("/settings/change-orders");
+  await page.getByRole("button", { name: /^Save/ }).first().click();
+  await expect(page).toHaveURL(/saved=1/);
+  await page.goto("/settings/invoices");
+  await expect(page.getByLabel(/One line per item/)).toBeChecked();
+  // Back to the usual.
+  await page.getByLabel(/One line per cost code/).check();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByLabel(/One line per cost code/)).toBeChecked();
+});
+
 test("adds to inventory, counts it, and removes it", async () => {
   await page.goto("/inventory");
   await page.getByRole("link", { name: "+ Add to inventory" }).click();

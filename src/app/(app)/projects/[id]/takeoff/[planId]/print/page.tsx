@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 import { getProject } from "@/lib/projects";
 import { conditionTotals, loadConditions } from "@/lib/takeoff-data";
 import { materialListFrom } from "@/lib/takeoff-materials";
-import { CONDITION_TYPE_LABELS, boardFeetPerLf, metricUnit, parseArcs, parsePoints, type ConditionType, type MetricKey } from "@/lib/takeoff";
+import { CONDITION_TYPE_LABELS, boardFeetPerLf, metricUnit, parseArcs, parseHoles, parsePoints, type ConditionType, type MetricKey } from "@/lib/takeoff";
 import { CutSheet, MaterialTable } from "../../_components/material-table";
 import { PrintSheets, type PrintSheet } from "./print-sheets";
 
@@ -46,6 +46,7 @@ export default async function PrintPlanPage({
           conditionId: c.id,
           points: parsePoints(m.points),
           arcs: parseArcs(m.points),
+          holes: parseHoles(m.points),
           isDeduction: m.isDeduction,
           angle: m.angle,
           pitch: m.pitch,

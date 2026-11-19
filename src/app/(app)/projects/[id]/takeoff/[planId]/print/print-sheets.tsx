@@ -38,6 +38,7 @@ type PrintShape = {
   conditionId: string;
   points: Pt[];
   arcs: number[];
+  holes?: Pt[][];
   isDeduction: boolean;
   angle: number;
   pitch: number | null;
@@ -538,6 +539,17 @@ export function PrintSheets({
                           ) : (
                             <polygon points={d} fill="none" stroke={c.color} strokeOpacity={0.4} strokeWidth={sw} strokeDasharray={`${sw * 4} ${sw * 4}`} />
                           )}
+                          {/* Holes deducted out of an area: their outlines too. */}
+                          {(m.holes ?? []).map((h, i) => (
+                            <polygon
+                              key={`h${i}`}
+                              points={h.map((q) => q.join(",")).join(" ")}
+                              fill="none"
+                              stroke={c.color}
+                              strokeOpacity={ownShown ? 1 : 0.4}
+                              strokeWidth={ownShown ? sw * 2 : sw}
+                            />
+                          ))}
                           {members.flatMap((mem, i) =>
                             (split?.[i] ?? [{ a: 0, b: 1, owner: c.id, length: 0 }]).map((p, j, row) => {
                               const owner = shownOwner(p.owner);

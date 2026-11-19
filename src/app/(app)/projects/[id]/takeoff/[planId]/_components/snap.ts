@@ -9,6 +9,34 @@ export type SnapHit = { point: Pt; kind: "vertex" | "end" | "line" };
 
 const key = (cx: number, cy: number) => cx * 65536 + cy;
 
+/** Largest PDF page is 200 in (14,400 pt) a side; nothing to snap to past that. */
+const MAX_PAGE = 16384;
+
+/** The segment clipped to the page box, or null when none of it is on the page. */
+function clip(x1: number, y1: number, x2: number, y2: number): [number, number, number, number] | null {
+  if (!Number.isFinite(x1 + y1 + x2 + y2)) return null;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  let t0 = 0;
+  let t1 = 1;
+  for (const [p, q] of [
+    [-dx, x1],
+    [dx, MAX_PAGE - x1],
+    [-dy, y1],
+    [dy, MAX_PAGE - y1],
+  ]) {
+    if (p === 0) {
+      if (q < 0) return null;
+    } else {
+      const r = q / p;
+      if (p < 0) t0 = Math.max(t0, r);
+      else t1 = Math.min(t1, r);
+      if (t0 > t1) return null;
+    }
+  }
+  return [x1 + t0 * dx, y1 + t0 * dy, x1 + t1 * dx, y1 + t1 * dy];
+}
+
 export function buildSnapIndex(segs: Float32Array, cell = 24): SnapIndex {
   const grid = new Map<number, number[]>();
   const add = (cx: number, cy: number, i: number) => {
@@ -20,10 +48,11 @@ export function buildSnapIndex(segs: Float32Array, cell = 24): SnapIndex {
     } else grid.set(k, [i]);
   };
   for (let i = 0; i < segs.length; i += 4) {
-    const x1 = segs[i];
-    const y1 = segs[i + 1];
-    const x2 = segs[i + 2];
-    const y2 = segs[i + 3];
+    // Only the part on the page: a plan with line work far off it (or bad numbers) would
+    // otherwise fill millions of grid cells and crash the page.
+    const c = clip(segs[i], segs[i + 1], segs[i + 2], segs[i + 3]);
+    if (!c) continue;
+    const [x1, y1, x2, y2] = c;
     // Walk along the segment so long lines only land in the cells they cross.
     const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1) / (cell / 2)));
     for (let s = 0; s <= steps; s++) {

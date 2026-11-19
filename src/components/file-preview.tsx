@@ -1,5 +1,6 @@
 "use client";
 
+import { pdfErrorMessage } from "@/lib/pdf-error";
 import { useEffect, useRef, useState } from "react";
 import { Download, ExternalLink, FileSpreadsheet } from "lucide-react";
 import { buttonClasses } from "@/components/ui";
@@ -86,7 +87,7 @@ function PdfPages({ url }: { url: string }) {
           await page.render({ canvas, viewport: vp }).promise;
         }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Couldn't show the PDF");
+        if (!cancelled) setError(pdfErrorMessage(e, "Couldn't show the PDF."));
       }
     })();
     return () => {
@@ -96,7 +97,7 @@ function PdfPages({ url }: { url: string }) {
   }, [url]);
   return (
     <div>
-      {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">Couldn&apos;t show it here — use Open. ({error})</p> : null}
+      {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">{error} You can still try Open.</p> : null}
       <div ref={box} className="min-h-40" />
       {pages > MAX_PAGES ? <p className="text-xs text-slate-500">First {MAX_PAGES} of {pages} pages — use Open for the rest.</p> : null}
     </div>

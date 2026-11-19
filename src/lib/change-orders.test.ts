@@ -116,6 +116,33 @@ describe("a change order on an invoice", () => {
     assert.equal(coInvoiceLines({ ...c, feePct: false }, coded, names, "co").at(-1)!.description, "Change Order #3 — Covered patio — Builder's fee");
   });
 
+  it("is one line per item when asked — selections named with their choice — adding up to the total", () => {
+    const c = { ...co({ profitMode: "PCT", profitValue: 10, profitShown: "FOLDED" }), ...head };
+    const items = [
+      { ...coded[0], description: "Footing" },
+      { ...coded[1], description: "Kitchen faucet", kind: "SELECTION", choiceName: "Moen Align" },
+      { ...coded[2], description: "Master tub", kind: "SELECTION", choiceName: null },
+      { ...coded[3], description: "" },
+    ];
+    const out = coInvoiceLines(c, items, names, "co", "ITEM");
+    assert.deepEqual(
+      out.map((l) => [l.description, l.amount, l.costCodeId]),
+      [
+        ["Change Order #3 — Covered patio — Footing", 1100, "conc"],
+        ["Change Order #3 — Covered patio — Kitchen faucet (Moen Align)", 2200, "frm"],
+        ["Change Order #3 — Covered patio — Master tub", 550, "frm"],
+        ["Change Order #3 — Covered patio — Item", 366.66, "co"],
+      ],
+    );
+    assert.equal(Math.round(out.reduce((n, l) => n + l.amount, 0) * 100) / 100, changeOrderTotals(c, items).total);
+    // The fee as its own line still comes last.
+    const fee = coInvoiceLines({ ...co({ profitMode: "PCT", profitValue: 10 }), ...head }, items, names, "co", "ITEM");
+    assert.equal(fee.length, 5);
+    assert.equal(fee.at(-1)!.description, "Change Order #3 — Covered patio — Builder's fee (10%)");
+    // A one-item change order is just its name.
+    assert.deepEqual(coInvoiceLines({ ...co({}), ...head }, items.slice(1, 2), names, null, "ITEM").map((l) => l.description), ["Change Order #3 — Covered patio"]);
+  });
+
   it("is one plain line when every line has the same code", () => {
     const out = coInvoiceLines({ ...co({}), ...head }, coded.slice(1, 3), names, null);
     assert.deepEqual(out, [{ description: "Change Order #3 — Covered patio", amount: 2500, costCodeId: "frm" }]);

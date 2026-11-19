@@ -9,7 +9,7 @@ import { activeCostCodes, getProject } from "@/lib/projects";
 import { conditionEstimateLines, conditionTotals, loadConditions } from "@/lib/takeoff-data";
 import { materialListFrom } from "@/lib/takeoff-materials";
 import { materialItemOptions } from "@/lib/material-items";
-import { CONDITION_COLORS, CONDITION_TYPES, type ConditionType, boardFeetPerLf, isCountType, metricLabel, parseArcs, parsePoints, type MetricKey } from "@/lib/takeoff";
+import { CONDITION_COLORS, CONDITION_TYPES, type ConditionType, boardFeetPerLf, isCountType, metricLabel, parseArcs, parseHoles, parsePoints, type MetricKey } from "@/lib/takeoff";
 import { itemsNeedingCodes, loadCodeRules } from "@/lib/item-codes";
 import { NeedsCodes } from "../_components/needs-codes";
 import { libraryTakeoffs, templateOptions } from "@/lib/takeoff-templates";
@@ -367,6 +367,7 @@ export default async function PlanViewerPage({
             conditionId: c.id,
             points: parsePoints(m.points),
             arcs: parseArcs(m.points),
+            holes: parseHoles(m.points),
             materialItemId: m.materialItemId,
             cased: m.cased,
             sizeLocked: m.sizeLocked,

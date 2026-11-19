@@ -10,6 +10,7 @@ const TABS = [
   { href: "/station/invites", label: "Invites" },
   { href: "/station/find-area", label: "Find area score" },
   { href: "/station/copy-job", label: "Copy a job", owner: true },
+  { href: "/station/coconstruct", label: "Bring in a job", owner: true },
   { href: "/station/team", label: "Team", owner: true },
   { href: "/station/log", label: "Log", owner: true },
 ];

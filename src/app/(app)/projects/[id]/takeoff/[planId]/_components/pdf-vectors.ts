@@ -40,6 +40,9 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
   let color = "#000000";
   const colors: string[] = [];
   const fillOps = new Set<number>([OPS.fill, OPS.eoFill, OPS.fillStroke, OPS.eoFillStroke, OPS.closeFillStroke, OPS.closeEOFillStroke]);
+  // Filled triangles, held back: some programs fill a solid wall as a string of triangles, and the seams between
+  // them (an edge two triangles share) cross the wall from corner to corner — no line anyone drew.
+  const tris = new Map<string, number[]>();
 
   for (let i = 0; i < list.fnArray.length && out.length < MAX_SEGMENTS * 4; i++) {
     const fn = list.fnArray[i];
@@ -66,6 +69,29 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
       const tx = (x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
       let cur: [number, number] | null = null;
       let start: [number, number] | null = null;
+      // This piece of the path so far: where its lines start in `out`, its corners, and whether it's all lines.
+      let subAt = out.length;
+      let subPts: [number, number][] = [];
+      let subLines = true;
+      const filled = fillOps.has(paintOp);
+      const endSub = () => {
+        // A filled triangle: its three sides go to `tris` instead (the same triangle twice counts once).
+        // (Corners in order, the closing one back at the start dropped — closed both ways, it can show up twice.)
+        const pts = subPts.filter((q, k) => k === 0 || q[0] !== subPts[k - 1][0] || q[1] !== subPts[k - 1][1]);
+        while (pts.length > 1 && pts[pts.length - 1][0] === pts[0][0] && pts[pts.length - 1][1] === pts[0][1]) pts.pop();
+        const n = (out.length - subAt) / 4;
+        if (filled && subLines && pts.length === 3 && n >= 3 && n <= 5) {
+          const lines = out.splice(subAt, n * 4);
+          const sides: number[] = [];
+          for (let k = 0; k < lines.length; k += 4) if (lines[k] !== lines[k + 2] || lines[k + 1] !== lines[k + 3]) sides.push(...lines.slice(k, k + 4));
+          const key = pts.map((q) => `${q[0].toFixed(2)},${q[1].toFixed(2)}`).sort().join(" ");
+          if (sides.length === 12) tris.set(key, sides);
+          else out.push(...lines); // (not three plain sides after all: as it was)
+        }
+        subAt = out.length;
+        subPts = [];
+        subLines = true;
+      };
       // A filled shape's outline, ring by ring (curves by their ends).
       const filling = fills && fillOps.has(paintOp);
       const rings: number[][] = [];
@@ -89,18 +115,22 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
         const op = data[j++];
         if (op === DrawOPS.moveTo) {
           endRun();
+          endSub();
           cur = start = tx(data[j++], data[j++]);
+          subPts.push(cur);
           run.push(cur);
           at(cur, true);
         } else if (op === DrawOPS.lineTo) {
           const p = tx(data[j++], data[j++]);
           if (cur) seg(cur, p);
+          subPts.push(p);
           if (!run.length && cur) run.push(cur);
           run.push(p);
           cur = p;
           at(p);
         } else if (op === DrawOPS.curveTo) {
           endRun();
+          subLines = false;
           const c1 = tx(data[j++], data[j++]);
           const c2 = tx(data[j++], data[j++]);
           const p = tx(data[j++], data[j++]);
@@ -118,6 +148,7 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
           at(p);
         } else if (op === DrawOPS.quadraticCurveTo) {
           endRun();
+          subLines = false;
           j += 2;
           const p = tx(data[j++], data[j++]);
           if (cur) out.push(p[0], p[1], p[0], p[1]);
@@ -125,18 +156,38 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
           at(p);
         } else if (op === DrawOPS.closePath) {
           endRun();
-          if (cur && start) seg(cur, start);
+          if (cur && start) {
+            seg(cur, start);
+            subPts.push(start);
+          }
           cur = start;
+          endSub();
         } else {
+          subLines = false;
           break; // unknown operator: stop reading this path
         }
       }
       endRun();
+      endSub();
       if (filling) {
         const kept = rings.filter((r) => r.length >= 6);
         if (kept.length) fills.push({ color, rings: kept });
       }
     }
+  }
+  // The triangles' sides that no other triangle shares: the outline of what they fill. (A side shared twice over is
+  // a seam inside; an odd count, kept.)
+  if (tris.size) {
+    const sides = new Map<string, { n: number; s: number[] }>();
+    for (const t of tris.values())
+      for (let k = 0; k < t.length; k += 4) {
+        const a = `${t[k].toFixed(2)},${t[k + 1].toFixed(2)}`, b = `${t[k + 2].toFixed(2)},${t[k + 3].toFixed(2)}`;
+        const key = a < b ? `${a} ${b}` : `${b} ${a}`;
+        const e = sides.get(key);
+        if (e) e.n++;
+        else sides.set(key, { n: 1, s: t.slice(k, k + 4) });
+      }
+    for (const e of sides.values()) if (e.n % 2 === 1 && out.length < MAX_SEGMENTS * 4) out.push(...e.s);
   }
   return new Float32Array(out);
 }

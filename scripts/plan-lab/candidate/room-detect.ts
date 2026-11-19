@@ -18,7 +18,7 @@
 import { DEG, bucketOf, distToSeg, grid, toLine, type Line, type Pt } from "../../../src/lib/wall-detect";
 
 /** Which rules the room finder runs: saved with each Find area click (AreaFindLog). Change it with them. */
-export const ROOM_DETECT_VERSION = "2026-10-28a";
+export const ROOM_DETECT_VERSION = "2026-11-13a";
 
 export type RoomFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -44,8 +44,6 @@ export type RoomFindOptions = {
    * width is closed.
    */
   doors?: { x: number; y: number; r: number; a?: [number, number]; b?: [number, number] }[];
-  /** A click outside the house finds the porch or patio there (see 3b). */
-  porches?: boolean;
   /** False: a room that runs on outside isn't closed in where it got out (see 3b) — it's "open". */
   closeHouse?: boolean;
   /** (Internal: false closes every opening up to a door's width, swing or not — see `doors`.) */
@@ -54,7 +52,50 @@ export type RoomFindOptions = {
   budgetMs?: number;
   /** (Internal: hand back the wall pieces found — before any are sorted out — and stop.) */
   piecesOnly?: (bands: { half: number; s0: number; s1: number }[]) => void;
+  /** (Internal: hand back what's outside the house around the click — see `houseOutsideMap` — and stop.) */
+  outsideOnly?: (map: OutsideMap) => void;
 };
+
+/**
+ * What's outside the house on a sheet, on a grid: `out[j * W + i]` is 1 for the cell at
+ * (x0 + (i + ½)·cell, y0 + (j + ½)·cell). The yard and a porch or patio (open to it, 4' wide and more) are
+ * outside; rooms, and a garage behind its door, aren't. The same as Find area uses to keep a room in the house.
+ */
+export type OutsideMap = { x0: number; y0: number; cell: number; W: number; H: number; out: Uint8Array };
+
+const outsideMaps = new WeakMap<object, Map<number, OutsideMap | null>>();
+/**
+ * The sheet's outside-the-house map (see `OutsideMap`), worked out once per sheet — a second or so on a
+ * big sheet, so ahead of the clicks (Find walls reads it). Null when the sheet can't be read in `budgetMs`.
+ */
+export function houseOutsideMap(segments: Float32Array | number[], opts: Pick<RoomFindOptions, "unitsPerFoot" | "fills" | "budgetMs">): OutsideMap | null {
+  const upf = opts.unitsPerFoot;
+  const byUpf = outsideMaps.get(segments) ?? new Map<number, OutsideMap | null>();
+  outsideMaps.set(segments, byUpf);
+  const known = byUpf.get(upf);
+  if (known !== undefined) return known;
+  if (!(upf > 0) || segments.length < 4 || unreadable.has(segments)) return null;
+  let xs = [Infinity, -Infinity];
+  let ys = [Infinity, -Infinity];
+  for (let i = 0; i + 1 < segments.length; i += 2) {
+    xs = [Math.min(xs[0], segments[i]), Math.max(xs[1], segments[i])];
+    ys = [Math.min(ys[0], segments[i + 1]), Math.max(ys[1], segments[i + 1])];
+  }
+  const deadline = performance.now() + (opts.budgetMs ?? 8000);
+  let map: OutsideMap | null = null;
+  try {
+    findRoomOnce(segments, [(xs[0] + xs[1]) / 2, (ys[0] + ys[1]) / 2], {
+      unitsPerFoot: upf,
+      fills: opts.fills,
+      reachFt: Math.max(xs[1] - xs[0], ys[1] - ys[0]) / 2 / upf + 10,
+      outsideOnly: (m) => (map = m),
+    }, deadline);
+  } catch (e) {
+    if (!(e instanceof TooSlow)) throw e;
+  }
+  byUpf.set(upf, map);
+  return map;
+}
 
 /**
  * The wall thicknesses a sheet uses (inches, to ¼), worked out once per sheet: every pair of long
@@ -561,7 +602,29 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   const filledBands = wallFill ? filledAll : filledAll.filter((w) => w.s1 - w.s0 >= 2 * upf || tiedToFilled(w));
   const lengthOf = (xs: Band[]) => xs.filter((w) => w.s1 - w.s0 >= upf).reduce((n, w) => n + (w.s1 - w.s0), 0);
   const filledLength = lengthOf(filledBands);
-  const heavy = filledLength >= 20 * upf && (!!wallFill || filledLength >= 0.25 * lengthOf(bands));
+  let heavy = filledLength >= 20 * upf && (!!wallFill || filledLength >= 0.25 * lengthOf(bands));
+  // (Only the outside walls drawn hatched — the inside ones plain double lines, more of them than the hatched: the
+  // plain ones are walls too, not cabinets. A plan that hatches every wall has few plain pairs at wall thickness.
+  // Likewise a fill color in only some walls — Derouen, 165' filled of 6,700': not the plan's wall fill.)
+  if (heavy) {
+    const bk = (w: Band) => Math.round(((2 * w.half) / inch) * 4) / 4;
+    const { used } = sheetWallThicknesses(segments, upf, deadline);
+    // (Plain pairs as thick as the hatched walls themselves — the thicknesses that carry a good share of the
+    // hatched length. Lormand fills its walls at 3½" and 5½" and has plenty of plain pairs at other spacings —
+    // cabinets, trim: those don't count.)
+    const fillBy = new Map<number, number>();
+    for (const w of filledBands) fillBy.set(bk(w), (fillBy.get(bk(w)) ?? 0) + (w.s1 - w.s0));
+    const wallT = [...fillBy].filter(([, n]) => n >= 0.15 * filledLength).map(([t]) => t);
+    const plain = bands.filter((w) => !filledAll.includes(w) && w.s1 - w.s0 >= 2 * upf && used.some((t) => Math.abs(bk(w) - t) <= 0.375) && wallT.some((t) => Math.abs(bk(w) - t) <= 0.375));
+    if (lengthOf(plain) > filledLength) heavy = false;
+    if (process.env.RD_DBG) {
+      const by = new Map<number, number>();
+      for (const w of plain) by.set(bk(w), (by.get(bk(w)) ?? 0) + (w.s1 - w.s0) / upf);
+      const fb = new Map<number, number>();
+      for (const w of filledBands) fb.set(bk(w), (fb.get(bk(w)) ?? 0) + (w.s1 - w.s0) / upf);
+      console.error("DBG heavy", { filledFt: filledLength / upf, plainFt: lengthOf(plain) / upf, used, wallFill: !!wallFill, plainBy: [...by].sort((a, b) => a[0] - b[0]).map(([t, f]) => `${t}":${f.toFixed(0)}'`).join(" "), filledBy: [...fb].sort((a, b) => a[0] - b[0]).map(([t, f]) => `${t}":${f.toFixed(0)}'`).join(" ") });
+    }
+  }
   if (heavy) bands.splice(0, bands.length, ...filledBands);
   else {
     // A plan that draws its walls as plain double lines draws them at a few set thicknesses — 3½" (a
@@ -887,8 +950,6 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     // (A few inches past both ends, into the jambs — they're often too short to count as wall.)
     bridges.push({ ang, ux: lx, uy: ly, nx, ny, rho: d.x * nx + d.y * ny, half: 1.5 * inch, s0: Math.min(sa, sb) - 6 * inch, s1: Math.max(sa, sb) + 6 * inch });
   }
-  (globalThis as { labBands?: (b: Band[]) => void }).labBands?.(bands);
-  (globalThis as { labBridges?: (b: Band[]) => void }).labBridges?.(bridges);
   const walls = [...bands, ...bridges, ...stairs];
 
   // 3. The floor, filled out from the click on a grid (walls blocked off, a cell past their faces so
@@ -938,6 +999,34 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     }
   };
   for (const w of walls) block(w);
+  /** What's outside the house (the yard, a porch, a patio — not the garage, behind its door). */
+  const outsideOfHouse = () => {
+    // (Not counting the sheet's border — a frame drawn double around the page would close in the yard.
+    // A border runs nearly the whole way across the drawing, its own way.)
+    const [pw, ph] = sheetSize(segments);
+    const house = new Uint8Array(W * H);
+    for (const w of walls) if (w.s1 - w.s0 < 0.85 * (Math.abs(w.ux) * pw + Math.abs(w.uy) * ph)) block(w, house);
+    // (A garage door — up to 20', something drawn across it — is part of the house's edge: the pieces of
+    // a real wall in line across it closed for telling outside from in, so the garage isn't the yard.)
+    for (let i = 0; i < byLine.length; i++) {
+      const w = byLine[i];
+      if (!anchored(w)) continue;
+      let next: Band | null = null;
+      for (let j = i + 1; j < byLine.length; j++) {
+        const p = byLine[j];
+        if (Math.round(p.ang / DEG) !== Math.round(w.ang / DEG) || Math.abs(p.rho - w.rho) > tMax) break;
+        if (Math.abs(p.rho - w.rho) > Math.max(w.half, p.half) || p.s0 <= w.s1 || !anchored(p)) continue;
+        if (!next || p.s0 < next.s0) next = p;
+      }
+      if (next && next.s0 - w.s1 <= 20 * upf && drawnAlong(w, w.s1, next.s0) >= 0.8 && !crossedBetween(w, w.s1, next.s0))
+        block({ ...w, rho: (w.rho + next.rho) / 2, half: Math.min(w.half, next.half), s0: w.s1 - inch, s1: next.s0 + inch }, house);
+    }
+    return houseOutside(house, W, H, Math.round((4 * upf) / cell));
+  };
+  if (opts.outsideOnly) {
+    opts.outsideOnly({ x0: box.x0, y0: box.y0, cell, W, H, out: outsideOfHouse() });
+    return { ok: false, reason: "open" };
+  }
   const ci = Math.floor((cx - box.x0) / cell);
   const cj = Math.floor((cy - box.y0) / cell);
   if (blocked[cj * W + ci]) return { ok: false, reason: "in-wall" };
@@ -1086,44 +1175,19 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   };
   let outsideHouse: Uint8Array | null = null;
   let closes = 0;
-  let porch = false;
-  const lab = (why: string) => (globalThis as { labHouse?: (x: unknown) => void }).labHouse?.({ why, outsideHouse, W, H, box, cell, seals: walls.slice(walls.length - closes), floor: stack.slice(0, top) });
   while (!fill()) {
-    if (opts.closeHouse === false || closes >= 12) return lab("too many"), { ok: false, reason: "open" };
-    if (!outsideHouse) {
-      // (Not counting the sheet's border — a frame drawn double around the page would close in the yard.
-      // A border runs nearly the whole way across the drawing, its own way.)
-      const [pw, ph] = sheetSize(segments);
-      const house = new Uint8Array(W * H);
-      for (const w of walls) if (w.s1 - w.s0 < 0.85 * (Math.abs(w.ux) * pw + Math.abs(w.uy) * ph)) block(w, house);
-      outsideHouse = houseOutside(house, W, H, Math.round((4 * upf) / cell));
-    }
-    if (outsideHouse[cj * W + ci]) {
-      // A click outside the house: a porch or patio — out from the house to its edge, the lines drawn
-      // around it (a slab's edge, a beam over the posts) counting as its sides. Once.
-      if (porch || !opts.porches) return lab("click outside"), { ok: false, reason: "open" };
-      porch = true;
-      for (const l of lines) {
-        if (l.s1 - l.s0 < 2 * upf || isDimension(l)) continue;
-        const edge = bandOf(l, l.rho, 0.75 * inch, l.s0, l.s1);
-        block(edge);
-        walls.push(edge);
-      }
-      continue;
-    }
+    if (opts.closeHouse === false || closes >= 12) return { ok: false, reason: "open" };
+    if (!outsideHouse) outsideHouse = outsideOfHouse();
+    if (outsideHouse[cj * W + ci]) return { ok: false, reason: "open" };
     const seal = gapClosing(leak);
-    if (!seal) return lab("no gap"), { ok: false, reason: "open" };
+    if (!seal) return { ok: false, reason: "open" };
     block(seal);
     walls.push(seal);
     closes++;
   }
-  lab("closed");
   // (Closed in, but taking in ground outside the house — a wall it couldn't read, so it closed somewhere
   // out in the yard: that's no room. Up to a few square feet is the doorway's own depth.)
-  if (porch) {
-    const sf = (top * cell * cell) / (upf * upf);
-    if (sf > 2500) return lab("porch too big"), { ok: false, reason: "open" };
-  } else if (closes && outsideHouse) {
+  if (closes && outsideHouse) {
     let out = 0;
     for (let k = 0; k < top; k++) if (outsideHouse[stack[k]]) out++;
     const sf = (out * cell * cell) / (upf * upf);
@@ -1617,14 +1681,46 @@ export function splitOutline(points: Pt[], a: Pt, b: Pt): [Pt[], Pt[]] | null {
  * closet): the line's first and last pieces run on out to the outline; the clicks between are the
  * cut's corners and have to be inside the area. Two clicks: a straight cut (splitOutline).
  */
-export function splitOutlineAlong(points: Pt[], path: Pt[]): [Pt[], Pt[]] | null {
+export function splitOutlineAlong(points: Pt[], path: Pt[], near = 0): [Pt[], Pt[]] | null {
   const clicks = path.filter((p, i) => i === 0 || Math.hypot(p[0] - path[i - 1][0], p[1] - path[i - 1][1]) > 1e-6);
   if (clicks.length < 2) return null;
-  if (clicks.length === 2) return splitOutline(points, clicks[0], clicks[1]);
   const n = points.length;
   if (n < 3) return null;
+  const total = Math.abs(shoelace(points));
+  if (!(total > 0)) return null;
+  const xs = points.map((p) => p[0]), ys = points.map((p) => p[1]);
+  const size = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys));
+  const eps = size * 1e-9;
+  const tol = Math.max(near, eps);
+  // A click on the outline (on an edge or a corner): the cut ends right there.
+  const onOutline = (q: Pt): { side: number; u: number; p: Pt } | null => {
+    let best: { side: number; u: number; p: Pt; d: number } | null = null;
+    for (let i = 0; i < n; i++) {
+      const a = points[i], b = points[(i + 1) % n];
+      const ex = b[0] - a[0], ey = b[1] - a[1];
+      const len2 = ex * ex + ey * ey;
+      if (!len2) continue;
+      const u = Math.max(0, Math.min(1, ((q[0] - a[0]) * ex + (q[1] - a[1]) * ey) / len2));
+      const p: Pt = [a[0] + ex * u, a[1] + ey * u];
+      const d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+      if (d <= tol && (!best || d < best.d - eps)) best = { side: i, u, p, d };
+    }
+    if (!best) return null;
+    // A corner is the start of the side after it (so the walk round the outline keeps it once).
+    if (best.u >= 1 - 1e-9) return { side: (best.side + 1) % n, u: 0, p: points[(best.side + 1) % n] };
+    if (best.u <= 1e-9) return { side: best.side, u: 0, p: points[best.side] };
+    return { side: best.side, u: best.u, p: best.p };
+  };
+  // Two clicks: the cut runs out both ways from between them (clicks short of the edges, or past them).
+  let aim: Pt | null = null;
+  if (clicks.length === 2) {
+    const m: Pt = [(clicks[0][0] + clicks[1][0]) / 2, (clicks[0][1] + clicks[1][1]) / 2];
+    if (!inside(points, m) && !(onOutline(clicks[0]) && onOutline(clicks[1]))) return splitOutline(points, clicks[0], clicks[1]);
+    clicks.splice(1, 0, m);
+    aim = m;
+  }
   const mids = clicks.slice(1, -1);
-  if (!mids.every((p) => inside(points, p))) return null;
+  if (!mids.every((p) => inside(points, p) || onOutline(p))) return null;
   // From `from` out through `to` (and on past it): the first place it crosses the outline.
   const out = (from: Pt, to: Pt): { side: number; u: number; p: Pt } | null => {
     const dx = to[0] - from[0];
@@ -1644,9 +1740,10 @@ export function splitOutlineAlong(points: Pt[], path: Pt[]): [Pt[], Pt[]] | null
     }
     return best;
   };
-  const h1 = out(clicks[1], clicks[0]);
-  const h2 = out(clicks[clicks.length - 2], clicks[clicks.length - 1]);
+  const h1 = onOutline(clicks[0]) ?? out(clicks[1], clicks[0]);
+  const h2 = onOutline(clicks[clicks.length - 1]) ?? out(clicks[clicks.length - 2], clicks[clicks.length - 1]);
   if (!h1 || !h2) return null;
+  if (h1.side === h2.side && Math.abs(h1.u - h2.u) < 1e-9) return null;
   // Round the outline from one crossing to the other (all the way round when both are on one side
   // and the second comes first along it).
   const walk = (from: { side: number; u: number; p: Pt }, to: { side: number; u: number; p: Pt }) => {
@@ -1659,9 +1756,24 @@ export function splitOutlineAlong(points: Pt[], path: Pt[]): [Pt[], Pt[]] | null
     pts.push(to.p);
     return pts;
   };
-  const one = [...walk(h1, h2), ...[...mids].reverse()];
-  const two = [...walk(h2, h1), ...mids];
-  if (Math.abs(shoelace(one)) < 1e-6 || Math.abs(shoelace(two)) < 1e-6) return null;
+  // A corner clicked (or a cut along an edge) leaves no point twice, one on top of the other.
+  const tidy = (pts: Pt[]) => {
+    const t = pts.filter((p, i) => Math.hypot(p[0] - pts[(i + 1) % pts.length][0], p[1] - pts[(i + 1) % pts.length][1]) > eps);
+    return t.filter((p, i) => {
+      const a = t[(i - 1 + t.length) % t.length], b = t[(i + 1) % t.length];
+      // (nor a point the outline doubles back through)
+      return Math.abs((p[0] - a[0]) * (b[1] - a[1]) - (p[1] - a[1]) * (b[0] - a[0])) > eps * size || (p[0] - a[0]) * (b[0] - p[0]) + (p[1] - a[1]) * (b[1] - p[1]) > 0;
+    });
+  };
+  // (The two-click middle only aims the cut.)
+  const cut = mids.filter((p) => p !== aim);
+  const one = tidy([...walk(h1, h2), ...[...cut].reverse()]);
+  const two = tidy([...walk(h2, h1), ...cut]);
+  if (one.length < 3 || two.length < 3) return null;
+  const a1 = Math.abs(shoelace(one)), a2 = Math.abs(shoelace(two));
+  if (a1 < total * 1e-6 || a2 < total * 1e-6) return null;
+  // The two parts have to make up the area exactly (a cut that wanders outside it doesn't).
+  if (Math.abs(a1 + a2 - total) > total * 1e-6) return null;
   return [one, two];
 }
 

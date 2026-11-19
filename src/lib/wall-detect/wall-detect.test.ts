@@ -321,6 +321,34 @@ describe("wall finder", () => {
     assert.ok(Math.abs(inner.lengthFt - 29.4) < 0.5, `inside wall: ${inner.lengthFt} ft`);
   });
 
+  it("an outside wall brings the house's outside walls along its outline — never another drawing's on the sheet", () => {
+    // The porch house drawn twice side by side (the floor plan and the electrical plan), 20' apart; the left
+    // one's right wall in two pieces with a 10' chimney between, 12" thick.
+    const one = porchHouse().slice(0, -16);
+    const segs: number[] = [];
+    for (let i = 0; i < one.length; i += 4) {
+      const [x1, y1, x2, y2] = one.slice(i, i + 4);
+      // (The left house's right wall: split for the chimney.)
+      if (x1 === x2 && (x1 === 480 || x1 === 476.5 || x1 === 480.8 || x1 === 481) && Math.min(y1, y2) <= 0 + 4 && Math.max(y1, y2) >= 236) {
+        const lo = Math.min(y1, y2);
+        const hi = Math.max(y1, y2);
+        segs.push(x1, lo, x1, 60, x1, 180, x1, hi);
+      } else segs.push(x1, y1, x2, y2);
+      // (In the gap, a 12"-thick stretch — a chimney's masonry: the outside face carries on, the inside one steps in.)
+      if (i === 0) segs.push(480, 60, 480, 180, 468, 60, 468, 180, 468, 60, 476.5, 60, 468, 180, 476.5, 180);
+      segs.push(x1 + 720, y1, x2 + 720, y2);
+    }
+    for (const [x1, y1, x2, y2] of [[-240, -240, 1440, -240], [-240, 600, 1440, 600], [-240, -240, -240, 600], [1440, -240, 1440, 600]]) segs.push(x1, y1, x2, y2);
+    const outside = houseOutsideMap(segs, { unitsPerFoot: UPF });
+    assert.ok(outside);
+    const r = findWalls(segs, [200, 0.2], { ...opts, outside });
+    assert.ok(r.ok && r.kind === "exterior");
+    // Nothing from the other drawing.
+    assert.ok(r.runs.every((run) => run.every(([x]) => x < 600)), "only this drawing's walls");
+    // The right wall's far piece, past the gap, comes too.
+    assert.ok(r.runs.some((run) => run.every(([x]) => Math.abs(x - 478.25) < 3) && run.some(([, y]) => y > 200)), "the piece past the chimney");
+  });
+
   it("finds the walls even when a face is drawn in pieces", () => {
     const r = findWalls(house(true), [100, 0.5], opts);
     assert.ok(r.ok);
@@ -517,6 +545,41 @@ describe("wall finder", () => {
       assert.equal(r.thicknessIn, 3.5);
       assert.equal(r.runs.length, 1);
     }
+  });
+
+  it("bare hatched walls with a thin hatched band against the outside face (siding, stone): outside walls (Winnie)", () => {
+    const segs: number[] = [];
+    const line = (x1: number, y1: number, x2: number, y2: number) => segs.push(x1, y1, x2, y2);
+    const rect = (d: number) => {
+      line(-d, -d, 480 + d, -d);
+      line(480 + d, -d, 480 + d, 360 + d);
+      line(480 + d, 360 + d, -d, 360 + d);
+      line(-d, 360 + d, -d, -d);
+    };
+    const hatch = (inner: number, outer: number) => {
+      const w = outer - inner;
+      for (let x = -inner; x + w <= 480 + inner; x += 1.5) {
+        line(x, -inner, x + w, -outer);
+        line(x, 360 + inner, x + w, 360 + outer);
+      }
+      for (let y = -inner; y + w <= 360 + inner; y += 1.5) {
+        line(-inner, y, -outer, y + w);
+        line(480 + inner, y, 480 + outer, y + w);
+      }
+    };
+    for (const d of [-3.5, 0, 1.5]) rect(d);
+    hatch(-3.5, 0); // the stud space
+    hatch(0, 1.5); // the thin band outside
+    for (const x of [238, 241.5]) line(x, 3.5, x, 356.5);
+    for (let y = 3.5; y + 3.5 <= 356.5; y += 1.5) line(238, y, 241.5, y + 3.5);
+    const r = findWalls(segs, [100, 3.5], opts);
+    assert.ok(r.ok);
+    assert.equal(r.kind, "exterior");
+    assert.equal(r.thicknessIn, 3.5);
+    assert.equal(r.runs.length, 4);
+    const i = findWalls(segs, [241.5, 100], opts);
+    assert.ok(i.ok);
+    assert.equal(i.kind, "interior");
   });
 
   it("a plan that only hatches its brick isn't read as hatching its walls", () => {

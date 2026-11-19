@@ -496,6 +496,7 @@ export type MeasurementShape = {
   pitch2?: number | null;
   height?: number | null; // Linear: this line's own wall height (ft); null/undefined = the condition's
   arcs?: number[] | null; // indexes of arc points (see arcPath)
+  holes?: Pt[][] | null; // Areas: the holes deducted out of it (a stair opening)
   door?: { widthIn: number; heightIn: number; cased?: boolean | null } | null; // Doors / windows: the unit picked for this marker
   /**
    * Joists/rafters on a span table: the member lengths (ft, pitch and overhang in) this shape gives
@@ -707,7 +708,9 @@ export function measurementMetrics(c: ConditionCalc, m: MeasurementShape, unitsP
   }
 
   const path = shapePath(c.type, m);
-  const plan = polygonArea(path) / sqft;
+  // (An area's holes — deducted — aren't part of it.)
+  const holes = c.type === "AREA" ? (m.holes ?? []) : [];
+  const plan = Math.max(0, polygonArea(path) - holes.reduce((s, h) => s + polygonArea(h), 0)) / sqft;
   const area = plan * slopeFactor(c.type === "FRAMING" ? (m.pitch ?? c.pitch) : c.pitch);
   out.plan_area = sign * plan;
   out.area = sign * area;
@@ -715,7 +718,7 @@ export function measurementMetrics(c: ConditionCalc, m: MeasurementShape, unitsP
   if (c.type === "AREA") {
     out.area_sy = (sign * area) / 9;
     out.squares = (sign * area) / 100;
-    out.perimeter = sign * (polygonPerimeter(path) / unitsPerFoot);
+    out.perimeter = sign * ((polygonPerimeter(path) + holes.reduce((s, h) => s + polygonPerimeter(h), 0)) / unitsPerFoot);
     out.volume = (sign * (area * (c.depth / 12))) / 27;
     return out;
   }
@@ -1172,7 +1175,10 @@ export function assemblyQuantity(
   return item.roundUp ? Math.ceil(q - 1e-9) : q;
 }
 
-/** Stored points: [x, y] vertices, [x, y, 1] for an arc point. */
+/**
+ * Stored points: [x, y] vertices, [x, y, 1] for an arc point. An area with holes cut in it (deducted) has
+ * its outline first, then each hole — a hole's first point is [x, y, 2].
+ */
 function storedPoints(json: string): number[][] {
   try {
     const v = JSON.parse(json);
@@ -1183,21 +1189,40 @@ function storedPoints(json: string): number[][] {
   }
 }
 
+/** The stored points up to the first hole: the shape's own outline / line. */
+function outlinePoints(json: string): number[][] {
+  const all = storedPoints(json);
+  const h = all.findIndex((p) => p[2] === 2);
+  return h < 0 ? all : all.slice(0, h);
+}
+
 export function parsePoints(json: string): Pt[] {
-  return storedPoints(json).map((p) => [p[0], p[1]]);
+  return outlinePoints(json).map((p) => [p[0], p[1]]);
 }
 
 /** Indexes of a stored shape's arc points. */
 export function parseArcs(json: string): number[] {
-  return storedPoints(json).flatMap((p, i) => (p[2] === 1 ? [i] : []));
+  return outlinePoints(json).flatMap((p, i) => (p[2] === 1 ? [i] : []));
 }
 
-/** Points (and arc points) as stored, rounded to 1/100 page unit. */
-export function pointsJson(points: Pt[], arcs?: number[] | null) {
+/** The holes deducted out of an area (none for most shapes). */
+export function parseHoles(json: string): Pt[][] {
+  const holes: Pt[][] = [];
+  for (const p of storedPoints(json).slice(outlinePoints(json).length)) {
+    if (p[2] === 2 || !holes.length) holes.push([]);
+    holes[holes.length - 1].push([p[0], p[1]]);
+  }
+  return holes.filter((h) => h.length >= 3);
+}
+
+/** Points (and arc points, and an area's holes) as stored, rounded to 1/100 page unit. */
+export function pointsJson(points: Pt[], arcs?: number[] | null, holes?: Pt[][] | null) {
   const set = new Set(arcs ?? []);
-  return JSON.stringify(
-    points.map(([x, y], i) => (set.has(i) ? [Math.round(x * 100) / 100, Math.round(y * 100) / 100, 1] : [Math.round(x * 100) / 100, Math.round(y * 100) / 100])),
-  );
+  const r = (n: number) => Math.round(n * 100) / 100;
+  return JSON.stringify([
+    ...points.map(([x, y], i) => (set.has(i) ? [r(x), r(y), 1] : [r(x), r(y)])),
+    ...(holes ?? []).filter((h) => h.length >= 3).flatMap((h) => h.map(([x, y], i) => (i === 0 ? [r(x), r(y), 2] : [r(x), r(y)]))),
+  ]);
 }
 
 /** 12.5 → 12'-6" */

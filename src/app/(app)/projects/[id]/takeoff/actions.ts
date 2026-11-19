@@ -59,6 +59,7 @@ import {
   sizeTypeOf,
   pointsJson,
   parseArcs,
+  parseHoles,
   parsePoints,
 } from "@/lib/takeoff";
 
@@ -620,6 +621,8 @@ export async function setMaterialPrice(
 
 const ptSchema = z.tuple([z.number().finite(), z.number().finite()]);
 const arcsSchema = z.array(z.number().int().min(0)).max(5000).optional();
+/** An area's holes (deducted out of it). */
+const holesSchema = z.array(z.array(ptSchema).min(3).max(5000)).max(500).nullable().optional();
 
 async function viewerSheet(projectId: string, sheetId: string) {
   const sheet = await db.takeoffSheet.findFirst({ where: { id: sheetId, plan: { projectId } } });
@@ -746,6 +749,7 @@ export async function bringTakeoffsForward(input: {
             points: pointsJson(
               parsePoints(m.points).map((p) => applyAlign(al, p)),
               parseArcs(m.points),
+              parseHoles(m.points).map((h) => h.map((p) => applyAlign(al, p))),
             ),
             angle: m.angle + turn,
           },
@@ -848,6 +852,7 @@ export async function createMeasurement(input: {
   conditionId: string;
   points: [number, number][];
   arcs?: number[]; // indexes of arc points
+  holes?: [number, number][][] | null; // Areas: holes deducted out of it
   materialItemId?: string | null; // Doors: which door this marker is
   cased?: boolean | null; // Windows: cased or not
   isDeduction?: boolean;
@@ -864,6 +869,7 @@ export async function createMeasurement(input: {
       conditionId: z.string(),
       points: z.array(ptSchema).min(1).max(5000),
       arcs: arcsSchema,
+      holes: holesSchema,
       materialItemId: z.string().nullable().optional(),
       cased: z.boolean().nullable().optional(),
       isDeduction: z.boolean().optional(),
@@ -882,7 +888,7 @@ export async function createMeasurement(input: {
     data: {
       sheetId: data.sheetId,
       conditionId: c.id,
-      points: pointsJson(data.points, data.arcs),
+      points: pointsJson(data.points, data.arcs, c.type === "AREA" ? data.holes : null),
       materialItemId: c.type === "DOOR" || c.type === "WINDOW" ? await doorItemId(data.materialItemId) : null,
       cased: c.type === "WINDOW" ? (data.cased ?? null) : null,
       isDeduction: c.type === "AREA" || c.type === "LINEAR" ? !!data.isDeduction : false,
@@ -980,6 +986,7 @@ export async function updateMeasurement(input: {
   height?: number | null;
   points?: [number, number][]; // moved / reshaped
   arcs?: number[]; // with points: which are arc points
+  holes?: [number, number][][] | null; // with points: an area's holes (left out = the ones it has)
   materialItemId?: string | null; // Doors: change which door this marker is
   cased?: boolean | null; // Windows: cased or not
   sizeLocked?: boolean; // span-table joists/rafters: false = back to "Auto (span table)"
@@ -997,6 +1004,7 @@ export async function updateMeasurement(input: {
       height: z.number().finite().min(0).max(200).nullable().optional(),
       points: z.array(ptSchema).min(1).max(5000).optional(),
       arcs: arcsSchema,
+      holes: holesSchema,
       materialItemId: z.string().nullable().optional(),
       cased: z.boolean().nullable().optional(),
       sizeLocked: z.boolean().optional(),
@@ -1024,7 +1032,10 @@ export async function updateMeasurement(input: {
       pitch: hasShapePitch(m.condition.type) ? data.pitch : undefined,
       pitch2: m.condition.type === "HIP_VALLEY" ? data.pitch2 : undefined,
       height: m.condition.type === "LINEAR" ? data.height : undefined,
-      points: data.points ? pointsJson(data.points, data.arcs) : undefined,
+      // (Reshaped: its holes stay unless new ones are given.)
+      points: data.points
+        ? pointsJson(data.points, data.arcs, m.condition.type === "AREA" ? (data.holes !== undefined ? data.holes : parseHoles(m.points)) : null)
+        : undefined,
       materialItemId:
         (m.condition.type === "DOOR" || m.condition.type === "WINDOW") && data.materialItemId !== undefined ? await doorItemId(data.materialItemId) : undefined,
       cased: m.condition.type === "WINDOW" && data.cased !== undefined ? data.cased : undefined,
@@ -1161,6 +1172,7 @@ export type SavedShape = {
   conditionId: string;
   points: [number, number][];
   arcs: number[];
+  holes?: [number, number][][];
   isDeduction: boolean;
   angle: number;
   pitch: number | null;
@@ -1200,6 +1212,7 @@ export async function deleteConditionShapes(input: { projectId: string; conditio
     conditionId: r.conditionId,
     points: parsePoints(r.points),
     arcs: parseArcs(r.points),
+    holes: parseHoles(r.points),
     isDeduction: r.isDeduction,
     angle: r.angle,
     pitch: r.pitch,
@@ -1223,6 +1236,7 @@ export async function createShapes(input: {
     conditionId: string;
     points: [number, number][];
     arcs?: number[];
+    holes?: [number, number][][] | null;
     isDeduction?: boolean;
     angle?: number;
     pitch?: number | null;
@@ -1243,6 +1257,7 @@ export async function createShapes(input: {
             conditionId: z.string(),
             points: z.array(ptSchema).min(1).max(5000),
             arcs: arcsSchema,
+            holes: holesSchema,
             isDeduction: z.boolean().optional(),
             angle: z.number().finite().optional(),
             pitch: z.number().finite().min(0).max(48).nullable().optional(),
@@ -1274,7 +1289,7 @@ export async function createShapes(input: {
         data: {
           sheetId: x.sheetId,
           conditionId: c.id,
-          points: pointsJson(x.points, x.arcs),
+          points: pointsJson(x.points, x.arcs, c.type === "AREA" ? x.holes : null),
           materialItemId: c.type === "DOOR" || c.type === "WINDOW" ? (items.get(x.materialItemId ?? "") ?? null) : null,
           cased: c.type === "WINDOW" ? (x.cased ?? null) : null,
           isDeduction: c.type === "AREA" || c.type === "LINEAR" ? !!x.isDeduction : false,
@@ -1303,7 +1318,7 @@ export async function createShapes(input: {
 export async function restoreShapes(input: {
   projectId: string;
   shapes: (Pick<SavedShape, "sheetId" | "conditionId" | "points" | "isDeduction" | "angle"> &
-    Partial<Pick<SavedShape, "arcs" | "pitch" | "pitch2" | "height" | "materialItemId" | "cased">>)[];
+    Partial<Pick<SavedShape, "arcs" | "holes" | "pitch" | "pitch2" | "height" | "materialItemId" | "cased">>)[];
 }) {
   await requireEdit("takeoffs");
   const data = z
@@ -1316,6 +1331,7 @@ export async function restoreShapes(input: {
             conditionId: z.string(),
             points: z.array(ptSchema).min(1).max(5000),
             arcs: arcsSchema,
+            holes: holesSchema,
             isDeduction: z.boolean(),
             angle: z.number().finite(),
             pitch: z.number().finite().nullable().optional(),
@@ -1356,7 +1372,7 @@ export async function restoreShapes(input: {
         data: {
           sheetId: x.sheetId,
           conditionId: x.conditionId,
-          points: pointsJson(x.points, x.arcs),
+          points: pointsJson(x.points, x.arcs, x.holes),
           isDeduction: x.isDeduction,
           angle: x.angle,
           pitch: x.pitch ?? null,

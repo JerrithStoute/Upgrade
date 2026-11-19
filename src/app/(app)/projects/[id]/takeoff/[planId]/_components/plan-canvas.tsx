@@ -1,5 +1,6 @@
 "use client";
 
+import { pdfErrorMessage } from "@/lib/pdf-error";
 import { useEffect, useRef, useState } from "react";
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from "pdfjs-dist";
 import { extractSegments, extractTextBoxes, extractTextItems, pageText, type DoorSwing, type FillShape, type TextBox } from "./pdf-vectors";
@@ -120,7 +121,7 @@ export function PlanCanvas({
       (e) => {
         if (!cancelled) {
           setStatus("error");
-          setError(e instanceof Error ? e.message : "Could not open the PDF");
+          setError(pdfErrorMessage(e));
         }
       },
     );
@@ -169,7 +170,7 @@ export function PlanCanvas({
       (e) => {
         if (!cancelled) {
           setStatus("error");
-          setError(e instanceof Error ? e.message : "Could not open the page");
+          setError(pdfErrorMessage(e, "Couldn't open this page."));
         }
       },
     );

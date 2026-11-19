@@ -17,7 +17,8 @@ export const saveChangeOrderDefaults = friendly(async function saveChangeOrderDe
   const admin = await requireAdmin();
   // What the client sees (set from a change order's Print / PDF page) stays as it is.
   const company = await db.company.findFirst({ select: { changeOrderDefaults: true } });
-  const { showItems, showPrices, profitShown, profitLabel, taxShown, taxLabel, doc } = parseCoDefaults(company?.changeOrderDefaults);
+  // (And how change orders go on invoices, set in Settings → Invoices.)
+  const { showItems, showPrices, profitShown, profitLabel, taxShown, taxLabel, doc, invoiceLines } = parseCoDefaults(company?.changeOrderDefaults);
   const text = (k: string) => str(fd, k).slice(0, 5000) || undefined;
   const mode = str(fd, "profitMode");
   const d: CoDefaults = {
@@ -34,6 +35,7 @@ export const saveChangeOrderDefaults = friendly(async function saveChangeOrderDe
     showItems,
     showPrices,
     doc,
+    invoiceLines,
   };
   const clean = Object.fromEntries(Object.entries(d).filter(([, v]) => v !== undefined));
   await db.company.updateMany({ data: { changeOrderDefaults: JSON.stringify(clean) } });

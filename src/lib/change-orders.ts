@@ -104,6 +104,8 @@ export type CoDefaults = {
   showItems?: boolean;
   showPrices?: boolean;
   doc?: Partial<DocOptions>;
+  /** How an approved change order goes on an invoice (Settings → Invoices); blank = one line per cost code. */
+  invoiceLines?: CoInvoiceLines;
 };
 
 /** What the client sees on the paper, beyond items and prices (ChangeOrder.docOptions). */
@@ -196,32 +198,52 @@ export function isFullyApproved(co: { clientApproval: boolean; clientApprovedAt:
 /** One invoice line billing (part of) a change order. */
 export type CoInvoiceLine = { description: string; amount: number; costCodeId: string | null };
 
+/** How a change order goes on an invoice (Settings → Invoices): one line per cost code, or one per item. */
+export type CoInvoiceLines = "CODE" | "ITEM";
+
 /**
  * An approved change order as invoice lines: one per cost code (its lines with that code put
- * together), so QuickBooks gets each code's amount. Shown the way the change order was: profit
- * built into each code's amount, or the fee as its own line; sales tax the same. A line without
- * a code, the fee and a tax line go on `fallbackCodeId` (Settings → Invoices). The amounts add up
- * to the change order's total exactly.
+ * together), so QuickBooks gets each code's amount — or, with `by` "ITEM", one per item (each
+ * selection its own line, named for it). Shown the way the change order was: profit built into
+ * each amount, or the fee as its own line; sales tax the same. A line without a code, the fee and
+ * a tax line go on `fallbackCodeId` (Settings → Invoices). The amounts add up to the change
+ * order's total exactly.
  */
 export function coInvoiceLines(
   co: CoProfit & { number: number; title: string; profitLabel?: string | null; taxLabel?: string | null; feePct?: boolean },
-  lines: (CoLine & { costCodeId?: string | null; sortOrder?: number })[],
+  lines: (CoLine & { costCodeId?: string | null; sortOrder?: number; description?: string; kind?: string | null; choiceName?: string | null })[],
   codeNames: Map<string, string>,
   fallbackCodeId: string | null,
+  by: CoInvoiceLines = "CODE",
 ): CoInvoiceLine[] {
   const t = changeOrderTotals(co, lines);
   const head = `Change Order #${co.number} — ${co.title}`;
-  const groups = new Map<string | null, number>();
-  for (const l of [...lines].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))) {
-    const code = l.costCodeId ?? fallbackCodeId;
-    groups.set(code, (groups.get(code) ?? 0) + t.shown(l));
+  const sorted = [...lines].sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+  let out: CoInvoiceLine[];
+  if (by === "ITEM") {
+    // One per item: a selection with its choice ("Kitchen faucet (Moen Align)").
+    const name = (l: (typeof sorted)[number]) => {
+      const d = (l.description ?? "").trim() || "Item";
+      return l.kind === "SELECTION" && l.choiceName ? `${d} (${l.choiceName})` : d;
+    };
+    out = sorted.map((l) => ({
+      description: sorted.length > 1 ? `${head} — ${name(l)}` : head,
+      amount: cents(t.shown(l)),
+      costCodeId: l.costCodeId ?? fallbackCodeId,
+    }));
+  } else {
+    const groups = new Map<string | null, number>();
+    for (const l of sorted) {
+      const code = l.costCodeId ?? fallbackCodeId;
+      groups.set(code, (groups.get(code) ?? 0) + t.shown(l));
+    }
+    const several = groups.size > 1;
+    out = [...groups].map(([code, amount]) => ({
+      description: several ? `${head} — ${(code && codeNames.get(code)) || "Other"}` : head,
+      amount: cents(amount),
+      costCodeId: code,
+    }));
   }
-  const several = groups.size > 1;
-  const out: CoInvoiceLine[] = [...groups].map(([code, amount]) => ({
-    description: several ? `${head} — ${(code && codeNames.get(code)) || "Other"}` : head,
-    amount: cents(amount),
-    costCodeId: code,
-  }));
   if (t.profitLine) {
     const pct = co.feePct !== false && t.feePct !== null ? ` (${t.feePct}%)` : "";
     out.push({ description: `${head} — ${co.profitLabel || "Builder's fee"}${pct}`, amount: t.profit, costCodeId: fallbackCodeId });

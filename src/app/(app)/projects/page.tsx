@@ -1,4 +1,5 @@
 import Link from "@/components/link";
+import { Fragment } from "react";
 import { cookies } from "next/headers";
 import { Plus } from "lucide-react";
 import { requireStaff } from "@/lib/auth";
@@ -158,9 +159,9 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
   const widgets: Widget[] = [
     ...KINDS.map((k) => {
       const rows = all.filter(({ p }) => kindOf(p) === k.key);
-      return { key: k.key, title: k.title, count: rows.length, total: sum(rows), newHref: `/projects/new?kind=${k.key}`, newLabel: k.newLabel, body: table(rows, k.empty) };
+      return { key: k.key, title: k.title, count: rows.length, total: sum(rows), newHref: `/projects/new?kind=${k.key}`, newLabel: k.newLabel, body: <Fragment key={k.key}>{table(rows, k.empty)}</Fragment> };
     }),
-    { key: "all", title: "All projects", count: all.length, total: sum(all), body: table(all, "No projects yet.", true) },
+    { key: "all", title: "All projects", count: all.length, total: sum(all), body: <Fragment key="all">{table(all, "No projects yet.", true)}</Fragment> },
     jobsMap(),
   ];
 
@@ -176,7 +177,7 @@ export default async function ProjectsPage({ searchParams }: { searchParams: Pro
       count: pinned.length,
       total: missing.length ? `${missing.length} not on the map` : "all on the map",
       body: (
-        <div className="space-y-2 p-3">
+        <div key="map" className="space-y-2 p-3">
           <JobsMap
             className="h-[28rem]"
             move={moveJobPin}

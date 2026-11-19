@@ -24,6 +24,8 @@
 
 export type Pt = [number, number];
 export type WallKind = "exterior" | "interior";
+/** An outside wall along the house's outline: the yard along one face for at least this share of it. */
+const YARD_SHARE = 0.5;
 
 export type WallFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -45,6 +47,8 @@ export type WallFindOptions = {
    * wall — a porch's or patio's back wall. Without it such a wall reads as inside.
    */
   outside?: { x0: number; y0: number; cell: number; W: number; H: number; out: Uint8Array };
+  /** An outside wall clicked: bring every outside wall this size along the house's outline too, joined or not (default on; needs `outside`). */
+  outline?: boolean;
 };
 
 export type WallFindResult =
@@ -294,7 +298,7 @@ function linesOf(segments: Float32Array | number[], upf: number) {
   return lines;
 }
 
-type Sorted = { walls: Piece[]; kinds: WallKind[]; layers: number[]; wrappedWall: boolean[]; stoneWall: boolean[] };
+type Sorted = { walls: Piece[]; kinds: WallKind[]; layers: number[]; wrappedWall: boolean[]; stoneWall: boolean[]; yard: number[] };
 /** Where lines a foot long and more are drawn, on a 2" grid (per page and scale): what a look out from a wall runs into. */
 type Inked = { x0: number; y0: number; cell: number; W: number; H: number; ink: Uint8Array };
 const inkCache = new WeakMap<object, Map<number, Inked>>();
@@ -346,7 +350,7 @@ function memoOf(segments: Float32Array | number[], upf: number) {
   return m;
 }
 const clonePieces = (ps: Piece[]) => ps.map((p) => ({ ...p, openings: p.openings && [...p.openings] }));
-const cloneSorted = (s: Sorted): Sorted => ({ walls: clonePieces(s.walls), kinds: [...s.kinds], layers: [...s.layers], wrappedWall: [...s.wrappedWall], stoneWall: [...s.stoneWall] });
+const cloneSorted = (s: Sorted): Sorted => ({ walls: clonePieces(s.walls), kinds: [...s.kinds], layers: [...s.layers], wrappedWall: [...s.wrappedWall], stoneWall: [...s.stoneWall], yard: [...s.yard] });
 
 function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFindOptions): WallFindResult {
   const upf = opts.unitsPerFoot;
@@ -624,6 +628,23 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
         // Its faces bare lines (no drywall, sheathing drawn): this plan draws its walls as hatched bands
         // with nothing more, so a hatched band is a wall, not brick — there's no telling the two apart.
         bare = hatchedGaps[0].layers < 2;
+      } else if (!pick && hatchedGaps.length >= 2 && opts.outside) {
+        // Two or more hatched bands side by side (a plan that hatches its walls and its brick alike): the wall is
+        // the one on the house side (away from the yard).
+        const om = opts.outside;
+        const yard = (o: number) => {
+          const [x, y] = [clicked.ux * cs + clicked.nx * (clicked.rho + o), clicked.uy * cs + clicked.ny * (clicked.rho + o)];
+          const i = Math.floor((x - om.x0) / om.cell), j = Math.floor((y - om.y0) / om.cell);
+          return i >= 0 && j >= 0 && i < om.W && j < om.H && om.out[j * om.W + i] ? 1 : 0;
+        };
+        const score = hatchedGaps.map((h) => [-1, 1].reduce((n, d) => n + [8, 14].reduce((m, r) => m + yard(h.lo + h.t / 2 + d * (h.t / 2 + r * inch)), 0), 0));
+        const lo = Math.min(...score);
+        if (Math.max(...score) > lo && score.filter((x) => x === lo).length === 1) {
+          const g = hatchedGaps[score.indexOf(lo)];
+          pick = { t: g.t, from: g.from, brick: true };
+          poche = true;
+          bare = g.layers < 2;
+        }
       }
       // Reached past two or more thin gaps with no brick on the way: the click is on a window or door
       // drawn in the wall (sash lines, a frame), and the gap found is something else's (the window's
@@ -831,8 +852,10 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
   // Stone outlines along a wall: on both faces (wrapped — a stone porch wall), or one face.
   let wrappedWall: boolean[] = [];
   let stoneWall: boolean[] = [];
+  // How much of each wall has the yard along one face (and the house along the other), from the outside map.
+  let yard: number[] = [];
   const sorted = cached.sorted.get(stipple);
-  if (sorted) ({ walls, kinds, layers, wrappedWall, stoneWall } = cloneSorted(sorted));
+  if (sorted) ({ walls, kinds, layers, wrappedWall, stoneWall, yard } = cloneSorted(sorted));
   else {
     const solid = stipple ? merge(merged, (w, p) => gapOf(w, p) <= inch || dottedGap(w, p)) : merged;
     const veneer: Piece[] = [];
@@ -955,6 +978,21 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
     // A row of them, all parallel and spaced along — a dimension tick or a door line here and there isn't.
     // (Not on a plan that hatches its walls: there the hatching of a wall nearby looks just like it, and
     // its brick is a band of its own — in `veneer`.)
+    // On a plan that draws every wall (and its brick) as a bare hatched band: another hatched band right against
+    // one face — sharing its line — is the brick. (Inside walls there stand alone.)
+    const bandBeside = (w: Piece, s: number) => {
+      if (!poche || !bareBands) return false;
+      for (const side of [-1, 1]) {
+        const face = w.rho + side * half;
+        const [lo, hi] = side > 0 ? [face + 1 * inch, face + 9 * inch] : [face - 9 * inch, face - 1 * inch];
+        let f: number | null = null;
+        for (const l of parallelIn(buckets, w.ang, lo, hi)) if (l.s1 - l.s0 >= 6 * inch && l.s0 <= s + inch && l.s1 >= s - inch && (f === null || Math.abs(l.rho - face) < Math.abs(f - face))) f = l.rho;
+        if (f === null) continue;
+        const d = Math.abs(f - face);
+        if (hatched({ ...w, rho: (face + f) / 2, s0: s - upf, s1: s + upf, open: 0 }, d / 2)) return true;
+      }
+      return false;
+    };
     const brickBeside = (w: Piece, s: number) => {
       if (poche) return false;
       const [x, y] = at(w, s);
@@ -1096,7 +1134,7 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
       const stoneOut =
         (outsideLeft && layered(left) && !layered(right) && openPast(clusters[li - 1]![0], -1)) ||
         (outsideRight && layered(right) && !layered(left) && openPast(clusters[ri + 1]![1], 1));
-      if (wrapped || stoneOut || veneer.some((v) => near(v.bucket, w.bucket) && Math.abs(v.rho - w.rho) <= half + 8 * inch + thickness && v.s0 <= s && v.s1 >= s) || brickBeside(w, s))
+      if (wrapped || stoneOut || veneer.some((v) => near(v.bucket, w.bucket) && Math.abs(v.rho - w.rho) <= half + 8 * inch + thickness && v.s0 <= s && v.s1 >= s) || brickBeside(w, s) || bandBeside(w, s))
         return { kind: "exterior", layers, brick: true, wrapped, stone, faces: [left[0], right[1]] };
       // More layers on one face (siding, sheathing) is the outside — when it's open past them (past the
       // stone, if any). A tub or vanity drawn tight to an inside wall adds lines too, but its far edge is right there.
@@ -1120,6 +1158,7 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
     // where it's open to the yard) with outside the house along one face and the house along the other:
     // outside. (Outside along both is something standing in the yard or on the porch — a beam, a planter.)
     const map = opts.outside;
+    const yardLooks = looked.map((l) => new Uint8Array(l.n));
     if (map) {
       // Where the map's wrong — it got into the house through a wall it couldn't read, or a garage door
       // it couldn't close — it shows the yard along the inside face of a wall sided outside, or along both
@@ -1151,6 +1190,7 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
       };
       const wrong: number[] = [];
       const porch: { look: Look[]; k: number; cells: number[] }[] = [];
+      const oneSide: { wi: number; k: number; cells: number[] }[] = [];
       walls.forEach((w, wi) => {
         const { step, looks } = looked[wi];
         looks.forEach((l, k) => {
@@ -1158,6 +1198,8 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
           const s = w.s0 + step * (k + 0.5);
           let left = yardCells(w, s, l.faces[0], -1);
           let right = yardCells(w, s, l.faces[1], 1);
+          if (left.length >= 2 && !right.length) oneSide.push({ wi, k, cells: left });
+          else if (right.length >= 2 && !left.length) oneSide.push({ wi, k, cells: right });
           if (left.length >= 2 && right.length >= 2) wrong.push(...left, ...right);
           else if (l.kind === "exterior" && l.outer) {
             const inner = l.outer < 0 ? right : left;
@@ -1169,7 +1211,7 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
           }
         });
       });
-      if (porch.length) {
+      if (porch.length || oneSide.length) {
         // (On a coarser grid, 4 cells a side: quick.)
         const g = coarseOf(map);
         const coarse = (k: number) => Math.floor(Math.floor(k / map.W) / 4) * g.W + Math.floor((k % map.W) / 4);
@@ -1188,6 +1230,7 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
           ring = next;
         }
         for (const p of porch) if (p.cells.every((c) => !doubt[coarse(c)])) p.look[p.k] = { ...p.look[p.k]!, kind: "exterior" };
+        for (const o of oneSide) if (o.cells.every((c) => !doubt[coarse(c)])) yardLooks[o.wi][o.k] = 1;
       }
     }
     walls.forEach((w, wi) => {
@@ -1307,12 +1350,13 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
           const said = looks.slice(r.from, r.to).filter((l): l is Look => !!l);
           wrappedWall.push(said.length > 0 && said.filter((l) => l.wrapped).length * 2 >= said.length);
           stoneWall.push(said.length > 0 && said.filter((l) => l.stone).length * 2 >= said.length);
+          yard.push(r.to > r.from ? yardLooks[wi].slice(r.from, r.to).reduce((n, v) => n + v, 0) / (r.to - r.from) : 0);
         }
         from = to;
       });
     });
     walls = sections;
-    cached.sorted.set(stipple, cloneSorted({ walls, kinds, layers, wrappedWall, stoneWall }));
+    cached.sorted.set(stipple, cloneSorted({ walls, kinds, layers, wrappedWall, stoneWall, yard }));
   }
 
   // 6. Follow the walls that meet at corners and T's, starting from the clicked one; keep the
@@ -1341,6 +1385,35 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
   for (let i = 0; i < walls.length; i++) if (i !== start && layers[i] < enough) kinds[i] = kind === "exterior" ? "interior" : "exterior";
   const found = new Set([start]);
   const queue = [start];
+  // An outside wall clicked: every other outside wall this size along the house's outline comes too — the yard
+  // along one face for most of it — even where the walls don't join up (a gap, a piece of another size between).
+  // (Only this building's: a sheet often draws the house twice — the floor plan and the electrical plan.)
+  // The building: every wall this size joined to the clicked one through others — corner to corner, or across a
+  // gap of a few feet (a door, a piece of another size) — never across the yard to another drawing.
+  let house: { has: (w: Piece) => boolean } | null = null;
+  if (kind === "exterior" && opts.outside && opts.outline !== false) {
+    const jump = 4 * upf;
+    const near = (i: number, j: number) => {
+      const a = segs[i];
+      const b = segs[j];
+      return distToSeg(a.x1, a.y1, b) <= jump || distToSeg(a.x2, a.y2, b) <= jump || distToSeg(b.x1, b.y1, a) <= jump || distToSeg(b.x2, b.y2, a) <= jump;
+    };
+    const inHouse = new Set([start]);
+    const todo = [start];
+    while (todo.length) {
+      const i = todo.pop()!;
+      for (let j = 0; j < walls.length; j++) if (!inHouse.has(j) && near(i, j)) (inHouse.add(j), todo.push(j));
+    }
+    const set = new Set([...inHouse].map((i) => walls[i]));
+    house = { has: (w) => set.has(w) };
+  }
+  if (house)
+    walls.forEach((w, j) => {
+      if (j !== start && kinds[j] === "exterior" && yard[j] >= YARD_SHARE && w.s1 - w.s0 >= 2 * upf && house.has(w)) {
+        found.add(j);
+        queue.push(j);
+      }
+    });
   while (queue.length) {
     const i = queue.pop()!;
     for (let j = 0; j < walls.length; j++) {
