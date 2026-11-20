@@ -975,6 +975,74 @@ export async function logAreaFind(input: {
   }
 }
 
+/**
+ * A Find walls click, saved quietly (WallFindLog) so the wall finder can be improved from real use:
+ * where, the scale, what it found, and the walls it added. Never fails the click.
+ */
+export async function logWallFind(input: {
+  projectId: string;
+  sheetId: string;
+  conditionId: string | null;
+  click: [number, number];
+  unitsPerFoot: number;
+  version: string;
+  ok: boolean;
+  reason?: string | null;
+  kind?: string | null;
+  thicknessIn?: number | null;
+  lengthFt?: number | null;
+  runs?: [number, number][][] | null;
+  addedLf?: number | null;
+  measurementIds?: string[] | null;
+  ms?: number | null;
+}) {
+  try {
+    await requireEdit("takeoffs");
+    const d = z
+      .object({
+        projectId: z.string(),
+        sheetId: z.string(),
+        conditionId: z.string().nullable(),
+        click: ptSchema,
+        unitsPerFoot: z.number().finite().positive(),
+        version: z.string().max(40),
+        ok: z.boolean(),
+        reason: z.string().max(40).nullable().optional(),
+        kind: z.string().max(20).nullable().optional(),
+        thicknessIn: z.number().finite().nullable().optional(),
+        lengthFt: z.number().finite().nullable().optional(),
+        runs: z.array(z.array(ptSchema).max(5000)).max(2000).nullable().optional(),
+        addedLf: z.number().finite().nullable().optional(),
+        measurementIds: z.array(z.string()).max(2000).nullable().optional(),
+        ms: z.number().finite().nullable().optional(),
+      })
+      .parse(input);
+    await viewerSheet(d.projectId, d.sheetId);
+    await db.wallFindLog.create({
+      data: {
+        projectId: d.projectId,
+        sheetId: d.sheetId,
+        conditionId: d.conditionId,
+        clickX: d.click[0],
+        clickY: d.click[1],
+        unitsPerFoot: d.unitsPerFoot,
+        version: d.version,
+        ok: d.ok,
+        reason: d.reason ?? null,
+        kind: d.kind ?? null,
+        thicknessIn: d.thicknessIn ?? null,
+        lengthFt: d.lengthFt ?? null,
+        runs: d.runs ? JSON.stringify(d.runs) : null,
+        addedLf: d.addedLf ?? null,
+        measurementIds: d.measurementIds ? JSON.stringify(d.measurementIds) : null,
+        ms: d.ms == null ? null : Math.round(d.ms),
+      },
+    });
+  } catch {
+    // Only a record for later — the click itself already worked (or said why not).
+  }
+}
+
 export async function updateMeasurement(input: {
   projectId: string;
   id: string;

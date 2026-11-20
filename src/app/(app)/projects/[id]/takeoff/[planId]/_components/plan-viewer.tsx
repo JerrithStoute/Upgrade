@@ -84,7 +84,7 @@ import { PlanCanvas, renderPatchGray, renderSheetGray, sheetLinesAndText } from 
 import type { DoorSwing, FillShape } from "./pdf-vectors";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { drawnStud } from "./wall-find";
-import { findWalls } from "@/lib/wall-detect";
+import { WALL_DETECT_VERSION, findWalls } from "@/lib/wall-detect";
 import { cutArea, cutLine, withoutExisting } from "@/lib/deduct";
 
 /** Total length of runs (plan units). */
@@ -136,6 +136,7 @@ import {
   deleteMeasurements,
   createMeasurement,
   logAreaFind,
+  logWallFind,
   addJobUnit,
   setJobUnits,
   addUnitChoice,
@@ -1523,7 +1524,7 @@ export function PlanViewer({
   /** Saves many new shapes in one trip (shown right away), undone together. */
   /** Walls Find walls added in the last few seconds (before they show in `shapes`): never added again. */
   const justAdded = useRef<{ sheetId: string; points: Pt[]; at: number }[]>([]);
-  const createMany = (list: ShapeData[], label: string) => {
+  const createMany = (list: ShapeData[], label: string, onIds?: (ids: string[]) => void) => {
     if (!list.length) return;
     showConds(list.map((d) => d.conditionId));
     const temps = list.map((d) => ({ ...d, id: `pending-${Math.random().toString(36).slice(2)}`, pending: true }));
@@ -1534,6 +1535,7 @@ export function PlanViewer({
         const real = new Map(temps.map((t, i) => [t.id, ids[i]]));
         setPending((p) => p.map((m) => (real.has(m.id) ? { ...m, id: real.get(m.id)!, pending: false } : m)));
         record({ kind: "addMany", label, ids, data: list });
+        onIds?.(ids);
       } catch (e) {
         const gone = new Set(temps.map((t) => t.id));
         setPending((p) => p.filter((m) => !gone.has(m.id)));
@@ -2844,8 +2846,13 @@ export function PlanViewer({
       if (!unitsPerFoot) return setError("Set this sheet's scale before finding walls.");
       if (!vectors || !vectors.length)
         return setError("This sheet has no line work to read (a scanned plan?) — walls can't be found here. Trace them with Measure.");
-      const r = findWalls(vectors, toPage(e.clientX, e.clientY), { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot) });
+      const click = toPage(e.clientX, e.clientY);
+      const t0 = performance.now();
+      const r = findWalls(vectors, click, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot) });
+      // Saved quietly, to improve the wall finder from real use (WallFindLog).
+      const log = { projectId, sheetId: sheet.id, conditionId: active.id, click, unitsPerFoot, version: WALL_DETECT_VERSION, ms: performance.now() - t0 };
       if (!r.ok) {
+        void logWallFind({ ...log, ok: false, reason: r.reason });
         return setError(
           r.reason === "no-line"
             ? "No line there — click right on one of the wall's lines."
@@ -2865,7 +2872,11 @@ export function PlanViewer({
         ...justAdded.current.filter((j) => j.sheetId === sheet.id).map((j) => j.points),
       ];
       const runs = withoutExisting(r.runs as Pt[][], existing, (r.thicknessIn / 2 + 1.5) * inch, 6 * inch);
-      if (!runs.length) return setFlash("Those walls are already measured — nothing added.");
+      const found = { ...log, ok: true, kind: r.kind, thicknessIn: r.thicknessIn, lengthFt: r.lengthFt, runs: r.runs as Pt[][] };
+      if (!runs.length) {
+        void logWallFind({ ...found, addedLf: 0, measurementIds: [] });
+        return setFlash("Those walls are already measured — nothing added.");
+      }
       for (const run of runs) justAdded.current.push({ sheetId: sheet.id, points: run, at: now });
       const lf = runsLf(runs) / unitsPerFoot;
       const skipped = r.lengthFt - lf > 0.5 ? ` (${num(r.lengthFt - lf)} lf already measured, left out)` : "";
@@ -2873,6 +2884,7 @@ export function PlanViewer({
       createMany(
         runs.map((run) => shapeFor(active, sheet.id, run)),
         `adding ${runs.length} walls`,
+        (ids) => void logWallFind({ ...found, addedLf: lf, measurementIds: ids }),
       );
       // Drawn a different size than this takeoff (2x6 walls, a 2x4 takeoff): said, so it can be undone.
       const drawnAs = drawnStud(r.thicknessIn);

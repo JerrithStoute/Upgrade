@@ -22,6 +22,9 @@
  * line work — nothing to find.
  */
 
+/** Which rules the wall finder runs: saved with each Find walls click (WallFindLog). Change it with them. */
+export const WALL_DETECT_VERSION = "2026-11-19a";
+
 export type Pt = [number, number];
 export type WallKind = "exterior" | "interior";
 /** An outside wall along the house's outline: the yard along one face for at least this share of it. */

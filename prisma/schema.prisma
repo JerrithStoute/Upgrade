@@ -317,6 +317,7 @@ model Project {
   activities        Activity[]
   takeoffPlans      TakeoffPlan[]
   areaFinds         AreaFindLog[]
+  wallFinds         WallFindLog[]
   takeoffConditions TakeoffCondition[]
   bids              Bid[]
   bidAwards         BidAward[]
@@ -1239,6 +1240,7 @@ model TakeoffSheet {
 
   measurements TakeoffMeasurement[]
   areaFinds    AreaFindLog[]
+  wallFinds    WallFindLog[]
 
   @@unique([planId, pageNumber])
   @@index([companyId])
@@ -1330,6 +1332,42 @@ model AreaFindLog {
 
   @@index([companyId])
   @@index([measurementId])
+}
+
+// Every Find walls click and what it gave — kept quietly, like AreaFindLog, to learn where the wall finder
+// goes wrong (src/lib/wall-detect). What the user did with the walls is read later from the measurements
+// themselves (still as found, changed, or gone) and from walls traced by hand nearby. Not shown in the app.
+model WallFindLog {
+  id             String       @id @default(cuid())
+  // The company this belongs to (filled in by the program; see src/lib/tenant.ts).
+  companyId      String       @default(dbgenerated("current_setting('app.company_id'::text)"))
+  projectId      String
+  project        Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sheetId        String
+  sheet          TakeoffSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+  conditionId    String? // the takeoff it was added to
+  // Where the click was (page units) and the sheet's scale then.
+  clickX         Float
+  clickY         Float
+  unitsPerFoot   Float
+  // The wall finder's version (WALL_DETECT_VERSION) — results are compared within a version.
+  version        String
+  // What it gave: walls (kind, thickness, center lines JSON [[[x,y],…],…]) or why not ("no-line", "no-wall").
+  ok             Boolean
+  reason         String?
+  kind           String? // "exterior" | "interior"
+  thicknessIn    Float?
+  lengthFt       Float? // all it found
+  runs           String?
+  // What was added: its length (less what was already measured) and the walls (JSON [id,…]; plain ids,
+  // not links: walls being undone or deleted is the point).
+  addedLf        Float?
+  measurementIds String?
+  ms             Int? // how long the click took to work out
+  createdAt      DateTime     @default(now())
+
+  @@index([companyId])
+  @@index([sheetId])
 }
 
 model TakeoffMeasurement {
