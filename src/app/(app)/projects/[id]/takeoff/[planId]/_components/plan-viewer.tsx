@@ -85,7 +85,7 @@ import type { DoorSwing, FillShape } from "./pdf-vectors";
 import { AutoCountPanel, FoundMarkers, autoCountPlan, newAutoCount, type AutoCount } from "./auto-count";
 import { drawnStud } from "./wall-find";
 import { WALL_DETECT_VERSION, findWalls } from "@/lib/wall-detect";
-import { cutArea, cutLine, withoutExisting } from "@/lib/deduct";
+import { cutArea, cutLine, mergeAreas, withoutExisting } from "@/lib/deduct";
 
 /** Total length of runs (plan units). */
 const runsLf = (runs: Pt[][]) => runs.reduce((s, r) => s + r.slice(1).reduce((t, q, i) => t + Math.hypot(q[0] - r[i][0], q[1] - r[i][1]), 0), 0);
@@ -759,6 +759,11 @@ export function PlanViewer({
   }, [bays, chip, edgeChip, pointChip, selectedId]);
   // Several shapes at once (drag a box, or Shift+click). One shape picked is `selectedId` (it can be edited).
   const [multi, setMulti] = useState<string[]>([]);
+  // Two areas picked with Shift+click: the Merge chip, where the second was clicked.
+  const [mergeChip, setMergeChip] = useState<Pt | null>(null);
+  useEffect(() => {
+    if (mergeChip && multi.length !== 2) setMergeChip(null);
+  }, [mergeChip, multi]);
   const [boxSel, setBoxSel] = useState<{ a: Pt; b: Pt; add: boolean } | null>(null);
   // "Clear takeoff": asking which sheets.
   const [clearing, setClearing] = useState(false);
@@ -1628,6 +1633,32 @@ export function PlanViewer({
     if (!removeIds.length) return setFlash(`Nothing of ${cond.name} under it to deduct from`);
     if (selfId) removeIds.push(selfId);
     replaceShapes(removeIds, added, "a deduction", isArea ? "Deducted — Ctrl+Z to take it back" : "Wall taken out there — Ctrl+Z to take it back");
+  };
+
+  /**
+   * Merge: the two areas picked (Shift+click) made one where they meet (a doorway) — walls beside it stay out; a
+   * hair's gap (under 2", from drawing them) is filled; not touching, they're joined through the openings in the wall
+   * between (jamb to jamb), never through a wall. Holes stay. It keeps the first one's takeoff. Ctrl+Z puts both back.
+   */
+  const mergePicked = () => {
+    const [a, b] = multi.map((id) => shapes.find((x) => x.id === id));
+    setMergeChip(null);
+    if (!a || !b) return;
+    const data = shapeData(a);
+    if (!data) return;
+    const gap = unitsPerFoot ? (2 * unitsPerFoot) / 12 : SNAP_PX / zoom;
+    const m = mergeAreas(
+      { points: arcPath(a.points, a.arcs, true), holes: a.holes ?? [] },
+      { points: arcPath(b.points, b.arcs, true), holes: b.holes ?? [] },
+      gap,
+      // (Not touching: joined through the doorways in the wall between — a wall up to 12" — never through the wall.)
+      vectors && unitsPerFoot ? { segments: vectors, wallGap: unitsPerFoot, inch: unitsPerFoot / 12 } : undefined,
+    );
+    if (!m) return setError("No opening between these two — Merge joins rooms that meet, or through a doorway or opening between them.");
+    setError(null);
+    setMulti([]);
+    const other = a.conditionId !== b.conditionId ? ` into ${condById.get(a.conditionId)?.name ?? "the first one's takeoff"}` : "";
+    replaceShapes([a.id, b.id], [{ ...data, points: m.points, arcs: [], holes: m.holes }], "a merge", `Merged${other} — Ctrl+Z to undo`, 0);
   };
 
   /** Splits a picked area in two along the line clicked (Find area found two rooms as one, say). */
@@ -2819,7 +2850,7 @@ export function PlanViewer({
       const p = toPage(e.clientX, e.clientY);
       let walls = pickFloor(thisFloorWalls, p, (SNAP_PX * 1.5) / zoom, unitsPerFoot ? unitsPerFoot * 0.75 : 12 / zoom);
       if (!walls && vectors?.length && unitsPerFoot) {
-        const r = findWalls(vectors, p, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot) });
+        const r = findWalls(vectors, p, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot), doors: doorSwings });
         if (r.ok) walls = r.runs as Pt[][];
       }
       if (!walls) return setError("No wall there — click right on one of the floor above's walls (or trace them first with Find walls).");
@@ -2848,7 +2879,7 @@ export function PlanViewer({
         return setError("This sheet has no line work to read (a scanned plan?) — walls can't be found here. Trace them with Measure.");
       const click = toPage(e.clientX, e.clientY);
       const t0 = performance.now();
-      const r = findWalls(vectors, click, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot) });
+      const r = findWalls(vectors, click, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot), doors: doorSwings });
       // Saved quietly, to improve the wall finder from real use (WallFindLog).
       const log = { projectId, sheetId: sheet.id, conditionId: active.id, click, unitsPerFoot, version: WALL_DETECT_VERSION, ms: performance.now() - t0 };
       if (!r.ok) {
@@ -2872,18 +2903,26 @@ export function PlanViewer({
         ...justAdded.current.filter((j) => j.sheetId === sheet.id).map((j) => j.points),
       ];
       const runs = withoutExisting(r.runs as Pt[][], existing, (r.thicknessIn / 2 + 1.5) * inch, 6 * inch);
+      // Little walls of another size it swept in (a porch's stub drawn fatter): on their own size's takeoff — this one's
+      // name with the size swapped ("Ext 2x4 Wall" → "Ext 2x6 Wall") when the job has it, else this one.
+      const little = (r.ok && "others" in r ? (r.others ?? []) : []).flatMap((o) => {
+        const size = drawnStud(o.thicknessIn);
+        const name = size ? active.name.replace(/2\s*x\s*(4|6|8|10|12)/i, size).trim().toLowerCase() : "";
+        const own = (name && conditions.find((c) => c.type === "WALL" && c.id !== active.id && c.name.trim().toLowerCase() === name)) || active;
+        return withoutExisting(o.runs as Pt[][], existing, (o.thicknessIn / 2 + 1.5) * inch, 6 * inch).map((run) => ({ run, cond: own }));
+      });
       const found = { ...log, ok: true, kind: r.kind, thicknessIn: r.thicknessIn, lengthFt: r.lengthFt, runs: r.runs as Pt[][] };
-      if (!runs.length) {
+      if (!runs.length && !little.length) {
         void logWallFind({ ...found, addedLf: 0, measurementIds: [] });
         return setFlash("Those walls are already measured — nothing added.");
       }
-      for (const run of runs) justAdded.current.push({ sheetId: sheet.id, points: run, at: now });
+      for (const run of [...runs, ...little.map((l) => l.run)]) justAdded.current.push({ sheetId: sheet.id, points: run, at: now });
       const lf = runsLf(runs) / unitsPerFoot;
       const skipped = r.lengthFt - lf > 0.5 ? ` (${num(r.lengthFt - lf)} lf already measured, left out)` : "";
       // Added right away — each wall on its own, undone together (Ctrl+Z); click one + Delete to drop it.
       createMany(
-        runs.map((run) => shapeFor(active, sheet.id, run)),
-        `adding ${runs.length} walls`,
+        [...runs.map((run) => shapeFor(active, sheet.id, run)), ...little.map((l) => shapeFor(l.cond, sheet.id, l.run))],
+        `adding ${runs.length + little.length} walls`,
         (ids) => void logWallFind({ ...found, addedLf: lf, measurementIds: ids }),
       );
       // Drawn a different size than this takeoff (2x6 walls, a 2x4 takeoff): said, so it can be undone.
@@ -2891,7 +2930,9 @@ export function PlanViewer({
       const takeoffStud = active.memberSize?.match(/2\s*x\s*(4|6|8|10|12)/i)?.[1];
       const mismatch =
         drawnAs && takeoffStud && drawnAs !== `2x${takeoffStud}` ? ` — drawn like ${drawnAs}, this takeoff is ${active.memberSize}. Wrong takeoff? Ctrl+Z` : "";
-      setFlash(`Added ${runs.length} ${r.kind} wall${runs.length === 1 ? "" : "s"} · ${num(lf)} lf${skipped}${mismatch}`);
+      const otherTo = [...new Set(little.map((l) => l.cond.name))];
+      const plusLittle = little.length ? ` + ${little.length} short wall${little.length === 1 ? "" : "s"} of another size → ${otherTo.join(", ")}` : "";
+      setFlash(`Added ${runs.length} ${r.kind} wall${runs.length === 1 ? "" : "s"} · ${num(lf)} lf${skipped}${plusLittle}${mismatch}`);
       return;
     }
     if (tool === "findarea") {
@@ -3475,7 +3516,15 @@ export function PlanViewer({
           }
         }
         // Shift+click adds it to (or takes it out of) the shapes picked.
-        if (e.shiftKey) return selectSet(picked.includes(m.id) ? picked.filter((x) => x !== m.id) : [...picked, m.id]);
+        if (e.shiftKey) {
+          const next = picked.includes(m.id) ? picked.filter((x) => x !== m.id) : [...picked, m.id];
+          selectSet(next);
+          // Two areas side by side: Merge, right at the click.
+          const two = next.length === 2 ? next.map((id) => shapes.find((x) => x.id === id)) : [];
+          const areas = two.length === 2 && two.every((x) => x && !x.pending && !x.isDeduction && condById.get(x.conditionId)?.type === "AREA");
+          setMergeChip(areas ? toPage(e.clientX, e.clientY) : null);
+          return;
+        }
         setMulti([]);
         setSelectedId(m.id);
         // A line or an area: the chip for the edge (wall piece) clicked, right where it was clicked.
@@ -5339,6 +5388,29 @@ export function PlanViewer({
                     </svg>
                   ) : null}
                   {chip && size ? renderChip() : null}
+                  {mergeChip && size && tool === "select" && multiShapes.length === 2 && !drag ? (
+                    <div
+                      className="absolute z-20 flex rounded-md border border-slate-200 bg-white shadow-lg"
+                      style={{
+                        left: mergeChip[0] * zoom,
+                        top: mergeChip[1] * zoom,
+                        transform: `rotate(${-rotation}deg) translate(-50%, calc(-100% - 10px))`,
+                        transformOrigin: "0 0",
+                      }}
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                      onContextMenu={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="flex h-7 items-center gap-1 whitespace-nowrap rounded-md px-2 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                        title="Make these two areas one — the edge between them goes. Ctrl+Z puts them back."
+                        onClick={mergePicked}
+                      >
+                        <Combine className="h-3.5 w-3.5" /> Merge
+                      </button>
+                    </div>
+                  ) : null}
                   {(() => {
                     // The chip at a click on the picked shape: an edge (a wall piece) or one of its points.
                     if (!size || splitting || tool !== "select" || !selected || selected.pending || drag) return null;

@@ -18,7 +18,7 @@
 import { DEG, bucketOf, distToSeg, grid, toLine, type Line, type Pt } from "../../../src/lib/wall-detect";
 
 /** Which rules the room finder runs: saved with each Find area click (AreaFindLog). Change it with them. */
-export const ROOM_DETECT_VERSION = "2026-11-19a";
+export const ROOM_DETECT_VERSION = "2026-11-20a";
 
 export type RoomFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -44,8 +44,6 @@ export type RoomFindOptions = {
    * width is closed.
    */
   doors?: { x: number; y: number; r: number; a?: [number, number]; b?: [number, number] }[];
-  /** False: no pockets — a shower, a tub, a counter's strip closed in beside the room stays out of it (see 3c). */
-  pockets?: boolean;
   /** False: a room that runs on outside isn't closed in where it got out (see 3b) — it's "open". */
   closeHouse?: boolean;
   /** (Internal: false closes every opening up to a door's width, swing or not — see `doors`.) */
@@ -56,6 +54,23 @@ export type RoomFindOptions = {
   piecesOnly?: (bands: { half: number; s0: number; s1: number }[]) => void;
   /** (Internal: hand back what's outside the house around the click — see `houseOutsideMap` — and stop.) */
   outsideOnly?: (map: OutsideMap) => void;
+  /**
+   * A fence the floor can't go past (the room AI's room, a little bigger — see room-ai): pixel (i, j) of `cells`
+   * (W×H, 1 = inside) is plan point (ox + i/S, oy + j/S). Inside it the room is found as always — walls, door
+   * closings, sides onto wall faces — so only where nothing's drawn does the fence make the edge.
+   */
+  fence?: { ox: number; oy: number; S: number; W: number; H: number; cells: Uint8Array };
+  /**
+   * The user's rule (2026-11-22): a room stops at the wall's face, but across an opening between two rooms (a door,
+   * a cased opening, nothing drawn) it runs to the MIDDLE of the wall — half the opening's strip each, nothing lost
+   * under the door, nothing counted twice. Doors to the outside stay at the face. Default on; false = to the face.
+   */
+  middle?: boolean;
+  /**
+   * (Test only.) Close every opening with no door too. Not used: on the user's rooms it cut bathrooms and halls across
+   * at wall stubs (a shower's half wall, a vanity's nook) — 82 rooms broken, 19 fixed (2026-11-22).
+   */
+  splitOpenings?: boolean;
 };
 
 /**
@@ -645,6 +660,25 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     if (used.length && top >= 30 * upf) bands.splice(0, bands.length, ...bands.filter((w) => filledAll.includes(w) || used.some((t) => Math.abs(bucket(w) - t) <= 0.375) || besideStairs(w)));
   }
 
+  // A point on a band's line: `along` it, `off` from its center line.
+  const at2 = (w: Band, along: number, off: number): [number, number] => [w.ux * along + w.nx * (w.rho + off), w.uy * along + w.ny * (w.rho + off)];
+  // The stretches of [from, to] along a band's line drawn by lines within its faces (touching pieces as one).
+  const drawnRuns = (w: Band, from: number, to: number, join: number, r0 = w.rho - w.half - inch, r1 = w.rho + w.half + inch) => {
+    const spans: [number, number][] = [];
+    for (const l of parallelNear(w.ang, r0, r1, from, to)) {
+      if (isDimension(l)) continue;
+      const a = Math.max(l.s0, from), b = Math.min(l.s1, to);
+      if (b > a) spans.push([a, b]);
+    }
+    spans.sort((p, q) => p[0] - q[0]);
+    const runs: [number, number][] = [];
+    for (const [a, b] of spans) {
+      const r = runs[runs.length - 1];
+      if (r && a <= r[1] + join) r[1] = Math.max(r[1], b);
+      else runs.push([a, b]);
+    }
+    return runs;
+  };
   // How much of [from, to] along a band's line is drawn by lines within its faces.
   const drawnAlong = (w: Band, from: number, to: number) => {
     const spans: [number, number][] = [];
@@ -670,9 +704,8 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   // (a door) only between pieces of a real wall — each long, or tied into another wall at an end;
   // label boxes and furniture standing in a room aren't strung together.
   const bridges: Band[] = [];
-  /** The door swings' own shut lines (2e) — a door, for sure; other openings closed may be a shower's front. */
-  const swung = new Set<Band>();
-  const swingSide = new Map<Band, number>();
+  // (Each closed opening's own stretch, between the wall's ends — for running the room to its middle, step 6.)
+  const openSpan = new Map<Band, [number, number]>();
   const bandsNear = bandGrid(bands, 2 * upf);
   const tiedAt = (w: Band, end: number) => {
     const ex = w.ux * end + w.nx * w.rho;
@@ -750,7 +783,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   const isDoorway = (w: Band, a: number, b: number) => {
     const width = b - a;
     // (Only inside walls, drawn under 5" thick: an outside wall's opening is a door, a window, a fireplace.)
-    if (!doors.length || opts.passages === false || width <= 3 * upf || 2 * w.half >= 5 * inch) return true;
+    if (!doors.length || opts.passages === false || opts.splitOpenings || width <= 3 * upf || 2 * w.half >= 5 * inch) return true;
     if (drawnAlong(w, a, b) >= 0.5) return true;
     // A door that shuts this opening: hinged on its line near one end, and its leaf, closed, lies along
     // the opening — one end of its swing sits on the opening's line, inside it. (The door of a room next
@@ -789,7 +822,11 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         if (real && (!nextReal || p.s0 < nextReal.s0) && anchored(p)) nextReal = p;
       }
     }
-    const bridge = (to: Band) => bridges.push({ ...w, rho: (w.rho + to.rho) / 2, half: Math.min(w.half, to.half), s0: w.s1 - inch, s1: to.s0 + inch });
+    const bridge = (to: Band) => {
+      const b = { ...w, rho: (w.rho + to.rho) / 2, half: Math.min(w.half, to.half), s0: w.s1 - inch, s1: to.s0 + inch };
+      bridges.push(b);
+      openSpan.set(b, [w.s1, to.s0]);
+    };
     if (asHeavy(w)) {
       // (Not through another wall: pieces in line on either side of a wall that crosses between them
       // are two rooms' walls, not one wall with an opening.)
@@ -916,7 +953,11 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         }
       }
       if (hit < Infinity && !isDoorway(w, dir > 0 ? end : end - hit, dir > 0 ? end + hit : end)) continue;
-      if (hit < Infinity) bridges.push({ ...w, s0: dir > 0 ? end - inch : end - hit - inch, s1: dir > 0 ? end + hit + inch : end + inch });
+      if (hit < Infinity) {
+        const b = { ...w, s0: dir > 0 ? end - inch : end - hit - inch, s1: dir > 0 ? end + hit + inch : end + inch };
+        bridges.push(b);
+        openSpan.set(b, dir > 0 ? [end, end + hit] : [end - hit, end]);
+      }
     }
   }
   // 2e. A door is a wall, as far as rooms go: every door swing shuts its opening, whatever else is or
@@ -980,10 +1021,6 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     const sb = e[0] * lx + e[1] * ly;
     // (A few inches past both ends, into the jambs — they're often too short to count as wall.)
     bridges.push({ ang, ux: lx, uy: ly, nx, ny, rho: d.x * nx + d.y * ny, half: 1.5 * inch, s0: Math.min(sa, sb) - 6 * inch, s1: Math.max(sa, sb) + 6 * inch });
-    swung.add(bridges[bridges.length - 1]);
-    // (Which way it swings: the side of the doorway its open end is on.)
-    const o = e === d.a ? d.b : d.a;
-    swingSide.set(bridges[bridges.length - 1], Math.sign((o[0] - d.x) * nx + (o[1] - d.y) * ny));
   }
   const walls = [...bands, ...bridges, ...stairs];
 
@@ -1033,8 +1070,16 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       }
     }
   };
-  (globalThis as { labWalls?: (w: Band[]) => void }).labWalls?.(walls);
   for (const w of walls) block(w);
+  // (The fence: cells outside it are walls.)
+  if (opts.fence) {
+    const f = opts.fence;
+    for (let j = 0; j < H; j++)
+      for (let i = 0; i < W; i++) {
+        const fi = Math.floor((box.x0 + (i + 0.5) * cell - f.ox) * f.S), fj = Math.floor((box.y0 + (j + 0.5) * cell - f.oy) * f.S);
+        if (fi < 0 || fj < 0 || fi >= f.W || fj >= f.H || !f.cells[fj * f.W + fi]) blocked[j * W + i] = 1;
+      }
+  }
   /** What's outside the house (the yard, a porch, a patio — not the garage, behind its door). */
   const outsideOfHouse = () => {
     // (Not counting the sheet's border — a frame drawn double around the page would close in the yard.
@@ -1230,113 +1275,6 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     if (sf > Math.max(10, (0.03 * top * cell * cell) / (upf * upf))) return { ok: false, reason: "open" };
   }
 
-  // 3c. Wall to wall: a small pocket closed in beside the room by wall pieces alone — a shower behind its
-  // curb, a tub behind its front, the strip under a counter or behind a closet shelf — is the room's floor
-  // too, and the piece between is no wall. Not a pocket with a door into it (a closet, a toilet room, a
-  // linen: a door swing, or an opening closed across), nor a chase (under 4 sf), nor anything bigger
-  // than a walk-in shower (45 sf).
-  if ((opts.pockets || process.env.RD_POCKETS) && !process.env.RD_NO_POCKETS) {
-    const isBand = new Set(bands);
-    const doorish = new Uint8Array(W * H);
-    for (const w of walls) if (!isBand.has(w) && (process.env.RD_ANYDOOR ? true : swung.has(w))) block(w, doorish);
-    // (Nothing beside a stair: the space under it, a landing.)
-    const stairy = new Uint8Array(W * H);
-    for (const w of stairs) block(w, stairy);
-    let roomCells = 0;
-    for (let k = 0; k < W * H; k++) if (floor[k]) roomCells++;
-    const sfCell = (cell * cell) / (upf * upf);
-    const maxCells = Math.ceil(45 / sfCell);
-    const minCells = Math.ceil(4 / sfCell);
-    const tried = new Uint8Array(W * H);
-    const pocket: number[] = [];
-    const cellAt = (x: number, y: number) => {
-      const i = Math.floor((x - box.x0) / cell), j = Math.floor((y - box.y0) / cell);
-      return i <= 0 || j <= 0 || i >= W - 1 || j >= H - 1 ? -1 : j * W + i;
-    };
-    const grow = (k0: number) => {
-      pocket.length = 0;
-      pocket.push(k0);
-      tried[k0] = 1;
-      let doorTouch = 0;
-      for (let h = 0; h < pocket.length; h++) {
-        check(4096);
-        const k = pocket[h];
-        const i = k % W;
-        if (i === 0 || k < W || i === W - 1 || k >= W * (H - 1) || pocket.length > maxCells) {
-          if (process.env.RD_DBG) console.error("pocket too big/open", pocket.length * sfCell);
-          return false;
-        }
-        for (const n of [k - 1, k + 1, k - W, k + W]) {
-          if (stairy[n]) return false;
-          if (doorish[n] && blocked[n] && ++doorTouch > 4) {
-            if (process.env.RD_DBG) console.error("pocket has a door", pocket.length * sfCell);
-            return false;
-          }
-          if (!blocked[n] && !tried[n] && !floor[n]) {
-            tried[n] = 1;
-            pocket.push(n);
-          }
-        }
-      }
-      if (process.env.RD_DBG) console.error("pocket", pocket.length * sfCell, "sf, door touches", doorTouch);
-      return pocket.length >= minCells;
-    };
-    // A door swinging anywhere near it (within its width of the hinge, and 6"): a room of its own.
-    const doorNear = (cells: number[]) =>
-      (opts.doors ?? []).some((d) => {
-        const r = d.r + 6 * inch;
-        return cells.some((k) => {
-          const i = k % W, j = (k - i) / W;
-          return Math.hypot(box.x0 + (i + 0.5) * cell - d.x, box.y0 + (j + 0.5) * cell - d.y) <= r;
-        });
-      });
-    // A foot wide or more nearly everywhere (not the hollow of a wall drawn in three lines, or a furred
-    // strip): most of it is still there taken in 5" from every side.
-    const roomy = (cells: number[]) => {
-      const mineSet = new Set(cells);
-      const r = Math.max(1, Math.round((5 * inch) / cell));
-      let deep = 0;
-      for (const k of cells) {
-        let ok = true;
-        for (let d = 1; d <= r && ok; d++) ok = mineSet.has(k - d) && mineSet.has(k + d) && mineSet.has(k - d * W) && mineSet.has(k + d * W);
-        if (ok) deep++;
-      }
-      return deep >= 0.4 * cells.length;
-    };
-    for (const w of bands) {
-      check(64);
-      for (const side of [1, -1]) {
-        let lo = Infinity, hi = -Infinity, got = -1;
-        let mine = new Set<number>();
-        for (let sv = w.s0 + inch; sv <= w.s1 - inch; sv += 2 * inch) {
-          const at = (o: number) => cellAt(w.ux * sv + w.nx * (w.rho + o), w.uy * sv + w.ny * (w.rho + o));
-          const near = at(-side * (w.half + 2 * cell)), far = at(side * (w.half + 2 * cell));
-          if (near < 0 || far < 0 || !floor[near] || blocked[far]) continue;
-          if (got >= 0 ? !mine.has(far) : floor[far]) continue;
-          if (got < 0) {
-            if (tried[far]) continue;
-            if (!grow(far)) continue;
-            mine = new Set(pocket);
-            // (Only into a room twice its size or more: a shower or closet clicked on is that, not the room beside it.)
-            if (pocket.length * 2 > roomCells || !roomy(pocket) || doorNear(pocket)) continue;
-            for (const k of pocket) floor[k] = 1;
-            got = far;
-          }
-          lo = Math.min(lo, sv);
-          hi = Math.max(hi, sv);
-        }
-        if (got < 0) continue;
-        // The piece between, where the room and the pocket face each other: floor.
-        for (let sv = lo - cell; sv <= hi + cell; sv += cell / 2)
-          for (let o = -(w.half + 1.5 * cell); o <= w.half + 1.5 * cell; o += cell / 2) {
-            const k = cellAt(w.ux * sv + w.nx * (w.rho + o), w.uy * sv + w.ny * (w.rho + o));
-            if (k >= 0) floor[k] = 1;
-          }
-        (globalThis as { labPocket?: (w: Band) => void }).labPocket?.(w);
-      }
-    }
-  }
-
   // 4. Whatever stands inside the room (an island, a label) is floor too: fill its holes — anything not
   // reachable from the edge of the search without crossing the floor.
   const outside = new Uint8Array(W * H);
@@ -1397,48 +1335,11 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
 
   // 5. Each side onto the wall face it runs along (the grid's edge sits a cell or so off it).
   const faces = walls.flatMap((w) => [w.rho - w.half, w.rho + w.half].map((rho) => ({ ...w, rho })));
-  // A doorway shut by its door: closed in line with the wall faces either side of it (the jambs), the way
-  // it's measured — not along the door, which hangs an inch or more inside the wall.
-  const jambFaces = !process.env.RD_DOORLINE
-    ? []
-    : [...swung].flatMap((d) => {
-        // (A doorway in a wall: a wall in line ending at each side of the opening.)
-        const e0 = d.s0 + 6 * inch, e1 = d.s1 - 6 * inch;
-        const inLine = bands.filter((w) => Math.abs(Math.sin(w.ang - d.ang)) <= Math.sin(4 * DEG) && Math.abs(w.rho - d.rho) <= w.half + 6 * inch);
-        const near = (w: Band | undefined) => (w ? Math.abs(w.rho - d.rho) : Infinity);
-        const A = inLine.filter((w) => w.s1 >= e0 - 8 * inch && w.s1 <= e0 + 4 * inch && w.s0 < e0 - 6 * inch).sort((p, q) => near(p) - near(q))[0];
-        const B = inLine.filter((w) => w.s0 >= e1 - 4 * inch && w.s0 <= e1 + 8 * inch && w.s1 > e1 + 6 * inch).sort((p, q) => near(p) - near(q))[0];
-        if (process.env.RD_BOTHJAMBS ? !A || !B : !A && !B) return [];
-        const w = (near(A) <= near(B) ? A : B)!;
-        return [w.rho - w.half, w.rho + w.half].map((rho) => ({ ...d, rho, half: 0, d0: d.s0, d1: d.s1, door: d.rho, swing: swingSide.get(d) ?? 0 }));
-      });
   const sides = pts.map((a, i) => {
     const b = pts[(i + 1) % pts.length];
     const l = toLine(a[0], a[1], b[0], b[1]);
     if (!l) return null;
     const m: Pt = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-    // (The side along the door itself — most of the doorway's width, on the door's line — and the jamb
-    // face on the room's side of it: the room's way is where the floor is.)
-    let jamb: { nx: number; ny: number; rho: number } | null = null;
-    let jambIn = -Infinity;
-    for (const f of jambFaces) {
-      if (Math.abs(Math.sin(f.ang - l.ang)) > Math.sin(4 * DEG)) continue;
-      const sa = a[0] * f.ux + a[1] * f.uy, sb = b[0] * f.ux + b[1] * f.uy;
-      const lo = Math.max(Math.min(sa, sb), f.d0), hi = Math.min(Math.max(sa, sb), f.d1);
-      if (hi - lo < 0.7 * (f.d1 - f.d0 - 12 * inch) || hi - lo < 12 * inch) continue;
-      const here = m[0] * f.nx + m[1] * f.ny;
-      if (Math.abs(here - f.door) > 1.5 * inch + 2.5 * cell) continue;
-      const k = (v: number) => [Math.floor((m[0] + f.nx * v - box.x0) / cell), Math.floor((m[1] + f.ny * v - box.y0) / cell)] as const;
-      const sgn = inRoom(...k(2 * cell)) ? 1 : inRoom(...k(-2 * cell)) ? -1 : 0;
-      if (!sgn) continue;
-      // RD_SWING=in: only doors swinging into the room; =out: only away from it.
-      if (process.env.RD_SWING === "in" && f.swing !== sgn) continue;
-      if (process.env.RD_SWING === "out" && f.swing !== -sgn) continue;
-      const inward = (f.rho - here) * sgn;
-      if (inward < -8 * inch || inward > 8 * inch) continue;
-      if (inward > jambIn) (jambIn = inward), (jamb = f);
-    }
-    if (jamb) return { nx: jamb.nx, ny: jamb.ny, rho: jamb.rho };
     let best: { nx: number; ny: number; rho: number } | null = null;
     let bestD = 2.5 * cell;
     for (const f of faces) {
@@ -1451,8 +1352,63 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         best = f;
       }
     }
-    return best ? { nx: best.nx, ny: best.ny, rho: best.rho } : { nx: l.nx, ny: l.ny, rho: l.rho };
+    return best ? { nx: best.nx, ny: best.ny, rho: best.rho, face: true, len: Math.hypot(b[0] - a[0], b[1] - a[1]) } : { nx: l.nx, ny: l.ny, rho: l.rho, face: false, len: Math.hypot(b[0] - a[0], b[1] - a[1]) };
   });
+  // A corner the grid cut off: one short side (under 18") or a few in a row (under 2' in all) on no wall face, at a
+  // slant, between two sides that meet at an angle — they go, and those two meet in a square corner. (A real angled
+  // wall has its face drawn, so it stays; a door's closing line runs in line with a side, not at a slant.)
+  {
+    type Side = (typeof sides)[number];
+    const cand = (q: Side) => !!q && !q.face && q.len < 18 * inch;
+    const cross = (a: Side, b: Side) => (a && b ? Math.abs(a.nx * b.ny - a.ny * b.nx) : 0);
+    for (let pass = 0; pass < 4; pass++) {
+      const n = sides.length;
+      if (n <= 3) break;
+      let done = false;
+      for (let i = 0; i < n && !done; i++) {
+        if (!cand(sides[i]) || cand(sides[(i + n - 1) % n])) continue; // start of a run
+        let j = i, total = 0;
+        while (cand(sides[j % n]) && j - i < n - 2) total += sides[j++ % n]!.len;
+        const P = sides[(i + n - 1) % n], R = sides[j % n];
+        const run = Array.from({ length: j - i }, (_, k) => sides[(i + k) % n]);
+        if (total >= 24 * inch || cross(P, R) < Math.sin(30 * DEG) || !run.some((q) => cross(q, P) >= Math.sin(25 * DEG) && cross(q, R) >= Math.sin(25 * DEG))) continue;
+        // Drop the run's sides and the corners inside it (sides[k] runs from pts[k] to pts[k + 1]); the corner at the
+        // run's start now leads into R, so it lands where P and R meet.
+        const drop = new Set(run.map((_, k) => (i + k) % n));
+        const dropPt = new Set(run.map((_, k) => (i + k + 1) % n));
+        const order = [...Array(n).keys()].filter((k) => !dropPt.has(k));
+        const newPts = order.map((k) => pts[k]);
+        const newSides = order.map((k) => {
+          let m = k;
+          while (drop.has(m % n)) m++;
+          return sides[m % n];
+        });
+        pts.splice(0, pts.length, ...newPts);
+        sides.splice(0, sides.length, ...newSides);
+        done = true;
+      }
+      if (!done) break;
+    }
+  }
+  // (And a single slanted cut whose neighbour is another short piece the run above didn't take.)
+  for (let pass = 0; pass < 3; pass++)
+    for (let i = 0; i < sides.length && sides.length > 3; i++) {
+      const q = sides[i];
+      if (!q || q.face || q.len >= 18 * inch) continue;
+      const p = sides[(i + sides.length - 1) % sides.length], r = sides[(i + 1) % sides.length];
+      if (!p || !r || Math.abs(p.nx * r.ny - p.ny * r.nx) < Math.sin(30 * DEG)) continue;
+      const slant = (a: { nx: number; ny: number }) => Math.abs(a.nx * q.ny - a.ny * q.nx);
+      if (slant(p) < Math.sin(25 * DEG) || slant(r) < Math.sin(25 * DEG)) continue;
+      if (i === sides.length - 1) {
+        sides.pop();
+        pts.shift();
+        sides.push(sides.shift()!);
+      } else {
+        sides.splice(i, 1);
+        pts.splice(i + 1, 1);
+      }
+      i--;
+    }
   const snapped: Pt[] = [];
   for (let i = 0; i < pts.length; i++) {
     const p = sides[(i + pts.length - 1) % pts.length];
@@ -1470,6 +1426,110 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   // A small jog where a window or door jamb pokes in or out (up to 10" deep, 4' wide), or a thin slit
   // (up to 6" wide, 4' deep), with the wall lining up on both sides of it: straightened out.
   pts = dropNicks(pts, 10 * inch, 4 * upf, 1.5 * inch, 2.5 * inch, 10 * upf);
+  // 6. Across an opening into another room, the side runs on to the middle of the wall (see `middle`): that piece of
+  // the side, pushed out from the wall's face to its center line. Not where the far side is the yard or a porch.
+  if (opts.middle !== false && openSpan.size) {
+    let outMap: Uint8Array | null = null;
+    const farIsRoom = (x: number, y: number) => {
+      const i = Math.floor((x - box.x0) / cell), j = Math.floor((y - box.y0) / cell);
+      if (i < 0 || j < 0 || i >= W || j >= H || blocked[j * W + i]) return false;
+      outMap ??= outsideOfHouse();
+      return !outMap[j * W + i];
+    };
+    const out: Pt[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], c = pts[(i + 1) % pts.length];
+      out.push(a);
+      const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      if (L < 12 * inch) continue;
+      const ux = (c[0] - a[0]) / L, uy = (c[1] - a[1]) / L;
+      const cuts: [number, number, number, number, number][] = []; // along from, along to, push x, push y
+      for (const [b, [o0, o1]] of openSpan) {
+        if (Math.abs(ux * b.nx + uy * b.ny) > Math.sin(4 * DEG) || o1 - o0 < 12 * inch) continue;
+        const d = ((a[0] + c[0]) / 2) * b.nx + ((a[1] + c[1]) / 2) * b.ny - b.rho;
+        // (The side on the opening's face — not one running down its middle already, or off in the room.)
+        if (Math.abs(d) < b.half - inch || Math.abs(d) > b.half + 2 * inch || b.half < 1.5 * inch) continue;
+        // (A real opening: not drawn along the wall's line most of the way across — a wall drawn in pieces, a window, a
+        // pocket door's slab are. An arch's or cased opening's dashed header leaves gaps: ~70% on Kala.)
+        if (drawnAlong(b, o0, o1) >= 0.85) continue;
+        // Where the opening's stretch lies along this side.
+        const sa = a[0] * b.ux + a[1] * b.uy, sc = c[0] * b.ux + c[1] * b.uy;
+        let lo = Math.max(Math.min(sa, sc), o0), hi = Math.min(Math.max(sa, sc), o1);
+        // (Not over a short piece of wall left at either end — a jamb's stub between the opening and a corner,
+        // too short to count as a wall of its own: where the wall is drawn — both its faces, not a dimension's end
+        // line laid along one — the room stops at its face.)
+        const runs: [number, number][] = [];
+        {
+          const f0 = drawnRuns(b, lo, hi, 0.5 * inch, b.rho - b.half - inch, b.rho), f1 = drawnRuns(b, lo, hi, 0.5 * inch, b.rho, b.rho + b.half + inch);
+          // (The far face has a gap where another wall joins it from beyond — a T: that's still wall, not opening.)
+          const toFar = d > 0 ? -1 : 1, far = toFar > 0 ? f1 : f0;
+          const isWall = (x: number, y: number) => {
+            const i = Math.floor((x - box.x0) / cell), j = Math.floor((y - box.y0) / cell);
+            return i >= 0 && j >= 0 && i < W && j < H && !!blocked[j * W + i];
+          };
+          let t0: number | null = null;
+          for (let t = lo; t <= hi + 1e-9; t += 0.5 * inch) {
+            const w = isWall(...at2(b, t, toFar * (b.half + 2 * inch))) && isWall(...at2(b, t, toFar * (b.half + 4 * inch)));
+            if (w && t0 === null) t0 = t;
+            if ((!w || t + 0.5 * inch > hi) && t0 !== null) { far.push([t0, w ? hi : t]); t0 = null; }
+          }
+          far.sort((p, q) => p[0] - q[0]);
+          for (let k = far.length - 1; k > 0; k--) if (far[k][0] <= far[k - 1][1] + 0.5 * inch) { far[k - 1][1] = Math.max(far[k - 1][1], far[k][1]); far.splice(k, 1); }
+          for (const [a0, a1] of f0)
+            for (const [c0, c1] of f1) {
+              const x0 = Math.max(a0, c0), x1 = Math.min(a1, c1);
+              if (x1 <= x0) continue;
+              const r = runs[runs.length - 1];
+              if (r && x0 <= r[1] + 0.5 * inch) r[1] = Math.max(r[1], x1);
+              else runs.push([x0, x1]);
+            }
+          runs.sort((p, q) => p[0] - q[0]);
+        }
+        // (To the stub's drawn end, across the wall, where it has one: an arch's dashed header can start right at it.)
+        const caps = (r0: number, r1: number) =>
+          strokesNear(...at2(b, r0 - inch, -b.half), ...at2(b, r1 + inch, b.half))
+            .filter((k) => Math.abs(Math.cos(k.ang - b.ang)) < Math.sin(10 * DEG))
+            .filter((k) => {
+              const e0 = k.x1 * b.nx + k.y1 * b.ny - b.rho, e1 = k.x2 * b.nx + k.y2 * b.ny - b.rho;
+              return Math.min(e0, e1) <= -b.half + 0.5 * inch && Math.max(e0, e1) >= b.half - 0.5 * inch;
+            })
+            .map((k) => ((k.x1 + k.x2) / 2) * b.ux + ((k.y1 + k.y2) / 2) * b.uy)
+            .filter((t) => t >= r0 - 0.5 * inch && t <= r1 + 0.5 * inch);
+        if (runs.length && runs[0][0] <= lo + 0.5 * inch && runs[0][1] - runs[0][0] >= 2 * inch) {
+          const c = caps(runs[0][0], runs[0][1]);
+          lo = c.length ? Math.max(lo, ...c) : runs[0][1];
+        }
+        const lr = runs[runs.length - 1];
+        if (lr && lr[1] >= hi - 0.5 * inch && lr[1] - lr[0] >= 2 * inch && lr[0] > lo) {
+          const c = caps(lr[0], lr[1]);
+          hi = c.length ? Math.min(hi, ...c) : lr[0];
+        }
+        if (hi - lo < 12 * inch) continue;
+        const sign = d > 0 ? -1 : 1; // toward the wall's center
+        const mid = (lo + hi) / 2;
+        const fx = b.ux * mid + b.nx * (b.rho + sign * (b.half + 6 * inch)), fy = b.uy * mid + b.ny * (b.rho + sign * (b.half + 6 * inch));
+        if (!farIsRoom(fx, fy)) continue;
+        // (Outward only: the strip it takes in lies outside the room — never a wall's end standing in the room.)
+        // (The side is at rho − sign·|d|: the room lies past it, away from the wall's center.)
+        const at = (o: number): Pt => [b.ux * mid + b.nx * (b.rho + sign * o), b.uy * mid + b.ny * (b.rho + sign * o)];
+        if (inside(pts, at(-Math.abs(d) / 2)) || !inside(pts, at(-Math.abs(d) - inch))) continue;
+        const ta = (lo - sa) / (sc - sa), tb = (hi - sa) / (sc - sa);
+        const [t0, t1] = ta < tb ? [ta, tb] : [tb, ta];
+        cuts.push([t0 * L, t1 * L, b.nx * sign * Math.abs(d), b.ny * sign * Math.abs(d), 0]);
+      }
+      cuts.sort((p, q) => p[0] - q[0]);
+      let last = 0;
+      for (const [t0, t1, px, py] of cuts) {
+        if (t0 < last) continue;
+        const at = (t: number): Pt => [a[0] + ux * t, a[1] + uy * t];
+        const p0 = at(t0), p1 = at(t1);
+        out.push(p0, [p0[0] + px, p0[1] + py], [p1[0] + px, p1[1] + py], p1);
+        last = t1;
+      }
+    }
+    // (Corners that landed on each other where a piece started at a corner: one.)
+    pts = out.filter((q, k) => { const r = out[(k + out.length - 1) % out.length]; return Math.hypot(q[0] - r[0], q[1] - r[1]) > 0.05 * inch; });
+  }
   const areaSf = Math.abs(shoelace(pts)) / (upf * upf);
   if (areaSf < 2) return { ok: false, reason: "too-small" };
   return { ok: true, outline: pts, areaSf };

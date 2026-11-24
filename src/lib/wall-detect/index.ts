@@ -23,7 +23,7 @@
  */
 
 /** Which rules the wall finder runs: saved with each Find walls click (WallFindLog). Change it with them. */
-export const WALL_DETECT_VERSION = "2026-11-19a";
+export const WALL_DETECT_VERSION = "2026-11-23a";
 
 export type Pt = [number, number];
 export type WallKind = "exterior" | "interior";
@@ -52,10 +52,22 @@ export type WallFindOptions = {
   outside?: { x0: number; y0: number; cell: number; W: number; H: number; out: Uint8Array };
   /** An outside wall clicked: bring every outside wall this size along the house's outline too, joined or not (default on; needs `outside`). */
   outline?: boolean;
+  /** The sheet's door swings (hinge, radius, the two ends of the arc): a door hung on a slant means a wall there. */
+  doors?: { x: number; y: number; r: number; a?: Pt; b?: Pt }[];
 };
 
 export type WallFindResult =
-  { ok: true; thicknessIn: number; kind: WallKind; runs: Pt[][]; lengthFt: number; openings: number } | { ok: false; reason: "no-line" | "no-wall" | "no-scale" };
+  | {
+      ok: true;
+      thicknessIn: number;
+      kind: WallKind;
+      runs: Pt[][];
+      lengthFt: number;
+      openings: number;
+      /** Little walls of another size swept in with an outside wall (a porch's stub drawn fatter): each goes on its own size's takeoff. */
+      others?: { runs: Pt[][]; thicknessIn: number }[];
+    }
+  | { ok: false; reason: "no-line" | "no-wall" | "no-scale" };
 
 type Line = { x1: number; y1: number; x2: number; y2: number; ang: number; ux: number; uy: number; nx: number; ny: number; rho: number; s0: number; s1: number };
 /** A straight stretch of wall center line: along direction u, at offset rho along n, from s0 to s1. */
@@ -170,7 +182,8 @@ function grid(lines: Line[], cell: number) {
  * `segments` is the page's line work as [x1, y1, x2, y2, …] in page units.
  * An outside wall carries on past a piece of another size (a 2x6 stretch in a 2x4 house's outside wall):
  * that piece is stepped over and the outside wall followed on at the clicked size beyond it. The piece
- * itself stays out — it's its own size, taken off with its own click.
+ * itself stays out — it's its own size, taken off with its own click — unless it's a little one (under 3', a porch's
+ * stub drawn fatter): that comes in with the outside wall.
  */
 export function findWalls(segments: Float32Array | number[], click: Pt, opts: WallFindOptions): WallFindResult {
   const first = findWallsAt(segments, click, opts);
@@ -236,22 +249,46 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   const runs = [...first.runs];
   let openings = first.openings;
   const over: Pt[][] = [];
+  const others: { runs: Pt[][]; thicknessIn: number }[] = [];
   const queue = endsOf(runs, runs);
   for (let steps = 0; queue.length && steps < 8;) {
     const e = queue.shift()!;
     if (nearRuns(e.p, over)) continue;
     // The outside piece of another size past the end.
     let piece: Pt[][] | null = null;
+    let pieceT = 0;
     for (const q of probesAt(e, otherSize)) {
       const r = look(q);
       if (r?.ok && r.kind === "exterior" && Math.abs(r.thicknessIn - first.thicknessIn) > tolIn && nearRuns(e.p, r.runs, 1.5 * join)) {
         piece = r.runs;
+        pieceT = r.thicknessIn;
         break;
       }
     }
     if (!piece) continue;
     steps++;
     over.push(...piece);
+    // A little one — a porch's stub drawn fatter, under 3' in all — comes in with the outside wall (the user: sweep
+    // the odd-size little walls in too); a longer stretch of another size stays its own click.
+    const pieceLen = piece.reduce((n, r) => n + Math.hypot(r[r.length - 1][0] - r[0][0], r[r.length - 1][1] - r[0][1]), 0);
+    if (pieceLen <= 3 * upf) {
+      const little = piece.filter((r) => !runs.includes(r)).map((r) => r.map((q) => [q[0], q[1]] as Pt));
+      // Its ends and the outside wall's meet in clean corners (each reaches the other's center line).
+      const reach = (r: Pt[], o: Pt[]) => {
+        const [a, b] = [r[0], r[r.length - 1]], [c, d] = [o[0], o[o.length - 1]];
+        const den = (b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0]);
+        if (Math.abs(den) < 1e-9 * Math.hypot(b[0] - a[0], b[1] - a[1]) * Math.hypot(d[0] - c[0], d[1] - c[1])) return;
+        const t = ((c[0] - a[0]) * (d[1] - c[1]) - (c[1] - a[1]) * (d[0] - c[0])) / den;
+        const x: Pt = [a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])];
+        for (const k of [0, r.length - 1]) if (Math.hypot(r[k][0] - x[0], r[k][1] - x[1]) <= join && distToSeg(x[0], x[1], segAt(o)) <= join) r[k] = x;
+      };
+      for (const l of little)
+        for (const o of runs) {
+          reach(l, o);
+          reach(o, l);
+        }
+      others.push({ runs: little, thicknessIn: pieceT });
+    }
     // Past its other end(s): the clicked size again — the outside wall carrying on.
     for (const f of endsOf(piece, piece)) {
       if (Math.hypot(f.p[0] - e.p[0], f.p[1] - e.p[1]) <= 2 * join || nearRuns(f.p, runs)) continue;
@@ -269,9 +306,9 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
       }
     }
   }
-  if (runs.length === first.runs.length) return first;
+  if (runs.length === first.runs.length && !others.length) return first;
   const lengthFt = runs.reduce((sum, r) => sum + Math.hypot(r[r.length - 1][0] - r[0][0], r[r.length - 1][1] - r[0][1]), 0) / upf;
-  return { ...first, runs, lengthFt, openings };
+  return { ...first, runs, lengthFt, openings, ...(others.length ? { others } : {}) };
 }
 
 /** The page's lines by direction (for partner lookups), once per page and scale. */
@@ -889,14 +926,15 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
       });
     };
     const long = walls.filter((w) => lengthOf(w) >= upf);
-    const offWall = (p: Piece, s: number) => {
+    // (`slant`: a wall it meets at 45° counts too — a door jamb's stub on a 45° wall.)
+    const offWall = (p: Piece, s: number, slant = false) => {
       const [x, y] = at(p, s);
-      return long.some((w) => w !== p && Math.abs(Math.sin(w.ang - p.ang)) > Math.sin(45 * DEG) && distToSeg(x, y, segOf(w)) <= half + 2 * inch);
+      return long.some((w) => w !== p && Math.abs(Math.sin(w.ang - p.ang)) > Math.sin((slant ? 40 : 45) * DEG) && distToSeg(x, y, segOf(w)) <= half + 2 * inch);
     };
     // …or off any wall's face: a 2x4 stub can come off a 2x6 wall, or meet a wall right at its corner.
     // (At least a wall's thickness long — shorter is just where two walls' lines cross.)
     const offFace = (p: Piece, s: number) => {
-      if (offWall(p, s)) return true;
+      if (offWall(p, s, true)) return true;
       if (lengthOf(p) < thickness) return false;
       const [x, y] = at(p, s);
       // Lines square across this wall, passing this end (found by direction, not where their middle is).
@@ -1162,6 +1200,12 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
     // outside. (Outside along both is something standing in the yard or on the porch — a beam, a planter.)
     const map = opts.outside;
     const yardLooks = looked.map((l) => new Uint8Array(l.n));
+    // Feet read outside only because the yard or a porch runs along one face (set below): at the very end of an
+    // inside wall, that's a porch's short wall carrying on from it — its own outside stretch, not smoothed away.
+    const porchLooks = looked.map((l) => new Uint8Array(l.n));
+    // End feet read outside by their own lines with the porch or yard out past a dimension line (see below): only for
+    // splitting off a porch's stub and keeping a short one — not the wall's yard share (that brings whole walls in).
+    const stubLooks = looked.map((l) => new Uint8Array(l.n));
     if (map) {
       // Where the map's wrong — it got into the house through a wall it couldn't read, or a garage door
       // it couldn't close — it shows the yard along the inside face of a wall sided outside, or along both
@@ -1192,7 +1236,7 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
         return out;
       };
       const wrong: number[] = [];
-      const porch: { look: Look[]; k: number; cells: number[] }[] = [];
+      const porch: { look: Look[]; k: number; cells: number[]; wi: number }[] = [];
       const oneSide: { wi: number; k: number; cells: number[] }[] = [];
       walls.forEach((w, wi) => {
         const { step, looks } = looked[wi];
@@ -1209,8 +1253,8 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
             if (inner.length >= 2) wrong.push(...inner);
           } else if (l.kind === "interior") {
             const yard = (near: number[], face: number, side: number) => [...near, ...farYard(w, s, face, side)];
-            if (!right.length && (left.length >= 2 || (left = yard(left, l.faces[0], -1)).length >= 2)) porch.push({ look: looks as Look[], k, cells: left });
-            else if (!left.length && (right.length >= 2 || (right = yard(right, l.faces[1], 1)).length >= 2)) porch.push({ look: looks as Look[], k, cells: right });
+            if (!right.length && (left.length >= 2 || (left = yard(left, l.faces[0], -1)).length >= 2)) porch.push({ look: looks as Look[], k, cells: left, wi });
+            else if (!left.length && (right.length >= 2 || (right = yard(right, l.faces[1], 1)).length >= 2)) porch.push({ look: looks as Look[], k, cells: right, wi });
           }
         });
       });
@@ -1232,9 +1276,42 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
           }
           ring = next;
         }
-        for (const p of porch) if (p.cells.every((c) => !doubt[coarse(c)])) p.look[p.k] = { ...p.look[p.k]!, kind: "exterior" };
+        for (const p of porch)
+          if (p.cells.every((c) => !doubt[coarse(c)])) {
+            p.look[p.k] = { ...p.look[p.k]!, kind: "exterior" };
+            porchLooks[p.wi][p.k] = 1;
+          }
         for (const o of oneSide) if (o.cells.every((c) => !doubt[coarse(c)])) yardLooks[o.wi][o.k] = 1;
       }
+      // A short outside wall at the very end of a line — a porch's stub where the house steps back — read outside
+      // by its own lines: the map rounds off the porch's inside corner there, so look farther, out to 4', past a
+      // dimension line or two but never through another wall. The porch on one side only: the yard along it.
+      const crosses = (ax: number, ay: number, bx: number, by: number, self: Piece) =>
+        walls.some((v) => {
+          if (v === self) return false;
+          const g = segOf(v);
+          const d1 = (g.x2 - g.x1) * (ay - g.y1) - (g.y2 - g.y1) * (ax - g.x1), d2 = (g.x2 - g.x1) * (by - g.y1) - (g.y2 - g.y1) * (bx - g.x1);
+          const d3 = (bx - ax) * (g.y1 - ay) - (by - ay) * (g.x1 - ax), d4 = (bx - ax) * (g.y2 - ay) - (by - ay) * (g.x2 - ax);
+          return d1 * d2 < 0 && d3 * d4 < 0;
+        });
+      const lookOut = (w: Piece, s: number, face: number, side: number) => {
+        const a = [w.ux * s + w.nx * (w.rho + face), w.uy * s + w.ny * (w.rho + face)];
+        for (let d = 3; d <= 48; d += 1.5) {
+          if (cellAt(w, s, face + side * d * inch) < 0) continue;
+          const o = w.rho + face + side * d * inch;
+          return !crosses(a[0], a[1], w.ux * s + w.nx * o, w.uy * s + w.ny * o, w);
+        }
+        return false;
+      };
+      walls.forEach((w, wi) => {
+        const { n, step, looks } = looked[wi];
+        for (const k of new Set(n <= 3 ? [...Array(n).keys()] : [0, 1, 2, n - 3, n - 2, n - 1])) {
+          const l = looks[k];
+          if (!l?.faces || l.kind !== "exterior" || yardLooks[wi][k] || porchLooks[wi][k]) continue;
+          const s = w.s0 + step * (k + 0.5);
+          if (lookOut(w, s, l.faces[0], -1) !== lookOut(w, s, l.faces[1], 1)) stubLooks[wi][k] = 1;
+        }
+      });
     }
     walls.forEach((w, wi) => {
       const { n, step, looks } = looked[wi];
@@ -1313,12 +1390,21 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
       // (On a plan that hatches its walls, a stretch read as inside foot after foot is an inside wall —
       // unless brick runs on both sides of it: then it's a window in a brick wall.)
       const readInside = (r: (typeof runs)[number]) => looks.slice(r.from, r.to).filter((l) => l?.kind === "interior").length;
+      // (Not when walls meet the line at both ends of the inside stretch — a bump-out's sides: then it's the inside
+      // wall between the bump-out and the room behind it, not a window.)
+      const meets = (sv: number) => {
+        const [x, y] = at(w, sv);
+        // (Within 2': the stretch's ends are read a foot at a time, and feet with no say go to the nearer.)
+        return walls.some((v) => v !== w && Math.abs(w.ux * v.uy - w.uy * v.ux) > Math.sin(60 * DEG) && distToSeg(x, y, segOf(v)) <= half + 2 * upf);
+      };
+      const boxedIn = (r: (typeof runs)[number]) => meets(w.s0 + step * r.from) && meets(w.s0 + step * r.to);
       for (let r = 1; r < runs.length - 1; r++)
         if (
           runs[r].kind === "interior" &&
           runs[r - 1].kind === "exterior" &&
           runs[r + 1].kind === "exterior" &&
           span(runs[r]) <= 10 &&
+          !boxedIn(runs[r]) &&
           !(poche && readInside(runs[r]) >= 3 && !(brickIn(runs[r - 1]) && brickIn(runs[r + 1])))
         )
           runs[r].kind = "exterior";
@@ -1327,6 +1413,26 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
           runs[r - 1].to = runs[r].to;
           runs.splice(r, 1);
         }
+      // A porch's short outside wall carrying on in line from an inside wall (the house steps back for the porch):
+      // the end feet, up to 3, with the porch along one face — their own outside stretch. (The inside wall stops
+      // at the outside wall there, cut at it below.)
+      if (n >= 4) {
+        let t = 0;
+        const porchy = (k: number) => !!porchLooks[wi][k] || !!stubLooks[wi][k] || (!!yardLooks[wi][k] && looks[k]?.kind === "exterior");
+        while (t < 3 && porchy(n - 1 - t)) t++;
+        const last = runs[runs.length - 1];
+        if (t && last.kind === "interior" && last.to - last.from > t) {
+          last.to = n - t;
+          runs.push({ from: n - t, to: n, kind: "exterior" });
+        }
+        let h = 0;
+        while (h < 3 && porchy(h)) h++;
+        const first = runs[0];
+        if (h && first.kind === "interior" && first.to - first.from > h) {
+          first.from = h;
+          runs.unshift({ from: 0, to: h, kind: "exterior" });
+        }
+      }
       // Split where the kind changes — at the wall that crosses there, if there's one close by.
       let from = w.s0;
       runs.forEach((r, k) => {
@@ -1353,7 +1459,9 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
           const said = looks.slice(r.from, r.to).filter((l): l is Look => !!l);
           wrappedWall.push(said.length > 0 && said.filter((l) => l.wrapped).length * 2 >= said.length);
           stoneWall.push(said.length > 0 && said.filter((l) => l.stone).length * 2 >= said.length);
-          yard.push(r.to > r.from ? yardLooks[wi].slice(r.from, r.to).reduce((n, v) => n + v, 0) / (r.to - r.from) : 0);
+          // (A stretch under 2' — a porch's stub — counts its looks out past a dimension line too.)
+          const short = to - from < 2 * upf;
+          yard.push(r.to > r.from ? Array.from({ length: r.to - r.from }, (_, k) => yardLooks[wi][r.from + k] || (short && stubLooks[wi][r.from + k]) ? 1 : 0).reduce((n: number, v) => n + v, 0) / (r.to - r.from) : 0);
         }
         from = to;
       });
@@ -1385,7 +1493,20 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
   // you clicked (its drywall, sheathing…).
   const kind = kinds[start];
   const enough = Math.min(2, layers[start]);
-  for (let i = 0; i < walls.length; i++) if (i !== start && layers[i] < enough) kinds[i] = kind === "exterior" ? "interior" : "exterior";
+  // (Not a short wall with the yard or a porch along one face — a porch's stub wall is too short to show its layers.)
+  for (let i = 0; i < walls.length; i++) if (i !== start && layers[i] < enough && !(kinds[i] === "exterior" && yard[i] >= YARD_SHARE)) kinds[i] = kind === "exterior" ? "interior" : "exterior";
+  // A short wall on a 45° slant joined at both ends to walls of the clicked kind is that kind too: looking across a
+  // slanted wall reads its layers poorly (a closet's 45° corner read as outside, a bay's 45° side as inside). The user,
+  // 2026-11-23: a 45° wall is a wall like any other.
+  {
+    const endsOf = (i: number) => [[segs[i].x1, segs[i].y1], [segs[i].x2, segs[i].y2]] as Pt[];
+    for (let j = 0; j < walls.length; j++) {
+      if (kinds[j] === kind || lengthOf(walls[j]) > 8 * upf) continue;
+      const slantTo = (i: number) => { const a = Math.abs(Math.sin(walls[i].ang - walls[j].ang)); return a > Math.sin(35 * DEG) && a < Math.sin(55 * DEG); };
+      const joined = endsOf(j).every((e) => walls.some((v, i) => i !== j && kinds[i] === kind && slantTo(i) && distToSeg(e[0], e[1], segs[i]) <= join));
+      if (joined) kinds[j] = kind;
+    }
+  }
   const found = new Set([start]);
   const queue = [start];
   // An outside wall clicked: every other outside wall this size along the house's outline comes too — the yard
@@ -1460,6 +1581,167 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
 
   // 8. Each wall on its own, corner to corner — so each can be changed by itself later.
   const runs = mine.map((w) => [at(w, w.s0), at(w, w.s1)]).filter(([a, b]) => Math.hypot(b[0] - a[0], b[1] - a[1]) > 0);
+  // A door hung on a slant (a pantry's or closet's corner door, a bath's 45° door): there's a wall there — the door's
+  // line, from the hinge along its shut position, run on both ways to the walls it meets (the short bits of 45° wall
+  // into the jambs too). The user, 2026-11-23: "since there is a door there, there must be a wall there".
+  for (const d of opts.doors ?? []) {
+    if (!d.a || !d.b || d.r < 1.5 * upf || d.r > 4 * upf) continue;
+    // Near the walls found (a door off in another part of the plan isn't this click's).
+    if (![...mine].some((v) => distToSeg(d.x, d.y, segOf(v)) <= 3 * upf)) continue;
+    // Which end is shut: the open one has the door's slab drawn along it (a line from the hinge), the shut one nothing.
+    // Shut on the slant — 35–55° to the walls around — the door's hung in a slanted wall. (A door in a straight wall
+    // drawn open at 45° has its slab on the slant and its shut end along the wall.)
+    const near3 = [...mine, ...others].filter((v) => distToSeg(d.x, d.y, segOf(v)) <= 3 * upf);
+    if (!near3.length) continue;
+    const slabOn = (e: Pt) => {
+      const L = Math.hypot(e[0] - d.x, e[1] - d.y), u: Pt = [(e[0] - d.x) / L, (e[1] - d.y) / L];
+      const [mx, my] = [(d.x + e[0]) / 2, (d.y + e[1]) / 2];
+      return strokesNear(mx - inch, my - inch, mx + inch, my + inch).some((l) => {
+        const ll = Math.hypot(l.x2 - l.x1, l.y2 - l.y1);
+        return ll >= 0.3 * L && Math.abs((l.x2 - l.x1) * u[1] - (l.y2 - l.y1) * u[0]) / ll < Math.sin(5 * DEG) && distToSeg(mx, my, l) <= 2.5 * inch;
+      });
+    };
+    const sa = slabOn(d.a as Pt), sb = slabOn(d.b as Pt);
+    if (sa === sb) continue;
+    const e = (sa ? d.b : d.a) as Pt;
+    const L = Math.hypot(e[0] - d.x, e[1] - d.y);
+    if (!(L > 0)) continue;
+    const u: Pt = [(e[0] - d.x) / L, (e[1] - d.y) / L];
+    const angTo = (v: Piece) => Math.abs(Math.asin(Math.min(1, Math.abs(v.ux * u[1] - v.uy * u[0])))) / DEG;
+    // (Other 45° walls nearby run along it — they're fine.)
+    if (!near3.every((v) => (angTo(v) >= 35 && angTo(v) <= 55) || angTo(v) < 10) || !near3.some((v) => angTo(v) >= 35 && angTo(v) <= 55)) continue;
+    // The short bit of 45° wall leading into the door (the user, 2026-11-23): a face of the wall drawn on the slant
+    // just past either end of the doorway (the hinge sits on a face: the faces are on its line and a wall's thickness
+    // off it) — a door in a straight wall has none.
+    const bit = strokesNear(d.x - 2 * upf, d.y - 2 * upf, d.x + 2 * upf, d.y + 2 * upf).some((l) => {
+      const lx = l.x2 - l.x1, ly = l.y2 - l.y1, ll = Math.hypot(lx, ly);
+      if (ll < inch || ll > 2 * upf || Math.abs(lx * u[1] - ly * u[0]) / ll > Math.sin(6 * DEG)) return false;
+      const o = Math.abs(((l.x1 + l.x2) / 2 - d.x) * -u[1] + ((l.y1 + l.y2) / 2 - d.y) * u[0]);
+      const t1 = (l.x1 - d.x) * u[0] + (l.y1 - d.y) * u[1], t2 = (l.x2 - d.x) * u[0] + (l.y2 - d.y) * u[1];
+      const past = Math.max(t1, t2) <= 0.5 * inch ? -Math.max(t1, t2) : Math.min(t1, t2) >= L - 0.5 * inch ? Math.min(t1, t2) - L : -1;
+      return past >= -0.5 * inch && past <= 12 * inch && [0, half, 2 * half].some((f) => Math.abs(o - f) <= 1.25 * inch);
+    });
+    if (!bit) continue;
+    // From each end of the doorway (the hinge, the shut leaf's tip), on along the line to the first wall across it.
+    const reach = (S: Pt, dir: Pt): Pt | null => {
+      for (let t = 0; t <= 2 * upf; t += 0.5 * inch) {
+        const X: Pt = [S[0] + dir[0] * t, S[1] + dir[1] * t];
+        // (Walls here still stop short of their corners — half a wall: reached a little past their ends.)
+        const v = walls.find((w) => Math.abs(w.ux * dir[1] - w.uy * dir[0]) > Math.sin(30 * DEG) && distToSeg(X[0], X[1], segOf({ ...w, s0: w.s0 - half - 2 * inch, s1: w.s1 + half + 2 * inch })) <= half + inch);
+        if (!v) continue;
+        // To its center line.
+        let best = X, bd = Infinity;
+        for (let k = t; k <= t + 3 * half + 2 * inch; k += 0.25 * inch) {
+          const Y: Pt = [S[0] + dir[0] * k, S[1] + dir[1] * k];
+          const dd = distToSeg(Y[0], Y[1], segOf(v));
+          if (dd < bd) { bd = dd; best = Y; }
+        }
+        return best;
+      }
+      return null;
+    };
+    const A0 = reach([d.x, d.y], [-u[0], -u[1]]), B0 = reach(e, u);
+    // (One side only — the wall past the far jamb not read as one: from the jamb, the door's own end.)
+    const pick = A0 || B0 ? { run: [A0 ?? ([d.x, d.y] as Pt), B0 ?? e] as [Pt, Pt] } : null;
+    if (!pick) continue;
+    const [A, B] = pick.run;
+    const m: Pt = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+    if (runs.some((r) => r.some((q, k) => k + 1 < r.length && distToSeg(m[0], m[1], { x1: q[0], y1: q[1], x2: r[k + 1][0], y2: r[k + 1][1] }) <= half + inch))) continue;
+    runs.push([A, B]);
+  }
+  // A corner cut at 45° (a pantry's or closet's door wall): two of these walls end at an open corner, square to
+  // each other, and between their ends only the door's jambs are drawn — short lines on the slant, a wall's
+  // thickness apart. The slanted wall runs end to end between them (Plan Lab 2026-11-21: never found before).
+  // Inside walls only (outside, brick's hatch strokes on the slant look like jambs).
+  if (kind === "interior") {
+    const near = (x: number, y: number) => [...mine, ...others].filter((v) => distToSeg(x, y, segOf(v)) <= half + join);
+    const free = (w: Piece, s: number) => { const [x, y] = at(w, s); return near(x, y).every((v) => v === w); };
+    const ends: { w: Piece; p: Pt; dir: Pt }[] = [];
+    for (const w of mine) {
+      if (free(w, w.s0)) ends.push({ w, p: at(w, w.s0), dir: [-w.ux, -w.uy] });
+      if (free(w, w.s1)) ends.push({ w, p: at(w, w.s1), dir: [w.ux, w.uy] });
+    }
+    // The door's jambs: at each end of the slant, the wall's two faces drawn short (under a foot) along it — a pair
+    // of lines a wall's thickness apart. (A door leaf or a stair's edge on the slant is one long line, not a pair.)
+    const jambsAt = (P: Pt, Q: Pt, end: Pt) => {
+      const L = Math.hypot(Q[0] - P[0], Q[1] - P[1]), ux = (Q[0] - P[0]) / L, uy = (Q[1] - P[1]) / L, nx = -uy, ny = ux;
+      const sides = new Set<number>();
+      let slants = 0;
+      for (const l of strokesNear(end[0], end[1], end[0], end[1])) {
+        const lx = l.x2 - l.x1, ly = l.y2 - l.y1, ll = Math.hypot(lx, ly);
+        if (ll < 0.5 * inch || ll > 12 * inch || Math.abs(lx * uy - ly * ux) / ll > Math.sin(8 * DEG)) continue;
+        const o = ((l.x1 + l.x2) / 2 - P[0]) * nx + ((l.y1 + l.y2) / 2 - P[1]) * ny;
+        if (Math.abs(Math.abs(o) - half) > 1.25 * inch) continue;
+        const t = ((l.x1 + l.x2) / 2 - end[0]) * ux + ((l.y1 + l.y2) / 2 - end[1]) * uy;
+        if (Math.abs(t) > 12 * inch) continue;
+        sides.add(Math.sign(o));
+        slants++;
+      }
+      // (Many of them: hatching, not a door's two jambs.)
+      return slants > 4 ? 0 : sides.size;
+    };
+    /**
+     * Both ends with a jamb on the slant, a pair (both faces) at one of them at least — or the wall's two faces drawn
+     * along the slant most of the way (a 45° wall with no door: its ends cut on the angle, so it's never paired up as a
+     * wall). (The user, 2026-11-23: these corners should never be missed. A door hung on the slant: see above.)
+     */
+    const faceCover = (P: Pt, Q: Pt) => {
+      const L = Math.hypot(Q[0] - P[0], Q[1] - P[1]), ux = (Q[0] - P[0]) / L, uy = (Q[1] - P[1]) / L, nx = -uy, ny = ux;
+      const cov = { [-1]: [] as [number, number][], [1]: [] as [number, number][] } as Record<number, [number, number][]>;
+      const [mx, my] = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2], R = L / 2 + upf;
+      for (const l of strokesNear(mx - R, my - R, mx + R, my + R)) {
+        const lx = l.x2 - l.x1, ly = l.y2 - l.y1, ll = Math.hypot(lx, ly);
+        if (ll < inch || Math.abs(lx * uy - ly * ux) / ll > Math.sin(5 * DEG)) continue;
+        const o = ((l.x1 + l.x2) / 2 - P[0]) * nx + ((l.y1 + l.y2) / 2 - P[1]) * ny;
+        if (Math.abs(Math.abs(o) - half) > 1.25 * inch) continue;
+        const t1 = (l.x1 - P[0]) * ux + (l.y1 - P[1]) * uy, t2 = (l.x2 - P[0]) * ux + (l.y2 - P[1]) * uy;
+        const a = Math.max(0, Math.min(t1, t2)), b = Math.min(L, Math.max(t1, t2));
+        if (b > a) cov[Math.sign(o)].push([a, b]);
+      }
+      const len = (xs: [number, number][]) => { xs.sort((p, q) => p[0] - q[0]); let n = 0, e = -Infinity; for (const [a, b] of xs) { if (b > e) { n += b - Math.max(a, e); e = b; } } return n; };
+      return Math.min(len(cov[-1]), len(cov[1])) / L;
+    };
+    const jambs = (P: Pt, Q: Pt) => {
+      const a = jambsAt(P, Q, P), b = jambsAt(P, Q, Q);
+      if (a >= 1 && b >= 1 && Math.max(a, b) === 2) return 1e9;
+      return faceCover(P, Q) >= 0.5 ? 1e9 : 0;
+    };
+    const used = new Set<number>();
+    for (let i = 0; i < ends.length; i++)
+      for (let j = i + 1; j < ends.length; j++) {
+        if (used.has(i) || used.has(j)) continue;
+        const A = ends[i], B = ends[j];
+        if (A.w === B.w || Math.abs(A.w.ux * B.w.uy - A.w.uy * B.w.ux) < Math.sin(80 * DEG)) continue;
+        const dx = B.p[0] - A.p[0], dy = B.p[1] - A.p[1], L = Math.hypot(dx, dy);
+        if (L < 1.5 * upf || L > 7 * upf) continue;
+        // On the slant (35–55° to both), and going on from each wall's end (not back along it).
+        const slant = (w: Piece) => Math.abs(Math.asin(Math.min(1, Math.abs(w.ux * dy - w.uy * dx) / L))) / DEG;
+        if (slant(A.w) < 35 || slant(A.w) > 55 || slant(B.w) < 35 || slant(B.w) > 55) continue;
+        if ((dx * A.dir[0] + dy * A.dir[1]) / L < 0.5 || (-dx * B.dir[0] - dy * B.dir[1]) / L < 0.5) continue;
+        if (jambs(A.p, B.p) < 2 * inch) continue;
+        runs.push([A.p, B.p]);
+        used.add(i);
+        used.add(j);
+      }
+    // …or found on one side only (the other is a short return, or another click's wall): from the free end, on at 45°
+    // either way, to the first wall it reaches — with the jambs drawn at both ends of it.
+    ends.forEach((A, i) => {
+      if (used.has(i)) return;
+      let best: Pt | null = null, bestT = Infinity;
+      for (const turn of [45, -45]) {
+        const c = Math.cos(turn * DEG), sn = Math.sin(turn * DEG);
+        const d: Pt = [A.dir[0] * c - A.dir[1] * sn, A.dir[0] * sn + A.dir[1] * c];
+        for (let t = 1.5 * upf; t <= 7 * upf && t < bestT; t += inch) {
+          const B: Pt = [A.p[0] + d[0] * t, A.p[1] + d[1] * t];
+          const hit = walls.some((v) => v !== A.w && Math.abs(v.ux * d[1] - v.uy * d[0]) > Math.sin(30 * DEG) && distToSeg(B[0], B[1], segOf(v)) <= half + 1 * inch);
+          if (!hit) continue;
+          if (jambs(A.p, B) >= 4 * inch) { best = B; bestT = t; }
+          break;
+        }
+      }
+      if (best) runs.push([A.p, best]);
+    });
+  }
   const lengthFt = runs.reduce((sum, [a, b]) => sum + Math.hypot(b[0] - a[0], b[1] - a[1]), 0) / upf;
   const openings = mine.reduce((n, w) => n + (w.openings ?? []).filter((s) => s >= w.s0 && s <= w.s1).length, 0);
   return { ok: true, thicknessIn: Math.round((thickness / inch) * 8) / 8, kind, runs, lengthFt, openings };

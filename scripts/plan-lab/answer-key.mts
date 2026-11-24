@@ -69,7 +69,7 @@ const toAccept: Record<string, number | string> = {};
 let acceptedNow = 0;
 
 const sheets = new Map<string, { segs: Float32Array; fills: FillShape[]; swings: DoorSwing[] }>();
-let same = 0;
+let same = 0, doorwayOnly = 0;
 const differ: string[] = [];
 for (const l of key) {
   const path = l.sheet.plan.file.storagePath;
@@ -92,7 +92,11 @@ for (const l of key) {
   const ok = accepted[id];
   if (matches(was)) same++;
   else if (ok !== undefined && (typeof ok === "number" ? matches(ok) : !r.ok && r.reason === ok)) acceptedNow++;
-  else {
+  else if (process.env.MIDCHECK && (() => { const f = findRoom(segs, [l.clickX, l.clickY], { unitsPerFoot: l.unitsPerFoot, fills, doors: swings, middle: false } as never); return f.ok && Math.abs(f.areaSf - was) <= Math.max(0.01 * was, 0.5) && r.ok && r.areaSf >= was && r.areaSf - was <= Math.max(0.06 * was, 6); })()) {
+    // (MIDCHECK: the same room but for its doorway edges run to the middle of the wall — only a little bigger.)
+    doorwayOnly++;
+    toAccept[id] = r.ok ? r.areaSf : r.reason;
+  } else {
     toAccept[id] = r.ok ? r.areaSf : r.reason;
     differ.push(
       `  ${l.project.name} › ${l.sheet.plan.name} p${l.sheet.pageNumber} at ${l.clickX.toFixed(0)},${l.clickY.toFixed(0)}: was ${was.toFixed(1)} sf, now ${r.ok ? `${r.areaSf.toFixed(1)} sf` : r.reason}`,
@@ -100,7 +104,7 @@ for (const l of key) {
   }
 }
 console.log(
-  `Answer key (${process.argv.includes("--app") ? "the app" : "the copy"}): ${key.length} rooms kept by builders — ${same} still the same${acceptedNow ? `, ${acceptedNow} changed on purpose (accepted)` : ""}, ${differ.length} different.`,
+  `Answer key (${process.argv.includes("--app") ? "the app" : "the copy"}): ${key.length} rooms kept by builders — ${same} still the same${acceptedNow ? `, ${acceptedNow} changed on purpose (accepted)` : ""}, ${differ.length} different${process.env.MIDCHECK ? `, ${doorwayOnly} only their doorway edges to the middle` : ""}.`,
 );
 if (differ.length) {
   console.log(differ.join("\n"));

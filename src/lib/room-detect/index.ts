@@ -18,7 +18,7 @@
 import { DEG, bucketOf, distToSeg, grid, toLine, type Line, type Pt } from "../wall-detect";
 
 /** Which rules the room finder runs: saved with each Find area click (AreaFindLog). Change it with them. */
-export const ROOM_DETECT_VERSION = "2026-11-19a";
+export const ROOM_DETECT_VERSION = "2026-11-24c";
 
 export type RoomFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -54,6 +54,23 @@ export type RoomFindOptions = {
   piecesOnly?: (bands: { half: number; s0: number; s1: number }[]) => void;
   /** (Internal: hand back what's outside the house around the click — see `houseOutsideMap` — and stop.) */
   outsideOnly?: (map: OutsideMap) => void;
+  /**
+   * A fence the floor can't go past (the room AI's room, a little bigger — see room-ai): pixel (i, j) of `cells`
+   * (W×H, 1 = inside) is plan point (ox + i/S, oy + j/S). Inside it the room is found as always — walls, door
+   * closings, sides onto wall faces — so only where nothing's drawn does the fence make the edge.
+   */
+  fence?: { ox: number; oy: number; S: number; W: number; H: number; cells: Uint8Array };
+  /**
+   * The user's rule (2026-11-22): a room stops at the wall's face, but across an opening between two rooms (a door,
+   * a cased opening, nothing drawn) it runs to the MIDDLE of the wall — half the opening's strip each, nothing lost
+   * under the door, nothing counted twice. Doors to the outside stay at the face. Default on; false = to the face.
+   */
+  middle?: boolean;
+  /**
+   * (Test only.) Close every opening with no door too. Not used: on the user's rooms it cut bathrooms and halls across
+   * at wall stubs (a shower's half wall, a vanity's nook) — 82 rooms broken, 19 fixed (2026-11-22).
+   */
+  splitOpenings?: boolean;
 };
 
 /**
@@ -511,7 +528,25 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       return Math.min(o1, o2) <= w.rho - w.half + 0.3 * inch && Math.max(o1, o2) >= w.rho + w.half - 0.3 * inch;
     });
   };
-  const openStub = (w: Band) => w.s1 - w.s0 < upf && !closedAt(w, w.s0) && !closedAt(w, w.s1);
+  // (Or where a wall jogs: walls running off its two ends to opposite sides — a short stretch of one wall stepped
+  // over, behind a microwave's cabinet in the user's pantry, 2026-11-23, where the kitchen ran through a 10" gap.)
+  const jogAt = (w: Band, sv: number) => {
+    const [x, y] = [w.ux * sv + w.nx * w.rho, w.uy * sv + w.ny * w.rho];
+    let side = 0;
+    for (const v of bands) {
+      // (Real walls, the short piece's own thickness — a tub's or vanity's edge isn't.)
+      if (v === w || v.s1 - v.s0 < 1.5 * upf || Math.abs(Math.sin(v.ang - w.ang)) < Math.sin(80 * DEG) || distToBand(x, y, v) > w.half + inch || v.half < 1.5 * inch || Math.abs(v.half - w.half) > 0.75 * inch) continue;
+      // Which side of w's line v runs off to (from this end).
+      const mid = ((v.s0 + v.s1) / 2) * 1;
+      const [vx, vy] = [v.ux * mid + v.nx * v.rho, v.uy * mid + v.ny * v.rho];
+      const o = vx * w.nx + vy * w.ny - w.rho;
+      if (Math.abs(o) > w.half + inch) side |= o > 0 ? 1 : 2;
+    }
+    return side;
+  };
+  // (Off both ends, not the same way at both — a jog, or a jog into a T. The same way at both is a box: a cabinet.)
+  const jogs = (w: Band) => { if (w.half < 1.5 * inch) return false; const a = jogAt(w, w.s0), b = jogAt(w, w.s1); return a !== 0 && b !== 0 && a !== b; };
+  const openStub = (w: Band) => w.s1 - w.s0 < upf && !closedAt(w, w.s0) && !closedAt(w, w.s1) && !jogs(w);
   if (bands.some(openStub)) bands.splice(0, bands.length, ...bands.filter((w) => !openStub(w)));
   if (opts.piecesOnly) {
     opts.piecesOnly(bands);
@@ -643,6 +678,25 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     if (used.length && top >= 30 * upf) bands.splice(0, bands.length, ...bands.filter((w) => filledAll.includes(w) || used.some((t) => Math.abs(bucket(w) - t) <= 0.375) || besideStairs(w)));
   }
 
+  // A point on a band's line: `along` it, `off` from its center line.
+  const at2 = (w: Band, along: number, off: number): [number, number] => [w.ux * along + w.nx * (w.rho + off), w.uy * along + w.ny * (w.rho + off)];
+  // The stretches of [from, to] along a band's line drawn by lines within its faces (touching pieces as one).
+  const drawnRuns = (w: Band, from: number, to: number, join: number, r0 = w.rho - w.half - inch, r1 = w.rho + w.half + inch) => {
+    const spans: [number, number][] = [];
+    for (const l of parallelNear(w.ang, r0, r1, from, to)) {
+      if (isDimension(l)) continue;
+      const a = Math.max(l.s0, from), b = Math.min(l.s1, to);
+      if (b > a) spans.push([a, b]);
+    }
+    spans.sort((p, q) => p[0] - q[0]);
+    const runs: [number, number][] = [];
+    for (const [a, b] of spans) {
+      const r = runs[runs.length - 1];
+      if (r && a <= r[1] + join) r[1] = Math.max(r[1], b);
+      else runs.push([a, b]);
+    }
+    return runs;
+  };
   // How much of [from, to] along a band's line is drawn by lines within its faces.
   const drawnAlong = (w: Band, from: number, to: number) => {
     const spans: [number, number][] = [];
@@ -664,10 +718,140 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     return covered / (to - from || 1);
   };
 
+  // (Not a wall: a thin piece standing right against a real wall's face — within 1½", the wall running the whole
+  // length of it and on past — an appliance's or cabinet's back, a shelf: the room runs to the wall's face behind
+  // it. The user's answer key, 2026-11-23: washer and dryer boxes drawn just off the wall.)
+  const against = (b: Band) =>
+    bands.some((a) => {
+      if (a === b || Math.abs(Math.sin(a.ang - b.ang)) > Math.sin(2 * DEG) || a.s1 - a.s0 < b.s1 - b.s0 + upf) return false;
+      const same = a.nx * b.nx + a.ny * b.ny > 0 ? 1 : -1;
+      const br = same * b.rho;
+      const gap = br < a.rho ? a.rho - a.half - (br + b.half) : br - b.half - (a.rho + a.half);
+      // (Standing off it, however little: a piece sharing the wall's face line is that wall, drawn with a third line.)
+      if (gap < 0.25 * inch || gap > 1.5 * inch) return false;
+      const [b0, b1] = same > 0 ? [b.s0, b.s1] : [-b.s1, -b.s0];
+      if (Math.min(a.s1, b1) - Math.max(a.s0, b0) < 0.9 * (b1 - b0)) return false;
+      // (A box standing in the room — its sides run out from the wall a foot or more at both ends — not a strip of
+      // the wall itself, drawn with an extra line in it.)
+      const away = br < a.rho ? -1 : 1; // from the wall into the room, along a's normal
+      const side = (sv: number) => {
+        const [ex, ey] = [b.ux * sv + b.nx * b.rho, b.uy * sv + b.ny * b.rho];
+        return strokesNear(ex - upf - inch, ey - upf - inch, ex + upf + inch, ey + upf + inch).some((k) => {
+          if (Math.abs(Math.cos(k.ang - b.ang)) > Math.sin(10 * DEG)) return false;
+          if (Math.abs((k.x1 + k.x2) / 2 * b.ux + (k.y1 + k.y2) / 2 * b.uy - sv) > 1.5 * inch) return false;
+          const o1 = (k.x1 * a.nx + k.y1 * a.ny - a.rho) * away, o2 = (k.x2 * a.nx + k.y2 * a.ny - a.rho) * away;
+          // (A box's side, ending at its front — not a room's wall running on past it.)
+          return Math.max(o1, o2) >= a.half + upf && Math.max(o1, o2) <= a.half + 3.75 * upf && Math.min(o1, o2) <= a.half + b.half * 2 + 2 * inch;
+        });
+      };
+      if (!side(b.s0) || !side(b.s1)) return false;
+      // (And its front: a line across, 1' to 3'6" out from the wall, most of its width — a washer, dryer, cabinet.)
+      const [mx, my] = [b.ux * ((b.s0 + b.s1) / 2) + b.nx * b.rho, b.uy * ((b.s0 + b.s1) / 2) + b.ny * b.rho];
+      const R = (b.s1 - b.s0) / 2 + 4 * upf;
+      return strokesNear(mx - R, my - R, mx + R, my + R).some((k) => {
+        if (Math.abs(Math.sin(k.ang - b.ang)) > Math.sin(5 * DEG)) return false;
+        const o = (((k.x1 + k.x2) / 2) * a.nx + ((k.y1 + k.y2) / 2) * a.ny - a.rho) * away - a.half;
+        if (o < upf || o > 3.5 * upf) return false;
+        const t1 = k.x1 * b.ux + k.y1 * b.uy, t2 = k.x2 * b.ux + k.y2 * b.uy;
+        return Math.min(Math.max(t1, t2), b.s1) - Math.max(Math.min(t1, t2), b.s0) >= 0.8 * (b.s1 - b.s0);
+      });
+    });
+  {
+    const keep = bands.filter((b) => !against(b));
+    if (keep.length < bands.length) bands.splice(0, bands.length, ...keep);
+  }
+  // (A short piece — under 3' — at an angle no long wall here runs at (4' or more, and square and 45° to those) isn't a
+  // wall: a sink or a chair drawn turned. Chirafis's baths, 2026-11-24: a lav drawn at 17° closed off the room on a slant.)
+  {
+    const longAngs = bands.filter((w) => w.s1 - w.s0 >= 4 * upf).map((w) => w.ang);
+    if (longAngs.length) {
+      const okAng = (a: number) => longAngs.some((b) => [0, 45, 90, 135].some((k) => Math.abs(Math.sin(a - b - k * DEG)) < Math.sin(3 * DEG)));
+      const keep = bands.filter((w) => w.s1 - w.s0 >= 3 * upf || okAng(w.ang));
+      if (keep.length < bands.length) bands.splice(0, bands.length, ...keep);
+    }
+  }
+  // (A bathtub isn't a wall: the room runs under it to the wall behind. A tub is a box 2'–3'8" deep and 4'–6'8" long,
+  // up against walls on two sides or more, with its rounded basin drawn inside — lines along both long sides a few
+  // inches in, shorter than the box, the corners curved. Its front and the basin's side, a few inches apart, look
+  // like a wall. The user, 2026-11-24: "ignore a bathtub and bring the area to the wall".)
+  {
+    const tubs: { ux: number; uy: number; nx: number; ny: number; s0: number; s1: number; r0: number; r1: number }[] = [];
+    const near = (a: number, b: number, tol: number) => Math.abs(a - b) <= tol;
+    for (const f of lines) {
+      const len = f.s1 - f.s0;
+      if (len < 4 * upf || len > 6.75 * upf) continue;
+      // The back: parallel, 2'–3'8" off, the same stretch.
+      for (const k of parallelNear(f.ang, f.rho - 3.7 * upf, f.rho + 3.7 * upf, f.s0, f.s1, 60)) {
+        if (k === f || Math.abs(Math.sin(k.ang - f.ang)) > Math.sin(2 * DEG)) continue;
+        const same = f.ux * k.ux + f.uy * k.uy > 0 ? 1 : -1;
+        const kr = same * k.rho, [k0, k1] = same > 0 ? [k.s0, k.s1] : [-k.s1, -k.s0];
+        const dep = Math.abs(kr - f.rho);
+        if (dep < 2 * upf || dep > 3.7 * upf || !near(k0, f.s0, 1.5 * inch) || !near(k1, f.s1, 1.5 * inch) || kr < f.rho) continue;
+        const [r0, r1] = [f.rho, kr];
+        // Its two ends, across.
+        const endAt = (sv: number) =>
+          strokesNear(f.ux * sv + f.nx * (r0 + r1) / 2 - inch, f.uy * sv + f.ny * (r0 + r1) / 2 - inch, f.ux * sv + f.nx * (r0 + r1) / 2 + inch, f.uy * sv + f.ny * (r0 + r1) / 2 + inch).some((e) => {
+            if (Math.abs(Math.cos(e.ang - f.ang)) > Math.sin(2 * DEG)) return false;
+            const o1 = e.x1 * f.nx + e.y1 * f.ny, o2 = e.x2 * f.nx + e.y2 * f.ny, t = ((e.x1 + e.x2) / 2) * f.ux + ((e.y1 + e.y2) / 2) * f.uy;
+            return near(t, sv, 1.5 * inch) && Math.min(o1, o2) <= r0 + 1.5 * inch && Math.max(o1, o2) >= r1 - 1.5 * inch;
+          });
+        if (!endAt(f.s0) || !endAt(f.s1)) continue;
+        // The basin: a line along each long side, 1"–9" in, 50%–95% of the box's length, short of both ends.
+        const basin = (from: number, dir: number) =>
+          parallelNear(f.ang, Math.min(from + dir * inch, from + dir * 9 * inch), Math.max(from + dir * inch, from + dir * 9 * inch), f.s0, f.s1, 40).some((b) => {
+            if (Math.abs(Math.sin(b.ang - f.ang)) > Math.sin(2 * DEG)) return false;
+            const sm = f.ux * b.ux + f.uy * b.uy > 0 ? 1 : -1, [b0, b1] = sm > 0 ? [b.s0, b.s1] : [-b.s1, -b.s0], br = sm * b.rho;
+            if ((br - from) * dir < inch || (br - from) * dir > 9 * inch) return false;
+            return b1 - b0 >= 0.5 * len && b1 - b0 <= 0.95 * len && b0 > f.s0 + inch && b1 < f.s1 - inch;
+          });
+        if (!basin(r0, 1) || !basin(r1, -1)) continue;
+        // (Curves at its corners: short strokes on the slant, inside the box.)
+        const [cx0, cy0] = [f.ux * f.s0 + f.nx * r0, f.uy * f.s0 + f.ny * r0], [cx1, cy1] = [f.ux * f.s1 + f.nx * r1, f.uy * f.s1 + f.ny * r1];
+        const curved = strokesNear(Math.min(cx0, cx1), Math.min(cy0, cy1), Math.max(cx0, cx1), Math.max(cy0, cy1)).filter((e) => {
+          if (e.s1 - e.s0 > 8 * inch || Math.abs(Math.sin(2 * (e.ang - f.ang))) < Math.sin(15 * DEG)) return false;
+          const t = ((e.x1 + e.x2) / 2) * f.ux + ((e.y1 + e.y2) / 2) * f.uy, o = ((e.x1 + e.x2) / 2) * f.nx + ((e.y1 + e.y2) / 2) * f.ny;
+          return t > f.s0 + inch && t < f.s1 - inch && o > r0 + inch && o < r1 - inch;
+        }).length;
+        if (curved < 3) continue;
+        // (Up against walls: two of its sides or more along a wall's face.)
+        const P = (s: number, r: number): Pt => [f.ux * s + f.nx * r, f.uy * s + f.ny * r];
+        const sideOnWall = (a: Pt, b: Pt) => {
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]), [dx, dy] = [(b[0] - a[0]) / L, (b[1] - a[1]) / L];
+          return bands.some((w) => {
+            if (Math.abs(dx * w.nx + dy * w.ny) > Math.sin(2 * DEG)) return false;
+            const off = Math.abs(((a[0] + b[0]) / 2) * w.nx + ((a[1] + b[1]) / 2) * w.ny - w.rho);
+            if (off < w.half - inch || off > w.half + 2 * inch) return false;
+            const [ta, tb] = [a[0] * w.ux + a[1] * w.uy, b[0] * w.ux + b[1] * w.uy];
+            return Math.min(w.s1, Math.max(ta, tb)) - Math.max(w.s0, Math.min(ta, tb)) >= 0.6 * L;
+          });
+        };
+        const [A, B, C, D] = [P(f.s0, r0), P(f.s1, r0), P(f.s1, r1), P(f.s0, r1)];
+        const walled = [sideOnWall(A, B), sideOnWall(B, C), sideOnWall(C, D), sideOnWall(D, A)].filter(Boolean).length;
+        if (walled < 2) continue;
+        tubs.push({ ux: f.ux, uy: f.uy, nx: f.nx, ny: f.ny, s0: f.s0, s1: f.s1, r0, r1 });
+      }
+    }
+    if (tubs.length) {
+      // (A band lying in the box — its whole center line within it, give or take an inch — goes.)
+      const inTub = (w: Band) =>
+        tubs.some((t) =>
+          [w.s0, w.s1].every((sv) => {
+            const [x, y] = [w.ux * sv + w.nx * w.rho, w.uy * sv + w.ny * w.rho];
+            const s = x * t.ux + y * t.uy, o = x * t.nx + y * t.ny;
+            return s >= t.s0 - inch && s <= t.s1 + inch && o >= t.r0 - inch && o <= t.r1 + inch;
+          }),
+        );
+      const keep = bands.filter((w) => !inTub(w));
+      if (keep.length < bands.length) bands.splice(0, bands.length, ...keep);
+    }
+  }
+
   // 2a. Doors and openings in a straight wall: the gap between two pieces of it, closed. An empty gap
   // (a door) only between pieces of a real wall — each long, or tied into another wall at an end;
   // label boxes and furniture standing in a room aren't strung together.
   const bridges: Band[] = [];
+  // (Each closed opening's own stretch, between the wall's ends — for running the room to its middle, step 6.)
+  const openSpan = new Map<Band, [number, number]>();
   const bandsNear = bandGrid(bands, 2 * upf);
   const tiedAt = (w: Band, end: number) => {
     const ex = w.ux * end + w.nx * w.rho;
@@ -745,7 +929,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   const isDoorway = (w: Band, a: number, b: number) => {
     const width = b - a;
     // (Only inside walls, drawn under 5" thick: an outside wall's opening is a door, a window, a fireplace.)
-    if (!doors.length || opts.passages === false || width <= 3 * upf || 2 * w.half >= 5 * inch) return true;
+    if (!doors.length || opts.passages === false || opts.splitOpenings || width <= 3 * upf || 2 * w.half >= 5 * inch) return true;
     if (drawnAlong(w, a, b) >= 0.5) return true;
     // A door that shuts this opening: hinged on its line near one end, and its leaf, closed, lies along
     // the opening — one end of its swing sits on the opening's line, inside it. (The door of a room next
@@ -784,7 +968,11 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         if (real && (!nextReal || p.s0 < nextReal.s0) && anchored(p)) nextReal = p;
       }
     }
-    const bridge = (to: Band) => bridges.push({ ...w, rho: (w.rho + to.rho) / 2, half: Math.min(w.half, to.half), s0: w.s1 - inch, s1: to.s0 + inch });
+    const bridge = (to: Band) => {
+      const b = { ...w, rho: (w.rho + to.rho) / 2, half: Math.min(w.half, to.half), s0: w.s1 - inch, s1: to.s0 + inch };
+      bridges.push(b);
+      openSpan.set(b, [w.s1, to.s0]);
+    };
     if (asHeavy(w)) {
       // (Not through another wall: pieces in line on either side of a wall that crosses between them
       // are two rooms' walls, not one wall with an opening.)
@@ -911,7 +1099,11 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         }
       }
       if (hit < Infinity && !isDoorway(w, dir > 0 ? end : end - hit, dir > 0 ? end + hit : end)) continue;
-      if (hit < Infinity) bridges.push({ ...w, s0: dir > 0 ? end - inch : end - hit - inch, s1: dir > 0 ? end + hit + inch : end + inch });
+      if (hit < Infinity) {
+        const b = { ...w, s0: dir > 0 ? end - inch : end - hit - inch, s1: dir > 0 ? end + hit + inch : end + inch };
+        bridges.push(b);
+        openSpan.set(b, dir > 0 ? [end, end + hit] : [end - hit, end]);
+      }
     }
   }
   // 2e. A door is a wall, as far as rooms go: every door swing shuts its opening, whatever else is or
@@ -965,6 +1157,38 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       );
       if (inLine.length === 1) shut.splice(0, 2, inLine[0]);
     }
+    // A door hung on a 45° slant, drawn open square to the plan (a toilet room's corner door): its open end has the
+    // door's slab drawn along it, the shut end — on the slant — nothing. The shut end closes it, not the slab (the
+    // user's master bath, 2026-11-23: the room ran through the 45° doorway).
+    let slanted = false;
+    const slabAt = (e: number[]) => {
+        const L = Math.hypot(e[0] - d.x, e[1] - d.y);
+        if (!(L > 0)) return false;
+        const a = Math.atan2(e[1] - d.y, e[0] - d.x), [mx, my] = [(d.x + e[0]) / 2, (d.y + e[1]) / 2];
+        return strokesNear(mx - inch, my - inch, mx + inch, my + inch).some((l) => Math.abs(Math.sin(l.ang - a)) < Math.sin(5 * DEG) && l.s1 - l.s0 >= 0.3 * L && distToSeg(mx, my, l) <= 2.5 * inch);
+      };
+    {
+      const diag = (e: number[]) => around.every((v) => { const a = Math.atan2(e[1] - d.y, e[0] - d.x); const k = Math.abs(Math.sin(a - v.ang)); return k > Math.sin(35 * DEG) && k < Math.sin(55 * DEG); });
+      const sa = slabAt(d.a), sb = slabAt(d.b);
+      if (sa !== sb) {
+        const free = sa ? d.b : d.a;
+        if (diag(free)) { shut.splice(0, shut.length, free); slanted = true; }
+      }
+    }
+    // (Both ends square and free: the door's slab tells them apart. The
+    // open end has it drawn along it, the shut end nothing; the shut end must run square to the walls. The user's real
+    // clicks, 2026-11-23: 28 rooms ran through a door whose swing was read but never shut.)
+    if (shut.length === 2 && !slanted) {
+      const sa = slabAt(d.a), sb = slabAt(d.b);
+      if (sa !== sb) {
+        const free = sa ? d.b : d.a, len = Math.hypot(free[0] - d.x, free[1] - d.y);
+        const [ux, uy] = [(free[0] - d.x) / len, (free[1] - d.y) / len];
+        // (And in line with the wall it's hung in: that wall runs the shut end's way, through the hinge — an open end taken
+        // for the shut one would cut across the room.)
+        const inWall = around.some((v) => v.half >= 1.5 * inch && Math.abs(ux * v.nx + uy * v.ny) < Math.sin(5 * DEG) && Math.abs(d.x * v.nx + d.y * v.ny - v.rho) <= v.half + 3 * inch);
+        if (len > 0 && inWall) shut.splice(0, shut.length, free);
+      }
+    }
     if (shut.length !== 1) continue;
     const e = shut[0];
     let ang = Math.atan2(e[1] - d.y, e[0] - d.x);
@@ -974,7 +1198,38 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     const sa = d.x * lx + d.y * ly;
     const sb = e[0] * lx + e[1] * ly;
     // (A few inches past both ends, into the jambs — they're often too short to count as wall.)
-    bridges.push({ ang, ux: lx, uy: ly, nx, ny, rho: d.x * nx + d.y * ny, half: 1.5 * inch, s0: Math.min(sa, sb) - 6 * inch, s1: Math.max(sa, sb) + 6 * inch });
+    // (On a 45° door: on from each jamb only until it meets a wall — a fixed 6" runs on past the corner the slanted
+    // wall turns at, into the room; up to a foot, else 2".)
+    const reachWall = (s0: number, dir: number) => {
+      for (let t = 0; t <= 12 * inch; t += 0.5 * inch) {
+        const sv = s0 + dir * t, [x, y] = [lx * sv + nx * (d.x * nx + d.y * ny), ly * sv + ny * (d.x * nx + d.y * ny)];
+        if (nearBy(x, y, upf).some((v) => Math.abs(Math.sin(v.ang - ang)) > Math.sin(30 * DEG) && distToBand(x, y, v) <= v.half)) return t + inch;
+      }
+      return 2 * inch;
+    };
+    const [lo, hi] = [Math.min(sa, sb), Math.max(sa, sb)];
+    bridges.push({ ang, ux: lx, uy: ly, nx, ny, rho: d.x * nx + d.y * ny, half: 1.5 * inch, s0: lo - (slanted ? reachWall(lo, -1) : 6 * inch), s1: hi + (slanted ? reachWall(hi, 1) : 6 * inch) });
+    // (The doorway itself, in the wall the door's hung in — for running the room to the wall's middle across it, step 6
+    // — the user's answer key, 2026-11-23: a door shut by its swing went to the face only, never the middle.)
+    // (Its wall may stand off past short jamb stubs, too short to be wall themselves — up to 2' on along the doorway's
+    // line from either jamb. Stafford's study door, 2026-11-24.)
+    let wall: Band | null = null;
+    const [dmx, dmy] = [(d.x + e[0]) / 2, (d.y + e[1]) / 2];
+    for (const v of new Set([...around, ...nearBy(dmx, dmy, d.r / 2 + 2 * upf)])) {
+      if (Math.abs(lx * v.nx + ly * v.ny) > Math.sin(5 * DEG) || v.half < 1.5 * inch) continue;
+      {
+        const [p0, p1] = [d.x * v.ux + d.y * v.uy, e[0] * v.ux + e[1] * v.uy].sort((p, q) => p - q);
+        if (Math.max(v.s0 - p1, p0 - v.s1) > 2 * upf) continue;
+      }
+      const off = Math.abs(d.x * v.nx + d.y * v.ny - v.rho);
+      if (off <= v.half + 3 * inch && (!wall || off < Math.abs(d.x * wall.nx + d.y * wall.ny - wall.rho))) wall = v;
+    }
+    if (wall) {
+      const ta = d.x * wall.ux + d.y * wall.uy, tb = e[0] * wall.ux + e[1] * wall.uy;
+      const [o0, o1] = [Math.min(ta, tb), Math.max(ta, tb)];
+      const had = [...openSpan].some(([v, [p0, p1]]) => Math.abs(v.rho - wall!.rho) <= wall!.half && v.ux * wall!.ux + v.uy * wall!.uy > 0.99 && Math.min(p1, o1) - Math.max(p0, o0) > 0);
+      if (!had) openSpan.set({ ...wall, s0: o0 - inch, s1: o1 + inch }, [o0, o1]);
+    }
   }
   const walls = [...bands, ...bridges, ...stairs];
 
@@ -1025,6 +1280,17 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     }
   };
   for (const w of walls) block(w);
+  // (The walls alone, before the fence — what's past a doorway is judged by the plan, not cut off by the fence.)
+  const wallsOnly = opts.fence ? blocked.slice() : blocked;
+  // (The fence: cells outside it are walls.)
+  if (opts.fence) {
+    const f = opts.fence;
+    for (let j = 0; j < H; j++)
+      for (let i = 0; i < W; i++) {
+        const fi = Math.floor((box.x0 + (i + 0.5) * cell - f.ox) * f.S), fj = Math.floor((box.y0 + (j + 0.5) * cell - f.oy) * f.S);
+        if (fi < 0 || fj < 0 || fi >= f.W || fj >= f.H || !f.cells[fj * f.W + fi]) blocked[j * W + i] = 1;
+      }
+  }
   /** What's outside the house (the yard, a porch, a patio — not the garage, behind its door). */
   const outsideOfHouse = () => {
     // (Not counting the sheet's border — a frame drawn double around the page would close in the yard.
@@ -1297,8 +1563,63 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         best = f;
       }
     }
-    return best ? { nx: best.nx, ny: best.ny, rho: best.rho } : { nx: l.nx, ny: l.ny, rho: l.rho };
+    return best ? { nx: best.nx, ny: best.ny, rho: best.rho, face: true, len: Math.hypot(b[0] - a[0], b[1] - a[1]) } : { nx: l.nx, ny: l.ny, rho: l.rho, face: false, len: Math.hypot(b[0] - a[0], b[1] - a[1]) };
   });
+  // A corner the grid cut off: one short side (under 18") or a few in a row (under 2' in all) on no wall face, at a
+  // slant, between two sides that meet at an angle — they go, and those two meet in a square corner. (A real angled
+  // wall has its face drawn, so it stays; a door's closing line runs in line with a side, not at a slant.)
+  {
+    type Side = (typeof sides)[number];
+    const cand = (q: Side) => !!q && !q.face && q.len < 18 * inch;
+    const cross = (a: Side, b: Side) => (a && b ? Math.abs(a.nx * b.ny - a.ny * b.nx) : 0);
+    for (let pass = 0; pass < 4; pass++) {
+      const n = sides.length;
+      if (n <= 3) break;
+      let done = false;
+      for (let i = 0; i < n && !done; i++) {
+        if (!cand(sides[i]) || cand(sides[(i + n - 1) % n])) continue; // start of a run
+        let j = i, total = 0;
+        while (cand(sides[j % n]) && j - i < n - 2) total += sides[j++ % n]!.len;
+        const P = sides[(i + n - 1) % n], R = sides[j % n];
+        const run = Array.from({ length: j - i }, (_, k) => sides[(i + k) % n]);
+        if (total >= 24 * inch || cross(P, R) < Math.sin(30 * DEG) || !run.some((q) => cross(q, P) >= Math.sin(25 * DEG) && cross(q, R) >= Math.sin(25 * DEG))) continue;
+        // Drop the run's sides and the corners inside it (sides[k] runs from pts[k] to pts[k + 1]); the corner at the
+        // run's start now leads into R, so it lands where P and R meet.
+        const drop = new Set(run.map((_, k) => (i + k) % n));
+        const dropPt = new Set(run.map((_, k) => (i + k + 1) % n));
+        const order = [...Array(n).keys()].filter((k) => !dropPt.has(k));
+        const newPts = order.map((k) => pts[k]);
+        const newSides = order.map((k) => {
+          let m = k;
+          while (drop.has(m % n)) m++;
+          return sides[m % n];
+        });
+        pts.splice(0, pts.length, ...newPts);
+        sides.splice(0, sides.length, ...newSides);
+        done = true;
+      }
+      if (!done) break;
+    }
+  }
+  // (And a single slanted cut whose neighbour is another short piece the run above didn't take.)
+  for (let pass = 0; pass < 3; pass++)
+    for (let i = 0; i < sides.length && sides.length > 3; i++) {
+      const q = sides[i];
+      if (!q || q.face || q.len >= 18 * inch) continue;
+      const p = sides[(i + sides.length - 1) % sides.length], r = sides[(i + 1) % sides.length];
+      if (!p || !r || Math.abs(p.nx * r.ny - p.ny * r.nx) < Math.sin(30 * DEG)) continue;
+      const slant = (a: { nx: number; ny: number }) => Math.abs(a.nx * q.ny - a.ny * q.nx);
+      if (slant(p) < Math.sin(25 * DEG) || slant(r) < Math.sin(25 * DEG)) continue;
+      if (i === sides.length - 1) {
+        sides.pop();
+        pts.shift();
+        sides.push(sides.shift()!);
+      } else {
+        sides.splice(i, 1);
+        pts.splice(i + 1, 1);
+      }
+      i--;
+    }
   const snapped: Pt[] = [];
   for (let i = 0; i < pts.length; i++) {
     const p = sides[(i + pts.length - 1) % pts.length];
@@ -1316,6 +1637,214 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   // A small jog where a window or door jamb pokes in or out (up to 10" deep, 4' wide), or a thin slit
   // (up to 6" wide, 4' deep), with the wall lining up on both sides of it: straightened out.
   pts = dropNicks(pts, 10 * inch, 4 * upf, 1.5 * inch, 2.5 * inch, 10 * upf);
+  // 6. Across an opening into another room, the side runs on to the middle of the wall (see `middle`): that piece of
+  // the side, pushed out from the wall's face to its center line. Not where the far side is the yard or a porch.
+  if (opts.middle !== false && openSpan.size) {
+    let outMap: Uint8Array | null = null;
+    const farIsRoom = (x: number, y: number) => {
+      const i = Math.floor((x - box.x0) / cell), j = Math.floor((y - box.y0) / cell);
+      if (i < 0 || j < 0 || i >= W || j >= H || wallsOnly[j * W + i]) return false;
+      outMap ??= outsideOfHouse();
+      return !outMap[j * W + i];
+    };
+    // (Not from a porch or patio — the room clicked is outside: its side stays on the house's face, the doorway the
+    // house's. The user's answer key, 2026-11-23.)
+    const ci = Math.floor((click[0] - box.x0) / cell), cj = Math.floor((click[1] - box.y0) / cell);
+    outMap ??= outsideOfHouse();
+    const fromOutside = ci >= 0 && cj >= 0 && ci < W && cj < H && !!outMap[cj * W + ci];
+    const out: Pt[] = [];
+    for (let i = 0; i < pts.length; i++) {
+      const a = pts[i], c = pts[(i + 1) % pts.length];
+      out.push(a);
+      const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      if (L < 12 * inch || fromOutside) continue;
+      const ux = (c[0] - a[0]) / L, uy = (c[1] - a[1]) / L;
+      const cuts: [number, number, number, number, number][] = []; // along from, along to, push x, push y
+      for (const [b, [o0, o1]] of openSpan) {
+        if (Math.abs(ux * b.nx + uy * b.ny) > Math.sin(4 * DEG) || o1 - o0 < 12 * inch) continue;
+        const d = ((a[0] + c[0]) / 2) * b.nx + ((a[1] + c[1]) / 2) * b.ny - b.rho;
+        // (The side on the opening's face — not one running down its middle already, or off in the room.)
+        if (Math.abs(d) < b.half - inch || Math.abs(d) > b.half + 2 * inch || b.half < 1.5 * inch) continue;
+        // (A real opening: not drawn along the wall's line most of the way across — a wall drawn in pieces, a window, a
+        // pocket door's slab are. An arch's or cased opening's dashed header leaves gaps: ~70% on Kala.)
+        if (drawnAlong(b, o0, o1) >= 0.85) continue;
+        // Where the opening's stretch lies along this side.
+        const sa = a[0] * b.ux + a[1] * b.uy, sc = c[0] * b.ux + c[1] * b.uy;
+        let lo = Math.max(Math.min(sa, sc), o0), hi = Math.min(Math.max(sa, sc), o1);
+        // (Not over a short piece of wall left at either end — a jamb's stub between the opening and a corner,
+        // too short to count as a wall of its own: where the wall is drawn — both its faces, not a dimension's end
+        // line laid along one — the room stops at its face.)
+        const runs: [number, number][] = [];
+        {
+          const f0 = drawnRuns(b, lo, hi, 0.5 * inch, b.rho - b.half - inch, b.rho), f1 = drawnRuns(b, lo, hi, 0.5 * inch, b.rho, b.rho + b.half + inch);
+          // (The far face has a gap where another wall joins it from beyond — a T: that's still wall, not opening.)
+          const toFar = d > 0 ? -1 : 1, far = toFar > 0 ? f1 : f0;
+          const isWall = (x: number, y: number) => {
+            const i = Math.floor((x - box.x0) / cell), j = Math.floor((y - box.y0) / cell);
+            return i >= 0 && j >= 0 && i < W && j < H && !!wallsOnly[j * W + i];
+          };
+          let t0: number | null = null;
+          for (let t = lo; t <= hi + 1e-9; t += 0.5 * inch) {
+            const w = isWall(...at2(b, t, toFar * (b.half + 2 * inch))) && isWall(...at2(b, t, toFar * (b.half + 4 * inch)));
+            if (w && t0 === null) t0 = t;
+            if ((!w || t + 0.5 * inch > hi) && t0 !== null) { far.push([t0, w ? hi : t]); t0 = null; }
+          }
+          far.sort((p, q) => p[0] - q[0]);
+          for (let k = far.length - 1; k > 0; k--) if (far[k][0] <= far[k - 1][1] + 0.5 * inch) { far[k - 1][1] = Math.max(far[k - 1][1], far[k][1]); far.splice(k, 1); }
+          for (const [a0, a1] of f0)
+            for (const [c0, c1] of f1) {
+              const x0 = Math.max(a0, c0), x1 = Math.min(a1, c1);
+              if (x1 <= x0) continue;
+              const r = runs[runs.length - 1];
+              if (r && x0 <= r[1] + 0.5 * inch) r[1] = Math.max(r[1], x1);
+              else runs.push([x0, x1]);
+            }
+          runs.sort((p, q) => p[0] - q[0]);
+        }
+        // (To the stub's drawn end, across the wall, where it has one: an arch's dashed header can start right at it.)
+        const caps = (r0: number, r1: number) =>
+          strokesNear(...at2(b, r0 - inch, -b.half), ...at2(b, r1 + inch, b.half))
+            .filter((k) => Math.abs(Math.cos(k.ang - b.ang)) < Math.sin(10 * DEG))
+            .filter((k) => {
+              const e0 = k.x1 * b.nx + k.y1 * b.ny - b.rho, e1 = k.x2 * b.nx + k.y2 * b.ny - b.rho;
+              return Math.min(e0, e1) <= -b.half + 0.5 * inch && Math.max(e0, e1) >= b.half - 0.5 * inch;
+            })
+            .map((k) => ((k.x1 + k.x2) / 2) * b.ux + ((k.y1 + k.y2) / 2) * b.uy)
+            .filter((t) => t >= r0 - 0.5 * inch && t <= r1 + 0.5 * inch);
+        if (runs.length && runs[0][0] <= lo + 0.5 * inch && runs[0][1] - runs[0][0] >= 2 * inch) {
+          const c = caps(runs[0][0], runs[0][1]);
+          lo = c.length ? Math.max(lo, ...c) : runs[0][1];
+        }
+        const lr = runs[runs.length - 1];
+        if (lr && lr[1] >= hi - 0.5 * inch && lr[1] - lr[0] >= 2 * inch && lr[0] > lo) {
+          const c = caps(lr[0], lr[1]);
+          hi = c.length ? Math.min(hi, ...c) : lr[0];
+        }
+        if (hi - lo < 12 * inch) continue;
+        const sign = d > 0 ? -1 : 1; // toward the wall's center
+        const mid = (lo + hi) / 2;
+        const fx = b.ux * mid + b.nx * (b.rho + sign * (b.half + 6 * inch)), fy = b.uy * mid + b.ny * (b.rho + sign * (b.half + 6 * inch));
+        if (!farIsRoom(fx, fy)) continue;
+        // (Outward only: the strip it takes in lies outside the room — never a wall's end standing in the room.)
+        // (The side is at rho − sign·|d|: the room lies past it, away from the wall's center.)
+        const at = (o: number): Pt => [b.ux * mid + b.nx * (b.rho + sign * o), b.uy * mid + b.ny * (b.rho + sign * o)];
+        if (inside(pts, at(-Math.abs(d) / 2)) || !inside(pts, at(-Math.abs(d) - inch))) continue;
+        const ta = (lo - sa) / (sc - sa), tb = (hi - sa) / (sc - sa);
+        const [t0, t1] = ta < tb ? [ta, tb] : [tb, ta];
+        cuts.push([t0 * L, t1 * L, b.nx * sign * Math.abs(d), b.ny * sign * Math.abs(d), 0]);
+      }
+      cuts.sort((p, q) => p[0] - q[0]);
+      // (Two doorways side by side, the same push, a post up to 6" between them — a pair of doors: one stretch, no notch.)
+      for (let k = cuts.length - 1; k > 0; k--) {
+        const [p, q] = [cuts[k - 1], cuts[k]];
+        if (q[0] >= p[1] && q[0] - p[1] <= 6 * inch && Math.hypot(q[2] - p[2], q[3] - p[3]) <= 0.5 * inch) {
+          p[1] = Math.max(p[1], q[1]);
+          cuts.splice(k, 1);
+        }
+      }
+      let last = 0;
+      for (const [t0, t1, px, py] of cuts) {
+        if (t0 < last) continue;
+        const at = (t: number): Pt => [a[0] + ux * t, a[1] + uy * t];
+        const p0 = at(t0), p1 = at(t1);
+        out.push(p0, [p0[0] + px, p0[1] + py], [p1[0] + px, p1[1] + py], p1);
+        last = t1;
+      }
+    }
+    // (Corners that landed on each other where a piece started at a corner: one.)
+    pts = out.filter((q, k) => { const r = out[(k + out.length - 1) % out.length]; return Math.hypot(q[0] - r[0], q[1] - r[1]) > 0.05 * inch; });
+  }
+  // 7. No short slanted bits left: a side under a foot, off the room's own directions (its sides 2' and longer) and
+  // on nothing drawn, is a corner the grid bit into — squared off whichever way changes the floor least: one of its
+  // ends dropped, or the sides either side of it run on to meet. (The user's real clicks, 2026-11-24: the commonest
+  // 2"–6" miss.)
+  {
+    const dirs = pts.flatMap((a, i) => { const b = pts[(i + 1) % pts.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); return L >= 2 * upf ? [Math.atan2(b[1] - a[1], b[0] - a[0])] : []; });
+    const onDir = (a: Pt, b: Pt) => { const t = Math.atan2(b[1] - a[1], b[0] - a[0]); return dirs.some((d) => Math.abs(Math.sin(2 * (t - d))) < Math.sin(6 * DEG)) || Math.abs(Math.sin(2 * t)) < Math.sin(3 * DEG); };
+    const drawn = (a: Pt, b: Pt) => {
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]), t = Math.atan2(b[1] - a[1], b[0] - a[0]);
+      return strokesNear(Math.min(a[0], b[0]) - inch, Math.min(a[1], b[1]) - inch, Math.max(a[0], b[0]) + inch, Math.max(a[1], b[1]) + inch).some(
+        (k) => Math.abs(Math.sin(k.ang - t)) < Math.sin(4 * DEG) && k.s1 - k.s0 >= 0.8 * L && distToSeg((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, k) <= inch,
+      );
+    };
+    const meet = (p: Pt, q: Pt, r: Pt, s: Pt): Pt | null => {
+      const d = (q[0] - p[0]) * (s[1] - r[1]) - (q[1] - p[1]) * (s[0] - r[0]);
+      if (Math.abs(d) < 1e-9) return null;
+      const t = ((r[0] - p[0]) * (s[1] - r[1]) - (r[1] - p[1]) * (s[0] - r[0])) / d;
+      return [p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1])];
+    };
+    for (let guard = 0; guard < 12 && pts.length > 4; guard++) {
+      const n = pts.length;
+      let fixed = false;
+      for (let i = 0; i < n && !fixed; i++) {
+        const a = pts[i], b = pts[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L > 12 * inch || L < 0.25 * inch || onDir(a, b) || drawn(a, b)) continue;
+        const p = pts[(i + n - 1) % n], c = pts[(i + 2) % n];
+        const opts2: Pt[][] = [];
+        opts2.push(pts.filter((_, k) => k !== (i + 1) % n)); // drop b
+        opts2.push(pts.filter((_, k) => k !== i)); // drop a
+        const m = meet(p, a, b, c);
+        if (m && Math.hypot(m[0] - a[0], m[1] - a[1]) <= 18 * inch && Math.hypot(m[0] - b[0], m[1] - b[1]) <= 18 * inch)
+          opts2.push(pts.flatMap((q, k) => (k === i ? [m] : k === (i + 1) % n ? [] : [q])));
+        const A0 = Math.abs(shoelace(pts));
+        let best: Pt[] | null = null, bestD = L * 6 * inch;
+        for (const o of opts2) {
+          // (Every side it leaves at the fix square to the room — no new slant.)
+          const ok = o.every((q, k) => { const r = o[(k + 1) % o.length]; const LL = Math.hypot(r[0] - q[0], r[1] - q[1]); return LL < 0.25 * inch || onDir(q, r) || drawn(q, r) || !((Math.hypot(q[0] - a[0], q[1] - a[1]) < 2 * upf) || (Math.hypot(r[0] - b[0], r[1] - b[1]) < 2 * upf)); });
+          const dA = Math.abs(Math.abs(shoelace(o)) - A0);
+          if (ok && dA < bestD) { bestD = dA; best = o; }
+        }
+        if (best) { pts = best; fixed = true; }
+      }
+      if (!fixed) break;
+    }
+    // (A short side across a wall's end — a stub's or jamb's end, under 8" — onto the end's drawn line when one runs
+    // along it within 5": the user's fixes, 2026-11-24, pull these 2"–4" onto the line.)
+    {
+      const n = pts.length;
+      for (let i = 0; i < n; i++) {
+        const p = pts[(i + n - 1) % n], a = pts[i], b = pts[(i + 1) % n], c = pts[(i + 2) % n];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L > 8 * inch || L < 1.5 * inch) continue;
+        const [ux, uy] = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], [nx, ny] = [-uy, ux];
+        // (Square to both its neighbours, which run on 6" or more: it's an end, not a jog.)
+        const sq = (q: Pt, r: Pt) => { const l = Math.hypot(r[0] - q[0], r[1] - q[1]); return l >= 6 * inch && Math.abs(((r[0] - q[0]) * ux + (r[1] - q[1]) * uy) / l) < Math.sin(5 * DEG); };
+        if (!sq(p, a) || !sq(b, c)) continue;
+        const rho = a[0] * nx + a[1] * ny, s0 = Math.min(a[0] * ux + a[1] * uy, b[0] * ux + b[1] * uy), s1 = s0 + L;
+        let best: number | null = null;
+        for (const k of strokesNear(Math.min(a[0], b[0]) - 5 * inch, Math.min(a[1], b[1]) - 5 * inch, Math.max(a[0], b[0]) + 5 * inch, Math.max(a[1], b[1]) + 5 * inch)) {
+          if (Math.abs(Math.sin(k.ang - Math.atan2(uy, ux))) > Math.sin(3 * DEG) || k.s1 - k.s0 > 14 * inch) continue;
+          const kr = ((k.x1 + k.x2) / 2) * nx + ((k.y1 + k.y2) / 2) * ny, d = kr - rho;
+          const t1 = k.x1 * ux + k.y1 * uy, t2 = k.x2 * ux + k.y2 * uy;
+          if (Math.abs(d) < 0.5 * inch || Math.abs(d) > 5 * inch || Math.min(s1, Math.max(t1, t2)) - Math.max(s0, Math.min(t1, t2)) < 0.8 * L) continue;
+          if (best === null || Math.abs(d) < Math.abs(best)) best = d;
+        }
+        if (best === null) continue;
+        pts[i] = [a[0] + nx * best, a[1] + ny * best];
+        pts[(i + 1) % n] = [b[0] + nx * best, b[1] + ny * best];
+      }
+    }
+    // (And a tiny tab at a corner — two sides under 6" stepping out past it, into a jamb: the corner, square.)
+    for (let guard = 0; guard < 12 && pts.length > 5; guard++) {
+      const n = pts.length;
+      let fixed = false;
+      for (let i = 0; i < n && !fixed; i++) {
+        const p = pts[(i + n - 1) % n], a = pts[i], b = pts[(i + 1) % n], c = pts[(i + 2) % n], d = pts[(i + 3) % n];
+        const ab = Math.hypot(b[0] - a[0], b[1] - a[1]), bc = Math.hypot(c[0] - b[0], c[1] - b[1]);
+        if (ab > 6 * inch || bc > 6 * inch || ab < 0.25 * inch || bc < 0.25 * inch) continue;
+        const [u1, u2] = [[a[0] - p[0], a[1] - p[1]], [d[0] - c[0], d[1] - c[1]]], l1 = Math.hypot(...u1), l2 = Math.hypot(...u2);
+        if (l1 < 6 * inch || l2 < 6 * inch || Math.abs(u1[0] * u2[1] - u1[1] * u2[0]) / (l1 * l2) < Math.sin(60 * DEG)) continue;
+        const m = meet(p, a, c, d);
+        if (!m || Math.hypot(m[0] - b[0], m[1] - b[1]) > 8 * inch) continue;
+        const o = pts.flatMap((q, k) => (k === i ? [m] : k === (i + 1) % n || k === (i + 2) % n ? [] : [q]));
+        if (Math.abs(Math.abs(shoelace(o)) - Math.abs(shoelace(pts))) > 36 * inch * inch) continue;
+        pts = o;
+        fixed = true;
+      }
+      if (!fixed) break;
+    }
+    pts = pts.filter((q, k) => { const r = pts[(k + pts.length - 1) % pts.length]; return Math.hypot(q[0] - r[0], q[1] - r[1]) > 0.05 * inch; });
+  }
   const areaSf = Math.abs(shoelace(pts)) / (upf * upf);
   if (areaSf < 2) return { ok: false, reason: "too-small" };
   return { ok: true, outline: pts, areaSf };
@@ -1388,8 +1917,29 @@ function dimensionsIn(lines: Line[], strokesNear: ReturnType<typeof grid>, upf: 
     if (list) list.push(l);
     else onLine.set(k, [l]);
   }
+  // …or at an arrowhead: two short strokes from the line's very end, angled back along it either side (8°–35°).
+  // (Chirafis's plan, 2026-11-24: arrows, no ticks — its dimension lines ran down through the rooms as walls.)
+  const arrowed = (l: Line) =>
+    [
+      [l.x1, l.y1, 1],
+      [l.x2, l.y2, -1],
+    ].some(([ex, ey, dir]) => {
+      // (dir: from this end into the line, along u.)
+      const sides = new Set<number>();
+      const [ux, uy] = [((l.x2 - l.x1) / Math.hypot(l.x2 - l.x1, l.y2 - l.y1)) * dir, ((l.y2 - l.y1) / Math.hypot(l.x2 - l.x1, l.y2 - l.y1)) * dir];
+      for (const m of strokesNear(ex - inch, ey - inch, ex + inch, ey + inch)) {
+        if (m === l || m.s1 - m.s0 > 8 * inch || m.s1 - m.s0 < 1.5 * inch) continue;
+        const d1 = Math.hypot(m.x1 - ex, m.y1 - ey), d2 = Math.hypot(m.x2 - ex, m.y2 - ey);
+        if (Math.min(d1, d2) > 0.5 * inch) continue;
+        const [fx, fy] = d1 < d2 ? [m.x2, m.y2] : [m.x1, m.y1];
+        const L = Math.hypot(fx - ex, fy - ey), along = ((fx - ex) * ux + (fy - ey) * uy) / L, across = ((fx - ex) * -uy + (fy - ey) * ux) / L;
+        if (along < Math.cos(35 * DEG) || Math.abs(across) < Math.sin(8 * DEG)) continue;
+        sides.add(Math.sign(across));
+      }
+      return sides.size === 2;
+    });
   const dimension = new Set<Line>();
-  for (const l of lines) if (l.s1 - l.s0 >= 6 * inch && ticked(l)) dimension.add(l);
+  for (const l of lines) if (l.s1 - l.s0 >= 6 * inch && (ticked(l) || arrowed(l))) dimension.add(l);
   for (let pass = 0; pass < 3; pass++)
     for (const list of onLine.values()) {
       if (!list.some((l) => dimension.has(l))) continue;

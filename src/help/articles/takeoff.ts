@@ -210,6 +210,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Make them all…", what: "With several shapes picked: moves them all to another takeoff of the same type, or into a new one." },
           { name: "Make deduction / Make addition", what: "Switches a picked area or line between adding and subtracting." },
           { name: "✂ Split", what: "Click an area: a **Split** button shows right where you clicked. It cuts the area in two, such as an open kitchen and living room that came as one.", how: "Click anywhere on the area, click **Split**, then click across where it should split: as many points as it takes to follow the walls, starting and ending at the area's edges. Right-click (or Enter) finishes it, like drawing a wall; Esc gets out. Delete the part you don't want, or move it to another takeoff. Ctrl+Z puts it back as one." },
+          { name: "Merge", what: "Two areas that should be one (a kitchen and dining found as two rooms) become one area, joined where they meet (a doorway or opening). Walls between them stay out.", how: "Click one area, then Shift+click the one next to it: a **Merge** button shows right where you clicked. Click it. Any deductions stay. Two areas that don't touch (each stopped at its side of a door) are joined through the doorway or opening between them, jamb to jamb, never through the wall; with only wall between them, they can't be merged. It keeps the first area's takeoff. Ctrl+Z puts both back." },
           { name: "Duplicate", what: "Ctrl+D drops a copy of the picked shape, for something that repeats (two matching bedrooms)." },
           { name: "Wall height / Pitch", what: "Linear shapes can have their own wall height; joists, rafters and hips their own pitch.", how: "Type it and click **Apply**. **use takeoff's** goes back to the takeoff's setting." },
         ],
@@ -320,6 +321,7 @@ export const TAKEOFF: HelpArticle[] = [
         items: [
           { name: "Added N exterior / interior walls · X lf", what: "What was added to the takeoff." },
           { name: "…drawn like 2x6, this takeoff is 2x4", what: "The walls are drawn a different size than the takeoff you picked.", how: "Ctrl+Z, pick the right takeoff, and click again. Or keep them and move them later." },
+          { name: "+ N short walls of another size → Ext 2x6 Wall", what: "Short outside walls (under 3') drawn another size, like the little walls beside a porch, came in with the click. They go on the takeoff with the same name but their own size, when the job has one; if not, on the takeoff you picked." },
           { name: "Took too much?", what: "Ctrl+Z takes back everything one click added. To drop a single wall, click it with **Select** (V) and press Delete." },
         ],
       },
@@ -327,8 +329,10 @@ export const TAKEOFF: HelpArticle[] = [
         heading: "How it decides",
         text: [
           "**Outside or inside:** an outside wall has more drawn on its outside face: siding, sheathing, brick hatching, or a stone outline. An inside wall looks the same on both faces. A wall with stone on both faces (a stone porch wall) counts as outside.",
-          "**Thickness:** only walls drawn the same thickness as the one you clicked. A 2x6 wall is never mixed in with 2x4s, so a house with 2x6 outside walls on one part and 2x4 on another takes a click on each.",
+          "**Thickness:** only walls drawn the same thickness as the one you clicked. A 2x6 wall is never mixed in with 2x4s, so a house with 2x6 outside walls on one part and 2x4 on another takes a click on each. The exception is a short outside wall under 3' (the little walls beside a porch): it comes in with the click, on its own size's takeoff.",
           "**Doors and windows:** a gap drawn as a door or window is bridged. A column standing on its own, or the back of a niche, is not.",
+          "**45° walls with a door:** a door hung on a slant (a closet or pantry corner door, a bath's 45° door) means a wall there — it comes with the walls around it, from wall to wall through the door, the short 45° bits into the jambs included.",
+          "**Porches:** where the house steps back for a porch, the little walls beside it count as outside walls, and the inside walls in line with them stop at the outside wall's inside face.",
           "**Brick and stone** veneer are not counted as walls; the wall behind them is.",
           "**Plans that fill walls with hatching:** some plans hatch the stud space itself, not just the brick. Find walls tells them apart: the wall's faces carry drywall and sheathing lines, the brick's outside face is a single line.",
           "**Plans that fill walls with dots:** only the dotted bands count as walls, so a dimension line, a beam, a brick ladder or a table drawn the same width is left out. On these plans an outside wall is one with open air past it, including walls facing a porch the house wraps around. A garage with its door open to the outside counts its wall to the house as outside.",
@@ -350,7 +354,7 @@ export const TAKEOFF: HelpArticle[] = [
     group: "Takeoff",
     area: "takeoffs",
     pages: [VIEWER],
-    what: "Find area measures a room's floor in one click. Click inside a room and its outline, to the inside face of the walls, is added to the takeoff you picked: closed straight across the doors, with islands and cabinets left in the floor. It works on plans made in CAD (a real PDF), not scans.",
+    what: "Find area measures a room's floor in one click. Click inside a room and its outline is added to the takeoff you picked: to the inside face of the walls, and to the middle of the wall at each doorway into another room, with islands and cabinets left in the floor. A door hung on a 45° slant (a toilet room's corner door) closes its room along the slant. A door shuts its doorway whichever way it's drawn open: the open side has the door drawn along it, the shut side doesn't. It works on plans made in CAD (a real PDF), not scans.",
     how: [
       "Pick an **Area** takeoff on the left, such as \"Tile Flooring\".",
       "Click **Find area** on the toolbar (where Find walls is for wall takeoffs).",
@@ -361,8 +365,9 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "What you get",
         items: [
-          { name: "The floor", what: "To the inside face of the walls around the room. Doors are closed straight across, so the area runs to the wall line." },
+          { name: "The floor", what: "To the inside face of the walls around the room. At a doorway into another room, the floor runs to the middle of the wall, so the strip under the door is split between the two rooms: nothing is left out and nothing is counted twice. Doors to the outside stop at the wall face." },
           { name: "Islands, cabinets, furniture, labels", what: "Ignored: the floor runs under them." },
+          { name: "Bathtubs", what: "Ignored: the floor runs under a tub to the wall behind it. Showers stay out; click inside one to measure it on its own." },
           { name: "Perimeter", what: "Comes with the area, like a traced one. Use it in the takeoff's items for baseboard, or for wall drywall and paint (perimeter times the wall height in the item's quantity)." },
           { name: "Doors", what: "Aren't taken out. To take one out, draw it with **Deduct**." },
           { name: "Dimensions, labels, symbols", what: "Ignored. On plans that fill or hatch their walls, only the filled walls count, so anything drawn thin never cuts a room off." },
@@ -374,6 +379,7 @@ export const TAKEOFF: HelpArticle[] = [
         heading: "Fixing it",
         items: [
           { name: "Ctrl+Z", what: "Takes back the last area added." },
+          { name: "One room came as two", what: "Find area stopped at an opening you count as one room (a kitchen and dining area).", how: "Click one area, Shift+click the other, then click **Merge**." },
           { name: "Two rooms came as one", what: "A wide opening, or no wall between (an open kitchen and living room).", how: "Click the area with **Select** (V), click **✂ Split**, then click across where it should split (as many points as it takes) and right-click to finish. Delete or move the part you don't want." },
           { name: "Delete", what: "Click an area with **Select** and press Delete." },
           { name: "With Deduct on", what: "Find area takes the room out instead, such as a closet out of a floor." },
