@@ -28,7 +28,10 @@ export type Clutter = {
   /** How much "looks like a wall, isn't one" goes on: beams, soffits, half walls, ledges, built-ins, hearths. */
   lookalike: number;
   longExt: boolean;
-  ticks: "slash" | "dot";
+  /** Dimension ends: slash ticks, dots, filled arrowheads, open arrowheads, open circles (round 5: real plans use all). */
+  ticks: "slash" | "dot" | "arrow" | "open" | "circle";
+  /** Round 5 (2026-11-24): styles from other drafters and software (web research) — none in the answer key. */
+  extra: { layers: boolean; ceil: number; floor: boolean; furn: boolean; tags: boolean; marks: boolean; roomFill: boolean };
   doorTags: boolean;
   winTags: boolean;
   stipple: boolean;
@@ -45,10 +48,11 @@ export function makeClutter(r: Rng): Clutter {
     roomDims: r.pick([0, 0, 0.35, 0.7, 1]),
     lookalike: r.pick([0.4, 0.7, 1, 1]),
     longExt: r.chance(0.3),
-    ticks: r.chance(0.7) ? "slash" : "dot",
+    ticks: r.pick(["slash", "slash", "slash", "dot", "arrow", "arrow", "open", "circle"] as const),
     doorTags: r.chance(0.5),
     winTags: r.chance(0.5),
     stipple: r.chance(0.6),
+    extra: { layers: r.chance(0.3), ceil: r.pick([0, 0, 0.3, 0.6]), floor: r.chance(0.25), furn: r.chance(0.35), tags: r.chance(0.3), marks: r.chance(0.35), roomFill: r.chance(0.12) },
   };
 }
 
@@ -201,6 +205,19 @@ export function clutter(L: Layout, g: Geom, c: Clutter, r: Rng, ptIn: number, th
     curve(ellipse(cc, sub(fr.f(cs + rs, cd), cc), sub(fr.f(cs, cd + rd), cc)), wt);
   };
   const lbl = (t: string, p: Pt, size = 5) => text(t, p, size);
+  /** A dimension line's end mark at `tip`; `u` points along the line into the measured stretch (arrows point out at the tip). */
+  const endMark = (tip: Pt, u: Pt, tick: number) => {
+    const n: Pt = [-u[1], u[0]];
+    if (c.ticks === "slash") line([sub(tip, mul(add(u, n), tick / 2)), add(tip, mul(add(u, n), tick / 2))], thin);
+    else if (c.ticks === "dot") curve(circle(tip, inIn(1.2)), fine);
+    else if (c.ticks === "circle") curve(circle(tip, inIn(2)), fine);
+    else {
+      const al = inIn(r.pick([6, 7, 8])), aw = al * Math.tan((r.pick([12, 15, 18]) * Math.PI) / 180);
+      const b = add(tip, mul(u, al)), p1 = add(b, mul(n, aw)), p2 = sub(b, mul(n, aw));
+      if (c.ticks === "arrow") out.push({ k: "fill", rings: [[tip, p1, p2, tip]], gray: 0 });
+      line(c.ticks === "arrow" ? [tip, p1, p2] : [p1, tip, p2], fine, undefined, c.ticks === "arrow");
+    }
+  };
 
   // Fixtures, by what each one looks like on a plan.
   const toilet = (fr: Frame, s0: number) => {
@@ -671,7 +688,8 @@ export function clutter(L: Layout, g: Geom, c: Clutter, r: Rng, ptIn: number, th
           const bar = r.chance(0.4) ? r.pick([6, 8, 9, 10]) : 0;
           for (const s2 of [0, fr.len]) {
             if (c.ticks === "slash") line([fr.f(s2 - tick / 2, off - tick / 2), fr.f(s2 + tick / 2, off + tick / 2)], thin);
-            else line([fr.f(s2, off - tick / 2), fr.f(s2, off + tick / 2)], thin);
+            else if (c.ticks === "dot") line([fr.f(s2, off - tick / 2), fr.f(s2, off + tick / 2)], thin);
+            else endMark(fr.f(s2, off), sub(fr.f(s2 ? s2 - 1 : 1, off), fr.f(s2, off)), tick);
             if (bar) line([fr.f(s2, off - bar / 2), fr.f(s2, off + bar / 2)], fine);
           }
           text(feetIn(fr.len), fr.f(fr.len / 2, off + inIn(tsz * 0.8)), tsz, side === "N" || side === "S" ? "x" : "y");
@@ -693,9 +711,15 @@ export function clutter(L: Layout, g: Geom, c: Clutter, r: Rng, ptIn: number, th
       if (xs.length < 2) return;
       const P = (s: number, d: number): Pt => (horiz ? [s, d] : [d, s]);
       line([P(xs[0] - inIn(4), cc), P(xs[xs.length - 1] + inIn(4), cc)], fine);
-      for (const s of xs) {
+      for (const [j, s] of xs.entries()) {
         if (c.ticks === "slash") line([P(s - tick / 2, cc + tick / 2), P(s + tick / 2, cc - tick / 2)], thin);
-        else curve(circle(P(s, cc), inIn(1.2)), fine);
+        else if (c.ticks === "dot") curve(circle(P(s, cc), inIn(1.2)), fine);
+        else if (c.ticks === "circle") endMark(P(s, cc), sub(P(s + 1, cc), P(s, cc)), tick);
+        else {
+          // (Arrowheads: back to back at a middle stop, one at each end.)
+          if (j > 0) endMark(P(s, cc), sub(P(s - 1, cc), P(s, cc)), tick);
+          if (j < xs.length - 1) endMark(P(s, cc), sub(P(s + 1, cc), P(s, cc)), tick);
+        }
         const e0 = extFrom(s);
         line([P(s, e0), P(s, extTo)], fine);
       }
@@ -837,6 +861,158 @@ export function clutter(L: Layout, g: Geom, c: Clutter, r: Rng, ptIn: number, th
       const outSide = q.sides[0] === OUT ? 1 : -1;
       const gt = r.pick([`${Math.round(w / 12)}' X ${r.pick([7, 8])}' O.H. DR.`, `${Math.round(w / 12)}°${r.pick([7, 8])}° GARAGE DOOR`, `${Math.round(w / 12)}' GARAGE DOOR`]);
       text(gt, at(q, (o.s0 + o.s1) / 2, r.chance(0.5) ? 0 : outSide * -30), 5, q.horiz ? "x" : "y");
+    }
+  }
+
+
+  // ---- round 5 (2026-11-24): what other drafters' and software's plans look like (web research; none of it is floor) ----
+  const E = c.extra;
+  const roomRects = rooms.flatMap((rm) => rm.rects.slice(0, 1).map((q) => ({ rm, q, R: inside(rm, q) }))).filter((x) => x.R.x1 - x.R.x0 > 24 && x.R.y1 - x.R.y0 > 24);
+  // Gray (or tinted) room fills, outline-free, under everything.
+  if (E.roomFill) {
+    const gray = r.pick([0.82, 0.86, 0.9, 0.93]);
+    for (const { rm, R } of roomRects) if (rm.type !== "garage") out.unshift({ k: "fill", rings: [[[R.x0, R.y0], [R.x1, R.y0], [R.x1, R.y1], [R.x0, R.y1], [R.x0, R.y0]]], gray: rm.type === "bath" || rm.type === "mbath" ? gray - 0.05 : gray });
+  }
+  // Wall layers: drywall lines ½" in from each face, sheathing on outside walls (Chief Architect / Revit fine detail).
+  if (E.layers)
+    runs.forEach((q, i) => {
+      const R0 = g.runRects[i];
+      const len = q.horiz ? q.b[0] - q.a[0] : q.b[1] - q.a[1];
+      const ops = openings.filter((o) => o.run === i).map((o) => [o.s0, o.s1]).sort((a, b) => a[0] - b[0]);
+      const spans: number[][] = [];
+      let s0 = 0;
+      for (const [a, b] of ops) { if (a > s0) spans.push([s0, a]); s0 = Math.max(s0, b); }
+      if (s0 < len) spans.push([s0, len]);
+      const lo = q.horiz ? R0.y0 : R0.x0;
+      const ds = q.kind === "ext" ? [0.5, q.t - 0.5, q.t - 1.25] : [0.5, q.t - 0.5];
+      for (const d of ds) for (const [a, b] of spans) {
+        if (b - a < 2) continue;
+        line(q.horiz ? [[q.a[0] + a, lo + d], [q.a[0] + b, lo + d]] : [[lo + d, q.a[1] + a], [lo + d, q.a[1] + b]], fine * 0.8);
+      }
+    });
+  // Ceilings: tray outlines (one or two, dashed, inset 12"–24"), vaults (a dashed ridge line), and a note.
+  if (E.ceil)
+    for (const { rm, R } of roomRects) {
+      if (!["bed", "master", "great", "flex"].includes(rm.type) || !r.chance(E.ceil)) continue;
+      const dash = r.pick([[6, 4], [10, 4], [4, 3]]);
+      if (r.chance(0.6)) {
+        const d = r.pick([12, 18, 24]);
+        for (const k of r.chance(0.35) ? [d, d + 8] : [d]) if (R.x1 - R.x0 > 2 * k + 24 && R.y1 - R.y0 > 2 * k + 24) line([[R.x0 + k, R.y0 + k], [R.x1 - k, R.y0 + k], [R.x1 - k, R.y1 - k], [R.x0 + k, R.y1 - k]], fine, dash, true);
+        if (r.chance(0.5)) text(r.pick(["TRAY CLG", "TRAY CEILING", "10'-0\" TRAY", "9'-0\" CLG"]), [(R.x0 + R.x1) / 2, R.y0 + d + 10], 4.5);
+      } else {
+        const wide = R.x1 - R.x0 >= R.y1 - R.y0, cy = (R.y0 + R.y1) / 2, cx = (R.x0 + R.x1) / 2;
+        line(wide ? [[R.x0, cy], [R.x1, cy]] : [[cx, R.y0], [cx, R.y1]], fine, [12, 3, 3, 3]);
+        if (r.chance(0.5)) text(r.pick(["VAULTED CLG", "VAULT", "CATHEDRAL CLG"]), wide ? [cx, cy - 10] : [cx + 14, cy], 4.5);
+      }
+    }
+  // Floor finishes: tile grids in wet rooms, wood planks in living rooms — edge to edge, touching the walls.
+  if (E.floor) {
+    const plank = r.pick([3, 4, 5, 6]), tile = r.pick([12, 12, 18, 24]), staggered = r.chance(0.6);
+    for (const { rm, R } of roomRects) {
+      const wet = ["bath", "mbath", "half", "laundry"].includes(rm.type);
+      if (wet && r.chance(0.8)) {
+        for (let x = R.x0 + tile; x < R.x1 - 1; x += tile) line([[x, R.y0], [x, R.y1]], fine * 0.7);
+        for (let y = R.y0 + tile; y < R.y1 - 1; y += tile) line([[R.x0, y], [R.x1, y]], fine * 0.7);
+      } else if (["great", "bed", "master", "flex"].includes(rm.type) && r.chance(0.5)) {
+        const along = R.x1 - R.x0 >= R.y1 - R.y0;
+        const [a0, a1, b0, b1] = along ? [R.x0, R.x1, R.y0, R.y1] : [R.y0, R.y1, R.x0, R.x1];
+        const P = (a: number, b: number): Pt => (along ? [a, b] : [b, a]);
+        for (let b = b0 + plank, k = 0; b < b1 - 0.5; b += plank, k++) {
+          line([P(a0, b), P(a1, b)], fine * 0.6);
+          if (staggered) for (let a = a0 + ((k * 17) % 48) + 24; a < a1 - 6; a += 48 + ((k * 7) % 24)) line([P(a, b - plank), P(a, b)], fine * 0.6);
+        }
+      }
+    }
+  }
+  // Furniture: beds with pillows, nightstands, a sofa, a dining table with chairs.
+  if (E.furn) {
+    for (const { rm, q, R } of roomRects) {
+      if (rm.type === "bed" || rm.type === "master") {
+        const bw = rm.type === "master" ? r.pick([60, 76]) : r.pick([39, 54, 60]);
+        const bed = (fr: Frame, s0: number) => {
+          rectF(fr, s0, 0, s0 + bw, 80);
+          const pw = bw > 45 ? bw / 2 - 4 : bw - 6;
+          for (let k = 0; k < (bw > 45 ? 2 : 1); k++) rectF(fr, s0 + 3 + k * (pw + 2), 3, s0 + 3 + k * (pw + 2) + pw, 15, fine);
+          line([fr.f(s0, r.pick([20, 24, 26])), fr.f(s0 + bw, r.pick([20, 24, 26]))], fine);
+          if (r.chance(0.5)) line([fr.f(s0, 26), fr.f(s0 + bw * 0.3, 40)], fine);
+        };
+        place(rm, q, R, { len: bw, depth: 80, draw: bed, where: "center" });
+        if (r.chance(0.6)) for (let k = 0; k < 2; k++) place(rm, q, R, { len: 20, depth: 18, draw: (fr, s0) => rectF(fr, s0, 0, s0 + 20, 18) });
+        if (r.chance(0.4)) place(rm, q, R, { len: r.pick([48, 60]), depth: 20, draw: (fr, s0) => rectF(fr, s0, 0, s0 + 60, 20) });
+      }
+    }
+    const great2 = rooms.find((q) => q.type === "great");
+    const lz2 = great2?.zones.find((z) => z.role === "living"), dz = great2?.zones.find((z) => z.role === "dining");
+    if (lz2) {
+      const Z = lz2.rect, cx = (Z.x0 + Z.x1) / 2, cy = (Z.y0 + Z.y1) / 2, sl = Math.min(84, Z.x1 - Z.x0 - 30);
+      if (sl > 50 && Z.y1 - Z.y0 > 100) {
+        line([[cx - sl / 2, cy + 30], [cx + sl / 2, cy + 30], [cx + sl / 2, cy + 66], [cx - sl / 2, cy + 66]], thin, undefined, true);
+        line([[cx - sl / 2, cy + 56], [cx + sl / 2, cy + 56]], fine);
+        for (let k = 1; k < 3; k++) line([[cx - sl / 2 + (k * sl) / 3, cy + 30], [cx - sl / 2 + (k * sl) / 3, cy + 56]], fine);
+        line([[cx - 24, cy - 12], [cx + 24, cy - 12], [cx + 24, cy + 12], [cx - 24, cy + 12]], fine, undefined, true);
+        if (r.chance(0.5)) line([[cx - sl / 2 - 6, cy - 30], [cx + sl / 2 + 6, cy - 30], [cx + sl / 2 + 6, cy + 72], [cx - sl / 2 - 6, cy + 72]], fine, [3, 2], true);
+      }
+    }
+    if (dz) {
+      const Z = dz.rect, cx = (Z.x0 + Z.x1) / 2, cy = (Z.y0 + Z.y1) / 2;
+      const tw = Math.min(72, Z.x1 - Z.x0 - 60), th = Math.min(40, Z.y1 - Z.y0 - 60);
+      if (tw > 30 && th > 30) {
+        if (r.chance(0.3)) curve(ellipse([cx, cy], [tw / 2, 0], [0, th / 2]));
+        else line([[cx - tw / 2, cy - th / 2], [cx + tw / 2, cy - th / 2], [cx + tw / 2, cy + th / 2], [cx - tw / 2, cy + th / 2]], thin, undefined, true);
+        for (let k = 0; k < Math.max(1, Math.floor(tw / 26)); k++) {
+          const x = cx - tw / 2 + 13 + k * 26;
+          for (const sgn of [-1, 1]) { const y = cy + sgn * (th / 2 + 4); line([[x - 8, y], [x + 8, y], [x + 8, y + sgn * 16], [x - 8, y + sgn * 16]], fine, undefined, true); }
+        }
+      }
+    }
+  }
+  // Room tags with the area, in a box (Revit "Room Tag with Area").
+  if (E.tags)
+    for (const { rm, R } of roomRects) {
+      if (R.x1 - R.x0 < 72 || R.y1 - R.y0 < 72 || !r.chance(0.8)) continue;
+      const sf = Math.round(rm.rects.reduce((s2, q2) => s2 + (q2.x1 - q2.x0) * (q2.y1 - q2.y0), 0) / 144);
+      const t = r.pick([`${sf} SF`, `${sf} SQ FT`, `${sf} S.F.`]), cx = (R.x0 + R.x1) / 2, cy = (R.y0 + R.y1) / 2 + inIn(12);
+      text(t, [cx, cy], 4.5);
+      if (r.chance(0.5)) { const hw = inIn(t.length * 1.6 + 6), hh = inIn(5); line([[cx - hw, cy - hh], [cx + hw, cy - hh], [cx + hw, cy + hh], [cx - hw, cy + hh]], fine, undefined, true); }
+    }
+  // Marks across the plan: a section cut line with its bubbles, a revision cloud, a north arrow.
+  if (E.marks) {
+    const all2 = g.walls.flat().flat();
+    const B = { x0: Math.min(...all2.map((p) => p[0])), x1: Math.max(...all2.map((p) => p[0])), y0: Math.min(...all2.map((p) => p[1])), y1: Math.max(...all2.map((p) => p[1])) };
+    if (r.chance(0.7)) {
+      const horiz = r.chance(0.5), f2 = 0.25 + 0.5 * r.f();
+      const cc = horiz ? B.y0 + f2 * (B.y1 - B.y0) : B.x0 + f2 * (B.x1 - B.x0);
+      const [a, b] = horiz ? [B.x0 - 30, B.x1 + 30] : [B.y0 - 30, B.y1 + 30];
+      const P = (s2: number, d: number): Pt => (horiz ? [s2, d] : [d, s2]);
+      line([P(a, cc), P(b, cc)], thin * 2, r.chance(0.5) ? [18, 4, 3, 4] : undefined);
+      const rb = inIn(r.pick([12, 14, 18]));
+      for (const e of [a - rb, b + rb]) {
+        curve(circle(P(e, cc), rb), thin);
+        out.push({ k: "fill", rings: [[P(e - rb * 0.7, cc), P(e + rb * 0.7, cc), P(e, cc + rb * 1.6), P(e - rb * 0.7, cc)]], gray: 0 });
+        text(r.pick(["A", "1", "B"]), P(e, cc - rb * 0.45), 6);
+      }
+    }
+    if (r.chance(0.4)) {
+      const w = r.int(60, 140), h = r.int(50, 110), x0 = B.x0 + r.f() * (B.x1 - B.x0 - w), y0 = B.y0 + r.f() * (B.y1 - B.y0 - h), bump = r.pick([6, 8, 10]);
+      const ring: Pt[] = [[x0, y0], [x0 + w, y0], [x0 + w, y0 + h], [x0, y0 + h]];
+      const arcs: Arc[] = [];
+      for (let i = 0; i < 4; i++) {
+        const p = ring[i], qn = ring[(i + 1) % 4], L2 = Math.hypot(qn[0] - p[0], qn[1] - p[1]), u: Pt = [(qn[0] - p[0]) / L2, (qn[1] - p[1]) / L2], nn: Pt = [u[1], -u[0]];
+        const nb = Math.max(1, Math.round(L2 / (2 * bump))), st = L2 / nb;
+        for (let k = 0; k < nb; k++) {
+          const s2 = add(p, mul(u, k * st)), e2 = add(p, mul(u, (k + 1) * st)), hgt = (st / 2) * 1.33;
+          arcs.push([s2, add(s2, mul(nn, hgt)), add(e2, mul(nn, hgt)), e2]);
+        }
+      }
+      curve(arcs, thin);
+      if (r.chance(0.7)) { const tp: Pt = [x0 + w + 6, y0 - 6]; line([tp, add(tp, [12, 0]), add(tp, [6, -10])], fine, undefined, true); }
+    }
+    if (r.chance(0.6)) {
+      const at2: Pt = [B.x1 + 50, B.y1 + 40], rn = inIn(18);
+      curve(circle(at2, rn), fine);
+      out.push({ k: "fill", rings: [[[at2[0], at2[1] - rn], [at2[0] + rn * 0.4, at2[1] + rn * 0.6], [at2[0], at2[1] + rn * 0.3], [at2[0], at2[1] - rn]]], gray: 0 });
+      line([[at2[0], at2[1] - rn], [at2[0] - rn * 0.4, at2[1] + rn * 0.6], [at2[0], at2[1] + rn * 0.3]], fine);
+      text("N", [at2[0], at2[1] - rn * 1.5], 7);
     }
   }
 

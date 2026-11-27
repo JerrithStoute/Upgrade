@@ -15,6 +15,7 @@
  * counts as right while it keeps coming out that way.
  */
 import "dotenv/config";
+if (process.env.RDOFF) (globalThis as any).__rdOff = new Set(process.env.RDOFF.split(","));
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { PrismaClient } from "@prisma/client";
@@ -24,7 +25,8 @@ import { outcomeOf, polygonArea, readPoints, type ShapeNow } from "../../src/lib
 import { findRoom as appFind } from "../../src/lib/room-detect";
 import { findRoom as copyFind } from "./candidate/room-detect";
 
-const findRoom = process.argv.includes("--app") ? appFind : copyFind;
+if (process.env.NOCHAIN) (globalThis as { __noChainArcs?: boolean }).__noChainArcs = true;
+const findRoom = process.env.AKRD ? ((await import(process.env.AKRD)) as { findRoom: typeof appFind }).findRoom : process.argv.includes("--app") ? appFind : copyFind;
 const db = new PrismaClient({ datasources: { db: { url: process.env.SYSTEM_DATABASE_URL ?? process.env.DATABASE_URL } } });
 const logs = await db.areaFindLog.findMany({
   where: { ok: true, measurementId: { not: null } },
@@ -71,7 +73,9 @@ let acceptedNow = 0;
 const sheets = new Map<string, { segs: Float32Array; fills: FillShape[]; swings: DoorSwing[] }>();
 let same = 0, doorwayOnly = 0;
 const differ: string[] = [];
+const ONLY = process.env.AKONLY ? readFileSync(process.env.AKONLY, "utf8") : null;
 for (const l of key) {
+  if (ONLY && !ONLY.includes(`${l.sheet.plan.name} p${l.sheet.pageNumber} at ${l.clickX.toFixed(0)},${l.clickY.toFixed(0)}:`)) continue;
   const path = l.sheet.plan.file.storagePath;
   const k = `${path}#${l.sheet.pageNumber}`;
   if (!sheets.has(k)) {

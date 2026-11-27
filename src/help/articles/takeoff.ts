@@ -34,6 +34,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Auto-count", what: "Finds every copy of a symbol (an outlet, a light, a door tag) and counts them for you. Shows for Count, Doors and Windows takeoffs.", how: "See the **Auto-count** article." },
           { name: "Find walls", what: "Click one wall and the walls connected to it are added. Shows for Walls and Linear takeoffs.", how: "See the **Find walls** article." },
           { name: "Find area", what: "Click inside a room and its floor is added, to the inside of the walls. Shows for Area takeoffs, in the same spot.", how: "See the **Find area** article." },
+          { name: "Find openings", what: "Click inside an opening (the gap in the wall, or the door or window drawn in it) and it's added jamb to jamb, with the header and studs your takeoff is set up for. A pair side by side (two windows mulled together, double doors with a post) comes as one opening, one header; a pocket door's runs on through its pocket, wall to wall. A click on a wall, or anywhere it finds no opening, adds nothing; an opening already taken off isn't added again. Shows for Openings / Headers takeoffs, in the same spot.", how: "Click **Find openings**, then click inside each opening. Ctrl+Z takes one back. Esc = stop. To take one off by hand, use **Measure**." },
           { name: "Deduct", what: "Makes the next shapes subtract instead of add, such as a fireplace hearth out of a floor. Deductions are drawn dashed. Keyboard: D. Shows for Area and Linear takeoffs." },
           { name: "Clear takeoff", what: "Deletes the measurements of the picked takeoff, on this sheet or every sheet. The takeoff and its settings stay. Ctrl+Z puts them back." },
           { name: "Labels: Joists / All / Off", what: "What's written on the plan. **Joists**: what each joist area uses (like \"2x8: (10) 14'\"). **All**: also wall lengths, opening widths, door and window sizes. **Off**: nothing.", how: "Click to switch between the three." },
@@ -185,7 +186,7 @@ export const TAKEOFF: HelpArticle[] = [
           { name: "Linear", what: "Click points along the line; finish with a right-click, double-click or Enter. Trim, gutters, fence." },
           { name: "Count", what: "One click per item. Outlets, fixtures, posts." },
           { name: "Walls", what: "Click each corner along the wall and finish the run. End on the first corner to close the building. Or let **Find walls** trace them." },
-          { name: "Openings / Headers", what: "Click one side of the opening, then the other. The width is the distance between your clicks." },
+          { name: "Openings / Headers", what: "With **Measure**: click one side of the opening, then the other — anywhere you like. The width is the distance between your clicks. (**Find openings** does it with one click inside the opening.)" },
           { name: "Doors / Windows", what: "One click per door or window, placing the one picked in the card at the top left.", how: "See **Doors and windows**." },
           { name: "Joists / Rafters", what: "Click the corners of the area the joists cover and close it; then choose which way they run.", how: "See **Joists, rafters and beams**." },
           { name: "Hip / Valley", what: "Click the wall corner, then the ridge end. Each line is one piece, at its true (sloped) length." },
@@ -328,7 +329,7 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "How it decides",
         text: [
-          "**Outside or inside:** an outside wall has more drawn on its outside face: siding, sheathing, brick hatching, or a stone outline. An inside wall looks the same on both faces. A wall with stone on both faces (a stone porch wall) counts as outside.",
+          "**Outside or inside:** an outside wall has more drawn on its outside face: siding, sheathing, brick hatching, or a stone outline. An inside wall looks the same on both faces. A wall with stone on both faces (a stone porch wall) counts as outside. So does a wall with a window drawn in it, even one drawn plain on both faces, like the wall behind a porch.",
           "**Thickness:** only walls drawn the same thickness as the one you clicked. A 2x6 wall is never mixed in with 2x4s, so a house with 2x6 outside walls on one part and 2x4 on another takes a click on each. The exception is a short outside wall under 3' (the little walls beside a porch): it comes in with the click, on its own size's takeoff.",
           "**Doors and windows:** a gap drawn as a door or window is bridged. A column standing on its own, or the back of a niche, is not.",
           "**45° walls with a door:** a door hung on a slant (a closet or pantry corner door, a bath's 45° door) means a wall there — it comes with the walls around it, from wall to wall through the door, the short 45° bits into the jambs included.",
@@ -365,7 +366,7 @@ export const TAKEOFF: HelpArticle[] = [
       {
         heading: "What you get",
         items: [
-          { name: "The floor", what: "To the inside face of the walls around the room. At a doorway into another room, the floor runs to the middle of the wall, so the strip under the door is split between the two rooms: nothing is left out and nothing is counted twice. Doors to the outside stop at the wall face." },
+          { name: "The floor", what: "To the inside face of the walls around the room. At a doorway into another room, the floor runs to the middle of the wall, so the strip under the door is split between the two rooms: nothing is left out and nothing is counted twice. Doors to the outside stop at the wall face. A door drawn standing open near a wall doesn't cut the room short: the floor still runs to the wall behind it." },
           { name: "Islands, cabinets, furniture, labels", what: "Ignored: the floor runs under them." },
           { name: "Bathtubs", what: "Ignored: the floor runs under a tub to the wall behind it. Showers stay out; click inside one to measure it on its own." },
           { name: "Perimeter", what: "Comes with the area, like a traced one. Use it in the takeoff's items for baseboard, or for wall drywall and paint (perimeter times the wall height in the item's quantity)." },

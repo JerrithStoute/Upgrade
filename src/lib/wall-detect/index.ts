@@ -23,7 +23,7 @@
  */
 
 /** Which rules the wall finder runs: saved with each Find walls click (WallFindLog). Change it with them. */
-export const WALL_DETECT_VERSION = "2026-11-23a";
+export const WALL_DETECT_VERSION = "2026-11-26b";
 
 export type Pt = [number, number];
 export type WallKind = "exterior" | "interior";
@@ -186,7 +186,133 @@ function grid(lines: Line[], cell: number) {
  * stub drawn fatter): that comes in with the outside wall.
  */
 export function findWalls(segments: Float32Array | number[], click: Pt, opts: WallFindOptions): WallFindResult {
-  const first = findWallsAt(segments, click, opts);
+  return inLinesOnly(segments, findWallsOut(segments, click, opts), click, opts);
+}
+
+/**
+ * An outside wall clicked: the walls that came with it, looked out from both sides — straight out and on a slant, from a
+ * few spots along it. Each real outside wall sees out past the rest one way at least; a wall inside the house (hatched
+ * like the outside walls — 2026-11-25, Giarratano's kitchen/stair wall) runs into them every way it looks: it's left out.
+ */
+// (A wall changing size along its length split at the change — held back 2026-11-25: on some plans it drops real
+// walls. Giarratano's 2x4–2x6–2x4 bath wall needs it.)
+const SPLIT_SIZES = !!(globalThis as { __splitSizes?: boolean }).__splitSizes;
+
+function inLinesOnly(segments: Float32Array | number[], r: WallFindResult, click: Pt, opts: WallFindOptions): WallFindResult {
+  if ((globalThis as { __noInLines?: boolean }).__noInLines || !r.ok || r.kind !== "exterior" || r.runs.length < 4) return r;
+  const upf = opts.unitsPerFoot;
+  const inch = upf / 12;
+  const segsOf = (run: Pt[]) => run.slice(1).map((q, k) => [run[k], q] as [Pt, Pt]);
+  const all = r.runs.map(segsOf);
+  const hits = (p: Pt, dx: number, dy: number, skip: number) => {
+    for (let i = 0; i < all.length; i++) {
+      if (i === skip) continue;
+      for (const [a, b] of all[i]) {
+        const ex = b[0] - a[0], ey = b[1] - a[1];
+        const den = dx * ey - dy * ex;
+        if (Math.abs(den) < 1e-9) continue;
+        const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / den;
+        const u = ((a[0] - p[0]) * dy - (a[1] - p[1]) * dx) / den;
+        if (t > 0.5 * upf && u >= 0 && u <= 1) return true;
+      }
+    }
+    return false;
+  };
+  const seg = (a: Pt, b: Pt) => ({ x1: a[0], y1: a[1], x2: b[0], y2: b[1] });
+  const lenOf = (run: Pt[]) => segsOf(run).reduce((n, [a, b]) => n + Math.hypot(b[0] - a[0], b[1] - a[1]), 0);
+  const clickedRun = r.runs.findIndex((run) => segsOf(run).some(([a, b]) => distToSeg(click[0], click[1], seg(a, b)) <= 2 * upf));
+  // Inside: no look out past the rest, either side, from anywhere along it.
+  const inside = r.runs.map((run, i) => {
+    if (i === clickedRun || lenOf(run) < 6 * upf) return false;
+    for (const [a, b] of segsOf(run)) {
+      const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (!(len > 0)) continue;
+      const ux = (b[0] - a[0]) / len, uy = (b[1] - a[1]) / len;
+      for (const f of [0.2, 0.5, 0.8]) {
+        const p: Pt = [a[0] + ux * len * f, a[1] + uy * len * f];
+        for (const side of [-1, 1])
+          for (const tilt of [0, 30, -30, 60, -60]) {
+            const t = (tilt * Math.PI) / 180, nx = -uy * side, ny = ux * side;
+            if (!hits(p, nx * Math.cos(t) - ny * Math.sin(t), nx * Math.sin(t) + ny * Math.cos(t), i)) return false;
+          }
+      }
+    }
+    return true;
+  });
+  if (!inside.some(Boolean)) return r;
+  // …but a porch's walls, closed in by the porch's open front bridged across: one meeting a wide stretch with nothing
+  // drawn (4'+ — wider than a door — starting within a foot of where it meets it) is kept, and so is one joined to a
+  // kept one.
+  const lines = linesOf(segments, upf);
+  const near = grid(lines, upf);
+  // (A wall there: its two faces, one each side of the center line — a step's or a threshold's single line isn't one.)
+  const drawnAt = (q: Pt, ux: number, uy: number) => {
+    const sides = new Set<number>();
+    for (const l of near(q[0] - 8 * inch, q[1] - 8 * inch, q[0] + 8 * inch, q[1] + 8 * inch)) {
+      if (Math.abs(l.ux * uy - l.uy * ux) >= 0.05 || l.s1 - l.s0 < 6 * inch || distToSeg(q[0], q[1], l) > (r.thicknessIn / 2 + 1) * inch) continue;
+      const off = (l.x1 - q[0]) * -uy + (l.y1 - q[1]) * ux;
+      if (Math.abs(off) >= 0.25 * r.thicknessIn * inch) sides.add(Math.sign(off));
+    }
+    return sides.size === 2;
+  };
+  const join = (r.thicknessIn + 3) * inch;
+  const openNear = (e: Pt, run: Pt[]) =>
+    segsOf(run).some(([a, b]) => {
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (!(L > 0) || distToSeg(e[0], e[1], seg(a, b)) > join) return false;
+      const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+      const s0 = (e[0] - a[0]) * ux + (e[1] - a[1]) * uy;
+      for (const dir of [-1, 1]) {
+        let run2 = 0, best = 0;
+        for (let d = 0; d <= upf + 5 * upf; d += 3 * inch) {
+          const s = s0 + dir * d;
+          if (s < 0 || s > L) break;
+          if (!drawnAt([a[0] + ux * s, a[1] + uy * s], ux, uy)) {
+            run2 += 3 * inch;
+            best = Math.max(best, run2);
+          } else if (d > upf) break;
+          else run2 = 0;
+        }
+        if (best >= 4 * upf) return true;
+      }
+      return false;
+    });
+  const ends = (run: Pt[]) => [run[0], run[run.length - 1]];
+  // (…or where the wall it meets — a short one, 8' at most — ends, a wide open stretch carrying on in line from there: a
+  // porch's front stubs, then
+  // its opening — 2026-11-25, Page 3.)
+  const openAfter = (e: Pt, run: Pt[]) => {
+    if (lenOf(run) > 8 * upf || !segsOf(run).some(([a, b]) => distToSeg(e[0], e[1], seg(a, b)) <= join)) return false;
+    const [p0, p1] = [run[0], run[run.length - 1]];
+    const far = Math.hypot(p0[0] - e[0], p0[1] - e[1]) > Math.hypot(p1[0] - e[0], p1[1] - e[1]) ? [p0, run[1]] : [p1, run[run.length - 2]];
+    const L = Math.hypot(far[0][0] - far[1][0], far[0][1] - far[1][1]);
+    if (!(L > 0)) return false;
+    const ux = (far[0][0] - far[1][0]) / L, uy = (far[0][1] - far[1][1]) / L;
+    let open = 0;
+    for (let d = 3 * inch; d <= 5 * upf; d += 3 * inch) {
+      if (drawnAt([far[0][0] + ux * d, far[0][1] + uy * d], ux, uy)) break;
+      open += 3 * inch;
+    }
+    return open >= 4 * upf;
+  };
+  const keepIn = inside.map((ins, i) => ins && ends(r.runs[i]).some((e) => r.runs.some((o, k) => k !== i && !inside[k] && (openNear(e, o) || openAfter(e, o)))));
+  for (let grew = true; grew; ) {
+    grew = false;
+    inside.forEach((ins, i) => {
+      if (!ins || keepIn[i]) return;
+      if (ends(r.runs[i]).some((e) => r.runs.some((o, k) => k !== i && keepIn[k] && segsOf(o).some(([a, b]) => distToSeg(e[0], e[1], seg(a, b)) <= join)))) {
+        keepIn[i] = true;
+        grew = true;
+      }
+    });
+  }
+  const keep = r.runs.filter((_, i) => !inside[i] || keepIn[i]);
+  if (keep.length === r.runs.length) return r;
+  return { ...r, runs: keep, lengthFt: keep.reduce((n, run) => n + lenOf(run), 0) / upf };
+}
+
+function findWallsOut(segments: Float32Array | number[], click: Pt, opts: WallFindOptions): WallFindResult {
+  const first = plainBy(segments, click, opts, findWallsAt(segments, click, opts));
   if (!first.ok || first.kind !== "exterior") return first;
   const upf = opts.unitsPerFoot;
   const inch = upf / 12;
@@ -309,6 +435,44 @@ export function findWalls(segments: Float32Array | number[], click: Pt, opts: Wa
   if (runs.length === first.runs.length && !others.length) return first;
   const lengthFt = runs.reduce((sum, r) => sum + Math.hypot(r[r.length - 1][0] - r[0][0], r[r.length - 1][1] - r[0][1]), 0) / upf;
   return { ...first, runs, lengthFt, openings, ...(others.length ? { others } : {}) };
+}
+
+/**
+ * Clicked where walls meet (a corner, a T) — or on something in the wall — the wall can read wrong there (hatching
+ * running two ways, a stub's end): nothing, or a scrap under 3'. Then read it a foot or two along, where it's plain
+ * wall, the way a click in a window does: the wall through the spot clicked, the nearest (the longest, a tie).
+ * (2026-11-25, Goines: clicks at Ts came back a 1' piece of 11" exterior.)
+ */
+function plainBy(segments: Float32Array | number[], click: Pt, opts: WallFindOptions, first: WallFindResult): WallFindResult {
+  if (first.ok && first.lengthFt >= 3) return first;
+  const upf = opts.unitsPerFoot;
+  if (!(upf > 0)) return first;
+  const inch = upf / 12;
+  // The walls' directions here: the long lines within 2'.
+  const angs: number[] = [];
+  for (const l of linesOf(segments, upf))
+    if (l.s1 - l.s0 >= 2 * upf && distToSeg(click[0], click[1], l) <= 2 * upf && !angs.some((a) => Math.abs(Math.sin(a - l.ang)) < 0.05)) angs.push(l.ang);
+  if (!angs.length) return first;
+  const thru = (r: Extract<WallFindResult, { ok: true }>) => {
+    let d = Infinity;
+    for (const run of r.runs) for (let k = 0; k + 1 < run.length; k++) d = Math.min(d, distToSeg(click[0], click[1], { x1: run[k][0], y1: run[k][1], x2: run[k + 1][0], y2: run[k + 1][1] }));
+    return d <= (r.thicknessIn / 2 + 1) * inch ? d : Infinity;
+  };
+  let best: Extract<WallFindResult, { ok: true }> | null = null;
+  let bestD = Infinity;
+  for (const step of [12, 24])
+    for (const a of angs.slice(0, 3))
+      for (const dir of [-1, 1]) {
+        const q: Pt = [click[0] + dir * Math.cos(a) * step * inch, click[1] + dir * Math.sin(a) * step * inch];
+        const r = findWallsAt(segments, q, opts);
+        if (!r.ok || r.lengthFt < 3) continue;
+        const d = thru(r);
+        if (d < bestD - 0.5 * inch || (d < bestD + 0.5 * inch && best && r.lengthFt > best.lengthFt)) {
+          best = r;
+          bestD = Math.min(d, bestD);
+        }
+      }
+  return best ?? first;
 }
 
 /** The page's lines by direction (for partner lookups), once per page and scale. */
@@ -555,12 +719,17 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
   // click — the siding, the drywall, the brick — it's the same gap. A hatched gap is brick.
   let clicked: Line | null = null;
   let best = opts.clickRadius;
+  // (A hatch stroke is the wall's fill, not one of its lines: a face line in reach beats it. 2026-11-25, Goines.)
+  let hatchHit = false;
   for (const l of lines) {
     if (l.s1 - l.s0 < 6 * inch) continue;
     const d = distToSeg(click[0], click[1], l);
-    if (d <= best) {
+    if (d > opts.clickRadius) continue;
+    const isHatch = l.s1 - l.s0 <= upf && inHatchRow(l);
+    if (clicked && hatchHit !== isHatch ? !isHatch : d <= best) {
       best = d;
       clicked = l;
+      hatchHit = isHatch;
     }
   }
   if (!clicked && !band) return { ok: false, reason: "no-line" };
@@ -668,16 +837,23 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
         // Its faces bare lines (no drywall, sheathing drawn): this plan draws its walls as hatched bands
         // with nothing more, so a hatched band is a wall, not brick — there's no telling the two apart.
         bare = hatchedGaps[0].layers < 2;
-      } else if (!pick && hatchedGaps.length >= 2 && opts.outside) {
+      } else if (hatchedGaps.length >= 2 && opts.outside) {
         // Two or more hatched bands side by side (a plan that hatches its walls and its brick alike): the wall is
-        // the one on the house side (away from the yard).
+        // the one on the house side (away from the yard) — not an open gap either way (a garage's workbench line
+        // off the wall's face, a room's edge past it: 2026-11-25 Goines).
         const om = opts.outside;
         const yard = (o: number) => {
           const [x, y] = [clicked.ux * cs + clicked.nx * (clicked.rho + o), clicked.uy * cs + clicked.ny * (clicked.rho + o)];
           const i = Math.floor((x - om.x0) / om.cell), j = Math.floor((y - om.y0) / om.cell);
           return i >= 0 && j >= 0 && i < om.W && j < om.H && om.out[j * om.W + i] ? 1 : 0;
         };
-        const score = hatchedGaps.map((h) => [-1, 1].reduce((n, d) => n + [8, 14].reduce((m, r) => m + yard(h.lo + h.t / 2 + d * (h.t / 2 + r * inch)), 0), 0));
+        let score = hatchedGaps.map((h) => [-1, 1].reduce((n, d) => n + [8, 14].reduce((m, r) => m + yard(h.lo + h.t / 2 + d * (h.t / 2 + r * inch)), 0), 0));
+        // (A tie — brick 5" thick reads the same at 8" and 14" off as the wall behind it: just off the faces, the
+        // brick's outside face is the yard, the wall's are the brick and the room. 2026-11-24, Goines.)
+        if (score.filter((x) => x === Math.min(...score)).length > 1) {
+          const near = hatchedGaps.map((h) => [-1, 1].reduce((n, d) => n + yard(h.lo + h.t / 2 + d * (h.t / 2 + 2 * inch)), 0));
+          score = score.map((x, i) => 10 * x + near[i]);
+        }
         const lo = Math.min(...score);
         if (Math.max(...score) > lo && score.filter((x) => x === lo).length === 1) {
           const g = hatchedGaps[score.indexOf(lo)];
@@ -956,9 +1132,30 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
       if (inside > 0 && drawn(w.ang, rho - inside, rho + inside, from, to) >= 0.8) return true;
       return drawn(w.ang, rho - half - inch, rho - inside, from, to) >= 0.8 && drawn(w.ang, rho + inside, rho + half + inch, from, to) >= 0.8;
     };
+    // Across the gap, a wall of another size: two faces running across it all the way, farther apart (or closer) than
+    // this wall's — a 2x6 stretch in a 2x4 wall (a plumbing wall's middle). Not an opening: the two aren't one wall.
+    // (2026-11-25, Giarratano: a hall bath wall 2x4–2x6–2x4 came as one 2x4 wall.)
+    const otherSizeAcross = (w: Piece, p: Piece) => {
+      const rho = (w.rho + p.rho) / 2;
+      const [from, to] = [Math.min(w.s1, p.s1), Math.max(w.s0, p.s0)];
+      // (Not on a plan that hatches its walls: there, brick's and a window's lines run beside the faces.)
+      if (poche || to - from < upf) return false;
+      // (Each face drawn across 80% of the gap or more, in however many pieces.)
+      const faces: number[] = [];
+      for (const l of parallelIn(buckets, w.ang, rho - half - 3 * inch, rho + half + 3 * inch))
+        if (l.s1 - l.s0 >= 6 * inch && !faces.some((f) => Math.abs(f - l.rho) < 0.3 * inch) && drawn(w.ang, l.rho - 0.2 * inch, l.rho + 0.2 * inch, from, to) >= 0.8) faces.push(l.rho);
+      // (One face flush with this wall's, the other out past this wall's other face by ¾"-3": a wider wall carrying on
+      // from it. Lines inside the wall, or on its faces — a window's — aren't one.)
+      const [lo, hi] = [rho - half, rho + half];
+      const near = (f: number, v: number) => Math.abs(f - v) <= 0.3 * inch;
+      // (And nothing inside this wall's width across it — a window's glass, its frame: a window, not a wider wall.)
+      if (drawn(w.ang, lo + 0.4 * inch, hi - 0.4 * inch, from, to) > 0.3) return false;
+      return (faces.some((f) => near(f, lo)) && faces.some((f) => f > hi + 0.75 * inch && f <= hi + 3 * inch)) || (faces.some((f) => near(f, hi)) && faces.some((f) => f < lo - 0.75 * inch && f >= lo - 3 * inch));
+    };
     walls = merge(walls, (w, p) => {
       const gap = gapOf(w, p);
       if (gap <= inch) return true;
+      if (SPLIT_SIZES && gap <= maxOpening && otherSizeAcross(w, p)) return false;
       if (gap <= maxOpening && drawnAcross(w, p)) return true;
       // A door: the wall closed at the opening (on at least one side), and both sides free ends —
       // a wall that runs into another wall there is a hallway's side, not a door's.
@@ -1189,6 +1386,36 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
       const open = extra > 0 ? openPast(outsideLeft ? clusters[li - 1]![0] : left[0], -1) : openPast(outsideRight ? clusters[ri + 1]![1] : right[1], 1);
       return open ? { kind: "exterior", layers, stone, faces, outer: extra > 0 ? -1 : 1 } : { kind: "interior", layers, stone, faces };
     };
+    // A window drawn in the wall: its glass, a line down the wall's middle (off both faces), 18" to 8' long, the wall
+    // closed across at both its ends (the jambs). Windows are only in outside walls — the user, 2026-11-26: a porch's
+    // back wall, drawn plain both sides, is outside when there's a window in it (Jordan Williams).
+    // (Not a stair's side: its treads run off the wall's face, one after another — a rail or stringer down the middle.)
+    const treads = (w: Piece, g: Line) => {
+      const [ax, ay] = at(w, g.s0);
+      const [bx, by] = at(w, g.s1);
+      const at2: number[] = [];
+      for (const m of strokesNear(ax - 4 * upf, ay - 4 * upf, bx + 4 * upf, by + 4 * upf)) {
+        if (Math.abs(Math.sin(m.ang - w.ang)) < Math.sin(80 * DEG) || m.s1 - m.s0 < 2 * upf) continue;
+        const along = ((m.x1 + m.x2) / 2) * w.ux + ((m.y1 + m.y2) / 2) * w.uy;
+        if (along < g.s0 || along > g.s1) continue;
+        const o = [m.x1 * w.nx + m.y1 * w.ny - w.rho, m.x2 * w.nx + m.y2 * w.ny - w.rho];
+        if (o.some((v) => Math.abs(Math.abs(v) - half) <= 1.5 * inch)) at2.push(along);
+      }
+      // (A tread's width apart, 8–14", four in a row — a pair of doors standing open isn't.)
+      at2.sort((p, q) => p - q);
+      let run = 1;
+      for (let k = 1; k < at2.length; k++) {
+        const d = at2[k] - at2[k - 1];
+        if (d < 2 * inch) continue;
+        run = d >= 8 * inch && d <= 14 * inch ? run + 1 : 1;
+        if (run >= 4) return true;
+      }
+      return false;
+    };
+    const glassAt = (w: Piece, s: number) =>
+      parallelIn(buckets, w.ang, w.rho - half + 0.75 * inch, w.rho + half - 0.75 * inch).some(
+        (l) => l.s0 <= s && l.s1 >= s && l.s1 - l.s0 >= 1.5 * upf && l.s1 - l.s0 <= 8 * upf && capped(w, l.s0) && capped(w, l.s1) && !treads(w, l),
+      );
     const sections: Piece[] = [];
     const looked = walls.map((w) => {
       const n = Math.max(1, Math.min(400, Math.round(lengthOf(w) / upf)));
@@ -1319,6 +1546,8 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
       // All opening (two door stubs and the doors between): nothing to look across, but a wall.
       const drawnWith = seen.length ? median(seen) : w.openings?.length ? Infinity : 0;
       let says = looks.map((l) => l?.kind ?? null);
+      const glass = looks.map((_, k) => glassAt(w, w.s0 + step * (k + 0.5)));
+      says = says.map((k, i) => (glass[i] ? "exterior" : k));
       // A short wall (a bump-out's side) with brick along it is outside — too short to out-vote one look the other way.
       if (poche && n <= 3 && looks.some((l) => l?.brick)) says = says.map(() => "exterior");
       // A wall of windows in a brick house: brick at both ends (the corners) and, between, only the
@@ -1338,6 +1567,8 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
         }
         return ext > int ? "exterior" : int > ext ? "interior" : says[k];
       });
+      // (A window's feet stay outside.)
+      says = says.map((k, i) => (glass[i] ? "exterior" : k));
       // Feet with no say go with the nearest that has one.
       const said = says.map((k, i) => (k ? i : -1)).filter((i) => i >= 0);
       const kindAt = (k: number): WallKind => {
@@ -1404,7 +1635,9 @@ function findWallsAt(segments: Float32Array | number[], click: Pt, opts: WallFin
           runs[r - 1].kind === "exterior" &&
           runs[r + 1].kind === "exterior" &&
           span(runs[r]) <= 10 &&
-          !boxedIn(runs[r]) &&
+          // (Walls meeting it at both ends — a bump-out's sides — unless it's between two windows: a shower or closet
+          // against the outside wall between them. 2026-11-26, Jordan Williams master bath.)
+          (!boxedIn(runs[r]) || (glass.slice(runs[r - 1].from, runs[r - 1].to).some(Boolean) && glass.slice(runs[r + 1].from, runs[r + 1].to).some(Boolean))) &&
           !(poche && readInside(runs[r]) >= 3 && !(brickIn(runs[r - 1]) && brickIn(runs[r + 1])))
         )
           runs[r].kind = "exterior";

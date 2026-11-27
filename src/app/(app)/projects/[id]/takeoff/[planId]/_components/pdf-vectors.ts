@@ -3,6 +3,8 @@ import type { PDFPageProxy } from "pdfjs-dist";
 type PdfJs = typeof import("pdfjs-dist");
 type Matrix = [number, number, number, number, number, number];
 
+import { drawnDoors } from "@/lib/room-detect/sheet-kind";
+
 // pdf.js path commands inside a constructPath operation (not exported by the library).
 const DrawOPS = { moveTo: 0, lineTo: 1, curveTo: 2, quadraticCurveTo: 3, closePath: 4 } as const;
 
@@ -189,7 +191,67 @@ export async function extractSegments(pdfjs: PdfJs, page: PDFPageProxy, arcs?: n
       }
     for (const e of sides.values()) if (e.n % 2 === 1 && out.length < MAX_SEGMENTS * 4) out.push(...e.s);
   }
+  // Door swings drawn as tiny straight pieces each its own path (2026-11-25, Goines: none read, so no doors at all):
+  // the pieces chained end to end, read like a path's run.
+  // (Door-sized: over 12 units — a 2' door at ⅛" = 1' is 18 — not a symbol's little circle; the scale isn't known here.)
+  const doorSized = (w: DoorSwing) => w.r > 12;
+  // Only on a sheet whose doors aren't read otherwise (none with its door drawn), and only when it finds a few (3+):
+  // a sheet with some doors read and the rest not runs rooms together through the rest (Find area leaves an opening
+  // with no swing open once a sheet has swings — 2026-11-25, O'Quinn: 2 found, 5 rooms joined).
+  // (OFF for now — lab only: on the answer key it shrank rooms builders kept, Goines and Winnie among them. 2026-11-25.)
+  if (swings && (globalThis as { __chainArcs?: boolean }).__chainArcs && drawnDoors(out, swings.filter(doorSized)) === 0) {
+    const more = chainedArcs(out);
+    if (drawnDoors(out, more.filter(doorSized)) >= 3) swings.push(...more);
+  }
   return new Float32Array(out);
+}
+
+/**
+ * Arcs drawn as short straight pieces that aren't one path (each piece its own): pieces under 24 units chained
+ * where exactly two meet end to end, each chain read by `polylineArcs`.
+ */
+export function chainedArcs(out: ArrayLike<number>): DoorSwing[] {
+  const key = (x: number, y: number) => `${Math.round(x * 20)},${Math.round(y * 20)}`;
+  const pieces: number[] = [];
+  const ends = new Map<string, number[]>();
+  for (let i = 0; i + 3 < out.length; i += 4) {
+    const L = Math.hypot(out[i + 2] - out[i], out[i + 3] - out[i + 1]);
+    if (!(L > 0) || L >= 24) continue;
+    const k = pieces.length / 4;
+    pieces.push(out[i], out[i + 1], out[i + 2], out[i + 3]);
+    for (const e of [0, 1]) {
+      const kk = key(out[i + 2 * e], out[i + 2 * e + 1]);
+      const list = ends.get(kk);
+      if (list) list.push(k, e);
+      else ends.set(kk, [k, e]);
+    }
+  }
+  const used = new Uint8Array(pieces.length / 4);
+  const arcsOut: DoorSwing[] = [];
+  for (let k0 = 0; k0 < used.length; k0++) {
+    if (used[k0]) continue;
+    used[k0] = 1;
+    const chain: [number, number][] = [
+      [pieces[4 * k0], pieces[4 * k0 + 1]],
+      [pieces[4 * k0 + 2], pieces[4 * k0 + 3]],
+    ];
+    for (const fwd of [true, false])
+      for (;;) {
+        const tip = fwd ? chain[chain.length - 1] : chain[0];
+        const list = ends.get(key(tip[0], tip[1]));
+        // (Exactly two pieces meet here — one the chain's own: a fork or a corner of more isn't an arc.)
+        if (!list || list.length !== 4) break;
+        const at = used[list[0]] ? 2 : 0;
+        if (used[list[at]]) break;
+        const [k, e] = [list[at], list[at + 1]];
+        used[k] = 1;
+        const far: [number, number] = [pieces[4 * k + 2 * (1 - e)], pieces[4 * k + 2 * (1 - e) + 1]];
+        if (fwd) chain.push(far);
+        else chain.unshift(far);
+      }
+    if (chain.length >= 6) arcsOut.push(...polylineArcs(chain));
+  }
+  return arcsOut;
 }
 
 /** A filled shape on the page: its color ("#rrggbb") and outline rings ([x, y, x, y, …], page units). */

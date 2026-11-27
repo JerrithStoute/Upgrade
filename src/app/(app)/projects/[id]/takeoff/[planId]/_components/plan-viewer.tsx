@@ -35,6 +35,7 @@ import {
   ChevronDown,
   GripVertical,
   WandSparkles,
+  DoorOpen,
   PaintBucket,
   Scissors,
   Merge as Combine,
@@ -89,7 +90,7 @@ import { cutArea, cutLine, mergeAreas, withoutExisting } from "@/lib/deduct";
 
 /** Total length of runs (plan units). */
 const runsLf = (runs: Pt[][]) => runs.reduce((s, r) => s + r.slice(1).reduce((t, q, i) => t + Math.hypot(q[0] - r[i][0], q[1] - r[i][1]), 0), 0);
-import { ROOM_DETECT_VERSION, splitOutlineAlong } from "@/lib/room-detect";
+import { ROOM_DETECT_VERSION, houseOutsideMap, splitOutlineAlong } from "@/lib/room-detect";
 import { addPoint, breakAt as breakLine, breakOff, deletePiece, pieceAt, nearestEdge as edgeNear, removePoint, type Line } from "@/lib/line-pieces";
 import { looksLikeFloorPlan } from "@/lib/room-detect/sheet-kind";
 import { RoomFinder } from "./room-find";
@@ -119,6 +120,7 @@ import {
   type Clutter,
 } from "@/lib/symbol-match";
 import { findDimensions } from "@/lib/room-detect";
+import { findOpening } from "@/lib/opening-detect";
 import { buildSnapIndex, findSnap, type SnapHit } from "./snap";
 import { ConditionDrawer, type DrawerCondition } from "./condition-drawer";
 import { NewTakeoffMenu } from "./new-takeoff-menu";
@@ -218,7 +220,7 @@ type ViewerMeasurement = {
 /** Find area on a sheet it can't read (said on the click, and in the tool's help line once known). */
 const UNREADABLE = "This plan is drawn in a way Find area can't read — measure its rooms with Area (click the corners).";
 
-type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount" | "findwalls" | "findarea";
+type Tool = "select" | "measure" | "calibrate" | "pan" | "ruler" | "autocount" | "findwalls" | "findarea" | "findopenings";
 
 /** A takeoff in your templates (the Library), to pull onto the job. */
 export type LibraryTakeoff = { id: string; name: string; type: string; color: string; template: string; templateId: string; items: number };
@@ -883,6 +885,44 @@ export function PlanViewer({
     };
   }, [vectors, fills, doorSwings, sheetScale]);
   const sheetUnreadable = !!vectors && unreadableSheet === vectors;
+  // One-click openings: the line growing from the click out to each jamb (a moment, then the opening's own mark), and
+  // what was just added (a quick second click on the same opening, before it shows, adds nothing).
+  const [openingSnap, setOpeningSnap] = useState<{ click: Pt; a: Pt; b: Pt; key: number } | null>(null);
+  useEffect(() => {
+    if (!openingSnap) return;
+    const t = setTimeout(() => setOpeningSnap(null), 700);
+    return () => clearTimeout(t);
+  }, [openingSnap]);
+  const recentOpenings = useRef<{ a: Pt; b: Pt; at: number }[]>([]);
+  /** An opening already taken off here (any Openings / Headers takeoff on this sheet): never counted twice. */
+  const openingTaken = (a: Pt, b: Pt) => {
+    const inch = (unitsPerFoot ?? 0) / 12;
+    const lines = [
+      ...shapes.filter((m) => !m.isDeduction && condById.get(m.conditionId)?.type === "OPENING" && m.points.length >= 2).map((m) => [m.points[0], m.points[m.points.length - 1]]),
+      ...recentOpenings.current.filter((r) => Date.now() - r.at < 3000).map((r) => [r.a, r.b]),
+    ];
+    return lines.some(([p, q]) => {
+      const L = dist(p, q);
+      if (!(L > 0)) return false;
+      const [ux, uy] = [(q[0] - p[0]) / L, (q[1] - p[1]) / L];
+      const along = (z: Pt) => (z[0] - p[0]) * ux + (z[1] - p[1]) * uy;
+      const across = (z: Pt) => Math.abs((z[0] - p[0]) * -uy + (z[1] - p[1]) * ux);
+      if (across(a) > 6 * inch || across(b) > 6 * inch) return false;
+      const [s0, s1] = [along(a), along(b)].sort((x, y) => x - y);
+      // (Overlapping most of either one.)
+      return Math.min(s1, L) - Math.max(s0, 0) > 0.5 * Math.min(s1 - s0, L);
+    });
+  };
+  // Find walls needs what's outside the house (brick vs the wall behind it, a porch's back wall) on every sheet, not
+  // only on one read ahead as a floor plan (a sheet whose doors aren't read as doors — 2026-11-25, Goines — clicked
+  // blind, read brick as 12" walls and found nothing on others): read ahead once Find walls is picked, and worked out
+  // right there (once a sheet) if a click comes first.
+  useEffect(() => {
+    if (tool !== "findwalls" || !vectors || !vectors.length || !sheetScale) return;
+    const f = (roomFinder.current ??= new RoomFinder());
+    f.loadOutside(f.sheet(vectors, fills, doorSwings), sheetScale);
+  }, [tool, vectors, fills, doorSwings, sheetScale]);
+  const outsideFor = (v: Float32Array, upf: number) => roomFinder.current?.outsideMap(v, upf) ?? houseOutsideMap(v, { unitsPerFoot: upf, fills }) ?? undefined;
   const sheetIdRef = useRef(sheet?.id);
   useEffect(() => {
     sheetIdRef.current = sheet?.id;
@@ -2445,7 +2485,7 @@ export function PlanViewer({
           stopAuto();
           setTool("measure");
         }
-        if (tool === "findwalls" || tool === "findarea") setTool("measure");
+        if (tool === "findwalls" || tool === "findarea" || tool === "findopenings") setTool("measure");
         setSplitting(null);
         setEdgeChip(null);
         setPointChip(null);
@@ -2850,7 +2890,7 @@ export function PlanViewer({
       const p = toPage(e.clientX, e.clientY);
       let walls = pickFloor(thisFloorWalls, p, (SNAP_PX * 1.5) / zoom, unitsPerFoot ? unitsPerFoot * 0.75 : 12 / zoom);
       if (!walls && vectors?.length && unitsPerFoot) {
-        const r = findWalls(vectors, p, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot), doors: doorSwings });
+        const r = findWalls(vectors, p, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: outsideFor(vectors, unitsPerFoot), doors: doorSwings });
         if (r.ok) walls = r.runs as Pt[][];
       }
       if (!walls) return setError("No wall there — click right on one of the floor above's walls (or trace them first with Find walls).");
@@ -2871,6 +2911,24 @@ export function PlanViewer({
       if (edgePick && dirShape && hoverEdge !== null) finishDirection(edgeAngle(dirShape.points, hoverEdge));
       return;
     }
+    if (tool === "findopenings") {
+      // Find openings: one click inside an opening takes it off jamb to jamb (opening-detect) — the header and studs come
+      // with it from the takeoff. A click that finds no opening adds nothing (the user: clicks only count on openings, never
+      // on a wall). By hand is Measure.
+      if (!active || !sheet || active.type !== "OPENING") return;
+      if (!unitsPerFoot) return setError("Set this sheet's scale before finding openings.");
+      if (!vectors || !vectors.length)
+        return setError("This sheet has no line work to read (a scanned plan?) — openings can't be found here. Take them off with Measure.");
+      if (e.detail >= 2) return;
+      const click = toPage(e.clientX, e.clientY);
+      const o = findOpening(vectors, click, { unitsPerFoot, swings: doorSwings });
+      if (!o) return setFlash("No opening there — click inside the opening (Measure takes one off by hand)");
+      if (openingTaken(o.a, o.b)) return setFlash("That opening is already taken off — nothing added");
+      recentOpenings.current = [...recentOpenings.current.filter((r) => Date.now() - r.at < 3000), { a: o.a, b: o.b, at: Date.now() }];
+      setOpeningSnap({ click, a: o.a, b: o.b, key: Date.now() });
+      save(active, [o.a, o.b]);
+      return;
+    }
     if (tool === "findwalls") {
       // One click on a wall: the wall finder follows the connected walls as thick (wall-detect).
       if (!active || !sheet) return;
@@ -2879,7 +2937,7 @@ export function PlanViewer({
         return setError("This sheet has no line work to read (a scanned plan?) — walls can't be found here. Trace them with Measure.");
       const click = toPage(e.clientX, e.clientY);
       const t0 = performance.now();
-      const r = findWalls(vectors, click, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: roomFinder.current?.outsideMap(vectors, unitsPerFoot), doors: doorSwings });
+      const r = findWalls(vectors, click, { unitsPerFoot, clickRadius: (SNAP_PX * 1.5) / zoom, outside: outsideFor(vectors, unitsPerFoot), doors: doorSwings });
       // Saved quietly, to improve the wall finder from real use (WallFindLog).
       const log = { projectId, sheetId: sheet.id, conditionId: active.id, click, unitsPerFoot, version: WALL_DETECT_VERSION, ms: performance.now() - t0 };
       if (!r.ok) {
@@ -3119,7 +3177,7 @@ export function PlanViewer({
     !unitsPerFoot &&
     !!active &&
     !isCountType(active.type) &&
-    (tool === "measure" || tool === "findwalls" || tool === "findarea") &&
+    (tool === "measure" || tool === "findwalls" || tool === "findarea" || tool === "findopenings") &&
     !scaleSkipped.includes(sheet.id);
   const presetValue =
     PRESET_SCALES.find((s) => sheet?.unitsPerFoot && Math.abs(s.paperInchesPerFoot * PDF_UNITS_PER_INCH - sheet.unitsPerFoot) < 1e-6)?.label ?? "";
@@ -3194,7 +3252,7 @@ export function PlanViewer({
       ? edgePick && hoverEdge !== null
         ? "cursor-pointer"
         : "cursor-default"
-      : tool === "measure" || tool === "calibrate" || tool === "ruler" || tool === "autocount" || tool === "findwalls" || tool === "findarea"
+      : tool === "measure" || tool === "calibrate" || tool === "ruler" || tool === "autocount" || tool === "findwalls" || tool === "findarea" || tool === "findopenings"
         ? "cursor-crosshair"
         : "cursor-default";
 
@@ -4242,6 +4300,23 @@ export function PlanViewer({
               <WandSparkles className="h-3.5 w-3.5" /> Find walls
             </ToolButton>
           ) : null}
+          {active && active.type === "OPENING" && !superseded ? (
+            <ToolButton
+              active={tool === "findopenings"}
+              onClick={() => {
+                if (tool === "findopenings") setTool("measure");
+                else {
+                  setTool("findopenings");
+                  setSelectedId(null);
+                  resetDraft();
+                  showTakeoff(active.id);
+                }
+              }}
+              title="Find openings — click inside an opening and it's added jamb to jamb, with its header and studs (plans made in CAD)"
+            >
+              <DoorOpen className="h-3.5 w-3.5" /> Find openings
+            </ToolButton>
+          ) : null}
           {active && active.type === "AREA" && !superseded ? (
             <ToolButton
               active={tool === "findarea"}
@@ -4412,6 +4487,11 @@ export function PlanViewer({
             <strong className="font-medium text-slate-800">Find walls{active ? ` · ${active.name}` : ""}:</strong> click a wall — it and the walls connected to
             it are added. Ctrl+Z takes them back; pick one and Delete to drop it. Esc = stop.
           </span>
+        ) : tool === "findopenings" ? (
+          <span>
+            <strong className="font-medium text-slate-800">Find openings{active ? ` · ${active.name}` : ""}:</strong> click inside an opening — it's added jamb to
+            jamb with its header and studs; a pair side by side comes as one. A click on a wall adds nothing. Ctrl+Z takes it back. By hand: Measure. Esc = stop.
+          </span>
         ) : tool === "findarea" ? (
           <span>
             <strong className="font-medium text-slate-800">Find area{active ? ` · ${active.name}` : ""}:</strong> click inside a room — its floor is added, to
@@ -4450,7 +4530,7 @@ export function PlanViewer({
                 : active.type === "WALL"
                   ? "click each corner along the wall; right-click, double-click or Enter to finish the run (end on the first corner to close the building)."
                   : active.type === "OPENING"
-                    ? "click one side of the opening, then the other. Each line is one opening; its length is the width."
+                    ? "click one side of the opening, then the other. Each line is one opening; its length is the width. (Find openings: one click inside it.)"
                     : active.type === "HIP_VALLEY"
                       ? "click the wall corner, then the ridge end; right-click, double-click or Enter to finish. Each line is one piece — its pitch is in the card on the plan."
                       : active.type === "BEAM"
@@ -5183,6 +5263,24 @@ export function PlanViewer({
                           ) : (
                             <circle cx={snapHit.point[0]} cy={snapHit.point[1]} r={px(7)} fill="none" stroke="#f97316" strokeWidth={2} {...stroke} />
                           )}
+                        </g>
+                      ) : null}
+
+                      {/* One-click opening: grows from the click out to each jamb, then snaps there. */}
+                      {openingSnap ? (
+                        <g key={openingSnap.key} pointerEvents="none">
+                          {[openingSnap.a, openingSnap.b].map((end, i) => (
+                            <line key={i} x1={openingSnap.click[0]} y1={openingSnap.click[1]} x2={openingSnap.click[0]} y2={openingSnap.click[1]} stroke={active?.color ?? "#f97316"} strokeWidth={6} strokeLinecap="round" {...stroke}>
+                              <animate attributeName="x2" from={openingSnap.click[0]} to={end[0]} dur="0.25s" fill="freeze" />
+                              <animate attributeName="y2" from={openingSnap.click[1]} to={end[1]} dur="0.25s" fill="freeze" />
+                              <animate attributeName="opacity" from="1" to="0" begin="0.45s" dur="0.25s" fill="freeze" />
+                            </line>
+                          ))}
+                          {[openingSnap.a, openingSnap.b].map((end, i) => (
+                            <circle key={`j${i}`} cx={end[0]} cy={end[1]} r={px(6)} fill="none" stroke={active?.color ?? "#f97316"} strokeWidth={2} opacity={0} {...stroke}>
+                              <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.6;1" begin="0.25s" dur="0.45s" fill="freeze" />
+                            </circle>
+                          ))}
                         </g>
                       ) : null}
 

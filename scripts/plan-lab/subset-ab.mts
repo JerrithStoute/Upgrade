@@ -2,10 +2,13 @@
 /** Plan lab: old vs new room finder on a subset of a real-replay file (all misses with offIn ≤ MAXOFF + KEEP random no-edit
  * rooms), graded against the same saved outlines in one pass. OLD = module path. Prints better/worse lists. */
 import "dotenv/config";
+if (process.env.RDOFF) (globalThis as any).__rdOff = new Set(process.env.RDOFF.split(","));
 import { readFileSync } from "fs";
 import { PrismaClient } from "@prisma/client";
 import * as pdfjs from "pdfjs-dist/legacy/build/pdf.mjs";
 import { extractSegments } from "../../src/app/(app)/projects/[id]/takeoff/[planId]/_components/pdf-vectors";
+if (process.env.NOTICK) globalThis.__noTick = true;
+if (process.env.NOCHAIN) globalThis.__noChainArcs = true;
 import { findRoom as NEW } from "../../src/lib/room-detect/index.ts";
 const { findRoom: OLD } = await import(process.env.OLD ?? "../../src/lib/room-detect/_old.ts");
 const rows = JSON.parse(readFileSync(process.env.FILE ?? "test-plans/_lab/rr-tub.json", "utf-8")).map((x, i) => ({ ...x, i }));
@@ -32,9 +35,9 @@ let better = [], worse = [], nOld = 0, nNew = 0;
 for (const r of set) {
   const s = sh.get(r.sheetId); if (!s) continue;
   const key = s.id;
-  if (!cache.has(key)) { if (cache.size > 6) cache.delete(cache.keys().next().value); const page = await (await pdfjs.getDocument({ data: new Uint8Array(readFileSync("uploads/" + s.plan.file.storagePath)), verbosity: 0 }).promise).getPage(s.pageNumber); const fills = [], doors = []; const segs = await extractSegments(pdfjs, page, undefined, fills, doors); cache.set(key, { segs, fills, doors }); }
-  const { segs, fills, doors } = cache.get(key), upf = s.unitsPerFoot, o = { unitsPerFoot: upf, fills, doors };
-  const a = OLD(segs, r.click, o), b = NEW(segs, r.click, o);
+  if (!cache.has(key)) { if (cache.size > 6) cache.delete(cache.keys().next().value); const page = await (await pdfjs.getDocument({ data: new Uint8Array(readFileSync("uploads/" + s.plan.file.storagePath)), verbosity: 0 }).promise).getPage(s.pageNumber); const fills = [], doors = []; const segs = await extractSegments(pdfjs, page, undefined, fills, doors); let doorsOld = doors; if (process.env.DOORAB) { globalThis.__noChainArcs = true; doorsOld = []; await extractSegments(pdfjs, page, undefined, [], doorsOld); globalThis.__noChainArcs = false; } cache.set(key, { segs, fills, doors, doorsOld }); }
+  const { segs, fills, doors, doorsOld } = cache.get(key), upf = s.unitsPerFoot, o = { unitsPerFoot: upf, fills, doors, budgetMs: Number(process.env.BUDGET ?? 2500) };
+  const a = OLD(segs, r.click, { ...o, doors: doorsOld }), b = NEW(segs, r.click, o);
   const ga = grade(a, a.outline, r.user, doors, upf), gb = grade(b, b.outline, r.user, doors, upf);
   if (ga <= 2) nOld++; if (gb <= 2) nNew++;
   if (ga > 2 && gb <= 2) better.push(`r${r.i} ${ga.toFixed(1)}->${gb.toFixed(1)}`);

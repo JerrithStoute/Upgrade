@@ -23,7 +23,7 @@ import { clutter, makeClutter, type Prim } from "./clutter";
 import pc from "polygon-clipping";
 import { strokeText, strokeWidth } from "./font";
 
-export const SYNTH_VERSION = "rooms4-2026-11-22";
+export const SYNTH_VERSION = "rooms5-2026-11-24";
 export const ROOT = "test-plans/_lab/synthetic";
 const FONTS = path.resolve("node_modules/pdfjs-dist/standard_fonts") + "/";
 

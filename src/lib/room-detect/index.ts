@@ -18,7 +18,7 @@
 import { DEG, bucketOf, distToSeg, grid, toLine, type Line, type Pt } from "../wall-detect";
 
 /** Which rules the room finder runs: saved with each Find area click (AreaFindLog). Change it with them. */
-export const ROOM_DETECT_VERSION = "2026-11-24c";
+export const ROOM_DETECT_VERSION = "2026-11-26c";
 
 export type RoomFindOptions = {
   /** The sheet's scale: page units per real foot. */
@@ -289,12 +289,58 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
   const box = { x0: cx - reach, y0: cy - reach, x1: cx + reach, y1: cy + reach };
 
   // The lines around the click (specks dropped).
-  const lines: Line[] = [];
+  let lines: Line[] = [];
+  // (A fan: six or more lines from one point out to six or more places, each within 3° of the next — what a PDF
+  // leaves of a sink or tub shaded as a fan of thin triangles. Never drawn by hand, never a wall: Chirafis,
+  // 2026-11-24, where they ran slanted "walls" through the master bath and the kitchen island. Only the fan's own
+  // lines go — walls meeting at that point stay, even drawn a little off square (Rothschild).)
+  const ends = new Map<string, { l: Line; a: number; far: string }[]>();
   for (let i = 0; i + 3 < segments.length; i += 4) {
     const [x1, y1, x2, y2] = [segments[i], segments[i + 1], segments[i + 2], segments[i + 3]];
     if (Math.max(x1, x2) < box.x0 || Math.min(x1, x2) > box.x1 || Math.max(y1, y2) < box.y0 || Math.min(y1, y2) > box.y1) continue;
     const l = toLine(x1, y1, x2, y2);
-    if (l && l.s1 - l.s0 >= inch) lines.push(l);
+    if (!l || l.s1 - l.s0 < inch) continue;
+    lines.push(l);
+    for (const [px, py, qx, qy] of [[x1, y1, x2, y2], [x2, y2, x1, y1]]) {
+      const k = `${Math.round(px * 20)},${Math.round(py * 20)}`;
+      const list = ends.get(k);
+      const e = { l, a: Math.atan2(qy - py, qx - px), far: `${Math.round(qx * 5)},${Math.round(qy * 5)}` };
+      if (list) list.push(e);
+      else ends.set(k, [e]);
+    }
+  }
+  {
+    const fan = new Set<Line>();
+    for (const list of ends.values()) {
+      if (list.length < 6) continue;
+      const es = list.slice().sort((p, q) => p.a - q.a);
+      // (Started after the widest gap, so no cluster runs across the ±180° seam.)
+      let w = 0, wide = es[0].a + 2 * Math.PI - es[es.length - 1].a;
+      for (let i = 1; i < es.length; i++) if (es[i].a - es[i - 1].a > wide) [wide, w] = [es[i].a - es[i - 1].a, i];
+      const ring = [...es.slice(w), ...es.slice(0, w)];
+      const turn = (i: number) => (ring[i].a - ring[i - 1].a + 2 * Math.PI) % (2 * Math.PI);
+      for (let i = 0; i < ring.length; ) {
+        let j = i + 1;
+        while (j < ring.length && turn(j) <= 3 * DEG) j++;
+        const run = ring.slice(i, j);
+        const ways = run.filter((e, k) => k === 0 || (e.a - run[k - 1].a + 2 * Math.PI) % (2 * Math.PI) > 0.05 * DEG).length;
+        if (new Set(run.map((e) => e.far)).size >= 6 && ways >= 5) for (const e of run) fan.add(e.l);
+        i = j;
+      }
+    }
+    // (The same shading's thin slivers between fans: a line at an odd angle — not square, not 45° — that ends at
+    // a fan's outer end.)
+    if (fan.size) {
+      const rim = new Set<string>();
+      for (const l of fan) for (const [x, y] of [[l.x1, l.y1], [l.x2, l.y2]]) rim.add(`${Math.round(x)},${Math.round(y)}`);
+      const atRim = (x: number, y: number) => {
+        for (const dx of [-1, 0, 1]) for (const dy of [-1, 0, 1]) if (rim.has(`${Math.round(x) + dx},${Math.round(y) + dy}`)) return true;
+        return false;
+      };
+      for (const l of lines)
+        if (!fan.has(l) && Math.abs(Math.sin(4 * l.ang)) > Math.sin(12 * DEG) && (atRim(l.x1, l.y1) || atRim(l.x2, l.y2))) fan.add(l);
+      lines = lines.filter((l) => !fan.has(l));
+    }
   }
   // The same lines filed by direction and by where they lie along it (in 4' stretches), so a piece of wall
   // is only compared with the lines beside it — not every parallel line across the sheet.
@@ -514,6 +560,21 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     return out;
   };
   const bands = wallPieces(6 * inch, false);
+  // A shelf, a counter or a row of cubbies isn't a wall: its front line and the face of the wall behind it read as one
+  // thick wall (9"+, nothing drawn between) — in a pantry, a closet, a mud room it cut the floor short (2026-11-24,
+  // ~20 of the misses). A thick wall whose face is also a face of an ordinary wall on its far side (that wall's own
+  // two faces, alongside for half its length or more) is that, and is dropped. A real thick wall stands on its own.
+  {
+    const thin = bands.filter((w) => 2 * w.half <= 9 * inch);
+    const shelf = (t: Band) => 2 * t.half > 9 * inch && thin.some((w) => {
+      if (Math.abs(Math.sin(w.ang - t.ang)) > 0.02 || Math.abs(w.ux * t.ux + w.uy * t.uy) < 0.99) return false;
+      const ov = Math.min(w.s1, t.s1) - Math.max(w.s0, t.s0);
+      if (ov < 0.5 * (t.s1 - t.s0)) return false;
+      // (w beside t, sharing a face: w's far face is t's near one, w outside t.)
+      return [-1, 1].some((k) => Math.abs(w.rho - k * w.half - (t.rho + k * t.half)) < 0.5 * inch);
+    });
+    if (bands.some(shelf)) bands.splice(0, bands.length, ...bands.filter((t) => !shelf(t)));
+  }
   // A short piece (under a foot) is a wall only if it's capped — a short line across an end, the wall's
   // thickness (a jamb, a wall's end). A switch or outlet drawn as two short lines off a wall has only the
   // wall's long face running past it, and its other end open.
@@ -1080,17 +1141,22 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       // words are drawn as lines, a letter's arm comes off its spine (an E) — it isn't a wall.
       const other = dir > 0 ? w.s0 : w.s1;
       // (On a plan that fills its walls, every filled piece is a wall.)
-      if (meets(w, end) || (!asHeavy(w) && !(meets(w, other, true) || runsOn(w, other, true) || inLineBeyond(w, other, -dir, true) || stairSide.has(w)))) continue;
+      if (meets(w, end)) continue;
+      // (A loose piece is stretched only when a window's lines run on from its end across the gap — a bay's corner post
+      // and its window on a slant: the user's fix, 2026-11-26, Jordan Williams master bedroom.)
+      const loose = !asHeavy(w) && !(meets(w, other, true) || runsOn(w, other, true) || inLineBeyond(w, other, -dir, true) || stairSide.has(w));
+      if (loose && ((globalThis as { __noBayPost?: boolean }).__noBayPost || Math.abs(Math.sin(2 * w.ang)) < Math.sin(30 * DEG))) continue;
       const reachDoor = maxDoor;
       let hit = Infinity;
       for (const v of nearBy(ex, ey, reachDoor + inch)) {
-        if (v === w || Math.abs(Math.sin(v.ang - w.ang)) < Math.sin(45 * DEG)) continue;
+        if (v === w || Math.abs(Math.sin(v.ang - w.ang)) < Math.sin((loose ? 40 : 45) * DEG)) continue;
         // Along this wall from its end to v's near face.
         const along = w.ux * v.nx + w.uy * v.ny;
         const off = ex * v.nx + ey * v.ny;
         for (const face of [v.rho - v.half, v.rho + v.half]) {
           const t = ((face - off) / along) * dir;
-          if (!(t > 0) || t > reachDoor || t >= hit) continue;
+          // (A loose post's own corner pieces, right at its end, aren't what it closes to.)
+          if (!(t > (loose ? 6 * inch : 0)) || t > reachDoor || t >= hit) continue;
           const hx = ex + w.ux * t * dir;
           const hy = ey + w.uy * t * dir;
           const s = hx * v.ux + hy * v.uy;
@@ -1098,6 +1164,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
           if (s >= v.s0 - upf && s <= v.s1 + upf) hit = t;
         }
       }
+      if (loose && !(hit < Infinity && hit >= 1.5 * upf && drawnAlong(w, dir > 0 ? end : end - hit, dir > 0 ? end + hit : end) >= 0.8)) continue;
       if (hit < Infinity && !isDoorway(w, dir > 0 ? end : end - hit, dir > 0 ? end + hit : end)) continue;
       if (hit < Infinity) {
         const b = { ...w, s0: dir > 0 ? end - inch : end - hit - inch, s1: dir > 0 ? end + hit + inch : end + inch };
@@ -1124,9 +1191,12 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       const parallel = (v: Band) => Math.abs(ux * v.nx + uy * v.ny) < Math.sin(5 * DEG);
       // (Up against a wall, or an opening already closed. Or a drawn wall a few inches off — an open
       // door's slab is often drawn standing off the wall beside it, by its stop and trim.)
+      // (A third of the door's length at least: a box behind the door's label in the doorway isn't a wall — 2026-11-25,
+      // Goines "2868".)
+      const long = (v: Band) => v.s1 - v.s0 >= 0.3 * len;
       const alongWall =
-        nearBy(mx, my, upf).some((v) => parallel(v) && distToBand(mx, my, v) <= 3 * inch) ||
-        nearReal(mx, my, upf).some((v) => parallel(v) && distToBand(mx, my, v) <= 8 * inch);
+        nearBy(mx, my, upf).some((v) => parallel(v) && long(v) && distToBand(mx, my, v) <= 3 * inch) ||
+        nearReal(mx, my, upf).some((v) => parallel(v) && long(v) && distToBand(mx, my, v) <= 8 * inch);
       return square && !alongWall;
     });
     // (A door hung in a wall at 45°: both ends of its swing at 45°, square to each other — the open end has the door's
@@ -1165,7 +1235,7 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         const L = Math.hypot(e[0] - d.x, e[1] - d.y);
         if (!(L > 0)) return false;
         const a = Math.atan2(e[1] - d.y, e[0] - d.x), [mx, my] = [(d.x + e[0]) / 2, (d.y + e[1]) / 2];
-        return strokesNear(mx - inch, my - inch, mx + inch, my + inch).some((l) => Math.abs(Math.sin(l.ang - a)) < Math.sin(5 * DEG) && l.s1 - l.s0 >= 0.3 * L && distToSeg(mx, my, l) <= 2.5 * inch);
+        return strokesNear(mx - inch, my - inch, mx + inch, my + inch).some((l) => Math.abs(Math.sin(l.ang - a)) < Math.sin(8 * DEG) && l.s1 - l.s0 >= 0.3 * L && distToSeg(mx, my, l) <= 2.5 * inch);
       };
     {
       const diag = (e: number[]) => around.every((v) => { const a = Math.atan2(e[1] - d.y, e[0] - d.x); const k = Math.abs(Math.sin(a - v.ang)); return k > Math.sin(35 * DEG) && k < Math.sin(55 * DEG); });
@@ -1189,10 +1259,29 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         if (len > 0 && inWall) shut.splice(0, shut.length, free);
       }
     }
+    // (The one end left has the door's slab drawn along it — that's where the door stands open; shut, it's the other, if
+    // that one runs square to the walls. 2026-11-25, Hoa Le's bedroom doors: the room ran out the door.)
+    if (shut.length === 1 && !slanted && slabAt(shut[0])) {
+      const other = shut[0] === d.a ? d.b : d.a;
+      const len = Math.hypot(other[0] - d.x, other[1] - d.y);
+      const [ux, uy] = [(other[0] - d.x) / len, (other[1] - d.y) / len];
+      if (len > 0 && !slabAt(other) && around.some((v) => Math.min(Math.abs(ux * v.nx + uy * v.ny), Math.abs(ux * v.ux + uy * v.uy)) < Math.sin(8 * DEG))) shut.splice(0, 1, other);
+    }
     if (shut.length !== 1) continue;
     const e = shut[0];
     let ang = Math.atan2(e[1] - d.y, e[0] - d.x);
-    if (ang < 0) ang += Math.PI;
+    // (Square to the walls it's hung in: a swing a few degrees off — drawn as short pieces, run a hair past the jamb —
+    // shut on the slant leaves a sliver open by the jamb. 2026-11-25, Goines utility.)
+    if (!slanted)
+      for (const v of around) {
+        const k = Math.round((ang - v.ang) / (Math.PI / 2));
+        if (Math.abs(ang - v.ang - (k * Math.PI) / 2) < 8 * DEG) {
+          ang = v.ang + (k * Math.PI) / 2;
+          break;
+        }
+      }
+    while (ang < 0) ang += Math.PI;
+    while (ang >= Math.PI) ang -= Math.PI;
     const [lx, ly] = [Math.cos(ang), Math.sin(ang)];
     const [nx, ny] = [-ly, lx];
     const sa = d.x * lx + d.y * ly;
@@ -1208,7 +1297,16 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       return 2 * inch;
     };
     const [lo, hi] = [Math.min(sa, sb), Math.max(sa, sb)];
-    bridges.push({ ang, ux: lx, uy: ly, nx, ny, rho: d.x * nx + d.y * ny, half: 1.5 * inch, s0: lo - (slanted ? reachWall(lo, -1) : 6 * inch), s1: hi + (slanted ? reachWall(hi, 1) : 6 * inch) });
+    // (Square doors: 6" on into the jambs — or on to the wall the door's hung in, when it carries on in line a little
+    // past (up to 14"): its end set back from a jamb's tick left a sliver open — 2026-11-25, Goines utility.)
+    const inLine = (s0: number, dir: number) => {
+      for (let t = 6 * inch; t <= 14 * inch; t += 0.5 * inch) {
+        const sv = s0 + dir * t, [x, y] = [lx * sv + nx * (d.x * nx + d.y * ny), ly * sv + ny * (d.x * nx + d.y * ny)];
+        if (nearBy(x, y, upf).some((v) => Math.abs(Math.sin(v.ang - ang)) < Math.sin(10 * DEG) && v.half >= 1.5 * inch && distToBand(x, y, v) <= v.half)) return t + inch;
+      }
+      return 6 * inch;
+    };
+    bridges.push({ ang, ux: lx, uy: ly, nx, ny, rho: d.x * nx + d.y * ny, half: 1.5 * inch, s0: lo - (slanted ? reachWall(lo, -1) : inLine(lo, -1)), s1: hi + (slanted ? reachWall(hi, 1) : inLine(hi, 1)) });
     // (The doorway itself, in the wall the door's hung in — for running the room to the wall's middle across it, step 6
     // — the user's answer key, 2026-11-23: a door shut by its swing went to the face only, never the middle.)
     // (Its wall may stand off past short jamb stubs, too short to be wall themselves — up to 2' on along the doorway's
@@ -1541,7 +1639,50 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     const i = k % (W + 1);
     return [box.x0 + i * cell, box.y0 + ((k - i) / (W + 1)) * cell];
   };
-  let pts = simplify(loop.map(corner), 1.5 * cell);
+  const raw = loop.map(corner);
+  let pts = simplify(raw, 1.5 * cell);
+  // (A step kept a step: a side the tidying left a little off square — under 25° — with only one or two steps of the
+  // grid's edge under it is a jog in the wall face (a 2x4 meeting a 2x6, a stub, a jamb), not a slanted wall: its
+  // square corners back. A real slanted wall leaves a staircase of many steps. The user's real clicks, 2026-11-24:
+  // ~200 rooms came back with a long undrawn slant like this.)
+  {
+    const at = new Map<Pt, number>();
+    raw.forEach((p, k) => at.set(p, k));
+    const out: Pt[] = [];
+    for (let s = 0; s < pts.length; s++) {
+      const a = pts[s], b = pts[(s + 1) % pts.length];
+      out.push(a);
+      const ia = at.get(a), ib = at.get(b);
+      if (ia === undefined || ib === undefined) continue;
+      const [dx, dy] = [Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1])];
+      const [major, minor] = [Math.max(dx, dy), Math.min(dx, dy)];
+      if (minor < 0.5 * cell || minor > Math.tan(25 * DEG) * major) continue;
+      const path: Pt[] = [];
+      for (let k = ia; k !== ib; k = (k + 1) % raw.length) path.push(raw[k]);
+      path.push(b);
+      const turns: Pt[] = [];
+      for (let k = 1; k < path.length - 1 && turns.length <= 4; k++) {
+        const [p, q, r] = [path[k - 1], path[k], path[k + 1]];
+        if ((q[0] - p[0]) * (r[1] - q[1]) - (q[1] - p[1]) * (r[0] - q[0]) !== 0) turns.push(q);
+      }
+      // (Stepping one way only, along and across — not a spike out and back, like a door leaf's notch.)
+      const q = [a, ...turns, b], [sx, sy] = [Math.sign(b[0] - a[0]), Math.sign(b[1] - a[1])];
+      const oneWay = q.slice(1).every((p, k) => Math.sign(p[0] - q[k][0]) * sx >= 0 && Math.sign(p[1] - q[k][1]) * sy >= 0);
+      if (turns.length <= 4 && oneWay) out.push(...turns);
+    }
+    pts = out;
+    // (No needles: a point the outline turns back on itself at — under 20° — is a sliver along a door leaf, not floor.)
+    for (let guard = 0; guard < 50 && pts.length > 3; guard++) {
+      const k = pts.findIndex((q, i) => {
+        const [p, r] = [pts[(i + pts.length - 1) % pts.length], pts[(i + 1) % pts.length]];
+        const [ux, uy, vx, vy] = [p[0] - q[0], p[1] - q[1], r[0] - q[0], r[1] - q[1]];
+        const l = Math.hypot(ux, uy) * Math.hypot(vx, vy);
+        return l > 0 && (ux * vx + uy * vy) / l > Math.cos(20 * DEG);
+      });
+      if (k < 0) break;
+      pts.splice(k, 1);
+    }
+  }
   if (pts.length < 3) return { ok: false, reason: "too-small" };
 
   // 5. Each side onto the wall face it runs along (the grid's edge sits a cell or so off it).
@@ -1661,7 +1802,8 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
       const ux = (c[0] - a[0]) / L, uy = (c[1] - a[1]) / L;
       const cuts: [number, number, number, number, number][] = []; // along from, along to, push x, push y
       for (const [b, [o0, o1]] of openSpan) {
-        if (Math.abs(ux * b.nx + uy * b.ny) > Math.sin(4 * DEG) || o1 - o0 < 12 * inch) continue;
+        // (Nor a garage door — over 7' wide, it opens onto the drive: the room stops at the wall's face. 2026-11-24.)
+        if (Math.abs(ux * b.nx + uy * b.ny) > Math.sin(4 * DEG) || o1 - o0 < 12 * inch || o1 - o0 > 7 * upf) continue;
         const d = ((a[0] + c[0]) / 2) * b.nx + ((a[1] + c[1]) / 2) * b.ny - b.rho;
         // (The side on the opening's face — not one running down its middle already, or off in the room.)
         if (Math.abs(d) < b.half - inch || Math.abs(d) > b.half + 2 * inch || b.half < 1.5 * inch) continue;
@@ -1754,6 +1896,41 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
     // (Corners that landed on each other where a piece started at a corner: one.)
     pts = out.filter((q, k) => { const r = out[(k + out.length - 1) % out.length]; return Math.hypot(q[0] - r[0], q[1] - r[1]) > 0.05 * inch; });
   }
+  {
+    // (No strips under 4" wide poking out of the room — a door leaf's slot: points in a straight line first made
+    // one side, then any two sides running out and back that close together, their end cut off.)
+    pts = pts.filter((q, i) => {
+      const [p, r] = [pts[(i + pts.length - 1) % pts.length], pts[(i + 1) % pts.length]];
+      return Math.abs((q[0] - p[0]) * (r[1] - q[1]) - (q[1] - p[1]) * (r[0] - q[0])) > 0.02 * Math.hypot(q[0] - p[0], q[1] - p[1]) * Math.hypot(r[0] - q[0], r[1] - q[1]);
+    });
+    for (let guard = 0; guard < 50 && pts.length > 5; guard++) {
+      const n = pts.length;
+      let cut = -1;
+      for (let i = 0; i < n && cut < 0; i++) {
+        const [a, b, c, d] = [pts[i], pts[(i + 1) % n], pts[(i + 2) % n], pts[(i + 3) % n]];
+        const [u, w] = [[b[0] - a[0], b[1] - a[1]], [d[0] - c[0], d[1] - c[1]]], [lu, lw] = [Math.hypot(...u), Math.hypot(...w)];
+        const bc = Math.hypot(c[0] - b[0], c[1] - b[1]);
+        if (bc > 4 * inch || lu < 2 * bc || lw < 2 * bc || (u[0] * w[0] + u[1] * w[1]) / (lu * lw) > -Math.cos(10 * DEG)) continue;
+        // (Out of the room — or a notch into it along a door's leaf, the leaf's own thin box cut out of the floor. A
+        // 3½" stub wall standing into the room is a notch too, and stays out.)
+        if (Math.sign(shoelace([a, b, c, d])) !== Math.sign(shoelace(pts))) {
+          const m: Pt = [(a[0] + b[0] + c[0] + d[0]) / 4, (a[1] + b[1] + c[1] + d[1]) / 4];
+          const leaf = (opts.doors ?? []).some((dr) =>
+            [dr.a, dr.b].some((e) => {
+              if (!e) return false;
+              const L = Math.hypot(e[0] - dr.x, e[1] - dr.y);
+              if (L < upf || Math.abs((e[0] - dr.x) * u[1] - (e[1] - dr.y) * u[0]) / (L * lu) > Math.sin(10 * DEG)) return false;
+              return distToSeg(m[0], m[1], { x1: dr.x, y1: dr.y, x2: e[0], y2: e[1] }) <= 3 * inch;
+            }),
+          );
+          if (!leaf) continue;
+        }
+        cut = i;
+      }
+      if (cut < 0) break;
+      pts = pts.filter((_, k) => k !== (cut + 1) % n && k !== (cut + 2) % n);
+    }
+  }
   // 7. No short slanted bits left: a side under a foot, off the room's own directions (its sides 2' and longer) and
   // on nothing drawn, is a corner the grid bit into — squared off whichever way changes the floor least: one of its
   // ends dropped, or the sides either side of it run on to meet. (The user's real clicks, 2026-11-24: the commonest
@@ -1838,11 +2015,87 @@ function findRoomOnce(segments: Float32Array | number[], click: Pt, opts: RoomFi
         if (!m || Math.hypot(m[0] - b[0], m[1] - b[1]) > 8 * inch) continue;
         const o = pts.flatMap((q, k) => (k === i ? [m] : k === (i + 1) % n || k === (i + 2) % n ? [] : [q]));
         if (Math.abs(Math.abs(shoelace(o)) - Math.abs(shoelace(pts))) > 36 * inch * inch) continue;
+        // (Not when squaring it takes in a wall: the step is the room going round a jamb's stub at a doorway, the jamb
+        // stays out — the user's fix, 2026-11-26, Jordan Gore closet.)
+        if (Math.abs(shoelace(o)) > Math.abs(shoelace(pts))) {
+          // (The jamb's end drawn along the step, or the corner it would fill inside a wall.)
+          const [qx, qy] = [(b[0] + m[0]) / 2, (b[1] + m[1]) / 2];
+          if (drawn(a, b) || drawn(b, c) || bands.some((w) => { const t = qx * w.ux + qy * w.uy; return t >= w.s0 && t <= w.s1 && Math.abs(qx * w.nx + qy * w.ny - w.rho) <= w.half - 0.25 * inch; })) continue;
+        }
         pts = o;
         fixed = true;
       }
       if (!fixed) break;
     }
+    // (A door hinged by a corner, drawn standing open along the wall beside it: the floor between its leaf and the
+    // wall is the room's — the side runs on along the wall, stepping in at the hinge to the doorway. The user's fixes,
+    // 2026-11-26, Jordan Williams laundry and coat closet.)
+    // (Held back 2026-11-26 for the user to decide: +30 real clicks, but 1 answer-key room — full set (5) — kept the other way.)
+    if (!(globalThis as { __noLeafStep?: boolean }).__noLeafStep)
+      for (const dr of opts.doors ?? []) {
+        if (dr.r < 1.5 * upf || dr.r > 4 * upf) continue;
+        for (const e of [dr.a, dr.b]) {
+          if (!e) continue;
+          const L = Math.hypot(e[0] - dr.x, e[1] - dr.y);
+          if (L < 0.8 * dr.r) continue;
+          const [ux, uy] = [(e[0] - dr.x) / L, (e[1] - dr.y) / L], [nx, ny] = [-uy, ux];
+          const acr = (q: Pt) => (q[0] - dr.x) * nx + (q[1] - dr.y) * ny, alg = (q: Pt) => (q[0] - dr.x) * ux + (q[1] - dr.y) * uy;
+          const n = pts.length;
+          let done = false;
+          for (let i = 0; i < n && !done; i++) {
+            const q0 = pts[i], q1 = pts[(i + 1) % n];
+            // A side along the leaf, from the hinge most of the way to its end.
+            if (Math.abs(acr(q0)) > 2 * inch || Math.abs(acr(q1)) > 2 * inch) continue;
+            const [h, o] = alg(q0) < alg(q1) ? [i, (i + 1) % n] : [(i + 1) % n, i];
+            if (alg(pts[h]) > 4 * inch || alg(pts[o]) < 0.6 * L || alg(pts[o]) > L + 6 * inch) continue;
+            // …its leaf end stepping straight out to the wall (4½"–8": a door standing off the corner by a stub — nearer, it's
+            // the door's own trim, and the room stays off the leaf as builders keep it), the wall running on along it from there.
+            const dir = o === (i + 1) % n ? 1 : -1;
+            const w0 = pts[(o + dir + n) % n], w1 = pts[(o + 2 * dir + 2 * n) % n];
+            const off = acr(w0);
+            if (Math.abs(off) < 4.5 * inch || Math.abs(off) > 8 * inch || Math.abs(alg(w0) - alg(pts[o])) > inch || Math.abs(acr(w1) - off) > inch || alg(w1) < alg(w0) + 6 * inch) continue;
+            const hinge: Pt = [dr.x, dr.y];
+            const onWall: Pt = [dr.x + nx * off, dr.y + ny * off];
+            const add = dir === 1 ? [hinge, onWall] : [onWall, hinge];
+            const o2 = pts.flatMap((q, k) => (k === o || k === (o + dir + n) % n ? [] : k === h ? (dir === 1 ? [q, ...add] : [...add, q]) : [q]));
+            // (Only taking in floor: the area grows.)
+            if (Math.abs(shoelace(o2)) <= Math.abs(shoelace(pts))) continue;
+            pts = o2;
+            done = true;
+          }
+        }
+      }
+    // (A jamb's trim standing proud of the wall's face by 1½" or less, beside a doorway: the face runs straight on to
+    // the doorway — the user's fixes, 2026-11-26, Jordan Williams. A deeper step is a jamb's stub and stays out.)
+    if (!(globalThis as { __noProud?: boolean }).__noProud)
+      for (let guard = 0; guard < 8 && pts.length > 5; guard++) {
+        const n = pts.length;
+        let fixed = false;
+        for (let i = 0; i < n && !fixed; i++)
+          for (const dir of [1, -1]) {
+            // e→d: the wall's face (2' or more); d→c: out of the face, ≤ 1½"; c→b: along it, ≤ 10"; b→a: to the doorway.
+            const at = (k: number) => pts[(i + dir * k + 4 * n) % n];
+            const [e, d, c, b, a] = [at(0), at(1), at(2), at(3), at(4)];
+            const fe = Math.hypot(d[0] - e[0], d[1] - e[1]);
+            if (fe < 2 * upf) continue;
+            const [ux, uy] = [(d[0] - e[0]) / fe, (d[1] - e[1]) / fe], [nx, ny] = [-uy, ux];
+            const acr = (q: Pt) => (q[0] - d[0]) * nx + (q[1] - d[1]) * ny, alg = (q: Pt) => (q[0] - d[0]) * ux + (q[1] - d[1]) * uy;
+            const proud = acr(c);
+            if (Math.abs(proud) < 0.25 * inch || Math.abs(proud) > 1.5 * inch || Math.abs(alg(c)) > 0.25 * inch) continue;
+            if (Math.abs(acr(b) - proud) > 0.25 * inch || alg(b) < 1 * inch || alg(b) > 10 * inch || Math.abs(alg(a) - alg(b)) > 0.25 * inch) continue;
+            // (The doorway's side past the face, the other way from the trim.)
+            if (Math.sign(acr(a)) === Math.sign(proud) || Math.abs(acr(a)) > 8 * inch) continue;
+            const b2: Pt = [d[0] + ux * alg(b), d[1] + uy * alg(b)];
+            const drop = new Set([(i + dir * 1 + 4 * n) % n, (i + dir * 2 + 4 * n) % n]);
+            const bi = (i + dir * 3 + 4 * n) % n;
+            const o = pts.flatMap((q, k) => (drop.has(k) ? [] : k === bi ? [b2] : [q]));
+            if (Math.abs(shoelace(o)) <= Math.abs(shoelace(pts))) continue;
+            pts = o;
+            fixed = true;
+            break;
+          }
+        if (!fixed) break;
+      }
     pts = pts.filter((q, k) => { const r = pts[(k + pts.length - 1) % pts.length]; return Math.hypot(q[0] - r[0], q[1] - r[1]) > 0.05 * inch; });
   }
   const areaSf = Math.abs(shoelace(pts)) / (upf * upf);
@@ -1938,8 +2191,48 @@ function dimensionsIn(lines: Line[], strokesNear: ReturnType<typeof grid>, upf: 
       }
       return sides.size === 2;
     });
+  // A wall's face isn't a dimension, though a tick or arrow lands at its end: hatching packed against it — short strokes alike,
+  // side by side, running off it across to the wall's other face (2026-11-24, Goines: a
+  // dimension's tick at the garage wall's end made its face a dimension — the garage ran on through the house).
+  // (Lines by direction and offset, either way round: a line's normal flips near 180°.)
+  const faceKey = (l: Line): [number, number] => { const a = Math.round(l.ang / DEG); return a >= 180 ? [0, -1] : [a, 1]; };
+  const faces = new Map<string, Line[]>();
+  for (const l of lines) {
+    if (l.s1 - l.s0 < 6 * inch) continue;
+    const [a, f] = faceKey(l), k = `${a}:${Math.round((f * l.rho) / (0.3 * inch))}`;
+    (faces.get(k) ?? faces.set(k, []).get(k)!).push(l);
+  }
+  const hatchedFace = (l: Line) => {
+    // (A long face only — a jamb's stub beside a garage door, ticked by the door's dimension, stays out of it.)
+    if (l.s1 - l.s0 < 4 * upf) return false;
+    let hits = 0;
+    for (let k = 1; k <= 5; k++) {
+      const sv = l.s0 + ((l.s1 - l.s0) * k) / 6, x = l.ux * sv + l.nx * l.rho, y = l.uy * sv + l.ny * l.rho;
+      const box = strokesNear(x - 8 * inch, y - 8 * inch, x + 8 * inch, y + 8 * inch);
+      // (Alike strokes side by side: three or more the same way and length within the 16" around — hatching's
+      // spacing varies, 2"–6", so not inHatchRow's.)
+      const row = (m: Line) => box.filter((k) => k !== m && Math.abs(Math.sin(k.ang - m.ang)) < Math.sin(3 * DEG) && Math.abs(k.s1 - k.s0 - (m.s1 - m.s0)) < inch && Math.abs(k.rho - m.rho) >= 0.3 * inch).length >= 3;
+      const found = box.some((m) => {
+        if (m === l || m.s1 - m.s0 > 10 * inch || Math.abs(Math.sin(m.ang - l.ang)) < Math.sin(20 * DEG)) return false;
+        const o1 = m.x1 * l.nx + m.y1 * l.ny - l.rho, o2 = m.x2 * l.nx + m.y2 * l.ny - l.rho;
+        if (Math.min(Math.abs(o1), Math.abs(o2)) > 0.3 * inch || Math.max(Math.abs(o1), Math.abs(o2)) < inch) return false;
+        const sm = ((m.x1 + m.x2) / 2) * l.ux + ((m.y1 + m.y2) / 2) * l.uy;
+        if (sm < l.s0 || sm > l.s1 || Math.hypot((m.x1 + m.x2) / 2 - x, (m.y1 + m.y2) / 2 - y) > 4 * inch || !row(m)) return false;
+        // (Its far end on the wall's other face: a line parallel to this one, 1"–14" off.)
+        const [fx, fy] = Math.abs(o1) > Math.abs(o2) ? [m.x1, m.y1] : [m.x2, m.y2], fr = fx * l.nx + fy * l.ny, fs = fx * l.ux + fy * l.uy;
+        const [ak, flip] = faceKey(l), r = flip * fr;
+        for (let d = -1; d <= 1; d++) for (const f of faces.get(`${ak}:${Math.round(r / (0.3 * inch)) + d}`) ?? []) if (f !== l && Math.abs(faceKey(f)[1] * f.rho - r) <= 0.3 * inch && Math.abs(f.ux * l.ux + f.uy * l.uy) > 0.99) {
+          const t = fx * f.ux + fy * f.uy;
+          if (t >= f.s0 - inch && t <= f.s1 + inch) return true;
+        }
+        return false;
+      });
+      if (found && ++hits >= 4) return true;
+    }
+    return false;
+  };
   const dimension = new Set<Line>();
-  for (const l of lines) if (l.s1 - l.s0 >= 6 * inch && (ticked(l) || arrowed(l))) dimension.add(l);
+  for (const l of lines) if (l.s1 - l.s0 >= 6 * inch && (ticked(l) || arrowed(l)) && !hatchedFace(l)) dimension.add(l);
   for (let pass = 0; pass < 3; pass++)
     for (const list of onLine.values()) {
       if (!list.some((l) => dimension.has(l))) continue;
